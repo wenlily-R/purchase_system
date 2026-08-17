@@ -94,7 +94,7 @@ def login_fail_count(c, username, ip):
     return r
 
 # ── 自动备份: sqlite backup API, 保留14份 (V5.1) ──
-BACKUP_DIR = os.path.join(BASE, 'backup')
+BACKUP_DIR = '/Users/a0/Desktop/正成能源/04_数据库备份/自动备份'  # 2026-08-17 整理: 备份统一放正成能源/04_数据库备份/自动备份
 def backup_db():
     try:
         os.makedirs(BACKUP_DIR, exist_ok=True)
