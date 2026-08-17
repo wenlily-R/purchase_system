@@ -5613,6 +5613,125 @@ def api_prequest_download(rid):
     return send_file(bio, as_attachment=True, download_name=f'{pr["req_no"]}物资采购申请单.xlsx',
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
+# ---- V11.4: 采购订单下载(单个订单生成标准xlsx, 含商家信息/明细/金额/审批签名) ----
+@app.route('/api/orders/<int:oid>/download')
+@login_required
+def api_order_download(oid):
+    """生成标准《采购订单》xlsx: 标题行+基础信息(单号/供应商/交易模式/金额)+商品明细+合计+审批进度(含电子签名)+签字区"""
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+    from openpyxl.drawing.image import Image as XLImage
+    import base64
+    conn = db()
+    o = conn.execute("SELECT * FROM purchase_orders WHERE id=?", (oid,)).fetchone()
+    if not o:
+        conn.close(); return jsonify({'error': '订单不存在'}), 404
+    items = conn.execute("SELECT * FROM order_items WHERE order_id=? ORDER BY id", (oid,)).fetchall()
+    approvals = conn.execute("SELECT * FROM approval_instances WHERE biz_type='purchase_order' AND biz_id=? ORDER BY level_no", (oid,)).fetchall()
+    pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (o['req_id'],)).fetchone() if o['req_id'] else None
+    conn.close()
+    wb = Workbook(); ws = wb.active; ws.title = '采购订单'
+    thin = Side(style='thin'); border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    fill = PatternFill('solid', fgColor='D9E2F3')
+    CN = lambda bold=False, size=11: Font(name='宋体', bold=bold, size=size)
+    # ── 标题行 ──
+    ws.merge_cells('A1:H2')
+    ws['A1'] = f'采 购 订 单\n订单编号：{o["order_no"]}        供应商：{o["supplier"] or ""}        下单日期：{str(o["created_at"] or "")[:10]}'
+    ws['A1'].font = CN(bold=True, size=15)
+    ws['A1'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    ws.row_dimensions[1].height = 40
+    # ── 基础信息区 ──
+    info = [
+        ('供应商', o['supplier'] or '', '交易模式', o['trade_mode'] or ''),
+        ('需求部门', o['requester'] or '', '品类', o['category'] or ''),
+        ('负责人', o['owner'] or '', '目标到货日', o['target_date'] or ''),
+        ('订单金额', '¥%s' % format(float(o['total_amount'] or 0), ',.2f'), '订单状态', o['status'] or ''),
+        ('询价/备注', (o['remark'] or '')[:80], '', ''),
+    ]
+    r = 4
+    for lk, lv, rk, rv in info:
+        ws.cell(r, 1, lk).font = CN(bold=True); ws.cell(r, 1).fill = fill
+        ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=3)
+        ws.cell(r, 2, lv).font = CN()
+        ws.cell(r, 4, rk).font = CN(bold=True); ws.cell(r, 4).fill = fill
+        ws.merge_cells(start_row=r, start_column=5, end_row=r, end_column=8)
+        ws.cell(r, 5, rv).font = CN()
+        for cc in range(1, 9):
+            ws.cell(r, cc).border = border
+        ws.row_dimensions[r].height = 22
+        r += 1
+    # ── 商品明细 ──
+    r += 1
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=8)
+    ws.cell(r, 1, '商品明细').font = CN(bold=True); ws.cell(r, 1).fill = fill
+    for cc in range(1, 9): ws.cell(r, cc).border = border
+    r += 1
+    headers = ['序号', '物资名称', '规格型号', '单位', '数量', '单价(元)', '税率%', '金额(元)']
+    for j, h in enumerate(headers, 1):
+        cell = ws.cell(r, j, h); cell.font = CN(bold=True); cell.fill = fill; cell.border = border
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+    r += 1
+    total_qty = 0.0; total_amt = 0.0
+    for i, it in enumerate(items, 1):
+        vals = [i, it['item_name'], it['spec'] or '', it['unit'] or '个', it['quantity'],
+                it['price'] or 0, it['tax_rate'] or 13, it['total_amount'] or it['amount'] or 0]
+        total_qty += float(it['quantity'] or 0); total_amt += float(it['total_amount'] or it['amount'] or 0)
+        for j, v in enumerate(vals, 1):
+            cell = ws.cell(r, j, v); cell.border = border; cell.font = CN()
+            if j in (1, 3, 4, 5, 6, 7): cell.alignment = Alignment(horizontal='center', vertical='center')
+        ws.row_dimensions[r].height = 20
+        r += 1
+    ws.cell(r, 4, '合计').font = CN(bold=True)
+    ws.cell(r, 5, total_qty).font = CN(bold=True)
+    ws.cell(r, 8, round(total_amt, 2)).font = CN(bold=True)
+    for cc in range(1, 9): ws.cell(r, cc).border = border
+    # ── 审批进度(含电子签名) ──
+    if approvals:
+        r += 2
+        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=8)
+        ws.cell(r, 1, '审批进度').font = CN(bold=True); ws.cell(r, 1).fill = fill
+        for cc in range(1, 9): ws.cell(r, cc).border = border
+        r += 1
+        for a in approvals:
+            st = {'approved': '✅通过', 'rejected': '❌驳回', 'pending': '⏳待审批'}.get(a['status'], a['status'])
+            line = '%s ｜ %s ｜ %s %s' % (a['role'] or '', st, a['approver'] or '', str(a['processed_at'] or '')[:16])
+            if a['comment']:
+                line += ' ｜ ' + (a['comment'] or '')
+            ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=7)
+            ws.cell(r, 1, line).font = CN(size=10)
+            for cc in range(1, 9): ws.cell(r, cc).border = border
+            # 电子签名图片
+            if a['signature'] and a['signature'].startswith('data:image/png'):
+                try:
+                    imgdata = base64.b64decode(a['signature'].split(',')[1])
+                    img = XLImage(io.BytesIO(imgdata))
+                    img.width = 70; img.height = 30
+                    ws.add_image(img, 'H%d' % r)
+                except Exception:
+                    pass
+            ws.row_dimensions[r].height = 32
+            r += 1
+    # ── 签字区 ──
+    r += 1
+    ws.merge_cells(f'A{r}:H{r + 1}')
+    ws.cell(row=r, column=1, value='采购经办人：                        部门负责人：                        供应商签字：')
+    ws.cell(row=r, column=1).font = CN()
+    ws.cell(row=r, column=1).alignment = Alignment(horizontal='left', vertical='center')
+    for rr in range(r, r + 2):
+        for cc in range(1, 9): ws.cell(row=rr, column=cc).border = border
+    # ── 列宽/打印 ──
+    widths = [6, 22, 18, 7, 9, 12, 8, 14]
+    for j, w in enumerate(widths, 1):
+        ws.column_dimensions[chr(64 + j)].width = w
+    ws.page_setup.orientation = 'landscape'
+    ws.page_setup.paperSize = 9
+    ws.page_setup.fitToWidth = 1
+    bio = io.BytesIO(); wb.save(bio); bio.seek(0)
+    from flask import send_file
+    return send_file(bio, as_attachment=True, download_name=f'{o["order_no"]}采购订单.xlsx',
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
 # ---- 单据导出 xlsx ----
 @app.route('/api/export')
 @login_required
