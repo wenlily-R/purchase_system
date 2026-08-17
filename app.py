@@ -3007,8 +3007,8 @@ def api_create_order():
     """同一批下单商品为一张订单: 订单头(汇总) + order_items 明细行; 一次审批"""
     d = request.json
     conn = db()
-    tm = d.get('trade_mode', '货到付款')
-    if tm not in ('货到付款', '先款后货'): tm = '货到付款'
+    tm = (d.get('trade_mode') or '货到付款').strip() or '货到付款'
+    # V11.3: 交易模式支持自定义, 不局限于 货到付款/先款后货
     items = d.get('items') or []
     if not items and d.get('item_name'):
         items = [{'item_name': d.get('item_name'), 'spec': d.get('spec'), 'unit': d.get('unit','个'),
@@ -3059,6 +3059,31 @@ def api_create_order():
     log(session['user_name'], '创建采购订单', '%s 共%d项商品 ¥%.0f' % (no, len(rows), grand_total))
     return jsonify({'success':True, 'order_no': no, 'id': oid, 'receive_no': rno,
                     'total_qty': total_qty, 'total_amount': grand_total, 'item_count': len(rows)})
+
+@app.route('/api/orders/<int:oid>/submit', methods=['POST'])
+@login_required
+def api_order_submit(oid):
+    """V11.3: 草稿订单提交审批 — 确认商家信息无误后, 创建审批实例并向上审批"""
+    conn = db()
+    o = conn.execute("SELECT * FROM purchase_orders WHERE id=?", (oid,)).fetchone()
+    if not o:
+        conn.close(); return jsonify({'error': '订单不存在'}), 404
+    if o['status'] != '草稿':
+        conn.close(); return jsonify({'error': '仅草稿状态的订单可提交审批'}), 400
+    if conn.execute("SELECT COUNT(*) FROM approval_instances WHERE biz_type='purchase_order' AND biz_id=? AND status='pending'", (oid,)).fetchone()[0] > 0:
+        conn.close(); return jsonify({'error': '该订单已在审批中'}), 400
+    conn.execute("UPDATE purchase_orders SET status='待审批', updated_at=? WHERE id=?", (now(), oid))
+    conn.commit()
+    amount = float(o['total_amount'] or 0)
+    create_approvals('purchase_order', oid, amount)
+    try:
+        start_instances('purchase_order', oid)
+    except Exception as e:
+        print('order submit start_instances err:', e)
+    conn.close()
+    log(session['user_name'], '订单提交审批', '%s 由草稿提交审批 ¥%.0f' % (o['order_no'], amount))
+    return jsonify({'success': True, 'order_no': o['order_no'], 'status': '待审批',
+                    'message': '订单已提交审批，审批通过后自动进入后续流程'})
 
 # ============================================================
 # ── NOTIFICATIONS ──
@@ -3435,7 +3460,7 @@ def inquiry_vendor_quote(token):
 @app.route('/api/inquiries/<int:iid>/select', methods=['POST'])
 @login_required
 def api_inquiry_select(iid):
-    """选中供应商 → 自动生成采购订单(进订单审批)"""
+    """V11.3: 选中供应商 → 生成采购订单(草稿态, 商家详细信息自动填入, 人工确认后提交审批)"""
     d = request.json
     sid = d.get('supplier_id')
     conn = db()
@@ -3470,12 +3495,33 @@ def api_inquiry_select(iid):
         grand_amt += amt
         rows.append((it['item_name'], it['spec'] or '', it['unit'] or '个', qty, price, amt))
     first = rows[0]
+    # V11.3: 商家详细信息自动填入订单(联系人/电话/报价/交期备注)
+    contact = (s['contact'] or '').strip()
+    phone = (s['phone'] or '').strip()
+    quote_remark = (s['quote_remark'] or '').strip()
+    detail_parts = ['三方询价选中: %s 报价¥%.2f' % (s['supplier_name'], total)]
+    if contact:
+        detail_parts.append('联系人: %s' % contact)
+    if phone:
+        detail_parts.append('电话: %s' % phone)
+    if quote_remark:
+        detail_parts.append('交期/备注: %s' % quote_remark)
+    detail_parts.append('询价单号: %s' % i['inq_no'])
+    remark = '; '.join(detail_parts)
+    # 交易模式: 优先取商家报价备注中的模式词, 否则默认货到付款
+    tm = '货到付款'
+    if quote_remark:
+        for kw in ('货到付款', '先款后货', '月结', '预付', '现款', '承兑'):
+            if kw in quote_remark:
+                tm = kw
+                break
+    # 草稿态: 不创建审批实例、不发起钉钉, 人工确认后提交审批
     conn.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,
-        supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (no, i['req_id'], first[0], first[1], sum(r[3] for r in rows), first[2], first[4], grand_amt, 0, 0, total,
          s['supplier_name'], pr['requester'] or '', '后勤类', session['user_name'], session['user_id'],
-         pr['target_date'] or '', '货到付款', '三方询价选中: %s 报价¥%.0f' % (s['supplier_name'], total), 0,
-         json.dumps([], ensure_ascii=False)))
+         pr['target_date'] or '', tm, remark, 0,
+         json.dumps([], ensure_ascii=False), '草稿'))
     oid = conn.execute("SELECT id FROM purchase_orders WHERE order_no=?", (no,)).fetchone()[0]
     for r in rows:
         conn.execute("INSERT INTO order_items(order_id,item_name,spec,unit,quantity,price,amount,tax_rate,tax_amount,total_amount,remark) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
@@ -3483,11 +3529,10 @@ def api_inquiry_select(iid):
     conn.execute("UPDATE inquiry_suppliers SET is_selected=1 WHERE id=?", (sid,))
     conn.execute("UPDATE inquiries SET status='已生成订单', selected_supplier_id=?, updated_at=? WHERE id=?", (sid, now(), iid))
     conn.commit()
-    create_approvals('purchase_order', oid, total)
-    start_instances('purchase_order', oid)
     conn.close()
-    log(session['user_name'], '询价选中下单', '%s → 订单%s 供应商%s ¥%.0f' % (i['inq_no'], no, s['supplier_name'], total))
-    return jsonify({'success': True, 'order_no': no, 'id': oid, 'total_amount': total})
+    log(session['user_name'], '询价选中下单', '%s → 订单%s(草稿) 供应商%s ¥%.0f' % (i['inq_no'], no, s['supplier_name'], total))
+    return jsonify({'success': True, 'order_no': no, 'id': oid, 'total_amount': total, 'status': '草稿',
+                    'message': '已生成采购订单草稿，商家信息已自动填入，请到采购订单中确认后提交审批'})
 
 @app.route('/api/inquiries/<int:iid>/export')
 @login_required

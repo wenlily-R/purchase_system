@@ -879,7 +879,14 @@ async function editDoc(bizType, bid, label){
     const o=data.order;
     h=`<div style="font-size:9px;color:#666;margin-bottom:6px">✏️ 编辑订单 ${esc(o.order_no)} — 保存实时生效</div>
     <div class="fr"><div class="fg"><label class="fl2">供应商 *</label><input class="fc" id="edSup" value="${esc(o.supplier||'')}"></div>
-    <div class="fg"><label class="fl2">交易模式</label><select class="fc" id="edMode"><option ${o.trade_mode=='货到付款'?'selected':''}>货到付款</option><option ${o.trade_mode=='先款后货'?'selected':''}>先款后货</option></select></div></div>
+    <div class="fg"><label class="fl2">交易模式</label>
+      <select class="fc" id="edMode" onchange="edModeTip()">
+        <option ${o.trade_mode=='货到付款'?'selected':''}>货到付款</option><option ${o.trade_mode=='先款后货'?'selected':''}>先款后货</option>
+        <option ${o.trade_mode=='月结'?'selected':''}>月结</option><option ${o.trade_mode=='预付定金'?'selected':''}>预付定金</option>
+        <option ${!['货到付款','先款后货','月结','预付定金'].includes(o.trade_mode)?'selected':''}>自定义...</option>
+      </select>
+      <input class="fc" id="edModeCustom" placeholder="输入自定义交易模式" style="display:none;margin-top:3px" value="${esc(['货到付款','先款后货','月结','预付定金'].includes(o.trade_mode)?'':(o.trade_mode||''))}">
+    </div></div>
     <div class="fr"><div class="fg"><label class="fl2">需求部门</label><input class="fc" id="edReq" value="${esc(o.requester||'')}"></div>
     <div class="fg"><label class="fl2">品类</label><input class="fc" id="edCat" value="${esc(o.category||'')}"></div></div>
     <div class="fr"><div class="fg"><label class="fl2">目标日</label><input class="fc" id="edDate" type="date" value="${esc(o.target_date||'')}"></div>
@@ -980,7 +987,14 @@ async function saveEditDoc(bizType, bid, label){
       if(n)d.items.push({item_name:n,spec:id('edS'+c)?.value||'',quantity:parseFloat(id('edQ'+c)?.value)||1,unit:id('edU'+c)?.value||'个',estimated_price:parseFloat(id('edP'+c)?.value)||0});
     });
   } else if(bizType=='purchase_order'){
-    d.supplier=id('edSup')?.value;d.trade_mode=id('edMode')?.value;d.requester=id('edReq')?.value;
+    d.supplier=id('edSup')?.value;
+    let tm=id('edMode')?.value;
+    if(tm=='自定义...'){
+      const cv=(id('edModeCustom')?.value||'').trim();
+      if(!cv){alert('请输入自定义交易模式');return}
+      tm=cv;
+    }
+    d.trade_mode=tm;d.requester=id('edReq')?.value;
     d.category=id('edCat')?.value;d.target_date=id('edDate')?.value;d.remark=id('edRem')?.value;
     d.items=[];
     document.querySelectorAll('[id^="editm"]').forEach(el=>{
@@ -1164,12 +1178,30 @@ async function showInquiry(id){
 }
 async function copyInqLink(token){
   const url=location.origin+'/inq/'+token;
+  const okMsg='✅ 链接已复制到剪贴板，可直接粘贴发送给供应商';
+  // 方式1: 新版剪贴板API(仅HTTPS/localhost可用)
   try{
-    await navigator.clipboard.writeText(url);
-    if(!confirm(`✅ 链接已复制到剪贴板，可直接粘贴发送给供应商：\n\n${url}\n\n需要打开查看吗？`)){return}
-    window.open(url,'_blank');
+    if(navigator.clipboard&&window.isSecureContext){
+      await navigator.clipboard.writeText(url);
+      alert(okMsg+'\n\n'+url);
+      return;
+    }
+    throw new Error('no-clipboard-api');
+  }catch(e){
+    // 方式2: 旧版execCommand(HTTP局域网也可用, 兼容方案)
+    try{
+      const ta=document.createElement('textarea');
+      ta.value=url;ta.style.position='fixed';ta.style.top='-999px';ta.style.opacity='0';
+      document.body.appendChild(ta);
+      ta.focus();ta.select();ta.setSelectionRange(0,url.length);
+      const ok=document.execCommand('copy');
+      ta.remove();
+      if(ok){alert(okMsg+'\n\n'+url);return}
+      throw new Error('exec-copy-failed');
+    }catch(e2){
+      prompt('请手动复制报价链接：',url);
+    }
   }
-  catch(e){prompt('请手动复制报价链接：',url)}
 }
 async function exportInquiry(iid){
   const r=await fetch('/api/inquiries/'+iid+'/export',{credentials:'include'});
@@ -1198,7 +1230,14 @@ async function loadOrders(){
       <td><span class="tag ${r.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(r.trade_mode||'货到付款')}</span></td>
       <td>¥${(r.total_amount||0).toFixed(0)}</td><td>${tag(r.status)}</td>
       <td><button class="lnk" onclick="showOrder(${r.id})">详情</button> <button class="lnk" style="color:#b08900" onclick="editDoc('purchase_order',${r.id},'采购订单')">✏️修改</button>
+      ${r.status=='草稿'?` <button class="lnk" style="color:var(--s);font-weight:700" onclick="submitDraftOrder(${r.id})">🚀提交审批</button>`:''}
       ${(r.status=='待审批'||r.status=='已通过'||r.status=='审批通过')?` <button class="lnk" style="color:var(--o)" onclick="withdrawDoc('purchase_order',${r.id},'采购订单')">↩️撤回</button>`:''}${(r.status=='待审批'||r.status=='已驳回'||r.status=='草稿')?` <button class="lnk" style="color:var(--d)" onclick="delDoc('purchase_order',${r.id},'采购订单')">🗑️删除</button>`:''}</td>`);
+}
+async function submitDraftOrder(oid){
+  if(!confirm('确认提交该草稿订单进入审批流程？提交后商家信息锁定，审批通过后自动进入后续流程'))return;
+  const r=await api(`/orders/${oid}/submit`,{method:'POST',body:'{}'});
+  if(r.success){alert('✅ '+r.message);loadOrders();loadDashboard()}
+  else alert(r.error||'提交失败');
 }
 async function showOrder(id){
   const d=await api(`/orders/${id}`),o=d.order;
@@ -2019,7 +2058,8 @@ async function showForm(type){
     id('dmTitle').textContent='📋 新建采购订单';
     id('dmBody').innerHTML=`
       <div class="fr"><div class="fg"><label class="fl2">供应商 *</label><select class="fc" id="fSup">${supOpts}</select></div>
-      <div class="fg"><label class="fl2">交易模式 *</label><select class="fc" id="fTradeMode" onchange="tradeModeTip()"><option>货到付款</option><option>先款后货</option></select></div></div>
+      <div class="fg"><label class="fl2">交易模式 *</label><select class="fc" id="fTradeMode" onchange="tradeModeTip()"><option>货到付款</option><option>先款后货</option><option>月结</option><option>预付定金</option><option>自定义...</option></select>
+      <input class="fc" id="fTradeModeCustom" placeholder="输入自定义交易模式" style="display:none;margin-top:3px"></div></div>
       <div class="fg"><label class="fl2" id="fTradeModeTip" style="color:#b76e00;font-size:8px">货到付款: 下单后自动进入入库板块</label></div>
       <div class="fr"><div class="fg"><label class="fl2">需求部门</label><select class="fc" id="fDept"><option>生产部</option><option>维修车间</option><option>后勤部</option><option>综合办</option></select></div>
       <div class="fg"><label class="fl2">品类</label><select class="fc" id="fCat"><option>备品备件</option><option>设备</option><option>建材</option><option>维修耗材</option><option>办公用品</option></select></div></div>
@@ -2165,7 +2205,23 @@ async function createPRequest(){
 }
 function tradeModeTip(){
   const t=id('fTradeMode').value;
-  id('fTradeModeTip').textContent=t=='货到付款'?'货到付款: 下单后自动进入入库板块, 确认验收入库后付款':'先款后货: 合同生效后自动进入入库板块, 预付款后入库核销';
+  const custom=id('fTradeModeCustom');
+  if(custom)custom.style.display=(t=='自定义...')?'block':'none';
+  id('fTradeModeTip').textContent=t=='货到付款'?'货到付款: 下单后自动进入入库板块, 确认验收入库后付款':t=='先款后货'?'先款后货: 合同生效后自动进入入库板块, 预付款后入库核销':t=='自定义...'?'自定义模式: 请输入交易方式(如 月结30天/承兑汇票/分期付款等)':'自定义模式: 请输入交易方式';
+}
+function edModeTip(){
+  const t=id('edMode').value;
+  const custom=id('edModeCustom');
+  if(custom)custom.style.display=(t=='自定义...')?'block':'none';
+}
+function getTradeMode(){
+  const t=id('fTradeMode').value;
+  if(t=='自定义...'){
+    const v=(id('fTradeModeCustom')?.value||'').trim();
+    if(!v){alert('请输入自定义交易模式');return null}
+    return v;
+  }
+  return t;
 }
 window._ordIdx=[];
 function importReqToOrder(){
@@ -2248,7 +2304,8 @@ async function createOrder(){
   }).filter(Boolean);
   if(!items.length){alert('请至少填写一个商品（物资名称）');return}
   if(!id('fSup').value){alert('请选择供应商');return}
-  const d={items,supplier:id('fSup').value,requester:id('fDept').value,category:id('fCat').value,target_date:id('fDate').value,trade_mode:id('fTradeMode').value,remark:id('fRem').value,urgent:id('fOrdUrgent')?.checked?1:0,req_id:window._ordReqId||null};
+  const tm=getTradeMode();if(tm===null)return;
+  const d={items,supplier:id('fSup').value,requester:id('fDept').value,category:id('fCat').value,target_date:id('fDate').value,trade_mode:tm,remark:id('fRem').value,urgent:id('fOrdUrgent')?.checked?1:0,req_id:window._ordReqId||null};
   const r=await api('/orders',{method:'POST',body:JSON.stringify(d)});
   if(r.success){alert(`✅ 订单 ${r.order_no} 已提交（${r.item_count||1}项商品，累计¥${(r.total_amount||0).toFixed(0)}）`);closeMod();loadOrders();loadDashboard()}
 }
