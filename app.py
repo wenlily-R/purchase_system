@@ -5636,17 +5636,24 @@ def api_order_download(oid):
     fill = PatternFill('solid', fgColor='D9E2F3')
     CN = lambda bold=False, size=11: Font(name='宋体', bold=bold, size=size)
     # ── 标题行 ──
-    ws.merge_cells('A1:H2')
-    ws['A1'] = f'采 购 订 单\n订单编号：{o["order_no"]}        供应商：{o["supplier"] or ""}        下单日期：{str(o["created_at"] or "")[:10]}'
-    ws['A1'].font = CN(bold=True, size=15)
-    ws['A1'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-    ws.row_dimensions[1].height = 40
+    ws.merge_cells('A1:H1')
+    ws['A1'] = '采 购 订 单'
+    ws['A1'].font = CN(bold=True, size=18)
+    ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
+    ws.row_dimensions[1].height = 36
+    # ── 单据编号行 ──
+    ws.merge_cells('A2:H2')
+    ws['A2'] = '订单编号：%s' % o['order_no']
+    ws['A2'].font = CN(size=11)
+    ws['A2'].alignment = Alignment(horizontal='center', vertical='center')
+    ws.row_dimensions[2].height = 20
     # ── 基础信息区 ──
     info = [
         ('供应商', o['supplier'] or '', '交易模式', o['trade_mode'] or ''),
         ('需求部门', o['requester'] or '', '品类', o['category'] or ''),
-        ('负责人', o['owner'] or '', '目标到货日', o['target_date'] or ''),
-        ('订单金额', '¥%s' % format(float(o['total_amount'] or 0), ',.2f'), '订单状态', o['status'] or ''),
+        ('负责人', o['owner'] or '', '下单日期', str(o['created_at'] or '')[:10]),
+        ('目标到货日', o['target_date'] or '', '订单状态', o['status'] or ''),
+        ('订单金额', '¥%s' % format(float(o['total_amount'] or 0), ',.2f'), '', ''),
         ('询价/备注', (o['remark'] or '')[:80], '', ''),
     ]
     r = 4
@@ -5654,9 +5661,12 @@ def api_order_download(oid):
         ws.cell(r, 1, lk).font = CN(bold=True); ws.cell(r, 1).fill = fill
         ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=3)
         ws.cell(r, 2, lv).font = CN()
-        ws.cell(r, 4, rk).font = CN(bold=True); ws.cell(r, 4).fill = fill
-        ws.merge_cells(start_row=r, start_column=5, end_row=r, end_column=8)
-        ws.cell(r, 5, rv).font = CN()
+        if rk:
+            ws.cell(r, 4, rk).font = CN(bold=True); ws.cell(r, 4).fill = fill
+            ws.merge_cells(start_row=r, start_column=5, end_row=r, end_column=8)
+            ws.cell(r, 5, rv).font = CN()
+        else:
+            ws.merge_cells(start_row=r, start_column=4, end_row=r, end_column=8)
         for cc in range(1, 9):
             ws.cell(r, cc).border = border
         ws.row_dimensions[r].height = 22
@@ -5715,7 +5725,7 @@ def api_order_download(oid):
     # ── 签字区 ──
     r += 1
     ws.merge_cells(f'A{r}:H{r + 1}')
-    ws.cell(row=r, column=1, value='采购经办人：                        部门负责人：                        供应商签字：')
+    ws.cell(row=r, column=1, value='采购经办人：                        部门负责人：')
     ws.cell(row=r, column=1).font = CN()
     ws.cell(row=r, column=1).alignment = Alignment(horizontal='left', vertical='center')
     for rr in range(r, r + 2):
