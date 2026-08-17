@@ -1,0 +1,5 @@
+flask>=2.3
+flask-cors
+requests
+openpyxl
+python-docx

@@ -1,0 +1,31 @@
+# 虚拟环境
+.venv/
+__pycache__/
+*.pyc
+
+# 临时文件
+.hermes-tmp.*
+data/.hermes-tmp.*
+
+# 业务数据库(每台机器各自本地数据,不同步)
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/*.db.bak_*
+data/*.db.init-shm
+data/*.db.init-wal
+backup/
+
+# 公网隧道地址(每台机器不同)
+data/public_url.txt
+
+# Windows 遗留/运行产物
+data/cloudflared.exe
+data/_*.png
+data/_*.vbs
+data/callback_registered.txt
+data/watchdog.py
+
+# 备份文件
+*.bak_*
+.DS_Store
