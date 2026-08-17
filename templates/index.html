@@ -1106,22 +1106,24 @@ async function showInquiryForm(){
   const opts=el.map(x=>`<option value="${x.id}">${esc(x.req_no)}｜${esc(x.purpose||'')}（${x.item_count||0}项，参考¥${(x.item_total||0).toFixed(0)}）</option>`).join('');
   IQ_SUPS=0;
   showDetail('🔍 发起三方询价',
-    `<div style="font-size:11px;margin-bottom:8px">选择已通过审批的采购申请，添加最多 <b>3</b> 家供应商，每家将生成专属免登录报价链接。</div>
+    `<div style="font-size:11px;margin-bottom:8px">选择已通过审批的采购申请，添加 <b>至少 3 家</b> 供应商，每家将生成专属免登录报价链接。</div>
     <div style="margin-bottom:8px"><select id="iqReq" style="width:100%;padding:6px;border:1px solid var(--b);border-radius:4px;font-size:11px">${opts}</select></div>
     <div id="iqSups"></div>
-    <button class="btn btn-o btn-sm" onclick="addIqSup()">+ 添加供应商</button>`,
+    <button class="btn btn-o btn-sm" onclick="addIqSup()">+ 添加供应商</button>
+    <span style="font-size:10px;color:#999;margin-left:6px" id="iqSupTip">已添加 0/至少3 家</span>`,
     `<button class="btn btn-o" onclick="closeMod()">取消</button>
      <button class="btn btn-p" onclick="createInquiry()">🚀 发起询价</button>`);
   addIqSup();
 }
 function addIqSup(){
-  if(IQ_SUPS>=3){alert('最多添加 3 家供应商');return}
+  if(IQ_SUPS>=10){alert('最多添加 10 家供应商');return}
   const c=++IQ_SUPS;
   id('iqSups').insertAdjacentHTML('beforeend',`<div style="display:flex;gap:4px;margin:3px 0;align-items:center" id="iqsup${c}">
     <input placeholder="供应商名称" id="iqn${c}" style="flex:2;padding:4px 6px;border:1px solid var(--b);border-radius:3px;font-size:10px">
     <input placeholder="联系人" id="iqc${c}" style="flex:1;padding:4px 6px;border:1px solid var(--b);border-radius:3px;font-size:10px">
     <input placeholder="电话" id="iqp${c}" style="flex:1;padding:4px 6px;border:1px solid var(--b);border-radius:3px;font-size:10px">
     <span onclick="this.parentElement.remove()" style="cursor:pointer;color:var(--d);font-size:12px">✕</span></div>`);
+  const tip=id('iqSupTip'); if(tip)tip.textContent=`已添加 ${IQ_SUPS}/至少3 家`;
 }
 async function createInquiry(){
   const req_id=parseInt(id('iqReq').value||0);
@@ -1131,7 +1133,7 @@ async function createInquiry(){
     if(n)suppliers.push({name:n,contact:id('iqc'+i)?.value?.trim()||'',phone:id('iqp'+i)?.value?.trim()||''});
   }
   if(!req_id){alert('请选择采购申请');return}
-  if(!suppliers.length){alert('请至少添加一家供应商');return}
+  if(suppliers.length<3){alert('询价供应商需选择3家及以上，方可发起询价');return}
   const r=await api('/inquiries',{method:'POST',body:JSON.stringify({req_id,suppliers})});
   if(r.success){alert(`✅ 询价单 ${r.inq_no} 已发起，请将报价链接发给各供应商`);closeMod();loadInquiries()}
   else alert(r.error||'发起失败');
@@ -1156,13 +1158,29 @@ async function showInquiry(id){
     });
     h+=`</tbody></table>`;
   }
-  const btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button>${d.status=='询价中'?'':''}`;
+  const btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button><button class="btn btn-p" onclick="exportInquiry(${d.id})">📥 导出Excel</button>${d.status=='询价中'?'':''}`;
   showDetail(`询价单 ${d.inq_no}`,h,btns);
 }
 async function copyInqLink(token){
   const url=location.origin+'/inq/'+token;
-  try{await navigator.clipboard.writeText(url);alert('✅ 报价链接已复制：\n'+url)}
+  try{
+    await navigator.clipboard.writeText(url);
+    if(!confirm(`✅ 链接已复制到剪贴板，可直接粘贴发送给供应商：\n\n${url}\n\n需要打开查看吗？`)){return}
+    window.open(url,'_blank');
+  }
   catch(e){prompt('请手动复制报价链接：',url)}
+}
+async function exportInquiry(iid){
+  const r=await fetch('/api/inquiries/'+iid+'/export',{credentials:'include'});
+  if(!r.ok){const j=await r.json().catch(()=>({}));alert(j.error||'导出失败');return}
+  const blob=await r.blob();
+  const a=document.createElement('a');
+  const fn=(r.headers.get('Content-Disposition')||'').match(/filename\*=UTF-8''([^;]+)/);
+  a.href=URL.createObjectURL(blob);
+  a.download=fn?decodeURIComponent(fn[1]):('询价单_'+iid+'.xlsx');
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),3000);
+  alert('✅ 询价单Excel已导出，请查看下载文件');
 }
 async function selectInquirySupplier(iid,sid){
   if(!confirm('确定选中该供应商并自动生成采购订单？'))return;

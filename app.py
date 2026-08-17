@@ -3307,6 +3307,10 @@ def api_create_inquiry():
         return jsonify({'error': '请选择要询价的申请'}), 400
     if not suppliers or len(suppliers) > 3:
         return jsonify({'error': '请添加1-3家询价供应商'}), 400
+    # V11.1 需求升级: 询价供应商需达到3家及以上方可发起
+    valid_names = [x for x in suppliers if (x.get('name') or '').strip()]
+    if len(valid_names) < 3:
+        return jsonify({'error': '询价供应商需选择3家及以上，方可发起询价'}), 400
     conn = db()
     pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (req_id,)).fetchone()
     if not pr:
@@ -3476,6 +3480,168 @@ def api_inquiry_select(iid):
     conn.close()
     log(session['user_name'], '询价选中下单', '%s → 订单%s 供应商%s ¥%.0f' % (i['inq_no'], no, s['supplier_name'], total))
     return jsonify({'success': True, 'order_no': no, 'id': oid, 'total_amount': total})
+
+@app.route('/api/inquiries/<int:iid>/export')
+@login_required
+def api_inquiry_export(iid):
+    """V11.1 询价单导出Excel: 基础信息+物料明细+全量供应商报价+比价统计+选中高亮+决策备注"""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+
+    conn = db()
+    i = conn.execute("SELECT * FROM inquiries WHERE id=?", (iid,)).fetchone()
+    if not i:
+        conn.close(); return jsonify({'error': '询价单不存在'}), 404
+    pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (i['req_id'],)).fetchone()
+    items = conn.execute("SELECT * FROM request_items WHERE req_id=? ORDER BY id", (i['req_id'],)).fetchall()
+    sups = conn.execute("SELECT * FROM inquiry_suppliers WHERE inquiry_id=? ORDER BY id", (iid,)).fetchall()
+    conn.close()
+
+    wb = Workbook(); ws = wb.active; ws.title = '询价单'
+    thin = Side(style='thin', color='B0B0B0')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    title_font = Font(name='微软雅黑', size=14, bold=True)
+    head_font = Font(name='微软雅黑', size=10, bold=True, color='FFFFFF')
+    head_fill = PatternFill('solid', fgColor='2F5597')
+    label_font = Font(name='微软雅黑', size=10, bold=True)
+    base_font = Font(name='微软雅黑', size=10)
+    note_font = Font(name='微软雅黑', size=10, italic=True, color='666666')
+    sel_fill = PatternFill('solid', fgColor='FFF2CC')       # 选中行浅黄
+    min_font = Font(name='微软雅黑', size=10, bold=True, color='C00000')  # 最低价标红加粗
+    wrap = Alignment(vertical='center', wrap_text=True)
+
+    ws.merge_cells('A1:H1')
+    ws['A1'] = '采 购 询 价 单'
+    ws['A1'].font = title_font; ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
+    ws.row_dimensions[1].height = 30
+
+    info = [
+        ('询价单号', i['inq_no'] or '', '询价主题', (i['title'] or i['purpose'] or '')[:60]),
+        ('申请单号', pr['req_no'] if pr else '', '采购事由', (pr['purpose'] if pr else '') or (i['purpose'] or '')),
+        ('发起部门', (pr['dept'] if pr else '') or '', '发起人', i['created_by'] or ''),
+        ('询价发起时间', i['created_at'] or '', '询价状态', i['status'] or ''),
+        ('物料/服务项数', str(len(items)) + ' 项', '供应商家数', str(len(sups)) + ' 家'),
+    ]
+    row = 3
+    for left_k, left_v, right_k, right_v in info:
+        ws.cell(row, 1, left_k).font = label_font
+        ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=3)
+        c = ws.cell(row, 2, left_v); c.font = base_font; c.alignment = wrap
+        ws.cell(row, 4, right_k).font = label_font
+        ws.merge_cells(start_row=row, start_column=5, end_row=row, end_column=8)
+        c = ws.cell(row, 5, right_v); c.font = base_font; c.alignment = wrap
+        for col in range(1, 9):
+            ws.cell(row, col).border = border
+        row += 1
+
+    row += 1
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=8)
+    ws.cell(row, 1, '一、询价物料 / 服务明细').font = head_font
+    for col in range(1, 9):
+        ws.cell(row, col).fill = head_fill; ws.cell(row, col).border = border
+    row += 1
+    item_head = ['序号', '物料名称', '规格型号', '单位', '数量', '参考单价(元)', '参考金额(元)', '用途/备注']
+    for ci, h in enumerate(item_head, 1):
+        c = ws.cell(row, ci, h); c.font = head_font; c.fill = head_fill; c.border = border
+        c.alignment = Alignment(horizontal='center', vertical='center')
+    row += 1
+    total_ref = 0.0
+    for idx, it in enumerate(items, 1):
+        qty = float(it['quantity'] or 0)
+        ref_total = float(it['total_price'] or 0)
+        ref_price = round(ref_total / qty, 2) if qty else 0
+        total_ref += ref_total
+        vals = [idx, it['item_name'] or '', it['spec'] or '', it['unit'] or '个',
+                qty, ref_price, round(ref_total, 2), (it['purpose'] if 'purpose' in it.keys() else (it['remark'] if 'remark' in it.keys() else '')) or '']
+        for ci, v in enumerate(vals, 1):
+            c = ws.cell(row, ci, v); c.font = base_font; c.border = border
+            c.alignment = Alignment(horizontal='center' if ci in (1, 4, 5) else 'left', vertical='center', wrap_text=True)
+        row += 1
+    ws.cell(row, 6, '参考合计').font = label_font
+    ws.cell(row, 7, round(total_ref, 2)).font = label_font
+    for col in range(1, 9):
+        ws.cell(row, col).border = border
+
+    row += 2
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=8)
+    ws.cell(row, 1, '二、供应商报价与比价对比表').font = head_font
+    for col in range(1, 9):
+        ws.cell(row, col).fill = head_fill; ws.cell(row, col).border = border
+    row += 1
+    sup_head = ['序号', '供应商名称', '联系人/电话', '报价总金额(元)', '报价时间', '是否最低价', '备注(交期/质保等)', '选中状态']
+    for ci, h in enumerate(sup_head, 1):
+        c = ws.cell(row, ci, h); c.font = head_font; c.fill = head_fill; c.border = border
+        c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    ws.row_dimensions[row].height = 24
+    row += 1
+
+    quoted = [s for s in sups if s['quote_price'] and s['quote_price'] > 0]
+    min_price = min((s['quote_price'] for s in quoted), default=None)
+    for idx, s in enumerate(sups, 1):
+        is_min = (s['quote_price'] and s['quote_price'] > 0 and s['quote_price'] == min_price)
+        vals = [idx, s['supplier_name'] or '', (s['contact'] or '') + (' ' + (s['phone'] or '') if s['phone'] else ''),
+                (s['quote_price'] or 0), s['quote_time'] or '未报价',
+                '★ 最低价' if is_min else '', s['quote_remark'] or '',
+                '✅ 已选中' if s['is_selected'] else '未选中']
+        for ci, v in enumerate(vals, 1):
+            c = ws.cell(row, ci, v)
+            c.border = border
+            c.alignment = Alignment(horizontal='center' if ci in (1, 4, 5, 6, 8) else 'left', vertical='center', wrap_text=True)
+            if s['is_selected']:
+                c.fill = sel_fill                      # 选中行浅黄底
+                c.font = Font(name='微软雅黑', size=10, bold=True, color='C00000')  # 加粗标红
+            elif is_min:
+                c.font = min_font                       # 最低价标红加粗
+            else:
+                c.font = base_font
+        row += 1
+    if not sups:
+        for ci in range(1, 9):
+            ws.cell(row, ci, '（暂无供应商）').border = border
+        row += 1
+
+    row += 1
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=8)
+    ws.cell(row, 1, '三、采购决策备注').font = head_font
+    for col in range(1, 9):
+        ws.cell(row, col).fill = head_fill; ws.cell(row, col).border = border
+    row += 1
+    ws.merge_cells(start_row=row, start_column=1, end_row=row + 3, end_column=8)
+    decision = ('本批次采购经过多方询价、比价与供应商综合考察，最终选择本供应商为合作方。')
+    selected = next((s for s in sups if s['is_selected']), None)
+    if selected:
+        decision = ('本批次采购经过多方询价、比价与供应商综合考察，最终选择「%s」为合作方，'
+                    '报价¥%s，%s。' % (selected['supplier_name'],
+                    format(float(selected['quote_price'] or 0), ',.2f'),
+                    selected['quote_remark'] or '交货期及付款条件按合同约定'))
+    c = ws.cell(row, 1, decision)
+    c.font = base_font; c.alignment = Alignment(vertical='top', wrap_text=True)
+    for r2 in range(row, row + 4):
+        for col in range(1, 9):
+            ws.cell(r2, col).border = border
+    row += 5
+    ws.cell(row, 1, '编制人：').font = note_font
+    ws.cell(row, 4, '审核人：').font = note_font
+    ws.cell(row, 7, '日期：').font = note_font
+
+    ws.column_dimensions['A'].width = 12
+    ws.column_dimensions['B'].width = 18
+    ws.column_dimensions['C'].width = 16
+    ws.column_dimensions['D'].width = 14
+    ws.column_dimensions['E'].width = 20
+    ws.column_dimensions['F'].width = 12
+    ws.column_dimensions['G'].width = 22
+    ws.column_dimensions['H'].width = 14
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fname = '询价单_%s.xlsx' % (i['inq_no'] or iid)
+    resp = make_response(buf.getvalue())
+    resp.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    resp.headers['Content-Disposition'] = "attachment; filename*=UTF-8''%s" % urllib.parse.quote(fname)
+    log(session['user_name'], '导出询价单Excel', '%s' % (i['inq_no'] or iid))
+    return resp
 
 @app.route('/api/budgets')
 @login_required
