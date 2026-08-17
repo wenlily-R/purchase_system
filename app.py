@@ -5207,7 +5207,13 @@ def api_contract_generate():
     cphone = cfg_get('company_phone', '')
     cno = gen_contract_no(conn)
     tm = o['trade_mode'] or '货到付款'
-    settle = '货到付款：到货验收入库后，月度对账、合并开票、挂账后付款' if tm == '货到付款' else '先款后货：合同签订后预付货款，供应商收款后发货，到货入库后挂账核销'
+    # V11.7: 结算方式跟随订单交易模式 — 自定义模式(如 预付30%)直接带入, 内置两种保留详细说明
+    if tm == '货到付款':
+        settle = '货到付款：到货验收入库后，月度对账、合并开票、挂账后付款'
+    elif tm == '先款后货':
+        settle = '先款后货：合同签订后预付货款，供应商收款后发货，到货入库后挂账核销'
+    else:
+        settle = tm
     items_txt = ''
     _oi = conn.execute("SELECT * FROM order_items WHERE order_id=? ORDER BY id", (oid,)).fetchall()
     if _oi:
