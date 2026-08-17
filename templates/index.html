@@ -24,7 +24,11 @@ body{background:var(--v9-bg);color:var(--v9-t)}
 #globalSearch{width:240px;padding:6px 12px;border:1px solid rgba(255,255,255,.25);border-radius:20px;background:rgba(255,255,255,.12);color:#fff;font-size:11px;transition:all .2s}
 #globalSearch::placeholder{color:#a9c3e0}
 #globalSearch:focus{outline:none;background:rgba(255,255,255,.2);border-color:#f5821f;box-shadow:0 0 0 3px rgba(245,130,31,.2)}
-.side{width:172px;background:#ffffff;border-right:1px solid var(--v9-b);top:52px;height:calc(100vh-52px);transition:width .2s;box-shadow:2px 0 8px rgba(12,58,107,.06)}
+.side{width:172px;background:#ffffff;border-right:1px solid var(--v9-b);top:52px;height:calc(100vh - 52px);transition:width .2s;box-shadow:2px 0 8px rgba(12,58,107,.06);overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;scrollbar-color:#b8c9de #f0f3f8;scrollbar-gutter:stable}
+.side::-webkit-scrollbar{width:8px}
+.side::-webkit-scrollbar-track{background:#f0f3f8}
+.side::-webkit-scrollbar-thumb{background:#b8c9de;border-radius:4px;border:1px solid #f0f3f8}
+.side::-webkit-scrollbar-thumb:hover{background:#14508c}
 .side .sl{color:#666;font-size:9px;padding:10px 12px 4px;letter-spacing:.5px;font-weight:700}
 .side .si{color:#000;font-size:11px;padding:7px 12px;border-left:3px solid transparent;border-radius:0 6px 6px 0;margin:1px 4px;transition:all .15s;font-weight:700}
 .side .si:hover{background:#eef2f7;color:#000}
@@ -177,10 +181,22 @@ dd{margin-left:100px;margin-bottom:1px;font-size:9px}
 .topnav a{color:#cfe0f4!important;font-size:11px;padding:4px 10px;border-radius:6px}
 .topnav a:hover{background:rgba(255,255,255,.14);color:#fff}
 .topnav a.act{background:#f5821f!important;color:#fff!important;font-weight:600}
+/* V11.5: 审批中心醒目标签 — 金色渐变+待办徽标 */
+.topnav a.appr-hl{background:linear-gradient(135deg,#f5821f,#e74c3c)!important;color:#fff!important;font-weight:700!important;font-size:12px!important;padding:4px 12px!important;box-shadow:0 1px 6px rgba(245,130,31,.5);animation:apprPulse 2s infinite}
+.topnav a.appr-hl:hover{filter:brightness(1.1)}
+@keyframes apprPulse{0%,100%{box-shadow:0 0 0 0 rgba(245,130,31,.45)}50%{box-shadow:0 0 0 5px rgba(245,130,31,0)}}
+.topnav a.appr-hl .ab{background:#fff;color:#e74c3c;font-weight:800;border-radius:9px;padding:0 5px;margin-left:3px;font-size:10px;display:none}
 .topright .uname{color:#e8f1fb!important}
 .topright .logout{color:#ffc9a3!important}
 .layout{padding-top:54px!important}
 .side{top:54px!important;height:calc(100vh-54px)!important;background:#ffffff!important;border-right:1px solid #dfe6ef!important}
+/* V11.6: 左侧菜单可滚动 + 自定义滚轴(滚轮/拖拽均可) */
+.side{overflow-y:auto!important;overflow-x:hidden!important;scrollbar-width:thin;scrollbar-color:#b8c9de #f0f3f8}
+.side::-webkit-scrollbar{width:8px!important}
+.side::-webkit-scrollbar-track{background:#f0f3f8!important}
+.side::-webkit-scrollbar-thumb{background:#b8c9de!important;border-radius:4px!important;border:1px solid #f0f3f8!important}
+.side::-webkit-scrollbar-thumb:hover{background:#14508c!important}
+.side::-webkit-scrollbar-thumb:active{background:#0c3a6b!important}
 .side .si{color:#000!important;font-weight:700!important}
 .side .si:hover{background:#eef2f7!important;color:#000!important}
 .side .si.act{background:linear-gradient(90deg,#14508c,#1a6bb0)!important;color:#fff!important;border-left-color:#f5821f!important}
@@ -650,8 +666,22 @@ function buildNav(){
   }).join('');
   if(ME.can_config){html+=`<div class="sl">系统配置</div><div class="si si-sub" onclick="sw('feishu')">✈️飞书</div><div class="si si-sub" onclick="sw('dingtalk')">💬钉钉</div><div class="si si-sub" onclick="sw('system')">⚙️系统设置</div>`}
   id('sideMenu').innerHTML=html;
-  const topItems=groups.slice(0,5).flatMap(g=>g[1]).slice(0,8);
-  id('topnav').innerHTML=topItems.map(i=>`<a onclick="sw('${i[0]}')">${i[1]}${i[2]}</a>`).join('')+`<a onclick="sw('reports')">📊报表</a>`;
+  // V11.5: 顶部导航 = 工作台 → 审批中心(醒目标签+待办数) → 其他常用
+  const allItems=groups.slice(0,5).flatMap(g=>g[1]);
+  const apprIdx=allItems.findIndex(i=>i[0]==='approvals');
+  let topItems=allItems.filter(i=>i[0]!=='approvals'&&i[0]!=='dashboard').slice(0,6);
+  let navHtml=`<a onclick="sw('dashboard')">📊工作台</a>`;
+  navHtml+=`<a class="appr-hl" onclick="sw('approvals')" title="待我审批">✅审批中心<span class="ab" id="navApprBadge"></span></a>`;
+  navHtml+=topItems.map(i=>`<a onclick="sw('${i[0]}')">${i[1]}${i[2]}</a>`).join('');
+  navHtml+=`<a onclick="sw('reports')">📊报表</a>`;
+  id('topnav').innerHTML=navHtml;
+  // 待办徽标: 由 loadDashboard 用 my_pending 更新
+  window._setNavBadge=function(n){
+    const b=id('navApprBadge');
+    if(!b)return;
+    if(n>0){b.style.display='inline-block';b.textContent=n>99?'99+':n}
+    else b.style.display='none';
+  };
 }
 function toggleGrp(el,gi){
   const body=id('grp'+gi);
@@ -733,6 +763,8 @@ async function loadDashboard(){
       <div class="kc" onclick="sw('inventory')" style="cursor:pointer;border-left-color:#e74c3c" title="点击查看库存"><div class="kl">超储物资</div><div class="kv cd">${k.stock_over||0}</div></div>`;
     // ② 审批消息专区
     window._dashAppr=d;
+    // V11.5: 顶部导航审批中心待办徽标
+    if(window._setNavBadge)window._setNavBadge((d.my_pending||[]).length);
     apprZone('todo');
     // ③ 预警消息中心(V9: 按类型分组 + 红黄绿分级)
     const al=d.alerts||[];
