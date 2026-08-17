@@ -1534,6 +1534,7 @@ async function loadContracts(){const c=await api('/contracts');id('contractsTabl
   <td style="white-space:nowrap"><button class="lnk" onclick="showContract(${r.id})">查看</button>${r.file_path?` <button class="lnk" style="color:var(--s)" onclick="window.open('/uploads/${esc(r.file_path)}','_blank')">📄下载</button>`:''} <button class="lnk" style="color:#b08900" onclick="editDoc('contract',${r.id},'合同')">✏️修改</button> ${(r.status=='待审批'||r.status=='已通过'||r.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('contract',${r.id},'合同')">↩️撤回</button>`:''}${(r.status=='待审批'||r.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('contract',${r.id},'合同')">🗑️删除</button>`:''}</td>`)}
 async function showContract(id){
   const c=(await api('/contracts')).find(x=>x.id===id);
+  if(!c){alert('未找到该合同(可能已被删除), 请刷新后重试');return}
   let h=`<div class="c2"><div><dt>合同号</dt><dd><b>${esc(c.contract_no)}</b></dd><dt>名称</dt><dd>${esc(c.contract_name)}</dd><dt>供应商</dt><dd>${esc(c.supplier)}</dd><dt>金额</dt><dd>¥${(c.amount||0).toFixed(2)}（大写：${c.amount_upper||''}）</dd></div>
     <div><dt>状态</dt><dd>${tag(c.status)}</dd><dt>签订日期</dt><dd>${esc(c.sign_date||'-')}</dd><dt>关联订单</dt><dd>#${c.order_id||'-'}</dd></div></div>`;
   if(c.file_path)h+=`<div style="margin-top:8px"><button class="btn btn-p btn-sm" onclick="window.open('/uploads/${esc(c.file_path)}','_blank')">📄 打开/下载合同文件</button> <button class="btn btn-w btn-sm" onclick="editContract(${id})">✏️ 编辑合同文本</button></div>`;
