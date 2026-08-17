@@ -5914,6 +5914,8 @@ if __name__ == '__main__':
         threading.Thread(target=_daily_backup_loop, daemon=True).start()
         print('  [自动备份] 每日03:00自动备份已启动')
     port = int(os.environ.get('PORT', 5899))
+    # V11.1 多人协作: 页面/模板改动即时生效, 无需重启(后端app.py改动由 app_watchdog.py 自动重启)
+    app.config['TEMPLATES_AUTO_RELOAD'] = True
     print(f"""
 ╔══════════════════════════════════════════════════╗
 ║  正成能源采购系统 v9.0 (UI美化版)      ║
