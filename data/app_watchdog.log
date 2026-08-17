@@ -474,3 +474,168 @@
 127.0.0.1 - - [17/Aug/2026 09:54:40] "GET / HTTP/1.1" 200 -
 127.0.0.1 - - [17/Aug/2026 09:54:56] "GET / HTTP/1.1" 200 -
 127.0.0.1 - - [17/Aug/2026 09:54:57] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 09:55:28] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 09:55:29] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 09:56:00] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 09:56:02] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [17/Aug/2026 09:56:12] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [17/Aug/2026 09:56:12] "GET /api/me HTTP/1.1" 200 -
+172.16.35.163 - - [17/Aug/2026 09:56:12] "GET /api/dashboard HTTP/1.1" 200 -
+172.16.35.163 - - [17/Aug/2026 09:56:12] "GET /api/approvals/overdue HTTP/1.1" 200 -
+172.16.35.163 - - [17/Aug/2026 09:56:14] "GET /api/prequests HTTP/1.1" 200 -
+172.16.35.163 - - [17/Aug/2026 09:56:16] "GET /api/inquiries HTTP/1.1" 200 -
+172.16.35.163 - - [17/Aug/2026 09:56:19] "GET /api/inquiries/1 HTTP/1.1" 200 -
+172.16.35.163 - - [17/Aug/2026 09:56:23] "GET /api/inquiries/1/export HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 09:56:33] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 09:56:34] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 09:57:06] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 09:57:09] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 09:57:40] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 09:57:48] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 09:58:22] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 09:58:24] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 09:58:55] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 09:58:56] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 09:59:28] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 09:59:29] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:00:00] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:00:02] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [17/Aug/2026 10:00:24] "GET /api/inquiries/1/export HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:00:33] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:00:34] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://172.16.35.163:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://172.16.35.163:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://172.16.35.163:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [17/Aug/2026 10:01:06] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://172.16.35.163:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://172.16.35.163:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [17/Aug/2026 10:01:41] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:01:43] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://172.16.35.163:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://172.16.35.163:5899
+[33mPress CTRL+C to quit[0m

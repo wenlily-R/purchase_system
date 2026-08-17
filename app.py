@@ -705,10 +705,11 @@ def check_all_approved(biz_type, biz_id):
     conn.close()
     return r == 0
 
-def do_approve(biz_type, biz_id, approver, approver_id, action='approved', comment=''):
+def do_approve(biz_type, biz_id, approver, approver_id, action='approved', comment='', signature=''):
     """V7.0: 审批操作权限锁死 — 仅当前节点指定审批人/系统管理员可同意驳回
     - 当前节点审批人 = 审批实例 approver(节点配置指定的人) 或 角色对应有效用户
-    - 其余用户(含其他角色领导)一律拒绝; 钉钉端权限与系统完全同步"""
+    - 其余用户(含其他角色领导)一律拒绝; 钉钉端权限与系统完全同步
+    - V11.2: signature 电子签名(dataURL图片)随审批记录保存"""
     conn = db()
     cur = conn.execute("SELECT * FROM approval_instances WHERE biz_type=? AND biz_id=? AND status='pending' ORDER BY level_no LIMIT 1", (biz_type, biz_id)).fetchone()
     if not cur:
@@ -724,8 +725,14 @@ def do_approve(biz_type, biz_id, approver, approver_id, action='approved', comme
     if not is_admin and (not me or me['id'] != node_approver_id):
         conn.close()
         return {'success':False,'error':'仅当前审批节点指定审批人可操作'}
-    conn.execute("UPDATE approval_instances SET status=?, approver=?, approver_id=?, comment=?, processed_at=? WHERE id=?",
-                 (action, approver, approver_id, comment, now(), cur['id']))
+    # 签名限制: 图片dataURL太长(可达几十KB), 截断保护
+    sig = (signature or '').strip()
+    if sig and not sig.startswith('data:image/'):
+        sig = ''
+    if len(sig) > 200000:
+        sig = sig[:200000]
+    conn.execute("UPDATE approval_instances SET status=?, approver=?, approver_id=?, comment=?, processed_at=?, signature=? WHERE id=?",
+                 (action, approver, approver_id, comment, now(), sig, cur['id']))
     conn.commit(); conn.close()
     return {'success':True}
 
@@ -2847,7 +2854,8 @@ def api_approve_action(biz_type, biz_id):
         finish_approvals(biz_type, biz_id, 'reject', session['user_name'], session['user_id'], d.get('comment',''))
         dt_sync_now(biz_type, biz_id)  # 立即同步钉钉: 终止挂起的审批实例
         return jsonify({'success':True})
-    r = do_approve(biz_type, biz_id, session['user_name'], session['user_id'], 'approved', d.get('comment',''))
+    sig = d.get('signature', '')
+    r = do_approve(biz_type, biz_id, session['user_name'], session['user_id'], 'approved', d.get('comment',''), signature=sig)
     if not r['success']: return jsonify(r), 400
     finish_approvals(biz_type, biz_id, 'ok', session['user_name'], session['user_id'], d.get('comment',''))
     dt_sync_now(biz_type, biz_id)  # 立即同步钉钉: 查询最新状态/终态时终止实例

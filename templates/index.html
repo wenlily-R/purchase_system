@@ -1073,8 +1073,9 @@ async function showPRequest(id){
   items.forEach(i=>{h+=`<div style="padding:2px 0;border-bottom:1px solid var(--b)">${esc(i.item_name)} ${esc(i.spec||'')} x${i.quantity}${esc(i.unit)}</div>`});
   h+=`</div>`;
   if(approvals.length){
-    h+=`<h4 style="font-size:10px;margin:6px 0 3px">✅ 审批进度</h4>`;
-    approvals.forEach(a=>{h+=`<div style="font-size:9px;padding:2px 0">${a.status=='approved'?'✅':a.status=='rejected'?'❌':'⏳'} ${esc(a.role)} ${a.status} ${a.processed_at||''}</div>`});
+    h+=`<h4 style="font-size:10px;margin:6px 0 3px">✅ 审批进度（含电子签名）</h4>`;
+    approvals.forEach(a=>{
+      h+=`<div style="font-size:9px;padding:3px 0;border-bottom:1px dashed var(--b)">${a.status=='approved'?'✅':a.status=='rejected'?'❌':'⏳'} ${esc(a.role)} ${a.status} ${a.processed_at||''}${a.comment?` <span style="color:#888">｜${esc(a.comment)}</span>`:''}${a.approver?` <span style="color:var(--s)">${esc(a.approver)}</span>`:''}${a.signature?` <img src="${a.signature}" alt="签名" style="height:34px;vertical-align:middle;border:1px solid #e3e9f2;border-radius:3px;background:#fff;margin-left:4px">`:''}</div>`});
   }
   if(r.urgent)h='<div style="background:#fff5f5;border:1px solid #f5c6c6;color:#e74c3c;font-weight:700;font-size:10px;padding:4px 8px;border-radius:4px;margin-bottom:6px">🚨 加急审批</div>'+h;
   if(r.attachments){
@@ -1336,8 +1337,49 @@ async function urgentRemind(bt,bid){
   else alert(r.error||'发送失败');
 }
 async function doApprove(bt,bid){
-  const r=await api(`/approvals/${bt}/${bid}/approve`,{method:'POST',body:JSON.stringify({action:'approved',comment:'同意'})});
-  if(r.success)loadApprovals();else alert(r.error||'失败');
+  // V11.2: 电子签名 — 弹出手写签名板, 领导在线签字后同意
+  showDetail('✍️ 审批签字',`
+    <div style="font-size:11px;margin-bottom:6px">请在下方签名区<span style="color:var(--d)">手写签名</span>（鼠标或手指书写），签字后点击「同意并签字」完成审批：</div>
+    <div style="position:relative;border:2px dashed #c9d4e8;border-radius:6px;background:#fafcff;touch-action:none">
+      <canvas id="signPad" width="560" height="200" style="width:100%;height:200px;display:block;cursor:crosshair"></canvas>
+      <div id="signHint" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:#c3cfdf;font-size:12px;pointer-events:none">✍️ 请在此处签名</div>
+    </div>
+    <div style="margin-top:6px;font-size:10px;color:#999">审批人：<b style="color:var(--s)">${esc(ME.name||'')}</b> ｜ 签字即表示同意该单据审批</div>`,
+    `<button class="btn btn-o" onclick="closeMod()">取消</button>
+     <button class="btn btn-w btn-sm" onclick="clearSign()">🗑 清除重写</button>
+     <button class="btn btn-p" onclick="submitSign('${bt}',${bid})">✅ 同意并签字</button>`);
+  initSignPad();
+}
+let SIGN_CTX=null,SIGN_DRAWING=false;
+function initSignPad(){
+  const cv=id('signPad');if(!cv)return;
+  const ctx=cv.getContext('2d');
+  ctx.fillStyle='#fff';ctx.fillRect(0,0,cv.width,cv.height);
+  ctx.strokeStyle='#1a3a6b';ctx.lineWidth=2.2;ctx.lineCap='round';ctx.lineJoin='round';
+  SIGN_CTX=ctx;SIGN_DRAWING=false;
+  const pos=e=>{const r=cv.getBoundingClientRect();const t=e.touches&&e.touches[0]||e;return{x:(t.clientX-r.left)*(cv.width/r.width),y:(t.clientY-r.top)*(cv.height/r.height)}};
+  cv.onmousedown=e=>{SIGN_DRAWING=true;const p=pos(e);ctx.beginPath();ctx.moveTo(p.x,p.y);id('signHint').style.display='none'};
+  cv.onmousemove=e=>{if(!SIGN_DRAWING)return;const p=pos(e);ctx.lineTo(p.x,p.y);ctx.stroke()};
+  cv.onmouseup=()=>SIGN_DRAWING=false;cv.onmouseleave=()=>SIGN_DRAWING=false;
+  cv.ontouchstart=e=>{e.preventDefault();SIGN_DRAWING=true;const p=pos(e);ctx.beginPath();ctx.moveTo(p.x,p.y);id('signHint').style.display='none'};
+  cv.ontouchmove=e=>{e.preventDefault();if(!SIGN_DRAWING)return;const p=pos(e);ctx.lineTo(p.x,p.y);ctx.stroke()};
+  cv.ontouchend=()=>SIGN_DRAWING=false;
+}
+function clearSign(){
+  const cv=id('signPad');if(!cv||!SIGN_CTX)return;
+  SIGN_CTX.fillStyle='#fff';SIGN_CTX.fillRect(0,0,cv.width,cv.height);
+  id('signHint').style.display='';
+}
+async function submitSign(bt,bid){
+  const cv=id('signPad');if(!cv||!SIGN_CTX)return;
+  // 检查是否真的写了字(看非白像素)
+  const d=SIGN_CTX.getImageData(0,0,cv.width,cv.height).data;
+  let ink=0;for(let i=3;i<d.length;i+=4){if(d[i]>0)ink++}
+  if(ink<50){alert('请先在签名区手写签名');return}
+  const sig=cv.toDataURL('image/png');
+  const r=await api(`/approvals/${bt}/${bid}/approve`,{method:'POST',body:JSON.stringify({action:'approved',comment:'同意',signature:sig})});
+  if(r.success){alert('✅ 已签字并同意');closeMod();loadApprovals();loadDashboard()}
+  else alert(r.error||'审批失败');
 }
 async function doReject(bt,bid){
   const c=prompt('驳回原因:');if(!c)return;
