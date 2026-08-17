@@ -121,12 +121,12 @@ body{background:var(--bg);color:var(--t);font-size:13px}
 .topright .uname{color:var(--t2);font-weight:500}
 .topright .logout{cursor:pointer;color:var(--d);font-size:10px}
 .layout{display:flex;padding-top:48px}
-.side{width:160px;background:var(--c);border-right:1px solid var(--b);position:fixed;top:48px;left:0;height:calc(100vh-48px);overflow-y:auto;z-index:50}
+.side{width:160px;background:var(--c);border-right:1px solid var(--b);position:fixed;top:48px;left:0;height:calc(100vh - 48px);overflow-y:auto;z-index:50}
 .sl{font-size:8px;color:#999;padding:6px 8px 2px;letter-spacing:.3px}
 .si{display:flex;align-items:center;gap:4px;padding:4px 8px;cursor:pointer;font-size:10px;color:var(--t2);border-left:3px solid transparent}
 .si:hover{background:var(--bg)}.si.act{background:var(--pl);color:var(--p);border-left-color:var(--p);font-weight:500}
 .si .badge{background:var(--d);color:#fff;border-radius:8px;padding:0 4px;font-size:8px;margin-left:auto}
-.main{margin-left:160px;flex:1;padding:10px 12px;min-height:calc(100vh-48px)}
+.main{margin-left:160px;flex:1;padding:10px 12px;min-height:calc(100vh - 48px)}
 .page{display:none}.page.act{display:block}
 h2{font-size:14px;font-weight:600;margin-bottom:6px;display:flex;align-items:center;gap:4px}
 .card{background:var(--c);border:1px solid var(--b);border-radius:var(--br);margin-bottom:6px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
@@ -189,14 +189,16 @@ dd{margin-left:100px;margin-bottom:1px;font-size:9px}
 .topright .uname{color:#e8f1fb!important}
 .topright .logout{color:#ffc9a3!important}
 .layout{padding-top:54px!important}
-.side{top:54px!important;height:calc(100vh-54px)!important;background:#ffffff!important;border-right:1px solid #dfe6ef!important}
-/* V11.6: 左侧菜单可滚动 + 自定义滚轴(滚轮/拖拽均可) */
-.side{overflow-y:auto!important;overflow-x:hidden!important;scrollbar-width:thin;scrollbar-color:#b8c9de #f0f3f8}
-.side::-webkit-scrollbar{width:8px!important}
-.side::-webkit-scrollbar-track{background:#f0f3f8!important}
-.side::-webkit-scrollbar-thumb{background:#b8c9de!important;border-radius:4px!important;border:1px solid #f0f3f8!important}
-.side::-webkit-scrollbar-thumb:hover{background:#14508c!important}
-.side::-webkit-scrollbar-thumb:active{background:#0c3a6b!important}
+.side{top:54px!important;height:calc(100vh - 54px)!important;background:#ffffff!important;border-right:1px solid #dfe6ef!important}
+/* V11.6/V11.7: 左侧面板独立滚轮 —— 原生滚动条全隐藏(macOS Safari 不支持自定义原生滚动条,故用 JS 组件 #sideScrollBar 替代,所有浏览器始终可见、可拖拽/点击/滚轮) */
+.side{overflow-y:scroll!important;overflow-x:hidden!important;scrollbar-width:none!important;scrollbar-gutter:auto!important}
+.side::-webkit-scrollbar{width:0!important;height:0!important;display:none!important}
+#sideScrollBar{position:fixed;width:10px;z-index:60;background:#f0f3f8;border-left:1px solid #e4eaf1;border-radius:0 5px 5px 0;opacity:0;transition:opacity .25s;pointer-events:none;cursor:pointer}
+body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
+#sideScrollThumb{position:absolute;left:1px;right:1px;top:0;background:#b8c9de;border-radius:4px;cursor:pointer;box-sizing:border-box;border:1px solid #a9bdd6}
+#sideScrollThumb:hover,#sideScrollThumb.dragging{background:#14508c;border-color:#14508c}
+#sideScrollThumb:active{background:#0c3a6b;border-color:#0c3a6b}
+#sideScrollBar.fit #sideScrollThumb{display:none}
 .side .si{color:#000!important;font-weight:700!important}
 .side .si:hover{background:#eef2f7!important;color:#000!important}
 .side .si.act{background:linear-gradient(90deg,#14508c,#1a6bb0)!important;color:#fff!important;border-left-color:#f5821f!important}
@@ -647,6 +649,7 @@ async function feishuLogin(){
 function initApp(){
   id('userName').textContent=ME.name+' ('+ME.role+')';
   buildNav();
+  if(typeof sideScrollInit==='function')sideScrollInit();
   loadDashboard();
 }
 function buildNav(){
@@ -693,6 +696,61 @@ function toggleGrp(el,gi){
 function toggleSide(){
   document.body.classList.toggle('side-collapsed');
   id('sideToggle').textContent=document.body.classList.contains('side-collapsed')?'▶':'◀';
+  if(typeof sideScrollSync==='function')sideScrollSync();
+}
+/* V11.7: 左侧面板独立滚轮组件 —— 始终可见,支持拖拽/点轨道跳转,滚轮滚动时同步 */
+function sideScrollSync(){
+  const s=id('sideMenu'),bar=id('sideScrollBar'),th=id('sideScrollThumb');
+  if(!s||!bar||!th)return;
+  const r=s.getBoundingClientRect();
+  bar.style.left=(r.right-10)+'px';
+  bar.style.top=r.top+'px';
+  bar.style.height=r.height+'px';
+  const max=s.scrollHeight-s.clientHeight;
+  if(max<=0){bar.classList.add('fit');th.style.top='0';th.style.height='100%';return}
+  bar.classList.remove('fit');
+  const thH=Math.max(28,r.height*r.height/s.scrollHeight);
+  th.style.height=thH+'px';
+  th.style.top=(s.scrollTop/max*(r.height-thH))+'px';
+}
+function sideScrollInit(){
+  if(id('sideScrollBar'))return;
+  const bar=document.createElement('div');bar.id='sideScrollBar';
+  const th=document.createElement('div');th.id='sideScrollThumb';
+  bar.appendChild(th);document.body.appendChild(bar);
+  const s=id('sideMenu');
+  let dragging=false,startY=0,startST=0;
+  th.addEventListener('pointerdown',e=>{
+    if(bar.classList.contains('fit'))return;
+    dragging=true;th.classList.add('dragging');
+    startY=e.clientY;startST=s.scrollTop;
+    th.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  th.addEventListener('pointermove',e=>{
+    if(!dragging)return;
+    const max=s.scrollHeight-s.clientHeight;
+    const trackH=bar.clientHeight,thH=th.clientHeight;
+    if(trackH<=thH)return;
+    s.scrollTop=startST+(e.clientY-startY)*(max/(trackH-thH));
+    sideScrollSync();
+  });
+  const endDrag=()=>{dragging=false;th.classList.remove('dragging')};
+  th.addEventListener('pointerup',endDrag);
+  th.addEventListener('pointercancel',endDrag);
+  bar.addEventListener('pointerdown',e=>{
+    if(e.target!==bar||bar.classList.contains('fit'))return;
+    const max=s.scrollHeight-s.clientHeight;
+    const trackH=bar.clientHeight,thH=th.clientHeight;
+    if(trackH<=thH)return;
+    const y=e.clientY-parseFloat(bar.style.top||0)-thH/2;
+    s.scrollTop=Math.max(0,Math.min(1,y/(trackH-thH)))*max;
+    sideScrollSync();
+  });
+  s.addEventListener('scroll',sideScrollSync);
+  window.addEventListener('resize',sideScrollSync);
+  new MutationObserver(sideScrollSync).observe(s,{childList:true,subtree:true,attributes:true,attributeFilter:['style','class']});
+  sideScrollSync();
 }
 
 function sw(name){
@@ -1121,7 +1179,8 @@ async function showPRequest(id){
   if(approvals.length){
     h+=`<h4 style="font-size:10px;margin:6px 0 3px">✅ 审批进度（含电子签名）</h4>`;
     approvals.forEach(a=>{
-      h+=`<div style="font-size:9px;padding:3px 0;border-bottom:1px dashed var(--b)">${a.status=='approved'?'✅':a.status=='rejected'?'❌':'⏳'} ${esc(a.role)} ${a.status} ${a.processed_at||''}${a.comment?` <span style="color:#888">｜${esc(a.comment)}</span>`:''}${a.approver?` <span style="color:var(--s)">${esc(a.approver)}</span>`:''}${a.signature?` <img src="${a.signature}" alt="签名" style="height:34px;vertical-align:middle;border:1px solid #e3e9f2;border-radius:3px;background:#fff;margin-left:4px">`:''}</div>`});
+      const apv=(a.approver=='钉钉')?'钉钉OA电子审批':(a.approver||'');
+      h+=`<div style="font-size:9px;padding:3px 0;border-bottom:1px dashed var(--b)">${a.status=='approved'?'✅':a.status=='rejected'?'❌':'⏳'} ${esc(a.role)} ${a.status} ${a.processed_at||''}${a.comment?` <span style="color:#888">｜${esc(a.comment)}</span>`:''}${apv?` <span style="color:var(--s)">${esc(apv)}</span>`:''}${a.signature?` <img src="${a.signature}" alt="签名" style="height:34px;vertical-align:middle;border:1px solid #e3e9f2;border-radius:3px;background:#fff;margin-left:4px">`:''}</div>`});
   }
   if(r.urgent)h='<div style="background:#fff5f5;border:1px solid #f5c6c6;color:#e74c3c;font-weight:700;font-size:10px;padding:4px 8px;border-radius:4px;margin-bottom:6px">🚨 加急审批</div>'+h;
   if(r.attachments){

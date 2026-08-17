@@ -1414,3 +1414,572 @@
 172.16.35.163 - - [17/Aug/2026 10:46:41] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
 127.0.0.1 - - [17/Aug/2026 10:47:04] "GET / HTTP/1.1" 200 -
 127.0.0.1 - - [17/Aug/2026 10:47:06] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:47:08] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:47:09] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:47:37] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:47:38] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:48:10] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:48:11] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:48:40] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:48:42] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:48:43] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://172.16.35.163:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [17/Aug/2026 10:49:14] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:49:14] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:49:15] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:49:16] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://172.16.35.163:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [17/Aug/2026 10:49:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:49:48] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:50:19] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:50:20] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:50:51] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:50:52] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:51:23] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:51:25] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:51:32] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:51:32] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:51:33] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:51:33] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:51:33] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:51:33] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:51:34] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:51:34] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:51:34] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:51:56] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:51:56] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:51:56] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:51:56] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:51:57] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:51:57] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:51:57] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:51:57] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:51:57] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:51:57] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:51:57] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:51:58] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:51:58] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:51:59] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:51:59] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:51:59] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:51:59] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:52:00] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:52:00] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:52:00] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:52:01] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:52:01] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:52:01] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:52:01] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:52:01] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:52:01] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:52:02] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:52:02] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:52:02] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:52:03] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:52:03] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:52:03] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:52:04] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:52:04] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:52:04] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:52:04] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:52:04] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:52:04] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:52:20] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:52:28] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:52:29] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:53:01] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:53:02] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [17/Aug/2026 10:53:22] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [17/Aug/2026 10:53:22] "GET /api/me HTTP/1.1" 200 -
+172.16.35.163 - - [17/Aug/2026 10:53:22] "GET /api/dashboard HTTP/1.1" 200 -
+172.16.35.163 - - [17/Aug/2026 10:53:22] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:53:33] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:53:34] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:54:05] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:54:14] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:54:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:54:48] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:55:20] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:55:21] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:55:52] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:55:53] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:56:24] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:56:26] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://172.16.35.163:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [17/Aug/2026 10:56:42] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:56:42] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:56:43] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:56:43] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:56:43] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:56:43] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:56:44] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:56:44] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:56:44] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:56:45] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:56:45] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:56:45] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:56:45] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:56:45] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:56:45] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:56:46] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:56:46] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:56:46] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:56:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:56:47] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:56:48] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:56:48] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:56:48] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:56:48] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:56:49] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:56:49] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:56:49] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:56:57] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:56:58] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [17/Aug/2026 10:56:58] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [17/Aug/2026 10:56:58] "GET /api/me HTTP/1.1" 200 -
+172.16.35.163 - - [17/Aug/2026 10:56:58] "GET /api/dashboard HTTP/1.1" 200 -
+172.16.35.163 - - [17/Aug/2026 10:56:58] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:56:59] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:56:59] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:57:00] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:57:00] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:00] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:00] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:01] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:01] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:01] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:02] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:02] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:57:02] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:57:03] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:03] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:03] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:03] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:03] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:03] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:04] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:04] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:57:05] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:57:05] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:05] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:05] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:06] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:06] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:06] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:10] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:10] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:57:11] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:57:11] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:11] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:11] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:12] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:12] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:12] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:13] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:13] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:57:14] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:57:14] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:14] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:14] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:15] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:15] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:15] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:16] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:16] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:57:16] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:57:17] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:17] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:17] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:17] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:17] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:17] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:29] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:30] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:37] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:37] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:57:37] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:57:37] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:37] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:37] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:38] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:38] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:38] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:40] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:40] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:57:40] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:57:40] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:40] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:40] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:41] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:41] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:41] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:42] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:42] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:57:43] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 10:57:43] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:43] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:43] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:44] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:44] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:57:44] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:58:01] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:58:02] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:58:33] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:58:37] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:59:14] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:59:15] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://172.16.35.163:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [17/Aug/2026 10:59:46] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 10:59:48] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://172.16.35.163:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://172.16.35.163:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [17/Aug/2026 11:00:14] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:14] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:00:14] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:00:14] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:14] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:14] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:15] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:15] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:15] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:18] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:18] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:00:18] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:00:18] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:18] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:18] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:19] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:19] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:19] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:20] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:21] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:22] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:22] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:00:22] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:00:22] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:22] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:22] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:23] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:23] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:23] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:26] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:26] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:00:26] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:00:27] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:27] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:27] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:27] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:27] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:27] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:50] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:50] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:00:51] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:00:51] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:51] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:51] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:52] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:52] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:52] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:52] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:55] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:55] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:00:55] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:00:55] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:55] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:55] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:56] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:56] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:56] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:59] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:00:59] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:00:59] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:01:00] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:00] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:00] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:00] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:00] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:00] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:03] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:03] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:01:04] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:01:04] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:04] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:04] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:05] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:05] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:05] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:18] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:18] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:01:18] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:01:18] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:18] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:18] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:19] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:19] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:19] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:22] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:22] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:01:22] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:01:22] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:22] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:22] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:23] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:23] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:23] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:26] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:26] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:01:27] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:01:27] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:27] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:27] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:28] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:28] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:28] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:28] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:31] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:31] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:01:31] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:01:31] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:31] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:31] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:31] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:32] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:32] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:01:32] "GET /api/approvals/overdue HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://172.16.35.163:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [17/Aug/2026 11:02:03] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:02:03] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:02:03] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:02:03] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:02:03] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:02:03] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:02:04] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:02:04] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:02:04] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:02:04] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:02:05] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:02:07] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:02:07] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:02:07] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:02:08] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:02:08] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:02:08] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:02:08] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:02:08] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:02:08] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:02:09] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:02:16] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:02:16] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:02:17] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:02:17] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:02:17] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:02:17] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:02:18] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:02:18] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:02:18] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [17/Aug/2026 11:02:18] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:02:18] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:02:18] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:02:28] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:02:38] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:02:39] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:03:13] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:03:14] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:03:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:03:48] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [17/Aug/2026 11:03:55] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [17/Aug/2026 11:03:55] "GET /api/me HTTP/1.1" 200 -
+172.16.35.163 - - [17/Aug/2026 11:03:56] "GET /api/dashboard HTTP/1.1" 200 -
+172.16.35.163 - - [17/Aug/2026 11:03:56] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:04:21] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:04:25] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:05:02] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:05:04] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:05:37] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:05:39] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:06:13] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:06:15] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:06:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:06:48] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:07:22] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:07:23] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:07:54] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:07:56] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:08:27] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:08:28] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:08:59] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:09:01] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:09:34] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:09:35] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:10:10] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:10:12] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:10:44] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:10:45] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:11:19] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:11:20] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://172.16.35.163:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://172.16.35.163:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [17/Aug/2026 11:11:53] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Aug/2026 11:11:54] "GET / HTTP/1.1" 200 -

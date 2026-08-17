@@ -5705,13 +5705,17 @@ def api_order_download(oid):
         r += 1
         for a in approvals:
             st = {'approved': '✅通过', 'rejected': '❌驳回', 'pending': '⏳待审批'}.get(a['status'], a['status'])
-            line = '%s ｜ %s ｜ %s %s' % (a['role'] or '', st, a['approver'] or '', str(a['processed_at'] or '')[:16])
+            # V11.6: 钉钉审批记录显示为"钉钉OA电子审批"(审批人实名认证, 与手写签名同效)
+            apv = a['approver'] or ''
+            if apv == '钉钉':
+                apv = '钉钉OA电子审批'
+            line = '%s ｜ %s ｜ %s %s' % (a['role'] or '', st, apv, str(a['processed_at'] or '')[:16])
             if a['comment']:
                 line += ' ｜ ' + (a['comment'] or '')
             ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=7)
             ws.cell(r, 1, line).font = CN(size=10)
             for cc in range(1, 9): ws.cell(r, cc).border = border
-            # 电子签名图片
+            # 电子签名图片(系统内手写签名) / 钉钉审批标记
             if a['signature'] and a['signature'].startswith('data:image/png'):
                 try:
                     imgdata = base64.b64decode(a['signature'].split(',')[1])
@@ -5720,6 +5724,8 @@ def api_order_download(oid):
                     ws.add_image(img, 'H%d' % r)
                 except Exception:
                     pass
+            else:
+                ws.cell(r, 8, '✔️' if (a['approver'] or '') == '钉钉' and a['status'] == 'approved' else '').font = Font(name='宋体', size=12, color='2F5597')
             ws.row_dimensions[r].height = 32
             r += 1
     # ── 签字区 ──
