@@ -1404,6 +1404,30 @@ def dt_first_bound_userid():
     except Exception:
         return ''
 
+def dt_union_id():
+    """V11.8: 获取钉钉 unionId(上传附件必填, 缓存到 sys_config.dingtalk_union_id)
+    取第一个已绑定 userid → /topapi/v2/user/get 拿 unionid; 失败逐用户尝试"""
+    try:
+        cached = cfg_get('dingtalk_union_id', '')
+        if cached:
+            return cached
+        c = db()
+        users = c.execute("SELECT name, dingtalk_userid FROM users WHERE dingtalk_userid IS NOT NULL AND dingtalk_userid != '' ORDER BY id").fetchall()
+        c.close()
+        for u in users:
+            try:
+                code_r, resp = dt_post('/topapi/v2/user/get', {'userid': u['dingtalk_userid']})
+                if code_r == 0 and isinstance(resp, dict):
+                    uid = (resp.get('result') or {}).get('unionid', '')
+                    if uid:
+                        cfg_set('dingtalk_union_id', uid)
+                        return uid
+            except Exception:
+                continue
+        return ''
+    except Exception:
+        return ''
+
 def dt_biz_info(biz_type, biz_id):
     return fs_biz_info(biz_type, biz_id)  # 复用单据信息提取
 
@@ -1687,8 +1711,12 @@ def dt_upload_file_to_dingtalk(path, filename):
             md5 = hashlib.md5(data).hexdigest()
         except Exception:
             md5 = ''
-        # 1. 获取上传信息(签名URL + uploadKey)
-        c, r = dt_new_post(f'/v1.0/storage/spaces/{sid}/files/uploadInfos/query', {
+        # 1. 获取上传信息(签名URL + uploadKey) — V11.8: URL必须带 ?unionId=
+        _uid = dt_union_id()
+        if not _uid:
+            log('系统', '钉钉附件上传失败', f'{fname}: 未获取到unionId')
+            return None
+        c, r = dt_new_post(f'/v1.0/storage/spaces/{sid}/files/uploadInfos/query?unionId={_uid}', {
             'multipart': False,
             'protocol': 'HEADER_SIGNATURE',
             'option': {'preCheckParam': {'name': fname, 'size': fsize, 'md5': md5}}})
@@ -1702,12 +1730,30 @@ def dt_upload_file_to_dingtalk(path, filename):
         if not upload_key or not urls:
             log('系统', '钉钉附件上传失败', f'{fname}: 无签名URL/uploadKey')
             return None
-        # 2. 上传文件二进制到签名URL(直传 OSS)
-        req = urllib.request.Request(urls[0], data=data, method='PUT', headers=headers)
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            resp.read()
-        # 3. 提交文件(dentry) → 获得 fileId
-        c2, r2 = dt_new_post(f'/v1.0/storage/spaces/{sid}/files/commit', {
+        # 2. 上传文件二进制到签名URL(直传 OSS) — V11.8: 必须用 http.client 手动PUT
+        #    (urllib 带 data 会自动加 Content-Type, 破坏 OSS 签名 → 403 SignatureDoesNotMatch)
+        try:
+            import http.client
+            from urllib.parse import urlparse
+            _u = urlparse(urls[0])
+            _conn = http.client.HTTPSConnection(_u.hostname, timeout=60)
+            _conn.putrequest('PUT', _u.path + ('?' + _u.query if _u.query else ''))
+            for _k, _v in (headers or {}).items():
+                _conn.putheader(_k, _v)
+            _conn.putheader('Content-Length', str(len(data)))
+            _conn.endheaders()
+            _conn.send(data)
+            _resp = _conn.getresponse()
+            _body = _resp.read()
+            _conn.close()
+            if _resp.status != 200:
+                log('系统', '钉钉附件上传失败', f'{fname}: OSS直传HTTP {_resp.status} {_body[:120]}')
+                return None
+        except Exception as e:
+            log('系统', '钉钉附件上传异常', f'{fname}: {str(e)[:120]}')
+            return None
+        # 3. 提交文件(dentry) → 获得 fileId — V11.8: URL带 ?unionId=
+        c2, r2 = dt_new_post(f'/v1.0/storage/spaces/{sid}/files/commit?unionId={_uid}', {
             'name': fname, 'parentId': '', 'uploadKey': upload_key})
         if c2 != 0:
             log('系统', '钉钉附件上传失败', f'{fname}: 提交失败 {json.dumps(r2, ensure_ascii=False)[:200]}')
@@ -2513,12 +2559,13 @@ def api_dingtalk_attachment_check():
     # 2. 存储空间ID
     sid = dt_storage_space_id()
     out['steps'].append({'name': '存储空间', 'ok': bool(sid), 'detail': f"spaceId={sid}" if sid else '不可用(需开通Storage权限)'})
-    # 3. 上传权限(获取上传信息)
+    # 3. 上传权限(获取上传信息) — V11.8: 带 unionId
     if sid:
         import hashlib
+        _uid = dt_union_id()
         test_data = b'dingtalk attachment check'
         md5 = hashlib.md5(test_data).hexdigest()
-        c, r = dt_new_post(f'/v1.0/storage/spaces/{sid}/files/uploadInfos/query', {
+        c, r = dt_new_post(f'/v1.0/storage/spaces/{sid}/files/uploadInfos/query?unionId={_uid}', {
             'multipart': False, 'protocol': 'HEADER_SIGNATURE',
             'option': {'preCheckParam': {'name': '_check.txt', 'size': len(test_data), 'md5': md5}}})
         if c == 0:
@@ -2536,15 +2583,17 @@ def api_dingtalk_attachment_check():
     return jsonify(out)
 
 def dt_upload_file_to_dingtalk_simple(data, filename):
-    """简化上传: bytes → 钉盘, 返回 {spaceId,fileName,fileSize,fileType,fileId}"""
+    """简化上传: bytes → 钉盘, 返回 {spaceId,fileName,fileSize,fileType,fileId} — V11.8: 带unionId"""
     import hashlib, mimetypes
     sid = dt_storage_space_id()
     if not sid: return None
+    _uid = dt_union_id()
+    if not _uid: return None
     fname = os.path.basename(filename)
     ext = os.path.splitext(fname)[1].lower().lstrip('.')
     ftype = 'image' if ext in ('jpg', 'jpeg', 'png', 'gif', 'bmp') else 'file'
     md5 = hashlib.md5(data).hexdigest()
-    c, r = dt_new_post(f'/v1.0/storage/spaces/{sid}/files/uploadInfos/query', {
+    c, r = dt_new_post(f'/v1.0/storage/spaces/{sid}/files/uploadInfos/query?unionId={_uid}', {
         'multipart': False, 'protocol': 'HEADER_SIGNATURE',
         'option': {'preCheckParam': {'name': fname, 'size': len(data), 'md5': md5}}})
     if c != 0: return None
@@ -2553,10 +2602,25 @@ def dt_upload_file_to_dingtalk_simple(data, filename):
     urls = hsi.get('resourceUrls') or []
     headers = hsi.get('headers') or {}
     if not upload_key or not urls: return None
-    req = urllib.request.Request(urls[0], data=data, method='PUT', headers=headers)
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        resp.read()
-    c2, r2 = dt_new_post(f'/v1.0/storage/spaces/{sid}/files/commit', {
+    try:
+        import http.client
+        from urllib.parse import urlparse
+        _u = urlparse(urls[0])
+        _conn = http.client.HTTPSConnection(_u.hostname, timeout=60)
+        _conn.putrequest('PUT', _u.path + ('?' + _u.query if _u.query else ''))
+        for _k, _v in (headers or {}).items():
+            _conn.putheader(_k, _v)
+        _conn.putheader('Content-Length', str(len(data)))
+        _conn.endheaders()
+        _conn.send(data)
+        _resp = _conn.getresponse()
+        _body = _resp.read()
+        _conn.close()
+        if _resp.status != 200:
+            return None
+    except Exception:
+        return None
+    c2, r2 = dt_new_post(f'/v1.0/storage/spaces/{sid}/files/commit?unionId={_uid}', {
         'name': fname, 'parentId': '', 'uploadKey': upload_key})
     if c2 != 0: return None
     dentry = r2.get('dentry') or {}
