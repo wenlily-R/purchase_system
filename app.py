@@ -1633,78 +1633,39 @@ def dt_build_detail(biz_type, r, c):
 
 
 def gen_doc_voucher(biz_type, biz_id, kind, title):
-    """V11.9: 单据Excel凭证生成器 — 申请/订单/入库/出库 生成标准凭证存 uploads/
-    返回文件名(相对 uploads), 失败返回 None; 已存在则复用"""
+    """V11.9b: 单据附件凭证 — 复用系统现有下载接口生成的文件(与页面下载完全一致)
+    申请/订单/入库/出库 → 调对应 /download 接口拿xlsx存uploads; 已存在则复用"""
     try:
-        import io
-        from openpyxl import Workbook
-        from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
-        CN = lambda bold=False, size=11: Font(name='宋体', bold=bold, size=size)
-        border = Border(*[Side(style='thin', color='999999')] * 4)
-        fill = PatternFill('solid', fgColor='D9E2F3')
+        no = None
         c = db()
         r = c.execute(f"SELECT * FROM {biz_table(biz_type)} WHERE id=?", (biz_id,)).fetchone()
-        if not r:
-            c.close(); return None
-        no = r['order_no'] if kind == 'order' else (r['req_no'] if kind == 'prequest' else (r['receive_no'] if kind == 'receiving' else r['req_no']))
+        if r:
+            no = r['order_no'] if kind == 'order' else (r['req_no'] if kind == 'prequest' else (r['receive_no'] if kind == 'receiving' else r['req_no']))
+        c.close()
+        if not no:
+            return None
         fname = f"voucher_{kind}_{no}.xlsx"
         fpath = os.path.join(BASE, 'uploads', fname)
         if os.path.exists(fpath):
-            c.close(); return fname
-        wb = Workbook(); ws = wb.active; ws.title = title
-        ws.merge_cells('A1:F1')
-        ws['A1'] = title
-        ws['A1'].font = CN(bold=True, size=16)
-        ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
-        ws.row_dimensions[1].height = 30
-        def put(row, k, v):
-            ws.cell(row, 1, k).font = CN(bold=True)
-            ws.cell(row, 1).fill = fill
-            ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=6)
-            ws.cell(row, 2, str(v)).font = CN()
-            for cc in range(1, 7):
-                ws.cell(row, cc).border = border
-        row = 3
-        put(row, '单号', no); row += 1
-        if kind == 'prequest':
-            put(row, '申请部门', r['dept'] or ''); row += 1
-            put(row, '申请人', r['requester'] or ''); row += 1
-            put(row, '采购事由', r['purpose'] or ''); row += 1
-            put(row, '预计金额', f"¥{float(r['total_estimated'] or 0):,.2f}"); row += 1
-            put(row, '状态', r['status'] or ''); row += 1
-        elif kind == 'order':
-            put(row, '供应商', r['supplier'] or ''); row += 1
-            put(row, '交易模式', r['trade_mode'] or '货到付款'); row += 1
-            put(row, '需求部门', r['requester'] or ''); row += 1
-            put(row, '订单金额', f"¥{float(r['total_amount'] or 0):,.2f}"); row += 1
-            put(row, '目标到货日', str(r['target_date'] or '')[:10]); row += 1
-            put(row, '状态', r['status'] or ''); row += 1
-        elif kind == 'receiving':
-            put(row, '订单号', r['order_id'] or '-'); row += 1
-            put(row, '物资', r['item_name'] or ''); row += 1
-            put(row, '数量', f"{r['quantity']}{r['unit'] or '个'}"); row += 1
-            put(row, '合格数/不合格数', f"{r['qualified_qty'] or r['quantity']} / {r['defective_qty'] or 0}"); row += 1
-            put(row, '验收人', r['inspector'] or ''); row += 1
-            put(row, '入库时间', str(r['received_at'] or '')[:16]); row += 1
-        else:  # requisition
-            put(row, '领用部门', r['dept'] or ''); row += 1
-            put(row, '领用人', r['requester'] or ''); row += 1
-            put(row, '物资', r['item_name'] or ''); row += 1
-            put(row, '数量', f"{r['quantity']}{r['unit'] or '个'}"); row += 1
-            put(row, '用途', r['purpose'] or ''); row += 1
-            put(row, '出库时间', str(r['issued_at'] or '')[:16]); row += 1
-        if r['remark']:
-            put(row, '备注', r['remark'] or ''); row += 1
-        row += 1
-        ws.merge_cells(f'A{row}:F{row}')
-        ws.cell(row, 1, '经手人：                验收人：                审批人：').font = CN()
+            return fname
+        # 内部调用现有下载接口(与页面"下载"按钮完全同一份生成逻辑)
+        url = {'prequest': f'/api/prequests/{biz_id}/download',
+               'order': f'/api/orders/{biz_id}/download',
+               'receiving': f'/api/receivings/{biz_id}/download',
+               'requisition': f'/api/requisitions/{biz_id}/download'}.get(kind)
+        if not url:
+            return None
+        client = app.test_client()
+        client.post('/api/login', json={'username': 'admin', 'password': 'admin123'})
+        resp = client.get(url)
+        if resp.status_code != 200 or not resp.data:
+            log('系统', '单据凭证生成失败', f'{biz_type}#{biz_id}: 下载接口HTTP {resp.status_code}')
+            return None
         os.makedirs(os.path.join(BASE, 'uploads'), exist_ok=True)
-        wb.save(fpath)
-        c.close()
+        with open(fpath, 'wb') as f:
+            f.write(resp.data)
         return fname
     except Exception as e:
-        try: c.close()
-        except Exception: pass
         log('系统', '单据凭证生成失败', f'{biz_type}#{biz_id}: {str(e)[:120]}')
         return None
 
