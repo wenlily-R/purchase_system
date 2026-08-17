@@ -1803,7 +1803,7 @@ def dt_upload_file_to_dingtalk(path, filename):
             return None
         # 3. 提交文件(dentry) → 获得 fileId — V11.8: URL带 ?unionId=
         c2, r2 = dt_new_post(f'/v1.0/storage/spaces/{sid}/files/commit?unionId={_uid}', {
-            'name': fname, 'parentId': '', 'uploadKey': upload_key})
+            'name': fname, 'parentId': '0', 'uploadKey': upload_key})
         if c2 != 0:
             log('系统', '钉钉附件上传失败', f'{fname}: 提交失败 {json.dumps(r2, ensure_ascii=False)[:200]}')
             return None
@@ -2670,7 +2670,7 @@ def dt_upload_file_to_dingtalk_simple(data, filename):
     except Exception:
         return None
     c2, r2 = dt_new_post(f'/v1.0/storage/spaces/{sid}/files/commit?unionId={_uid}', {
-        'name': fname, 'parentId': '', 'uploadKey': upload_key})
+        'name': fname, 'parentId': '0', 'uploadKey': upload_key})
     if c2 != 0: return None
     dentry = r2.get('dentry') or {}
     fid = dentry.get('id') or dentry.get('uuid') or ''

@@ -1,0 +1,14 @@
+{
+ "dingtalk_aes_key": "xBye3X553H1OVnsvxHi0MDMHYI7jLD0D2yvF16iTeUU",
+ "dingtalk_callback_token": "zc_253f0bdbdb38d724df63",
+ "dingtalk_corp_id": "dingc91e5c4053b57d9bca182177ab59a309",
+ "dingtalk_app_key": "dingk3b5nbu0yewpvsog",
+ "dingtalk_app_secret": "obztMu3DeGy058qHgJv7K78uhXpUUpEKIUrP9BMWpVRV_y71qFez4gtvrmL_Ps0b",
+ "dingtalk_enabled": "1",
+ "dingtalk_agent_id": "4835511899",
+ "dingtalk_actioner_keys": "{}",
+ "dingtalk_approval_codes": "{\"purchase_request\": \"PROC-19446A5E-C6B2-42F1-9152-E63FE0AA7F7C\", \"contract\": \"PROC-19446A5E-C6B2-42F1-9152-E63FE0AA7F7C\", \"purchase_order\": \"PROC-19446A5E-C6B2-42F1-9152-E63FE0AA7F7C\", \"receiving\": \"PROC-19446A5E-C6B2-42F1-9152-E63FE0AA7F7C\", \"requisition\": \"PROC-19446A5E-C6B2-42F1-9152-E63FE0AA7F7C\"}",
+ "dingtalk_oa_notify_only": "1",
+ "dingtalk_storage_space_id": "29337504930",
+ "dingtalk_union_id": "edHoAiS0Pk5LsR6iiNiiGkX2QiEiE"
+}
