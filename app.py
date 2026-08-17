@@ -1632,15 +1632,105 @@ def dt_build_detail(biz_type, r, c):
     return "\n".join(out)
 
 
+def gen_doc_voucher(biz_type, biz_id, kind, title):
+    """V11.9: 单据Excel凭证生成器 — 申请/订单/入库/出库 生成标准凭证存 uploads/
+    返回文件名(相对 uploads), 失败返回 None; 已存在则复用"""
+    try:
+        import io
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+        CN = lambda bold=False, size=11: Font(name='宋体', bold=bold, size=size)
+        border = Border(*[Side(style='thin', color='999999')] * 4)
+        fill = PatternFill('solid', fgColor='D9E2F3')
+        c = db()
+        r = c.execute(f"SELECT * FROM {biz_table(biz_type)} WHERE id=?", (biz_id,)).fetchone()
+        if not r:
+            c.close(); return None
+        no = r['order_no'] if kind == 'order' else (r['req_no'] if kind == 'prequest' else (r['receive_no'] if kind == 'receiving' else r['req_no']))
+        fname = f"voucher_{kind}_{no}.xlsx"
+        fpath = os.path.join(BASE, 'uploads', fname)
+        if os.path.exists(fpath):
+            c.close(); return fname
+        wb = Workbook(); ws = wb.active; ws.title = title
+        ws.merge_cells('A1:F1')
+        ws['A1'] = title
+        ws['A1'].font = CN(bold=True, size=16)
+        ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
+        ws.row_dimensions[1].height = 30
+        def put(row, k, v):
+            ws.cell(row, 1, k).font = CN(bold=True)
+            ws.cell(row, 1).fill = fill
+            ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=6)
+            ws.cell(row, 2, str(v)).font = CN()
+            for cc in range(1, 7):
+                ws.cell(row, cc).border = border
+        row = 3
+        put(row, '单号', no); row += 1
+        if kind == 'prequest':
+            put(row, '申请部门', r['dept'] or ''); row += 1
+            put(row, '申请人', r['requester'] or ''); row += 1
+            put(row, '采购事由', r['purpose'] or ''); row += 1
+            put(row, '预计金额', f"¥{float(r['total_estimated'] or 0):,.2f}"); row += 1
+            put(row, '状态', r['status'] or ''); row += 1
+        elif kind == 'order':
+            put(row, '供应商', r['supplier'] or ''); row += 1
+            put(row, '交易模式', r['trade_mode'] or '货到付款'); row += 1
+            put(row, '需求部门', r['requester'] or ''); row += 1
+            put(row, '订单金额', f"¥{float(r['total_amount'] or 0):,.2f}"); row += 1
+            put(row, '目标到货日', str(r['target_date'] or '')[:10]); row += 1
+            put(row, '状态', r['status'] or ''); row += 1
+        elif kind == 'receiving':
+            put(row, '订单号', r['order_id'] or '-'); row += 1
+            put(row, '物资', r['item_name'] or ''); row += 1
+            put(row, '数量', f"{r['quantity']}{r['unit'] or '个'}"); row += 1
+            put(row, '合格数/不合格数', f"{r['qualified_qty'] or r['quantity']} / {r['defective_qty'] or 0}"); row += 1
+            put(row, '验收人', r['inspector'] or ''); row += 1
+            put(row, '入库时间', str(r['received_at'] or '')[:16]); row += 1
+        else:  # requisition
+            put(row, '领用部门', r['dept'] or ''); row += 1
+            put(row, '领用人', r['requester'] or ''); row += 1
+            put(row, '物资', r['item_name'] or ''); row += 1
+            put(row, '数量', f"{r['quantity']}{r['unit'] or '个'}"); row += 1
+            put(row, '用途', r['purpose'] or ''); row += 1
+            put(row, '出库时间', str(r['issued_at'] or '')[:16]); row += 1
+        if r['remark']:
+            put(row, '备注', r['remark'] or ''); row += 1
+        row += 1
+        ws.merge_cells(f'A{row}:F{row}')
+        ws.cell(row, 1, '经手人：                验收人：                审批人：').font = CN()
+        os.makedirs(os.path.join(BASE, 'uploads'), exist_ok=True)
+        wb.save(fpath)
+        c.close()
+        return fname
+    except Exception as e:
+        try: c.close()
+        except Exception: pass
+        log('系统', '单据凭证生成失败', f'{biz_type}#{biz_id}: {str(e)[:120]}')
+        return None
+
+
 def dt_build_attachment(biz_type, r, c):
-    """V6.0: 组装钉钉附件字段值 [{"spaceId","fileName","fileSize","fileType","fileId"}]
-    将系统内单据附件(合同docx/pdf等)映射为钉钉可在线预览的附件(需钉钉模板含附件控件)"""
+    """V11.9: 组装钉钉附件字段值 — 每类单据自动生成标准Excel凭证后上传
+    申请/订单/入库/出库 → 自动生成凭证xlsx存uploads; 合同 → 已有docx
+    返回 [{path,name,cat}] 本地路径标记, 由 dt_resolve_attachments 上传钉钉"""
     try:
         files = []
         # 合同: 自动生成的合同文件
         if biz_type == 'contract' and r['file_path']:
             files.append({'path': os.path.join(BASE, 'uploads', r['file_path']), 'name': r['file_path'],
                           'cat': '合同类'})
+        # V11.9: 申请/订单/入库/出库 → 自动生成Excel凭证(领导审批可见)
+        gen_map = {'purchase_request': ('prequest', '采购申请单'),
+                   'purchase_order': ('order', '采购订单'),
+                   'receiving': ('receiving', '入库验收单'),
+                   'requisition': ('requisition', '出库单')}
+        if biz_type in gen_map and r['id']:
+            try:
+                fn = gen_doc_voucher(biz_type, r['id'], gen_map[biz_type][0], gen_map[biz_type][1])
+                if fn:
+                    files.append({'path': os.path.join(BASE, 'uploads', fn), 'name': fn, 'cat': gen_map[biz_type][1]})
+            except Exception as e:
+                log('系统', '单据凭证生成失败', f'{biz_type}#{r["id"]}: {str(e)[:120]}')
         # 申请: attachments JSON 数组(纯文件名)
         for key in ('attachments', 'attachment'):
             if key in r.keys() and r[key]:
@@ -1653,8 +1743,6 @@ def dt_build_attachment(biz_type, r, c):
                         files.append({'path': os.path.join(BASE, 'uploads', a.strip()), 'name': a.strip(), 'cat': '附件'})
         # 只保留真实存在的文件
         exist = [f for f in files if os.path.exists(f['path'])]
-        # 钉钉附件字段需要先把文件上传钉钉存储拿 spaceId/fileId → 这里先返回本地路径标记,
-        # 由 dt_start_instance 上传后填充; 若无上传能力则跳过附件(不影响主流程)
         return exist
     except Exception:
         return []
