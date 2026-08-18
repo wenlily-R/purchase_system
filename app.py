@@ -1819,8 +1819,22 @@ def dt_upload_file_to_dingtalk(path, filename):
             'protocol': 'HEADER_SIGNATURE',
             'option': {'preCheckParam': {'name': fname, 'size': fsize, 'md5': md5}}})
         if c != 0:
-            log('系统', '钉钉附件上传失败', f'{fname}: 获取上传信息失败 {json.dumps(r, ensure_ascii=False)[:200]}')
-            return None
+            # V10.4 自动重试: 空间授权过期(no privilege/permissionDenied) → 清缓存重新获取空间+unionId → 重试一次
+            _msg = json.dumps(r, ensure_ascii=False)[:300] if r else ''
+            if 'privilege' in _msg or 'permissionDenied' in _msg:
+                log('系统', '钉钉空间授权过期', f'{fname}: {_msg[:80]} → 清缓存重取空间重试')
+                cfg_set('dingtalk_storage_space_id', '')
+                cfg_set('dingtalk_union_id', '')
+                sid2 = dt_storage_space_id()
+                _uid2 = dt_union_id()
+                if sid2 and _uid2:
+                    c, r = dt_new_post(f'/v1.0/storage/spaces/{sid2}/files/uploadInfos/query?unionId={_uid2}', {
+                        'multipart': False,
+                        'protocol': 'HEADER_SIGNATURE',
+                        'option': {'preCheckParam': {'name': fname, 'size': fsize, 'md5': md5}}})
+            if c != 0:
+                log('系统', '钉钉附件上传失败', f'{fname}: 获取上传信息失败 {json.dumps(r, ensure_ascii=False)[:200]}')
+                return None
         upload_key = r.get('uploadKey', '')
         hsi = r.get('headerSignatureInfo') or {}
         urls = hsi.get('resourceUrls') or []
@@ -2694,7 +2708,19 @@ def dt_upload_file_to_dingtalk_simple(data, filename):
     c, r = dt_new_post(f'/v1.0/storage/spaces/{sid}/files/uploadInfos/query?unionId={_uid}', {
         'multipart': False, 'protocol': 'HEADER_SIGNATURE',
         'option': {'preCheckParam': {'name': fname, 'size': len(data), 'md5': md5}}})
-    if c != 0: return None
+    if c != 0:
+        # V10.4 自动重试: 空间授权过期 → 清缓存重取 → 重试一次
+        _msg = json.dumps(r, ensure_ascii=False)[:300] if r else ''
+        if 'privilege' in _msg or 'permissionDenied' in _msg:
+            cfg_set('dingtalk_storage_space_id', '')
+            cfg_set('dingtalk_union_id', '')
+            sid2 = dt_storage_space_id()
+            _uid2 = dt_union_id()
+            if sid2 and _uid2:
+                c, r = dt_new_post(f'/v1.0/storage/spaces/{sid2}/files/uploadInfos/query?unionId={_uid2}', {
+                    'multipart': False, 'protocol': 'HEADER_SIGNATURE',
+                    'option': {'preCheckParam': {'name': fname, 'size': len(data), 'md5': md5}}})
+        if c != 0: return None
     upload_key = r.get('uploadKey', '')
     hsi = r.get('headerSignatureInfo') or {}
     urls = hsi.get('resourceUrls') or []
