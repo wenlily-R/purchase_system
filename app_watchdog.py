@@ -38,8 +38,18 @@ def snapshot():
     return s
 
 def start_app():
-    """启动(或重启)系统进程"""
+    """启动(或重启)系统进程 — V11.17: 重启前先跑自检, 有错误则拒绝重启(保持旧版继续服务)"""
     global proc
+    # 自检: 代码有低级错误(语法/裸百分号/session后台线程等)时不重启
+    try:
+        r = subprocess.run([VENV_PY, os.path.join(BASE, 'check_code.py')],
+                           capture_output=True, text=True, timeout=60)
+        if r.returncode != 0:
+            print('[%s] ⛔ 自检未通过, 拒绝重启(保持当前版本运行)!' % time.strftime('%H:%M:%S'))
+            print(r.stdout[-800:])
+            return
+    except Exception as e:
+        print('[%s] ⚠️ 自检执行异常(放行): %s' % (time.strftime('%H:%M:%S'), e))
     if proc and proc.poll() is None:
         proc.kill()
         try:

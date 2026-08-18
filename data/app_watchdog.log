@@ -7951,3 +7951,214 @@ ValueError: unsupported format character ';' (0x3b) at index 1033
 127.0.0.1 - - [18/Aug/2026 10:11:08] "GET / HTTP/1.1" 200 -
 127.0.0.1 - - [18/Aug/2026 10:11:10] "GET / HTTP/1.1" 200 -
 127.0.0.1 - - [18/Aug/2026 10:11:11] "GET /inq/b2aed33342d74fc0846f30dc4f55d701 HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:11:41] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:11:42] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:12:14] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:12:15] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:12:46] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:12:47] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://172.16.35.163:5899
+[33mPress CTRL+C to quit[0m
+172.16.35.163 - - [18/Aug/2026 10:13:00] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 10:13:00] "GET /api/me HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 10:13:00] "GET /api/dashboard HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 10:13:00] "GET /api/approvals/overdue HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 10:13:02] "GET /api/inquiries HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 10:13:04] "GET /api/inquiries/5 HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://172.16.35.163:5899
+[33mPress CTRL+C to quit[0m
+172.16.35.163 - - [18/Aug/2026 10:13:14] "GET /inq/ac22a45b08304b03be5a249a95a104aa HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:13:19] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:13:20] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://172.16.35.163:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+Address already in use
+Port 5899 is in use by another program. Either identify and stop that program, or start the server with a different port.
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+Address already in use
+Port 5899 is in use by another program. Either identify and stop that program, or start the server with a different port.
+172.16.35.155 - - [18/Aug/2026 10:13:41] "GET /inq/b2aed33342d74fc0846f30dc4f55d701 HTTP/1.1" 200 -
+172.16.35.155 - - [18/Aug/2026 10:13:43] "GET /inq/8e00ff91c1c743b5bb6a582c6eccb110 HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+Address already in use
+Port 5899 is in use by another program. Either identify and stop that program, or start the server with a different port.
+172.16.35.155 - - [18/Aug/2026 10:13:47] "GET /inq/b2aed33342d74fc0846f30dc4f55d701 HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+Address already in use
+Port 5899 is in use by another program. Either identify and stop that program, or start the server with a different port.
+172.16.35.155 - - [18/Aug/2026 10:13:48] "GET /inq/8e00ff91c1c743b5bb6a582c6eccb110 HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:13:50] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+Address already in use
+Port 5899 is in use by another program. Either identify and stop that program, or start the server with a different port.
+127.0.0.1 - - [18/Aug/2026 10:13:51] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:13:53] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+Address already in use
+Port 5899 is in use by another program. Either identify and stop that program, or start the server with a different port.
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://172.16.35.163:5899
+[33mPress CTRL+C to quit[0m
+172.16.35.119 - - [18/Aug/2026 10:14:02] "[33mGET /apple-touch-icon-precomposed.png HTTP/1.1[0m" 404 -
+172.16.35.119 - - [18/Aug/2026 10:14:02] "GET /inq/ac22a45b08304b03be5a249a95a104aa HTTP/1.1" 200 -
+172.16.35.119 - - [18/Aug/2026 10:14:02] "[33mGET /apple-touch-icon.png HTTP/1.1[0m" 404 -
+172.16.35.119 - - [18/Aug/2026 10:14:02] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+172.16.35.119 - - [18/Aug/2026 10:14:10] "[33mGET /apple-touch-icon-precomposed.png HTTP/1.1[0m" 404 -
+172.16.35.119 - - [18/Aug/2026 10:14:10] "[33mGET /apple-touch-icon.png HTTP/1.1[0m" 404 -
+172.16.35.119 - - [18/Aug/2026 10:14:10] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+172.16.35.119 - - [18/Aug/2026 10:14:10] "GET /inq/ac22a45b08304b03be5a249a95a104aa HTTP/1.1" 200 -
+172.16.35.119 - - [18/Aug/2026 10:14:12] "[33mGET /apple-touch-icon-precomposed.png HTTP/1.1[0m" 404 -
+172.16.35.119 - - [18/Aug/2026 10:14:12] "[33mGET /apple-touch-icon.png HTTP/1.1[0m" 404 -
+172.16.35.119 - - [18/Aug/2026 10:14:12] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+172.16.35.119 - - [18/Aug/2026 10:14:12] "GET /inq/ac22a45b08304b03be5a249a95a104aa HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:14:17] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:14:18] "GET / HTTP/1.1" 200 -
+172.16.35.119 - - [18/Aug/2026 10:14:24] "GET /inq/ac22a45b08304b03be5a249a95a104aa HTTP/1.1" 200 -
+172.16.35.119 - - [18/Aug/2026 10:14:24] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [18/Aug/2026 10:14:24] "GET / HTTP/1.1" 200 -
