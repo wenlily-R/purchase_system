@@ -772,6 +772,19 @@ function sw(name){
 
 function closeMod(){id('detailModal').classList.remove('show')}
 id('detailModal')?.addEventListener('click',e=>{if(e.target===id('detailModal'))closeMod()});
+// V11.19: 审批状态自动刷新 — 每30秒静默刷新当前页面数据(钉钉审批完, 电脑自动更新, 无需手动刷新)
+let _curPage='dashboard';
+const _sw_orig=sw;
+window.sw=function(name){_curPage=name;return _sw_orig(name)};
+setInterval(()=>{
+  if(document.hidden)return;
+  const fn={'dashboard':loadDashboard,'prequests':loadPRequests,'orders':loadOrders,'inquiries':loadInquiries,'approvals':loadApprovals,
+    'contracts':loadContracts,'receivings':loadReceivings,
+    'payments':loadPayments,'inventory':loadInventory,'requisitions':loadRequisitions,'suppliers':loadSuppliers,'reports':loadReports,'feishu':loadFeishu,
+    'dingtalk':loadDingTalk,
+    'settlements':loadSettlements,'invoices':loadInvoicePage,'ledger':loadLedger,'system':loadSystem}[_curPage];
+  if(fn)try{fn()}catch(e){}
+},30000);
 function showDetail(t,h,f){id('dmTitle').textContent=t;id('dmBody').innerHTML=h;id('dmFooter').innerHTML=f||'<button class="btn btn-o" onclick="closeMod()">关闭</button>';id('detailModal').classList.add('show')}
 
 function tag(s){const m={'已完成':'tg-g','已付款':'tg-g','已通过':'tg-g','已入库':'tg-g','已签收':'tg-g','待审批':'tg-o','待签收':'tg-o','待检验':'tg-o','待入库':'tg-o','验收中':'tg-o','验收完成':'tg-g','审批通过':'tg-b','已签合同':'tg-b','已发货':'tg-b','已到货':'tg-b','已挂账':'tg-b','已驳回':'tg-r','已关闭':'tg-gy','执行中':'tg-b'};return `<span class="tag ${m[s]||'tg-gy'}">${esc(s)}</span>`}
