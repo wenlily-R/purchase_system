@@ -218,11 +218,12 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
   <div class="login-card">
     <h1>⚡ 正成能源采购系统</h1>
     <div class="sub">智慧采购管理系统 v5.1 专业加固版 · 请登录</div>
-    <div class="fg"><label>用户名</label><input id="loginUser" placeholder="输入账号" value="admin"></div>
-    <div class="fg"><label>密码</label><input id="loginPass" type="password" placeholder="输入密码" value="admin123" onkeydown="if(event.key==='Enter')doLogin()"></div>
+    <div class="fg"><label>用户名</label><input id="loginUser" placeholder="输入账号" autocomplete="username"></div>
+    <div class="fg"><label>密码</label><input id="loginPass" type="password" placeholder="输入密码" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
     <button class="btn" onclick="doLogin()">登 录</button>
     <button class="btn btn-o" style="margin-top:8px" onclick="dingtalkLogin()">💬 钉钉免登</button>
     <div class="err" id="loginErr"></div>
+    <div style="margin-top:6px;font-size:9px;color:#aaa;text-align:center" id="loginRememberTip"></div>
     <div style="margin-top:12px;font-size:9px;color:#999;text-align:center">
       测试账号: admin/admin123 · 李总/123456 · 王财务/123456 · 刘员工/123456
     </div>
@@ -617,7 +618,10 @@ async function doLogin(){
   const u=id('loginUser').value,p=id('loginPass').value,err=id('loginErr');
   try{
     const r=await api('/login',{method:'POST',body:JSON.stringify({username:u,password:p})});
-    if(r.success){ME=r.user;showApp();initApp()}
+    if(r.success){ME=r.user;showApp();initApp();
+      // V11.23: 记住本浏览器登录的账号(下次自动填入, 各人浏览器各记各的, 不互相干扰)
+      try{localStorage.setItem('zxny_login_user',u)}catch(e){}
+    }
     else{err.style.display='block';err.textContent=r.error||'账号或密码错误'}
   }catch(e){
     err.style.display='block';
@@ -626,7 +630,15 @@ async function doLogin(){
     else err.textContent='连接服务器失败：'+e.message;
   }
 }
-async function doLogout(){await api('/logout',{method:'POST'});showLogin()}
+function doLogout(){api('/logout',{method:'POST'}).catch(()=>{});showLogin()}
+// V11.23: 页面加载时自动填入本浏览器上次登录的账号(不再固定显示 admin)
+function loadRememberedLogin(){
+  try{
+    const u=localStorage.getItem('zxny_login_user');
+    if(u){id('loginUser').value=u;id('loginPass').focus();const t=id('loginRememberTip');if(t)t.textContent='已记住账号 '+u+' · 输入密码登录';}
+  }catch(e){}
+}
+loadRememberedLogin();
 
 async function dingtalkLogin(){
   try{
