@@ -9036,3 +9036,80 @@ Port 5899 is in use by another program. Either identify and stop that program, o
 172.16.35.164 - - [18/Aug/2026 11:25:26] "GET /api/categories HTTP/1.1" 200 -
 172.16.35.184 - - [18/Aug/2026 11:25:31] "GET /api/dashboard HTTP/1.1" 200 -
 172.16.35.184 - - [18/Aug/2026 11:25:31] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 11:25:46] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 11:25:48] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 11:25:52] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 11:25:55] "GET / HTTP/1.1" 200 -
+172.16.35.164 - - [18/Aug/2026 11:25:57] "GET /api/inventory HTTP/1.1" 200 -
+172.16.35.164 - - [18/Aug/2026 11:25:57] "GET /api/categories HTTP/1.1" 200 -
+172.16.35.184 - - [18/Aug/2026 11:26:01] "GET /api/dashboard HTTP/1.1" 200 -
+172.16.35.184 - - [18/Aug/2026 11:26:01] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 11:26:30] "GET / HTTP/1.1" 200 -
+172.16.35.184 - - [18/Aug/2026 11:26:31] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 11:26:31] "GET / HTTP/1.1" 200 -
+172.16.35.184 - - [18/Aug/2026 11:26:31] "GET /api/approvals/overdue HTTP/1.1" 200 -
+172.16.35.164 - - [18/Aug/2026 11:26:57] "GET /api/inventory HTTP/1.1" 200 -
+172.16.35.164 - - [18/Aug/2026 11:26:57] "GET /api/categories HTTP/1.1" 200 -
+172.16.35.184 - - [18/Aug/2026 11:27:01] "GET /api/dashboard HTTP/1.1" 200 -
+172.16.35.184 - - [18/Aug/2026 11:27:01] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 11:27:05] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 11:27:06] "GET / HTTP/1.1" 200 -
+172.16.35.184 - - [18/Aug/2026 11:27:31] "GET /api/dashboard HTTP/1.1" 200 -
+172.16.35.184 - - [18/Aug/2026 11:27:31] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 11:27:38] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 11:27:40] "GET / HTTP/1.1" 200 -
+172.16.35.164 - - [18/Aug/2026 11:27:57] "GET /api/inventory HTTP/1.1" 200 -
+172.16.35.164 - - [18/Aug/2026 11:27:57] "GET /api/categories HTTP/1.1" 200 -
+172.16.35.184 - - [18/Aug/2026 11:28:01] "GET /api/dashboard HTTP/1.1" 200 -
+172.16.35.184 - - [18/Aug/2026 11:28:01] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 11:28:13] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 11:28:14] "GET / HTTP/1.1" 200 -
+172.16.35.184 - - [18/Aug/2026 11:28:31] "GET /api/dashboard HTTP/1.1" 200 -
+172.16.35.184 - - [18/Aug/2026 11:28:31] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 11:28:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 11:28:48] "GET / HTTP/1.1" 200 -
+172.16.35.164 - - [18/Aug/2026 11:28:57] "GET /api/inventory HTTP/1.1" 200 -
+172.16.35.164 - - [18/Aug/2026 11:28:57] "GET /api/categories HTTP/1.1" 200 -
+172.16.35.184 - - [18/Aug/2026 11:29:01] "GET /api/dashboard HTTP/1.1" 200 -
+172.16.35.184 - - [18/Aug/2026 11:29:01] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 11:29:23] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 11:29:24] "GET / HTTP/1.1" 200 -
+172.16.35.184 - - [18/Aug/2026 11:29:31] "GET /api/dashboard HTTP/1.1" 200 -
+172.16.35.184 - - [18/Aug/2026 11:29:31] "GET /api/approvals/overdue HTTP/1.1" 200 -
+172.16.35.164 - - [18/Aug/2026 11:29:57] "GET /api/inventory HTTP/1.1" 200 -
+172.16.35.164 - - [18/Aug/2026 11:29:57] "GET /api/categories HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 11:29:57] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 11:29:59] "GET / HTTP/1.1" 200 -
+172.16.35.184 - - [18/Aug/2026 11:30:01] "GET /api/dashboard HTTP/1.1" 200 -
+172.16.35.184 - - [18/Aug/2026 11:30:01] "GET /api/approvals/overdue HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://172.16.35.163:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [18/Aug/2026 11:30:31] "GET / HTTP/1.1" 200 -
+172.16.35.184 - - [18/Aug/2026 11:30:31] "GET /api/dashboard HTTP/1.1" 200 -
+172.16.35.184 - - [18/Aug/2026 11:30:31] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 11:30:32] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 11:30:34] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 11:30:34] "GET /api/me HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 11:30:35] "GET /api/public-url HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 11:30:35] "GET /api/dashboard HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 11:30:35] "GET /api/approvals/overdue HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 11:30:40] "[33mGET /apple-touch-icon-precomposed.png HTTP/1.1[0m" 404 -
+172.16.35.163 - - [18/Aug/2026 11:30:40] "[33mGET /apple-touch-icon.png HTTP/1.1[0m" 404 -
+172.16.35.163 - - [18/Aug/2026 11:30:40] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -

@@ -110,6 +110,23 @@ for i, line in enumerate(lines, 1):
         if q > 0 and 'VALUES(' in line and q > 8:
             ok(f'app.py:{i}: SQL 含 {q} 个占位符(人工确认参数数量)')
 
+# 5b. 关键功能存在性检查(防重写丢失 — 历史教训: V10.4自动重试在V11.10重写时丢失)
+print('\n[5b] 关键功能存在性检查')
+CRITICAL = [
+    # (特征代码, 说明)
+    ("'privilege' in _msg or 'permissionDenied' in _msg", '钉钉空间授权过期自动重试(V10.4, 丢失会致附件全部失败)'),
+    ("def dt_union_id", '钉钉 unionId 获取函数(V11.8, 丢失会致 MissingunionId)'),
+    ("f'/v1.0/storage/spaces/{sid}/files/uploadInfos/query?unionId=", '上传接口带 unionId 参数'),
+    ("def gen_doc_voucher", '单据Excel凭证生成器(V11.9, 丢失会致无附件)'),
+    ("def _op_name", '后台线程安全操作人(V11.12, 丢失会致审批同步崩溃)'),
+    ("http.client.HTTPSConnection", 'OSS直传用http.client(V11.8, urllib会403)'),
+]
+for feat, desc in CRITICAL:
+    if feat in src:
+        ok(f'{desc}')
+    else:
+        err(f'缺少关键功能: {desc} (特征: {feat})')
+
 # 6. JS 语法检查
 print('\n[6] 前端 JS 语法')
 try:
