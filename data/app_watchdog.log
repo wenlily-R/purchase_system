@@ -7717,3 +7717,237 @@ ValueError: unsupported format character ';' (0x3b) at index 1033
 [33mPress CTRL+C to quit[0m
 127.0.0.1 - - [18/Aug/2026 09:46:14] "GET / HTTP/1.1" 200 -
 127.0.0.1 - - [18/Aug/2026 09:46:15] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:46:26] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:46:27] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:46:46] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:46:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:47:18] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:47:19] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 09:47:23] "[31m[1mGET /api/inquiries HTTP/1.1[0m" 401 -
+172.16.35.163 - - [18/Aug/2026 09:47:42] "POST /api/login HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 09:47:42] "GET /api/dashboard HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 09:47:42] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:47:51] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:47:52] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 09:48:04] "GET /api/prequests HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 09:48:05] "GET /api/dashboard HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 09:48:05] "GET /api/approvals/overdue HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 09:48:05] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:48:23] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:48:24] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:48:55] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:48:57] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:49:28] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:49:30] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:50:01] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:50:02] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:50:34] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:50:35] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:51:06] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:51:07] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:51:39] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:51:40] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:52:11] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:52:12] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 09:52:17] "GET /api/inquiries HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 09:52:18] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:52:44] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:52:46] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:53:17] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:53:18] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:53:50] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:53:55] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:54:30] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:54:32] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 09:54:55] "GET /api/inquiries HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 09:54:55] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:55:03] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:55:05] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 09:55:06] "GET /api/suppliers HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 09:55:06] "GET /api/categories HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 09:55:06] "GET /api/departments HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 09:55:06] "GET /api/prequests/next_no HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 09:55:06] "GET /api/budgets HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:55:36] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:55:37] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:56:12] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:56:13] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 09:56:42] "GET /api/suppliers HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 09:56:42] "GET /api/categories HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 09:56:42] "GET /api/departments HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 09:56:42] "GET /api/prequests/next_no HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 09:56:42] "GET /api/budgets HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:56:44] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:56:45] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:57:17] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:57:19] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:57:53] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:57:54] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:58:26] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:58:27] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:58:59] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:59:00] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 09:59:01] "POST /api/prequests HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 09:59:03] "GET /api/prequests HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 09:59:03] "GET /api/dashboard HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 09:59:03] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:59:31] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:59:37] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:00:11] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:00:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:00:50] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 10:01:21] "GET /api/inquiries HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:01:22] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:01:23] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 10:01:23] "GET /api/prequests HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 10:01:30] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:01:54] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:01:56] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 10:02:09] "GET /api/prequests/14 HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 10:02:26] "GET /api/inquiries HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:02:27] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 10:02:27] "GET /api/prequests HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 10:02:28] "GET /api/prequests/14 HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 10:02:28] "GET /api/departments HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 10:02:28] "GET /api/budgets HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:02:32] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 10:02:56] "GET /api/inquiries HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 10:02:56] "GET /api/prequests HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 10:02:58] "GET /api/inquiries HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:03:09] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 10:03:11] "GET /api/inquiries/eligible HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:03:11] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:03:48] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:03:50] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:04:21] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:04:22] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:04:53] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:04:56] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:05:27] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 10:05:31] "POST /api/inquiries HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:05:33] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:06:06] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:06:08] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 10:06:18] "GET /api/inquiries HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 10:06:21] "GET /api/inquiries/5 HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:06:40] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:06:41] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 10:06:59] "GET /api/inquiries/5 HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:07:12] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:07:15] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:07:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:07:48] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:08:19] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:08:21] "GET / HTTP/1.1" 200 -
+[2026-08-18 10:08:37,585] ERROR in app: Exception on /inq/ac22a45b08304b03be5a249a95a104aa [GET]
+Traceback (most recent call last):
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask/app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask/app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask_cors/extension.py", line 206, in wrapped_function
+    return cors_after_request(app_any.make_response(f(*args, **kwargs)))
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask/app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask/app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/app.py", line 3578, in inquiry_vendor_page
+    body = ('<div style="max-width:520px;margin:60px auto;background:#fff;border-radius:12px;padding:32px;'
+ValueError: unsupported format character ';' (0x3b) at index 1033
+172.16.35.163 - - [18/Aug/2026 10:08:37] "[35m[1mGET /inq/ac22a45b08304b03be5a249a95a104aa HTTP/1.1[0m" 500 -
+127.0.0.1 - - [18/Aug/2026 10:08:52] "GET / HTTP/1.1" 200 -
+[2026-08-18 10:08:52,768] ERROR in app: Exception on /inq/ac22a45b08304b03be5a249a95a104aa [GET]
+Traceback (most recent call last):
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask/app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask/app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask_cors/extension.py", line 206, in wrapped_function
+    return cors_after_request(app_any.make_response(f(*args, **kwargs)))
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask/app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask/app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/app.py", line 3578, in inquiry_vendor_page
+    body = ('<div style="max-width:520px;margin:60px auto;background:#fff;border-radius:12px;padding:32px;'
+ValueError: unsupported format character ';' (0x3b) at index 1033
+172.16.35.163 - - [18/Aug/2026 10:08:52] "[35m[1mGET /inq/ac22a45b08304b03be5a249a95a104aa HTTP/1.1[0m" 500 -
+127.0.0.1 - - [18/Aug/2026 10:08:53] "GET / HTTP/1.1" 200 -
+[2026-08-18 10:09:01,089] ERROR in app: Exception on /inq/ac22a45b08304b03be5a249a95a104aa [GET]
+Traceback (most recent call last):
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask/app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask/app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask_cors/extension.py", line 206, in wrapped_function
+    return cors_after_request(app_any.make_response(f(*args, **kwargs)))
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask/app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask/app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/app.py", line 3578, in inquiry_vendor_page
+    body = ('<div style="max-width:520px;margin:60px auto;background:#fff;border-radius:12px;padding:32px;'
+ValueError: unsupported format character ';' (0x3b) at index 1033
+172.16.35.119 - - [18/Aug/2026 10:09:01] "[35m[1mGET /inq/ac22a45b08304b03be5a249a95a104aa HTTP/1.1[0m" 500 -
+[2026-08-18 10:09:04,700] ERROR in app: Exception on /inq/ab3190f10c5349b3b3914560d260c371 [GET]
+Traceback (most recent call last):
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask/app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask/app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask_cors/extension.py", line 206, in wrapped_function
+    return cors_after_request(app_any.make_response(f(*args, **kwargs)))
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask/app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask/app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/app.py", line 3578, in inquiry_vendor_page
+    body = ('<div style="max-width:520px;margin:60px auto;background:#fff;border-radius:12px;padding:32px;'
+ValueError: unsupported format character ';' (0x3b) at index 1033
+172.16.35.119 - - [18/Aug/2026 10:09:04] "[35m[1mGET /inq/ab3190f10c5349b3b3914560d260c371 HTTP/1.1[0m" 500 -
+[2026-08-18 10:09:09,573] ERROR in app: Exception on /inq/ab3190f10c5349b3b3914560d260c371 [GET]
+Traceback (most recent call last):
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask/app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask/app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask_cors/extension.py", line 206, in wrapped_function
+    return cors_after_request(app_any.make_response(f(*args, **kwargs)))
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask/app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask/app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/app.py", line 3578, in inquiry_vendor_page
+    body = ('<div style="max-width:520px;margin:60px auto;background:#fff;border-radius:12px;padding:32px;'
+ValueError: unsupported format character ';' (0x3b) at index 1033
+172.16.35.119 - - [18/Aug/2026 10:09:09] "[35m[1mGET /inq/ab3190f10c5349b3b3914560d260c371 HTTP/1.1[0m" 500 -
+172.16.35.119 - - [18/Aug/2026 10:09:13] "GET /inq/e739a99013384419b99b91e1d548bd14 HTTP/1.1" 200 -
+172.16.35.119 - - [18/Aug/2026 10:09:18] "GET /inq/e739a99013384419b99b91e1d548bd14 HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:09:25] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:09:26] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:10:04] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:10:05] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://172.16.35.163:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [18/Aug/2026 10:10:36] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:10:37] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:11:08] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:11:10] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:11:11] "GET /inq/b2aed33342d74fc0846f30dc4f55d701 HTTP/1.1" 200 -
