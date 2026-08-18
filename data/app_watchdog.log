@@ -7517,3 +7517,105 @@
 127.0.0.1 - - [18/Aug/2026 09:31:59] "GET / HTTP/1.1" 200 -
 127.0.0.1 - - [18/Aug/2026 09:32:31] "GET / HTTP/1.1" 200 -
 127.0.0.1 - - [18/Aug/2026 09:32:34] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:32:35] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:32:40] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:33:06] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:33:07] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:33:39] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 09:34:11] "GET /api/inquiries HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 09:34:12] "GET /api/inquiries/3 HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:34:26] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:34:27] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 09:35:00] "GET /api/inquiries/3 HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:35:02] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:35:04] "GET / HTTP/1.1" 200 -
+[2026-08-18 09:35:11,121] ERROR in app: Exception on /inq/ab3190f10c5349b3b3914560d260c371 [GET]
+Traceback (most recent call last):
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask/app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask/app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask_cors/extension.py", line 206, in wrapped_function
+    return cors_after_request(app_any.make_response(f(*args, **kwargs)))
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask/app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask/app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/app.py", line 3529, in inquiry_vendor_page
+    body = ('<div style="max-width:520px;margin:60px auto;background:#fff;border-radius:12px;padding:32px;'
+ValueError: unsupported format character ';' (0x3b) at index 1033
+172.16.35.163 - - [18/Aug/2026 09:35:11] "[35m[1mGET /inq/ab3190f10c5349b3b3914560d260c371 HTTP/1.1[0m" 500 -
+172.16.35.163 - - [18/Aug/2026 09:35:11] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+[2026-08-18 09:35:17,450] ERROR in app: Exception on /inq/ab3190f10c5349b3b3914560d260c371 [GET]
+Traceback (most recent call last):
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask/app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask/app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask_cors/extension.py", line 206, in wrapped_function
+    return cors_after_request(app_any.make_response(f(*args, **kwargs)))
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask/app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/.venv/lib/python3.9/site-packages/flask/app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+  File "/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system/app.py", line 3529, in inquiry_vendor_page
+    body = ('<div style="max-width:520px;margin:60px auto;background:#fff;border-radius:12px;padding:32px;'
+ValueError: unsupported format character ';' (0x3b) at index 1033
+172.16.35.163 - - [18/Aug/2026 09:35:17] "[35m[1mGET /inq/ab3190f10c5349b3b3914560d260c371 HTTP/1.1[0m" 500 -
+172.16.35.163 - - [18/Aug/2026 09:35:26] "GET /api/orders HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 09:35:26] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:35:37] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:35:38] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:36:10] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:36:12] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:36:45] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:36:50] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:37:26] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:37:28] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:38:01] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:38:03] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://172.16.35.163:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [18/Aug/2026 09:38:35] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:38:38] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:39:13] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:39:15] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://172.16.35.163:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [18/Aug/2026 09:39:32] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:39:49] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 09:39:50] "GET / HTTP/1.1" 200 -

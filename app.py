@@ -1490,13 +1490,29 @@ def dt_build_form(biz_type, biz_id, info):
                 purpose = f"合同 {r['contract_no']} {r['contract_name'] or ''}"[:200]
                 target = str(r['end_date'] or r['start_date'] or today)[:10]
             elif biz_type == 'receiving':
-                cat = dt_cat_option(r['item_name'] or '')
-                purpose = f"入库单 {r['receive_no']} {r['item_name'] or ''}"[:200]
-                target = today
+                # V11.14: 入库模板控件=入库日期/备注/附件(表格控件"入库明细"格式无法兼容, 明细走备注文本)
+                rdetail = dt_build_detail('receiving', r, c)
+                form = [
+                    {'name': '入库日期', 'value': str(r['received_at'] or today)[:10]},
+                    {'name': '备注', 'value': rdetail[:1900]},
+                ]
+                attach = dt_build_attachment(biz_type, r, c)
+                if attach:
+                    form.append({'name': '附件', 'value': json.dumps(attach, ensure_ascii=False)})
+                c.close()
+                return form
             elif biz_type == 'requisition':
-                cat = dt_cat_option(r['item_name'] or '')
-                purpose = f"出库单 {r['req_no']} {r['item_name'] or ''}"[:200]
-                target = today
+                # V11.14: 出库模板控件=出库日期/备注/附件(表格控件"采购明细"格式无法兼容, 明细走备注文本)
+                rdetail = dt_build_detail('requisition', r, c)
+                form = [
+                    {'name': '出库日期', 'value': str(r['issued_at'] or today)[:10]},
+                    {'name': '备注', 'value': rdetail[:1900]},
+                ]
+                attach = dt_build_attachment(biz_type, r, c)
+                if attach:
+                    form.append({'name': '附件', 'value': json.dumps(attach, ensure_ascii=False)})
+                c.close()
+                return form
             elif biz_type == 'payment':
                 cat = dt_cat_option(r['payment_reason'] or r['supplier'] or '')
                 purpose = f"付款 {r['payment_no']} {r['payment_reason'] or ''}"[:200]
