@@ -1083,11 +1083,12 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
     except Exception:
         pass
     # V55需求1-2: 先款后货合同生效(执行中)后, 自动生成待入库记录展示在入库板块
+    # V11.11: 合同审批通过(执行中)后, 无论交易模式(货到付款/先款后货/自定义)均自动生成待入库记录
     if biz_type == 'contract' and st == '执行中':
         _ct = c.execute("SELECT * FROM contracts WHERE id=?", (biz_id,)).fetchone()
         if _ct and _ct['order_id']:
             _po = c.execute("SELECT * FROM purchase_orders WHERE id=?", (_ct['order_id'],)).fetchone()
-            if _po and _po['trade_mode'] == '先款后货':
+            if _po:
                 _exist = c.execute("SELECT 1 FROM receivings WHERE order_id=? AND status!='已入库'", (_po['id'],)).fetchone()
                 if not _exist:
                     _oi = c.execute("SELECT * FROM order_items WHERE order_id=? ORDER BY id", (_po['id'],)).fetchall()
@@ -1095,7 +1096,7 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
                     _qty = sum(float(x['quantity']) for x in _oi) if _oi else _po['quantity']
                     _rno = gen_no('RK', 'receivings', 'receive_no', c)
                     c.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                              (_rno, None, _po['id'], _name, '', _qty, '个', 0, '待入库', now(), '先款后货: 合同生效后自动进入入库板块(整批%d项)' % (len(_oi) if _oi else 1)))
+                              (_rno, None, _po['id'], _name, '', _qty, '个', 0, '待入库', now(), '合同生效后自动进入入库板块(整批%d项)' % (len(_oi) if _oi else 1)))
     c.execute("UPDATE feishu_instances SET status='synced', updated_at=? WHERE biz_type=? AND biz_id=? AND status='pending'", (now(), biz_type, biz_id))
     c.execute("UPDATE dingtalk_instances SET status='synced', updated_at=? WHERE biz_type=? AND biz_id=? AND status='pending'", (now(), biz_type, biz_id))
     c.commit(); c.close()
@@ -1499,24 +1500,22 @@ def dt_build_form(biz_type, biz_id, info):
                 cat = dt_cat_option(r['payment_reason'] or r['supplier'] or '')
                 purpose = f"付款 {r['payment_no']} {r['payment_reason'] or ''}"[:200]
                 target = str(r['expect_pay_date'] or today)[:10]
-            else:  # purchase_order
+            else:  # purchase_order — V11.10b: 订单模板控件=标题/部门(选项类)/销售方式/订单图片/备注/附件
                 cat = dt_cat_option(r['category'] or r['item_name'] or '')
                 purpose = f"订单 {r['order_no']} {r['item_name'] or ''}"[:200]
                 target = str(r['target_date'] or today)[:10]
-            form = [
-                {'name': '部门', 'value': '[1]'},
-                {'name': '采购类别', 'value': cat},
-                {'name': '采购事由', 'value': purpose},
-                {'name': '交付日期', 'value': target},
-            ]
-            # 完整单据详情(多行结构化文本)
-            form.append({'name': '备注', 'value': detail[:1900]})
-            # 附件: 系统内单据附件(合同docx/pdf等) → 钉钉附件字段
-            attach = dt_build_attachment(biz_type, r, c)
-            if attach:
-                form.append({'name': '附件', 'value': json.dumps(attach, ensure_ascii=False)})
-            c.close()
-            return form
+                form = [
+                    {'name': '部门', 'value': '["选项一"]'},
+                    {'name': '销售方式', 'value': '["选项一"]'},
+                    {'name': '订单图片', 'value': '[]'},
+                    {'name': '备注', 'value': detail[:1900]},
+                ]
+                # 附件: 订单Excel凭证 → 钉钉附件
+                attach = dt_build_attachment(biz_type, r, c)
+                if attach:
+                    form.append({'name': '附件', 'value': json.dumps(attach, ensure_ascii=False)})
+                c.close()
+                return form
     # 其他业务类型: 回退到原有字段组装(按各自模板配置)
     return [
         {'name': '采购名称', 'value': str(info[1])[:60]},
