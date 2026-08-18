@@ -650,6 +650,8 @@ function initApp(){
   id('userName').textContent=ME.name+' ('+ME.role+')';
   buildNav();
   if(typeof sideScrollInit==='function')sideScrollInit();
+  // V11.18: 预加载公网地址, 供报价链接复制使用(商家必须用公网链接才能打开)
+  (async()=>{try{const c=await fetch('/api/public-url',{credentials:'include'}).then(r=>r.json());if(c&&c.url)window._basePublicUrl=c.url}catch(e){}})();
   loadDashboard();
 }
 function buildNav(){
@@ -1271,8 +1273,18 @@ async function showInquiry(id){
   showDetail(`询价单 ${d.inq_no}`,h,btns);
 }
 async function copyInqLink(token){
-  const url=location.origin+'/inq/'+token;
-  const okMsg='✅ 链接已复制到剪贴板，可直接粘贴发送给供应商';
+  // V11.18: 优先用公网地址生成链接(商家在外面才能打开); 拿不到公网地址才退回当前页面地址
+  let base='';
+  try{
+    if(window._dtCfg&&window._dtCfg.public_url) base=window._dtCfg.public_url.replace(/\/+$/,'');
+  }catch(e){}
+  if(!base&&window._basePublicUrl) base=window._basePublicUrl.replace(/\/+$/,'');
+  if(!base){
+    try{const c=await api('/dingtalk/status');base=(c.public_url||'').replace(/\/+$/,'')}catch(e){}
+  }
+  if(!base) base=location.origin;
+  const url=base+'/inq/'+token;
+  const okMsg='✅ 链接已复制到剪贴板，可直接粘贴发送给供应商'+(base!==location.origin?'\n(公网链接, 商家可直接打开)':'');
   // 方式1: 新版剪贴板API(仅HTTPS/localhost可用)
   try{
     if(navigator.clipboard&&window.isSecureContext){

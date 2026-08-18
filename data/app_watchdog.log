@@ -8162,3 +8162,142 @@ Port 5899 is in use by another program. Either identify and stop that program, o
 172.16.35.119 - - [18/Aug/2026 10:14:24] "GET /inq/ac22a45b08304b03be5a249a95a104aa HTTP/1.1" 200 -
 172.16.35.119 - - [18/Aug/2026 10:14:24] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
 127.0.0.1 - - [18/Aug/2026 10:14:24] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:14:25] "GET / HTTP/1.1" 200 -
+172.16.35.119 - - [18/Aug/2026 10:14:43] "GET /inq/ac22a45b08304b03be5a249a95a104aa HTTP/1.1" 200 -
+172.16.35.155 - - [18/Aug/2026 10:14:53] "POST /api/inquiry/vendor/8e00ff91c1c743b5bb6a582c6eccb110/quote HTTP/1.1" 200 -
+172.16.35.155 - - [18/Aug/2026 10:14:55] "GET /inq/b2aed33342d74fc0846f30dc4f55d701 HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:14:57] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:14:58] "GET / HTTP/1.1" 200 -
+172.16.35.155 - - [18/Aug/2026 10:15:04] "POST /api/inquiry/vendor/b2aed33342d74fc0846f30dc4f55d701/quote HTTP/1.1" 200 -
+172.16.35.155 - - [18/Aug/2026 10:15:05] "GET /inq/b2aed33342d74fc0846f30dc4f55d701 HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:15:29] "GET / HTTP/1.1" 200 -
+172.16.35.119 - - [18/Aug/2026 10:15:29] "[33mGET /apple-touch-icon-precomposed.png HTTP/1.1[0m" 404 -
+172.16.35.119 - - [18/Aug/2026 10:15:29] "[33mGET /apple-touch-icon.png HTTP/1.1[0m" 404 -
+172.16.35.119 - - [18/Aug/2026 10:15:29] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+172.16.35.119 - - [18/Aug/2026 10:15:29] "GET /inq/ac22a45b08304b03be5a249a95a104aa HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:15:30] "GET / HTTP/1.1" 200 -
+172.16.35.119 - - [18/Aug/2026 10:15:31] "[33mGET /apple-touch-icon-precomposed.png HTTP/1.1[0m" 404 -
+172.16.35.119 - - [18/Aug/2026 10:15:31] "[33mGET /apple-touch-icon.png HTTP/1.1[0m" 404 -
+172.16.35.119 - - [18/Aug/2026 10:15:31] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+172.16.35.119 - - [18/Aug/2026 10:15:31] "GET /inq/ac22a45b08304b03be5a249a95a104aa HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:16:02] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:16:03] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:16:34] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:16:36] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:17:07] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:17:08] "GET / HTTP/1.1" 200 -
+172.16.35.119 - - [18/Aug/2026 10:17:21] "[33mGET /apple-touch-icon-precomposed.png HTTP/1.1[0m" 404 -
+172.16.35.119 - - [18/Aug/2026 10:17:21] "[33mGET /apple-touch-icon.png HTTP/1.1[0m" 404 -
+172.16.35.119 - - [18/Aug/2026 10:17:21] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+172.16.35.119 - - [18/Aug/2026 10:17:21] "GET /inq/ac22a45b08304b03be5a249a95a104aa HTTP/1.1" 200 -
+172.16.35.119 - - [18/Aug/2026 10:17:22] "[33mGET /apple-touch-icon-precomposed.png HTTP/1.1[0m" 404 -
+172.16.35.119 - - [18/Aug/2026 10:17:23] "GET /inq/ac22a45b08304b03be5a249a95a104aa HTTP/1.1" 200 -
+172.16.35.119 - - [18/Aug/2026 10:17:23] "[33mGET /apple-touch-icon.png HTTP/1.1[0m" 404 -
+172.16.35.119 - - [18/Aug/2026 10:17:23] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [18/Aug/2026 10:17:39] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:17:40] "GET / HTTP/1.1" 200 -
+172.16.35.155 - - [18/Aug/2026 10:17:47] "GET /inq/ac22a45b08304b03be5a249a95a104aa HTTP/1.1" 200 -
+172.16.35.155 - - [18/Aug/2026 10:17:47] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [18/Aug/2026 10:18:12] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:18:13] "GET / HTTP/1.1" 200 -
+172.16.35.119 - - [18/Aug/2026 10:18:17] "[33mGET /apple-touch-icon-precomposed.png HTTP/1.1[0m" 404 -
+172.16.35.119 - - [18/Aug/2026 10:18:17] "GET /inq/ac22a45b08304b03be5a249a95a104aa HTTP/1.1" 200 -
+172.16.35.119 - - [18/Aug/2026 10:18:17] "[33mGET /apple-touch-icon.png HTTP/1.1[0m" 404 -
+172.16.35.119 - - [18/Aug/2026 10:18:17] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+172.16.35.119 - - [18/Aug/2026 10:18:19] "[33mGET /apple-touch-icon-precomposed.png HTTP/1.1[0m" 404 -
+172.16.35.119 - - [18/Aug/2026 10:18:19] "[33mGET /apple-touch-icon.png HTTP/1.1[0m" 404 -
+172.16.35.119 - - [18/Aug/2026 10:18:19] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+172.16.35.119 - - [18/Aug/2026 10:18:19] "GET /inq/ac22a45b08304b03be5a249a95a104aa HTTP/1.1" 200 -
+172.16.35.157 - - [18/Aug/2026 10:18:33] "GET /inq/ac22a45b08304b03be5a249a95a104aa HTTP/1.1" 200 -
+172.16.35.157 - - [18/Aug/2026 10:18:33] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [18/Aug/2026 10:18:44] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:18:45] "GET / HTTP/1.1" 200 -
+172.16.35.157 - - [18/Aug/2026 10:19:11] "POST /api/inquiry/vendor/ac22a45b08304b03be5a249a95a104aa/quote HTTP/1.1" 200 -
+172.16.35.157 - - [18/Aug/2026 10:19:12] "GET /inq/ac22a45b08304b03be5a249a95a104aa HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:19:16] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:19:18] "GET / HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 10:19:33] "POST /api/inquiry/vendor/ac22a45b08304b03be5a249a95a104aa/quote HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 10:19:36] "GET /inq/ac22a45b08304b03be5a249a95a104aa HTTP/1.1" 200 -
+172.16.35.163 - - [18/Aug/2026 10:19:42] "GET /api/inquiries/5 HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:19:49] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:19:50] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:20:22] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:20:23] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://172.16.35.163:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://172.16.35.163:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://172.16.35.163:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [18/Aug/2026 10:20:54] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [18/Aug/2026 10:20:56] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://172.16.35.163:5899
+[33mPress CTRL+C to quit[0m
