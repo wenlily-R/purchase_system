@@ -1255,10 +1255,13 @@ async function showInquiry(id){
   h+=`<h4 style="font-size:10px;margin:8px 0 3px">🏢 供应商报价对比</h4>`;
   if(!d.suppliers||!d.suppliers.length)h+='<div style="font-size:10px;color:#999">无供应商</div>';
   else{
-    h+=`<table class="tb" style="font-size:9px"><thead><tr><th>供应商</th><th>联系人</th><th>报价</th><th>备注</th><th>报价时间</th><th>报价链接</th><th>操作</th></tr></thead><tbody>`;
+    h+=`<table class="tb" style="font-size:9px"><thead><tr><th>供应商</th><th>联系人</th><th>报价</th><th>交付日期</th><th>质保时间</th><th>备注</th><th>报价时间</th><th>操作</th></tr></thead><tbody>`;
     d.suppliers.forEach(s=>{
       h+=`<tr><td>${esc(s.supplier_name)}${s.is_selected?' <span class="tag tg-g">已选中</span>':''}</td><td>${esc(s.contact||'')}${s.phone?'<br>'+esc(s.phone):''}</td>
-        <td style="font-weight:700;color:${s.quote_price?'#e67e22':'#999'}">${s.quote_price?('¥'+(s.quote_price||0).toFixed(2)):'未报价'}</td><td>${esc(s.quote_remark||'')}</td><td>${esc(s.quote_time||'')}</td>
+        <td style="font-weight:700;color:${s.quote_price?'#e67e22':'#999'}">${s.quote_price?('¥'+(s.quote_price||0).toFixed(2)):'未报价'}</td>
+        <td>${s.quote_delivery?esc(s.quote_delivery):'<span style="color:#bbb">-</span>'}</td>
+        <td>${s.quote_warranty?esc(s.quote_warranty):'<span style="color:#bbb">-</span>'}</td>
+        <td>${esc(s.quote_remark||'')}</td><td>${esc(s.quote_time||'')}</td>
         <td><button class="lnk" onclick="copyInqLink('${s.token}')">📋复制链接</button></td>
         <td>${(d.status=='询价中'&&s.quote_price&&!s.is_selected)?`<button class="lnk" style="color:var(--o)" onclick="selectInquirySupplier(${d.id},${s.id})">✅选中下单</button>`:''}</td></tr>`;
     });

@@ -321,6 +321,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT, inquiry_id INTEGER NOT NULL, supplier_name TEXT NOT NULL,
             contact TEXT, phone TEXT, token TEXT UNIQUE NOT NULL,
             quote_price REAL DEFAULT 0, quote_remark TEXT, quote_time TEXT,
+            quote_delivery TEXT DEFAULT '', quote_warranty TEXT DEFAULT '',
             is_selected INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now','localtime')));
     """)
     conn.commit()
@@ -3536,14 +3537,22 @@ def inquiry_vendor_page(token):
                 '<th style="padding:6px 8px;text-align:left">规格</th><th style="padding:6px 8px;text-align:left">数量</th>'
                 '<th style="padding:6px 8px;text-align:left">参考金额</th></tr>%s</table>'
                 '<div style="margin-bottom:12px"><label style="font-size:12px;color:#555;display:block;margin-bottom:4px">报价总金额（元，含税）</label>'
-                '<input id="qp" type="number" min="0" step="0.01" placeholder="请输入报价金额" style="width:100%%;box-sizing:border-box;padding:10px 12px;border:1px solid #d0d7e2;border-radius:8px;font-size:15px"></div>'
-                '<div style="margin-bottom:16px"><label style="font-size:12px;color:#555;display:block;margin-bottom:4px">备注（交期/质保等）</label>'
-                '<textarea id="qr" rows="2" placeholder="选填" style="width:100%%;box-sizing:border-box;padding:8px 12px;border:1px solid #d0d7e2;border-radius:8px;font-size:13px"></textarea></div>'
-                '<button onclick="sub()" style="width:100%%;padding:12px;background:#1f6feb;color:#fff;border:none;border-radius:8px;font-size:15px;cursor:pointer">提交报价</button>'
+                '<input id="qp" type="number" min="0" step="0.01" placeholder="请输入报价金额" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #d0d7e2;border-radius:8px;font-size:15px"></div>'
+                '<div style="margin-bottom:12px"><label style="font-size:12px;color:#555;display:block;margin-bottom:4px">交付日期（收到货款后几天内交货）*</label>'
+                '<select id="qd" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #d0d7e2;border-radius:8px;font-size:14px">'
+                '<option value="">请选择交付日期</option><option>3天</option><option>7天</option><option>15天</option><option>30天</option><option>45天</option><option>60天</option><option>90天</option><option>120天</option></select></div>'
+                '<div style="margin-bottom:12px"><label style="font-size:12px;color:#555;display:block;margin-bottom:4px">质保时间 *</label>'
+                '<select id="qw" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #d0d7e2;border-radius:8px;font-size:14px">'
+                '<option value="">请选择质保时间</option><option>3个月</option><option>6个月</option><option>12个月</option><option>24个月</option><option>36个月</option><option>无质保</option></select></div>'
+                '<div style="margin-bottom:16px"><label style="font-size:12px;color:#555;display:block;margin-bottom:4px">备注（选填）</label>'
+                '<textarea id="qr" rows="2" placeholder="其他说明，选填" style="width:100%;box-sizing:border-box;padding:8px 12px;border:1px solid #d0d7e2;border-radius:8px;font-size:13px"></textarea></div>'
+                '<button onclick="sub()" style="width:100%;padding:12px;background:#1f6feb;color:#fff;border:none;border-radius:8px;font-size:15px;cursor:pointer">提交报价</button>'
                 '<div id="msg" style="margin-top:10px;font-size:13px;color:#27ae60;text-align:center"></div>'
                 '<script>async function sub(){const p=parseFloat(document.getElementById("qp").value);if(!(p>0)){alert("请填写有效报价金额");return}'
+                'const qd=document.getElementById("qd").value;if(!qd){alert("请选择交付日期");return}'
+                'const qw=document.getElementById("qw").value;if(!qw){alert("请选择质保时间");return}'
                 'const r=await fetch("%s",{method:"POST",headers:{"Content-Type":"application/json"},'
-                'body:JSON.stringify({quote_price:p,quote_remark:document.getElementById("qr").value})});'
+                'body:JSON.stringify({quote_price:p,quote_remark:document.getElementById("qr").value,quote_delivery:qd,quote_warranty:qw})});'
                 'const j=await r.json();if(j.success){document.getElementById("msg").textContent="✅ 报价提交成功";setTimeout(()=>location.reload(),800)}'
                 'else{alert(j.error||"提交失败")}}</script></div>') % (
                     esc_html(s['supplier_name']), esc_html(pr['purpose'] if pr else ''), esc_html(i['inq_no']),
@@ -3564,8 +3573,8 @@ def inquiry_vendor_quote(token):
     i = conn.execute("SELECT * FROM inquiries WHERE id=?", (s['inquiry_id'],)).fetchone()
     if not i or i['status'] != '询价中':
         conn.close(); return jsonify({'error': '该询价已结束，无法报价'}), 400
-    conn.execute("UPDATE inquiry_suppliers SET quote_price=?, quote_remark=?, quote_time=? WHERE id=?",
-                 (price, (d.get('quote_remark') or '')[:200], now(), s['id']))
+    conn.execute("UPDATE inquiry_suppliers SET quote_price=?, quote_remark=?, quote_delivery=?, quote_warranty=?, quote_time=? WHERE id=?",
+                 (price, (d.get('quote_remark') or '')[:200], (d.get('quote_delivery') or '')[:20], (d.get('quote_warranty') or '')[:20], now(), s['id']))
     conn.commit(); conn.close()
     return jsonify({'success': True})
 
@@ -3611,13 +3620,20 @@ def api_inquiry_select(iid):
     contact = (s['contact'] or '').strip()
     phone = (s['phone'] or '').strip()
     quote_remark = (s['quote_remark'] or '').strip()
+    quote_delivery = (s['quote_delivery'] or '').strip()
+    quote_warranty = (s['quote_warranty'] or '').strip()
     detail_parts = ['三方询价选中: %s 报价¥%.2f' % (s['supplier_name'], total)]
     if contact:
         detail_parts.append('联系人: %s' % contact)
     if phone:
         detail_parts.append('电话: %s' % phone)
+    # V11.13: 交付日期/质保时间单独展示(不混在备注里)
+    if quote_delivery:
+        detail_parts.append('交付日期: %s' % quote_delivery)
+    if quote_warranty:
+        detail_parts.append('质保时间: %s' % quote_warranty)
     if quote_remark:
-        detail_parts.append('交期/备注: %s' % quote_remark)
+        detail_parts.append('备注: %s' % quote_remark)
     detail_parts.append('询价单号: %s' % i['inq_no'])
     remark = '; '.join(detail_parts)
     # 交易模式: 优先取商家报价备注中的模式词, 否则默认货到付款
@@ -3693,16 +3709,16 @@ def api_inquiry_export(iid):
         ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=3)
         c = ws.cell(row, 2, left_v); c.font = base_font; c.alignment = wrap
         ws.cell(row, 4, right_k).font = label_font
-        ws.merge_cells(start_row=row, start_column=5, end_row=row, end_column=8)
+        ws.merge_cells(start_row=row, start_column=5, end_row=row, end_column=10)
         c = ws.cell(row, 5, right_v); c.font = base_font; c.alignment = wrap
-        for col in range(1, 9):
+        for col in range(1, 11):
             ws.cell(row, col).border = border
         row += 1
 
     row += 1
-    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=8)
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=10)
     ws.cell(row, 1, '一、询价物料 / 服务明细').font = head_font
-    for col in range(1, 9):
+    for col in range(1, 11):
         ws.cell(row, col).fill = head_fill; ws.cell(row, col).border = border
     row += 1
     item_head = ['序号', '物料名称', '规格型号', '单位', '数量', '参考单价(元)', '参考金额(元)', '用途/备注']
@@ -3724,16 +3740,16 @@ def api_inquiry_export(iid):
         row += 1
     ws.cell(row, 6, '参考合计').font = label_font
     ws.cell(row, 7, round(total_ref, 2)).font = label_font
-    for col in range(1, 9):
+    for col in range(1, 11):
         ws.cell(row, col).border = border
 
     row += 2
-    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=8)
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=10)
     ws.cell(row, 1, '二、供应商报价与比价对比表').font = head_font
-    for col in range(1, 9):
+    for col in range(1, 11):
         ws.cell(row, col).fill = head_fill; ws.cell(row, col).border = border
     row += 1
-    sup_head = ['序号', '供应商名称', '联系人/电话', '报价总金额(元)', '报价时间', '是否最低价', '备注(交期/质保等)', '选中状态']
+    sup_head = ['序号', '供应商名称', '联系人/电话', '报价总金额(元)', '交付日期', '质保时间', '备注', '报价时间', '是否最低价', '选中状态']
     for ci, h in enumerate(sup_head, 1):
         c = ws.cell(row, ci, h); c.font = head_font; c.fill = head_fill; c.border = border
         c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
@@ -3745,9 +3761,9 @@ def api_inquiry_export(iid):
     for idx, s in enumerate(sups, 1):
         is_min = (s['quote_price'] and s['quote_price'] > 0 and s['quote_price'] == min_price)
         vals = [idx, s['supplier_name'] or '', (s['contact'] or '') + (' ' + (s['phone'] or '') if s['phone'] else ''),
-                (s['quote_price'] or 0), s['quote_time'] or '未报价',
-                '★ 最低价' if is_min else '', s['quote_remark'] or '',
-                '✅ 已选中' if s['is_selected'] else '未选中']
+                (s['quote_price'] or 0), s['quote_delivery'] or '', s['quote_warranty'] or '', s['quote_remark'] or '',
+                s['quote_time'] or '未报价',
+                '★ 最低价' if is_min else '', '✅ 已选中' if s['is_selected'] else '未选中']
         for ci, v in enumerate(vals, 1):
             c = ws.cell(row, ci, v)
             c.border = border
@@ -3761,17 +3777,17 @@ def api_inquiry_export(iid):
                 c.font = base_font
         row += 1
     if not sups:
-        for ci in range(1, 9):
+        for ci in range(1, 11):
             ws.cell(row, ci, '（暂无供应商）').border = border
         row += 1
 
     row += 1
-    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=8)
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=10)
     ws.cell(row, 1, '三、采购决策备注').font = head_font
-    for col in range(1, 9):
+    for col in range(1, 11):
         ws.cell(row, col).fill = head_fill; ws.cell(row, col).border = border
     row += 1
-    ws.merge_cells(start_row=row, start_column=1, end_row=row + 3, end_column=8)
+    ws.merge_cells(start_row=row, start_column=1, end_row=row + 3, end_column=10)
     decision = ('本批次采购经过多方询价、比价与供应商综合考察，最终选择本供应商为合作方。')
     selected = next((s for s in sups if s['is_selected']), None)
     if selected:
@@ -3782,7 +3798,7 @@ def api_inquiry_export(iid):
     c = ws.cell(row, 1, decision)
     c.font = base_font; c.alignment = Alignment(vertical='top', wrap_text=True)
     for r2 in range(row, row + 4):
-        for col in range(1, 9):
+        for col in range(1, 11):
             ws.cell(r2, col).border = border
     row += 5
     ws.cell(row, 1, '编制人：').font = note_font
@@ -4010,6 +4026,15 @@ def do_requisition_stock(c, rid, warehouse='主库房', operator='系统'):
     return total_q
 
 
+def _op_name():
+    """V11.12: 取操作人 — 后台线程(审批轮询/回调)无HTTP请求上下文, flask session 会抛异常; 有请求时返回登录用户, 否则返回'系统'"""
+    try:
+        from flask import session as _s
+        return _s.get('user_name', '系统')
+    except Exception:
+        return '系统'
+
+
 def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty_override=None):
     """V5.0: 入库审批通过后执行 — 增加库存 + 写流水(幂等: 已有该单据入库流水则跳过)"""
     rn = c.execute("SELECT * FROM receivings WHERE id=?", (rid,)).fetchone()
@@ -4056,7 +4081,7 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
                 new_bal = q
             c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                       (it['item_name'], it.get('spec','') or '', it.get('unit','个') or '个', '入库', 'receiving', rid, rn['receive_no'], q, new_bal,
-                       session.get('user_name','系统'), f'入库单{rn["receive_no"]}审批通过', now()))
+                       _op_name(), f'入库单{rn["receive_no"]}审批通过', now()))
     elif oi:
         _po = c.execute("SELECT category, trade_mode, supplier FROM purchase_orders WHERE id=?", (rn['order_id'],)).fetchone()
         _po_sup = (_po['supplier'] or '') if _po else ''
@@ -4093,7 +4118,7 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
                 new_bal = q
             c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                       (it['item_name'], it['spec'] or '', it['unit'] or '个', '入库', 'receiving', rid, rn['receive_no'], q, new_bal,
-                       session.get('user_name','系统'), f'入库单{rn["receive_no"]}审批通过', now()))
+                       _op_name(), f'入库单{rn["receive_no"]}审批通过', now()))
     else:
         q = float(rn['quantity'] or 0)
         total_q = q
@@ -4122,7 +4147,7 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
             new_bal = q
         c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                   (rn['item_name'], rn['spec'] or '', rn['unit'] or '个', '入库', 'receiving', rid, rn['receive_no'], q, new_bal,
-                   session.get('user_name','系统'), f'入库单{rn["receive_no"]}审批通过', now()))
+                   _op_name(), f'入库单{rn["receive_no"]}审批通过', now()))
     c.execute("UPDATE receivings SET status='已入库',completed_at=?,warehouse=?,inspector=? WHERE id=?",
               (now(), warehouse, inspector or '管理员', rid))
     if rn['order_id']:
