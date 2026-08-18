@@ -1482,13 +1482,37 @@ def dt_build_form(biz_type, biz_id, info):
         if r:
             detail = dt_build_detail(biz_type, r, c)
             if biz_type == 'purchase_request':
+                # V11.15: 申请模板控件=部门/采购类别/采购事由/交付日期/备注/附件
                 cat = dt_cat_option(r['budget_code'] or r['dept'] or '')
                 purpose = str(r['purpose'] or '')[:200]
                 target = str(r['target_date'] or today)[:10]
+                form = [
+                    {'name': '部门', 'value': '[1]'},
+                    {'name': '采购类别', 'value': cat},
+                    {'name': '采购事由', 'value': purpose},
+                    {'name': '交付日期', 'value': target},
+                    {'name': '备注', 'value': detail[:1900]},
+                ]
+                attach = dt_build_attachment(biz_type, r, c)
+                if attach:
+                    form.append({'name': '附件', 'value': json.dumps(attach, ensure_ascii=False)})
+                c.close()
+                return form
             elif biz_type == 'contract':
-                cat = dt_cat_option(r['contract_name'] or '')
-                purpose = f"合同 {r['contract_no']} {r['contract_name'] or ''}"[:200]
-                target = str(r['end_date'] or r['start_date'] or today)[:10]
+                # V11.15: 合同模板控件=合同编号/对方单位名称/合同总额（元）/图片/备注/附件(全角括号实测)
+                _amt = float(r['amount'] or 0)
+                form = [
+                    {'name': '合同编号', 'value': r['contract_no'] or ''},
+                    {'name': '对方单位名称', 'value': r['contract_name'] or ''},
+                    {'name': '合同总额（元）', 'value': '%.2f' % _amt},
+                    {'name': '图片', 'value': '[]'},
+                    {'name': '备注', 'value': detail[:1900]},
+                ]
+                attach = dt_build_attachment(biz_type, r, c)
+                if attach:
+                    form.append({'name': '附件', 'value': json.dumps(attach, ensure_ascii=False)})
+                c.close()
+                return form
             elif biz_type == 'receiving':
                 # V11.14: 入库模板控件=入库日期/备注/附件(表格控件"入库明细"格式无法兼容, 明细走备注文本)
                 rdetail = dt_build_detail('receiving', r, c)
@@ -1514,9 +1538,18 @@ def dt_build_form(biz_type, biz_id, info):
                 c.close()
                 return form
             elif biz_type == 'payment':
-                cat = dt_cat_option(r['payment_reason'] or r['supplier'] or '')
-                purpose = f"付款 {r['payment_no']} {r['payment_reason'] or ''}"[:200]
-                target = str(r['expect_pay_date'] or today)[:10]
+                # V11.15: 付款模板控件=单据编号/内容摘要/金额(元)/申请人
+                form = [
+                    {'name': '单据编号', 'value': r['payment_no'] or ''},
+                    {'name': '内容摘要', 'value': detail[:1900]},
+                    {'name': '金额(元)', 'value': '%.2f' % float(r['amount'] or 0)},
+                    {'name': '申请人', 'value': r['payee_name'] or r['requester'] or '系统'},
+                ]
+                attach = dt_build_attachment(biz_type, r, c)
+                if attach:
+                    form.append({'name': '附件', 'value': json.dumps(attach, ensure_ascii=False)})
+                c.close()
+                return form
             else:  # purchase_order — V11.10b: 订单模板控件=标题/部门(选项类)/销售方式/订单图片/备注/附件
                 cat = dt_cat_option(r['category'] or r['item_name'] or '')
                 purpose = f"订单 {r['order_no']} {r['item_name'] or ''}"[:200]
