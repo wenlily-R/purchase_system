@@ -1212,10 +1212,10 @@ def fs_send_reminders(force=False):
     c.commit(); c.close()
 
 def dt_poll_loop():
-    """钉钉审批结果即时同步线程: 每15秒轮询一次(替代原来60s调度内的低频轮询)"""
+    """钉钉审批结果即时同步线程: 每60秒轮询一次(V11.28: 15s→60s, API消耗降75%)"""
     while True:
         try:
-            time.sleep(15)
+            time.sleep(60)
             if dingtalk_enabled():
                 dt_poll_results()
                 dt_retry_failed_instances()
@@ -2123,6 +2123,40 @@ def dt_sync_result(instance_id, result, comment=''):
         c2.commit(); c2.close()
         log('钉钉', '审批意见回写', f"{r['biz_type']}#{r['biz_id']}: {str(comment)[:100]}")
     finish_approvals(r['biz_type'], r['biz_id'], 'ok' if result == 'agree' else 'reject', '钉钉', 0, comment or f'钉钉审批{result}')
+    # V11.28: 审批结果即时通知申请人(钉钉工作通知, 一次审批一次调用, 消耗可忽略)
+    try:
+        if dingtalk_enabled():
+            _b = biz_table(r['biz_type'])
+            _c = db()
+            try:
+                _row = _c.execute(f"SELECT * FROM {_b} WHERE id=?", (r['biz_id'],)).fetchone()
+            except Exception:
+                _row = None
+            _c.close()
+            if _row is not None:
+                _doc_no = ''
+                for _k in ('req_no', 'order_no', 'contract_no', 'receive_no', 'payment_no'):
+                    if _k in _row.keys() and _row[_k]:
+                        _doc_no = str(_row[_k]); break
+                _requester = None
+                for _k in ('requester', 'created_by', 'apply_by'):
+                    if _k in _row.keys() and _row[_k]:
+                        _requester = str(_row[_k]); break
+                if _requester:
+                    _u = db()
+                    try:
+                        _usr = _u.execute("SELECT * FROM users WHERE name=? LIMIT 1", (_requester,)).fetchone()
+                    except Exception:
+                        _usr = None
+                    _u.close()
+                    if _usr and _usr['dingtalk_userid']:
+                        _verdict = '已通过 ✅' if result == 'agree' else '未通过 ❌'
+                        dt_send_todo([_usr['dingtalk_userid']], f'审批结果通知：{_doc_no}',
+                                     f"您提交的{_doc_no} 经钉钉审批 **{_verdict}**",
+                                     biz_type=r['biz_type'], biz_id=r['biz_id'], push_type='auto',
+                                     operator='系统')
+    except Exception:
+        pass
 
 
 # ---- 审批结果轮询兜底(不依赖事件回调; corpId 缺失时也能同步结果) ----
@@ -2138,10 +2172,12 @@ def dt_query_instance(instance_id):
 
 
 def dt_poll_results():
-    """遍历 dingtalk_instances 中 pending 状态实例, 查询钉钉侧结果并回写系统"""
+    """遍历 dingtalk_instances 中 pending 状态实例, 查询钉钉侧结果并回写系统
+    V11.28: 只查最近7天内活跃的pending实例(老实例不查, API消耗大降)"""
     try:
         c = db()
-        rows = c.execute("SELECT * FROM dingtalk_instances WHERE status='pending'").fetchall()
+        rows = c.execute("""SELECT * FROM dingtalk_instances WHERE status='pending'
+            AND updated_at >= datetime('now','localtime','-7 days')""").fetchall()
         c.close()
         n = 0
         for r in rows:
