@@ -913,10 +913,19 @@ function alertRow(a){
   const lv=a.level=='red'?'red':a.level=='orange'?'orange':'green';
   const col=lv=='red'?'#e74c3c':lv=='orange'?'#f39c12':'#27ae60';
   const jump=(a.biz_type&&a.biz_id)?` onclick="jumpAlert('${a.biz_type}',${a.biz_id})" style="cursor:pointer"`:``;
+  // V11.33: 库存缺货预警 → 一键补货按钮
+  const replenish=(a.biz_type=='inventory'&&a.alert_type.includes('缺货')&&a.biz_id)?` <button class="btn btn-p btn-sm" style="padding:1px 8px;font-size:9px" onclick="event.stopPropagation();replenishInv(${a.biz_id})">🛒 一键补货</button>`:'';
   return `<div ${jump} class="v9-alert ${lv}" title="点击直达对应单据">
     <span style="font-weight:700;white-space:nowrap">${lv=='red'?'🔴':lv=='orange'?'🟡':'🟢'}${esc(a.alert_type)}</span>
-    <span style="flex:1">${esc(a.title)} — ${esc(a.content)}</span>
+    <span style="flex:1">${esc(a.title)} — ${esc(a.content)}</span>${replenish}
     <span class="close" onclick="event.stopPropagation();processAlert(${a.id})" title="标记已处理">✕</span></div>`;
+}
+// V11.33: 库存一键补货 — 生成采购申请(补到安全线)
+async function replenishInv(iid){
+  if(!confirm('确认一键补货？将自动生成采购申请(补到安全库存线)并提交审批'))return;
+  const r=await api(`/inventory/${iid}/replenish`,{method:'POST',body:'{}'});
+  if(r.success){alert(`✅ 补货申请 ${r.req_no} 已生成(补${r.qty}个)，已进入审批流程`);loadDashboard()}
+  else alert(r.error||'补货失败');
 }
 async function processAlert(id){
   const r=await api(`/alerts/${id}/process`,{method:'POST',body:JSON.stringify({})});
@@ -1910,7 +1919,7 @@ async function loadInventory(cat){
     if(showP)h+=`<td>¥${(r.price||0).toFixed(2)}</td><td>${r.tax_rate||13}%</td><td>¥${(r.price_taxed||0).toFixed(2)}</td><td>¥${(r.total_taxed||0).toFixed(2)}</td>`;
     h+=`<td>${esc(r.remark||'')}</td>
       <td>${low?'<span class="tag" style="background:#e74c3c;color:#fff">'+((r.quantity||0)<=0?'缺货':'预警')+'</span>':over?'<span class="tag" style="background:#f39c12;color:#fff">超储</span>':'<span class="tag" style="background:#27ae60;color:#fff">正常</span>'}</td>
-      <td><button class="lnk" style="color:#b08900" onclick="editDoc('inventory',${r.id},'库存物资')">✏️修改</button> <button class="lnk" style="color:var(--s)" onclick="traceInv(${r.id})">🔍 溯源</button></td></tr>`;
+      <td>${low?`<button class="lnk" style="color:var(--p);font-weight:600" onclick="replenishInv(${r.id})">🛒 补货</button>`:''} <button class="lnk" style="color:#b08900" onclick="editDoc('inventory',${r.id},'库存物资')">✏️修改</button> <button class="lnk" style="color:var(--s)" onclick="traceInv(${r.id})">🔍 溯源</button></td></tr>`;
   });
   id('inventoryTable').innerHTML=h||'<div style="padding:8px;color:#999">暂无库存数据</div>';
 }

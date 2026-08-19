@@ -3268,6 +3268,47 @@ def api_create_prequest():
     log(session['user_name'], '创建采购申请', f'{no} 共{len(items)}项 ¥{total:.0f}')
     return jsonify({'success':True, 'req_no':no, 'id':prid})
 
+@app.route('/api/inventory/<int:iid>/replenish', methods=['POST'])
+@login_required
+def api_inventory_replenish(iid):
+    """V11.33: 库存预警一键补货 — 低于安全库存的物资自动生成采购申请(补到安全线)"""
+    conn = db()
+    inv = conn.execute("SELECT * FROM inventory WHERE id=?", (iid,)).fetchone()
+    if not inv:
+        conn.close(); return jsonify({'error': '库存物资不存在'}), 404
+    qty = float(inv['quantity'] or 0); safe = float(inv['safe_stock'] or 0)
+    if safe <= 0 or qty >= safe:
+        conn.close(); return jsonify({'error': '该物资未设置安全库存或未低于安全线'}), 400
+    buy_qty = safe - qty  # 补到安全线
+    price = float(inv['price'] or 0)
+    est = buy_qty * price
+    no = ''
+    for _try in range(5):
+        no = gen_req_no(conn)
+        try:
+            conn.execute("""INSERT INTO purchase_requests(req_no,dept,requester,requester_id,budget_code,purpose,target_date,total_estimated,remark,urgent,apply_date)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                (no, '采购与供应链部', session['user_name'], session['user_id'], '',
+                 f'库存补货: {inv["item_name"]}', datetime.date.today().strftime('%Y-%m-%d'), est,
+                 f'自动补货(库存不足): 当前{inv["quantity"]:g}{inv["unit"]}, 安全线{safe:g}{inv["unit"]}, 补货{buy_qty:g}{inv["unit"]}', 0,
+                 datetime.date.today().strftime('%Y-%m-%d')))
+            break
+        except sqlite3.IntegrityError:
+            continue
+    else:
+        conn.close(); return jsonify({'error': '单号生成冲突，请重试'}), 500
+    prid = conn.execute("SELECT id FROM purchase_requests WHERE req_no=?", (no,)).fetchone()[0]
+    conn.execute("INSERT INTO request_items(req_id,item_name,spec,unit,quantity,estimated_price,total_price,remark,category,brand_param,arrival_date) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                 (prid, inv['item_name'], inv['spec'] or '', inv['unit'] or '个', buy_qty, price, est,
+                  '库存自动补货', inv['cat_code'] or '', '', ''))
+    conn.commit()
+    create_approvals('purchase_request', prid, est)
+    try: start_instances('purchase_request', prid)
+    except Exception: pass
+    conn.close()
+    log(session['user_name'], '库存一键补货', f'{no} {inv["item_name"]} x{buy_qty:g} 自动补货')
+    return jsonify({'success': True, 'req_no': no, 'id': prid, 'qty': buy_qty})
+
 @app.route('/api/prequests/<int:rid>/reject', methods=['POST'])
 @login_required
 def api_reject_prequest(rid):
