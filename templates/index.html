@@ -1248,9 +1248,14 @@ async function showInquiryForm(){
   if(!el.length){alert('暂无可询价的申请：需要「已通过审批且尚未下单」的采购申请');return}
   const opts=el.map(x=>`<option value="${x.id}">${esc(x.req_no)}｜${esc(x.purpose||'')}（${x.item_count||0}项，参考¥${(x.item_total||0).toFixed(0)}）</option>`).join('');
   IQ_SUPS=0;
+  // V11.24: 报价截止日期选项(默认7天)
+  const dlOpts=(()=>{const d=new Date(),arr=[];const days=[3,7,15,30];const fmt=x=>x.toISOString().slice(0,10);
+    for(const n of days){const t=new Date(d);t.setDate(t.getDate()+n);arr.push(`<option value="${fmt(t)}"${n==7?' selected':''}>${n}天后（${fmt(t)}）</option>`)}return arr.join('')})();
   showDetail('🔍 发起三方询价',
     `<div style="font-size:11px;margin-bottom:8px">选择已通过审批的采购申请，添加 <b>至少 3 家</b> 供应商，每家将生成专属免登录报价链接。</div>
     <div style="margin-bottom:8px"><select id="iqReq" style="width:100%;padding:6px;border:1px solid var(--b);border-radius:4px;font-size:11px">${opts}</select></div>
+    <div style="margin-bottom:8px"><label style="font-size:10px;color:#666;display:block;margin-bottom:3px">⏰ 报价截止日期（到期自动截止，商家无法再报价）</label>
+    <select id="iqDeadline" style="width:100%;padding:6px;border:1px solid var(--b);border-radius:4px;font-size:11px">${dlOpts}</select></div>
     <div id="iqSups"></div>
     <button class="btn btn-o btn-sm" onclick="addIqSup()">+ 添加供应商</button>
     <span style="font-size:10px;color:#999;margin-left:6px" id="iqSupTip">已添加 0/至少3 家</span>`,
@@ -1277,14 +1282,14 @@ async function createInquiry(){
   }
   if(!req_id){alert('请选择采购申请');return}
   if(suppliers.length<3){alert('询价供应商需选择3家及以上，方可发起询价');return}
-  const r=await api('/inquiries',{method:'POST',body:JSON.stringify({req_id,suppliers})});
+  const r=await api('/inquiries',{method:'POST',body:JSON.stringify({req_id,suppliers,deadline:id('iqDeadline')?.value||''})});
   if(r.success){alert(`✅ 询价单 ${r.inq_no} 已发起，请将报价链接发给各供应商`);closeMod();loadInquiries()}
   else alert(r.error||'发起失败');
 }
 async function showInquiry(id){
   const d=await api(`/inquiries/${id}`);
   const r=d.request||{};
-  let h=`<div class="c2"><div><dt>询价单号</dt><dd><b>${esc(d.inq_no)}</b></dd><dt>申请单号</dt><dd>${esc(r.req_no||('#'+d.req_id))}</dd><dt>部门</dt><dd>${esc(r.dept||'')}</dd><dt>状态</dt><dd>${tag(d.status)}</dd></div>
+  let h=`<div class="c2"><div><dt>询价单号</dt><dd><b>${esc(d.inq_no)}</b></dd><dt>申请单号</dt><dd>${esc(r.req_no||('#'+d.req_id))}</dd><dt>部门</dt><dd>${esc(r.dept||'')}</dd><dt>状态</dt><dd>${tag(d.status)}${d.deadline?` <span style="font-size:9px;color:${d.deadline<new Date().toISOString().slice(0,10)?'#c0392b':'#b08900'}">⏰截止${esc(d.deadline)}${d.deadline<new Date().toISOString().slice(0,10)?' 已截止':''}</span>`:''}</dd></div>
     <div><dt>采购事由</dt><dd>${esc(d.purpose||'')}</dd><dt>发起人</dt><dd>${esc(d.created_by||'')}</dd><dt>发起时间</dt><dd>${esc(d.created_at||'')}</dd></div></div>`;
   if(d.items&&d.items.length){
     h+=`<h4 style="font-size:10px;margin:6px 0 3px">📋 采购明细（${d.items.length}项）</h4><div style="font-size:9px">${d.items.map(i=>`<div style="padding:2px 0;border-bottom:1px solid var(--b)">${esc(i.item_name)} ${esc(i.spec||'')} x${i.quantity}${esc(i.unit||'')}（参考¥${(i.total_price||0).toFixed(0)}）</div>`).join('')}</div>`;

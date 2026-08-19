@@ -316,7 +316,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS inquiries (
             id INTEGER PRIMARY KEY AUTOINCREMENT, inq_no TEXT UNIQUE NOT NULL, req_id INTEGER NOT NULL,
             title TEXT, purpose TEXT, status TEXT DEFAULT '询价中', selected_supplier_id INTEGER DEFAULT 0,
-            created_by TEXT, created_at TEXT DEFAULT (datetime('now','localtime')), updated_at TEXT DEFAULT (datetime('now','localtime')));
+            deadline TEXT DEFAULT '', created_by TEXT, created_at TEXT DEFAULT (datetime('now','localtime')), updated_at TEXT DEFAULT (datetime('now','localtime')));
         CREATE TABLE IF NOT EXISTS inquiry_suppliers (
             id INTEGER PRIMARY KEY AUTOINCREMENT, inquiry_id INTEGER NOT NULL, supplier_name TEXT NOT NULL,
             contact TEXT, phone TEXT, token TEXT UNIQUE NOT NULL,
@@ -3544,8 +3544,16 @@ def api_create_inquiry():
         conn.close(); return jsonify({'error': '该申请已下单，无需询价'}), 400
     no = gen_no('XJ', 'inquiries', 'inq_no', conn)
     title = (pr['purpose'] or '')[:80]
-    conn.execute("INSERT INTO inquiries(inq_no,req_id,title,purpose,status,created_by) VALUES(?,?,?,?,?,?)",
-                 (no, req_id, title, pr['purpose'], '询价中', session['user_name']))
+    # V11.24: 报价截止时间 — 前端传 deadline(YYYY-MM-DD), 不传默认7天后
+    import datetime as _dt
+    try:
+        dl = (d.get('deadline') or '').strip()
+        _dl = _dt.datetime.strptime(dl, '%Y-%m-%d') if dl else (_dt.date.today() + _dt.timedelta(days=7))
+        deadline = _dl.strftime('%Y-%m-%d')
+    except Exception:
+        deadline = (_dt.date.today() + _dt.timedelta(days=7)).strftime('%Y-%m-%d')
+    conn.execute("INSERT INTO inquiries(inq_no,req_id,title,purpose,status,deadline,created_by) VALUES(?,?,?,?,?,?,?)",
+                 (no, req_id, title, pr['purpose'], '询价中', deadline, session['user_name']))
     iid = conn.execute("SELECT id FROM inquiries WHERE inq_no=?", (no,)).fetchone()[0]
     for s in suppliers[:3]:
         name = (s.get('name') or '').strip()
@@ -3579,6 +3587,9 @@ def api_inquiry_detail(iid):
 @app.route('/inq/<token>')
 def inquiry_vendor_page(token):
     """商家免登录报价页(无需登录, 链接发供应商)"""
+    def _today_str():
+        import datetime as _d
+        return _d.date.today().strftime('%Y-%m-%d')
     conn = db()
     s = conn.execute("SELECT * FROM inquiry_suppliers WHERE token=?", (token,)).fetchone()
     if not s:
@@ -3601,10 +3612,22 @@ def inquiry_vendor_page(token):
                 '<a href="%s" style="color:#1f6feb;font-size:13px">← 返回查看/修改报价</a></div>') % (
                     esc_html(s['supplier_name']), s['quote_price'], request.url)
     else:
+        # V11.24: 截止时间状态
+        _deadline = (i['deadline'] or '') if i else ''
+        _dl_txt = ''
+        _dl_hint = ''
+        if _deadline:
+            _dl_txt = '<div style="background:%s;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px;border:1px solid %s"><b>⏰ 报价截止：%s</b>%s</div>' % (
+                '#fff3cd' if _deadline >= _today_str() else '#f8d7da',
+                '#ffeeba' if _deadline >= _today_str() else '#f5c6cb',
+                esc_html(_deadline),
+                '' if _deadline >= _today_str() else '<br><span style="color:#c0392b">⚠️ 该询价已截止，无法继续报价</span>')
+        else:
+            _dl_hint = ''
         body = ('<div style="max-width:520px;margin:60px auto;background:#fff;border-radius:12px;padding:32px;'
                 'box-shadow:0 4px 24px rgba(0,0,0,.08);font-family:-apple-system,Segoe UI,Microsoft YaHei,sans-serif">'
                 '<h2 style="margin:0 0 4px;color:#1f6feb">📋 采购询价单</h2>'
-                '<p style="color:#888;font-size:13px;margin:0 0 16px">尊敬的 %s，请对以下采购需求报价</p>'
+                '<p style="color:#888;font-size:13px;margin:0 0 16px">尊敬的 %s，请对以下采购需求报价</p>%s'
                 '<div style="background:#f5f8ff;border-radius:8px;padding:12px 16px;font-size:13px;margin-bottom:14px">'
                 '<b>%s</b><br><span style="color:#888">询价编号：%s</span></div>'
                 '<table style="width:100%%;border-collapse:collapse;font-size:13px;margin-bottom:14px">'
@@ -3630,7 +3653,7 @@ def inquiry_vendor_page(token):
                 'body:JSON.stringify({quote_price:p,quote_remark:document.getElementById("qr").value,quote_delivery:qd,quote_warranty:qw})});'
                 'const j=await r.json();if(j.success){document.getElementById("msg").textContent="✅ 报价提交成功";setTimeout(()=>location.reload(),800)}'
                 'else{alert(j.error||"提交失败")}}</script></div>') % (
-                    esc_html(s['supplier_name']), esc_html(pr['purpose'] if pr else ''), esc_html(i['inq_no']),
+                    esc_html(s['supplier_name']), _dl_txt, esc_html(pr['purpose'] if pr else ''), esc_html(i['inq_no']),
                     item_rows, '/api/inquiry/vendor/%s/quote' % token)
     return body
 
@@ -3648,6 +3671,12 @@ def inquiry_vendor_quote(token):
     i = conn.execute("SELECT * FROM inquiries WHERE id=?", (s['inquiry_id'],)).fetchone()
     if not i or i['status'] != '询价中':
         conn.close(); return jsonify({'error': '该询价已结束，无法报价'}), 400
+    # V11.24: 报价截止时间检查 — 超过截止日期拒绝报价
+    if i['deadline']:
+        import datetime as _dt
+        _today = _dt.date.today().strftime('%Y-%m-%d')
+        if _today > str(i['deadline']):
+            conn.close(); return jsonify({'error': '该询价已于 %s 截止，无法继续报价' % i['deadline']}), 400
     conn.execute("UPDATE inquiry_suppliers SET quote_price=?, quote_remark=?, quote_delivery=?, quote_warranty=?, quote_time=? WHERE id=?",
                  (price, (d.get('quote_remark') or '')[:200], (d.get('quote_delivery') or '')[:20], (d.get('quote_warranty') or '')[:20], now(), s['id']))
     conn.commit(); conn.close()
@@ -3665,6 +3694,11 @@ def api_inquiry_select(iid):
         conn.close(); return jsonify({'error': '询价单不存在'}), 404
     if i['status'] != '询价中':
         conn.close(); return jsonify({'error': '该询价已结束'}), 400
+    # V11.24: 截止后不允许再选中下单(已截止的询价只能比价查看)
+    if i['deadline']:
+        import datetime as _dt
+        if _dt.date.today().strftime('%Y-%m-%d') > str(i['deadline']):
+            conn.close(); return jsonify({'error': '该询价已于 %s 截止，如需下单请重新发起询价' % i['deadline']}), 400
     s = conn.execute("SELECT * FROM inquiry_suppliers WHERE id=? AND inquiry_id=?", (sid, iid)).fetchone()
     if not s:
         conn.close(); return jsonify({'error': '供应商不在该询价单中'}), 400
