@@ -3053,6 +3053,114 @@ def api_approve_action(biz_type, biz_id):
     return jsonify({'success':True})
 
 # ============================================================
+# V11.27 ── 预录签名(签名版): 领导手写一次, 审批通过的单据自动盖章
+# ============================================================
+@app.route('/api/signature/save', methods=['POST'])
+@login_required
+def api_signature_save():
+    """保存预录签名(dataURL PNG) → uploads/signatures/ → sys_config 记文件名"""
+    d = request.json
+    data_url = (d.get('dataUrl') or '')
+    name = (d.get('name') or '').strip()[:20] or session['user_name']
+    if not data_url.startswith('data:image/png'):
+        return jsonify({'error': '签名格式错误'}), 400
+    import base64
+    try:
+        raw = base64.b64decode(data_url.split(',')[1])
+    except Exception:
+        return jsonify({'error': '签名数据解码失败'}), 400
+    os.makedirs(os.path.join(BASE, 'uploads', 'signatures'), exist_ok=True)
+    fn = f'sig_{name}_{datetime.datetime.now().strftime("%Y%m%d%H%M%S")}.png'
+    with open(os.path.join(BASE, 'uploads', 'signatures', fn), 'wb') as f:
+        f.write(raw)
+    conn = db()
+    conn.execute("INSERT OR REPLACE INTO sys_config(key,value) VALUES('leader_signature',?)", (fn,))
+    conn.execute("INSERT OR REPLACE INTO sys_config(key,value) VALUES('leader_signature_name',?)", (name,))
+    conn.commit(); conn.close()
+    log(session['user_name'], '保存预录签名', name)
+    return jsonify({'success': True, 'file': fn})
+
+@app.route('/api/signature/info')
+@login_required
+def api_signature_info():
+    """返回预录签名状态(有无/名字/图片URL)"""
+    conn = db()
+    fn = conn.execute("SELECT value FROM sys_config WHERE key='leader_signature'").fetchone()
+    nm = conn.execute("SELECT value FROM sys_config WHERE key='leader_signature_name'").fetchone()
+    conn.close()
+    f = fn[0] if fn else ''
+    return jsonify({'has': bool(f), 'name': (nm[0] if nm else '') or '',
+                    'url': '/uploads/signatures/' + f if f else ''})
+
+@app.route('/api/signature/delete', methods=['POST'])
+@login_required
+def api_signature_delete():
+    """删除预录签名"""
+    conn = db()
+    fn = conn.execute("SELECT value FROM sys_config WHERE key='leader_signature'").fetchone()
+    if fn and fn[0]:
+        try:
+            p = os.path.join(BASE, 'uploads', 'signatures', fn[0])
+            if os.path.exists(p): os.remove(p)
+        except Exception: pass
+    conn.execute("DELETE FROM sys_config WHERE key IN ('leader_signature','leader_signature_name')")
+    conn.commit(); conn.close()
+    log(session['user_name'], '删除预录签名', '')
+    return jsonify({'success': True})
+
+def get_leader_sign():
+    """返回 (签名文件名, 签名人名字); 无则 ('','')"""
+    conn = db()
+    fn = conn.execute("SELECT value FROM sys_config WHERE key='leader_signature'").fetchone()
+    nm = conn.execute("SELECT value FROM sys_config WHERE key='leader_signature_name'").fetchone()
+    conn.close()
+    return ((fn[0] if fn else ''), (nm[0] if nm else '') or '')
+
+def stamp_leader_sign(ws, sign_row, biz_type='', biz_id=0):
+    """V11.27: 单据Excel盖章 — 若单据已审批通过且配置了预录签名, 在签字区盖签名图+说明
+    ws: openpyxl worksheet; sign_row: 签字区行号; 签名图插入到签字文本右侧空白区"""
+    try:
+        sign_fn, sign_name = get_leader_sign()
+        if not sign_fn:
+            return
+        # 判断单据是否已审批通过(有 approved 节点)
+        conn = db()
+        ok = conn.execute("SELECT COUNT(*) FROM approval_instances WHERE biz_type=? AND biz_id=? AND status='approved'",
+                          (biz_type, biz_id)).fetchone()[0] > 0
+        conn.close()
+        if not ok:
+            return
+        import openpyxl
+        from openpyxl.drawing.image import Image as XLImage
+        from openpyxl.styles import Font as XLFont
+        img_path = os.path.join(BASE, 'uploads', 'signatures', sign_fn)
+        if not os.path.exists(img_path):
+            return
+        img = XLImage(img_path)
+        img.width = 110; img.height = 48
+        # 放在签字区右侧空白处 (F列起)
+        anchor = ws.cell(row=sign_row, column=6).coordinate
+        img.anchor = anchor
+        ws.add_image(img)
+        # 签名说明小字 (自动找签字区下方第一个非合并单元格)
+        try:
+            from openpyxl.cell.cell import MergedCell
+            nr = sign_row + 1
+            note = None
+            while nr < sign_row + 20:
+                cc = ws.cell(row=nr, column=6)
+                if not isinstance(cc, MergedCell):
+                    note = cc; break
+                nr += 1
+            if note is not None:
+                note.value = '本单据经系统电子审批，签名由系统自动生成'
+                note.font = XLFont(name='宋体', size=7, color='999999')
+        except Exception:
+            pass
+    except Exception as e:
+        print('stamp_leader_sign err:', e)
+
+# ============================================================
 # ── PURCHASE REQUESTS (多行申请) ──
 # ============================================================
 @app.route('/api/prequests')
@@ -4382,6 +4490,8 @@ def api_receiving_download(rid):
     ws.cell(row=r, column=1).alignment = Alignment(horizontal='center')
     for j, w in enumerate([6, 18, 18, 10, 8, 12, 8, 12, 12, 20], 1):
         ws.column_dimensions[chr(64 + j)].width = w
+    # V11.27: 审批通过 → 盖章领导预录签名
+    stamp_leader_sign(ws, r - 1, 'receiving', rn['id'])
     ws.page_setup.orientation = 'landscape'
     ws.page_setup.fitToWidth = 1
     bio = io.BytesIO(); wb.save(bio); bio.seek(0)
@@ -4478,6 +4588,8 @@ def api_requisition_download(rid):
     ws.row_dimensions[r].height = 22
     for j, w in enumerate([6, 20, 20, 8, 10, 12, 14], 1):
         ws.column_dimensions[chr(64 + j)].width = w
+    # V11.27: 审批通过 → 盖章领导预录签名
+    stamp_leader_sign(ws, r, 'requisition', rq['id'])
     ws.page_setup.orientation = 'landscape'
     ws.page_setup.fitToWidth = 1
     bio = io.BytesIO(); wb.save(bio); bio.seek(0)
@@ -5867,6 +5979,8 @@ def api_prequest_download(rid):
     widths = [5.1, 10.9, 24.6, 12.1, 23.4, 5.2, 8.2, 17.2, 10.2, 7.3, 9.0, 14.0]
     for j, w in enumerate(widths, 1):
         ws.column_dimensions[chr(64 + j)].width = w
+    # V11.27: 审批通过 → 盖章领导预录签名
+    stamp_leader_sign(ws, sign1, 'purchase_request', rid)
     # ── 打印设置: A4 横向 ──
     ws.page_setup.orientation = 'landscape'
     ws.page_setup.paperSize = 9  # A4
@@ -6003,6 +6117,8 @@ def api_order_download(oid):
     widths = [6, 22, 18, 7, 9, 12, 8, 14]
     for j, w in enumerate(widths, 1):
         ws.column_dimensions[chr(64 + j)].width = w
+    # V11.27: 审批通过 → 盖章领导预录签名
+    stamp_leader_sign(ws, r, 'purchase_order', oid)
     ws.page_setup.orientation = 'landscape'
     ws.page_setup.paperSize = 9
     ws.page_setup.fitToWidth = 1

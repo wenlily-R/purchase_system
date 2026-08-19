@@ -496,6 +496,20 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
       <div id="cfgAuthBox" style="margin-top:6px"><div class="loading">加载中...</div></div>
     </div></div>
   <div class="card"><div class="ch"><h3>⑤ 系统操作日志</h3></div><div class="cb" id="sysLogBox"><div class="loading">加载中...</div></div></div>
+  <div class="card"><div class="ch"><h3>⑥ 预录签名（V11.27 审批盖章）</h3></div><div class="cb">
+    <div style="font-size:10px;color:#666;margin-bottom:6px">领导在下方手写签名保存后，<b>所有审批通过的单据</b>（申请/订单/入库/出库）下载打印时自动盖上此签名。签名仅供单据打印展示，法律效力以系统审批留痕为准。</div>
+    <div id="sigInfo" style="font-size:10px;margin-bottom:6px"></div>
+    <div style="position:relative;border:1px solid var(--b);border-radius:8px;margin-bottom:6px;background:#fafbfd">
+      <canvas id="sigPad2" width="560" height="160" style="width:100%;height:160px;display:block;cursor:crosshair"></canvas>
+      <div id="sigHint2" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:#c3cfdf;font-size:12px;pointer-events:none">✍️ 请在此处手写签名（鼠标/手指）</div>
+    </div>
+    <div style="display:flex;gap:4px;flex-wrap:wrap">
+      <button class="btn btn-p btn-sm" onclick="saveLeaderSig()">💾 保存签名</button>
+      <button class="btn btn-o btn-sm" onclick="clearSigPad2()">🧹 清空重写</button>
+      <button class="btn btn-o btn-sm" onclick="delLeaderSig()">🗑️ 删除签名</button>
+    </div>
+    <div id="sigMsg" style="font-size:10px;color:#27ae60;margin-top:4px"></div>
+  </div></div>
 </div>
 <div class="page" id="pfeishu">
   <h2>✈️ 飞书对接</h2>
@@ -1566,6 +1580,56 @@ function clearSign(){
   const cv=id('signPad');if(!cv||!SIGN_CTX)return;
   SIGN_CTX.fillStyle='#fff';SIGN_CTX.fillRect(0,0,cv.width,cv.height);
   id('signHint').style.display='';
+}
+// ── V11.27 预录签名(领导签名版) ──
+let SIG2_CTX=null,SIG2_DRAWING=false;
+function initSigPad2(){
+  const cv=id('sigPad2');if(!cv)return;
+  const ctx=cv.getContext('2d');
+  ctx.fillStyle='#fff';ctx.fillRect(0,0,cv.width,cv.height);
+  ctx.strokeStyle='#1a3a6b';ctx.lineWidth=2.2;ctx.lineCap='round';ctx.lineJoin='round';
+  SIG2_CTX=ctx;SIG2_DRAWING=false;
+  const pos=e=>{const r=cv.getBoundingClientRect();const t=e.touches&&e.touches[0]||e;return{x:(t.clientX-r.left)*(cv.width/r.width),y:(t.clientY-r.top)*(cv.height/r.height)}};
+  cv.onmousedown=e=>{SIG2_DRAWING=true;const p=pos(e);ctx.beginPath();ctx.moveTo(p.x,p.y);id('sigHint2').style.display='none'};
+  cv.onmousemove=e=>{if(!SIG2_DRAWING)return;const p=pos(e);ctx.lineTo(p.x,p.y);ctx.stroke()};
+  cv.onmouseup=()=>SIG2_DRAWING=false;cv.onmouseleave=()=>SIG2_DRAWING=false;
+  cv.ontouchstart=e=>{e.preventDefault();SIG2_DRAWING=true;const p=pos(e);ctx.beginPath();ctx.moveTo(p.x,p.y);id('sigHint2').style.display='none'};
+  cv.ontouchmove=e=>{e.preventDefault();if(!SIG2_DRAWING)return;const p=pos(e);ctx.lineTo(p.x,p.y);ctx.stroke()};
+  cv.ontouchend=()=>SIG2_DRAWING=false;
+}
+function clearSigPad2(){
+  const cv=id('sigPad2');if(!cv||!SIG2_CTX)return;
+  SIG2_CTX.fillStyle='#fff';SIG2_CTX.fillRect(0,0,cv.width,cv.height);
+  id('sigHint2').style.display='';
+}
+function loadSigInfo(){
+  api('/signature/info').then(r=>{
+    const box=id('sigInfo');if(!box)return;
+    if(r&&r.has){
+      box.innerHTML=`当前预录签名：<b style="color:var(--s)">${esc(r.name||'')}</b> <img src="${r.url}" style="height:30px;vertical-align:middle;border:1px solid #e3e9f2;border-radius:3px;background:#fff;margin-left:6px"> —— 审批通过的单据下载时将自动盖章`;
+      id('sigMsg').textContent='';
+    }else{
+      box.innerHTML=`<span style="color:#999">尚未保存预录签名。请在下方手写签名后点击「保存签名」。</span>`;
+    }
+  }).catch(()=>{});
+}
+async function saveLeaderSig(){
+  const cv=id('sigPad2');if(!cv||!SIG2_CTX){alert('请先在签名区书写');return}
+  // 检查是否写了字
+  const d=SIG2_CTX.getImageData(0,0,cv.width,cv.height).data;
+  let has=0;
+  for(let i=3;i<d.length;i+=4){if(d[i]>10){has++;if(has>300)break}}
+  if(has<300){alert('请先在签名区手写签名');return}
+  const dataUrl=cv.toDataURL('image/png');
+  const r=await api('/signature/save',{method:'POST',body:JSON.stringify({dataUrl,name:ME?.name||''})});
+  if(r.success){alert('✅ 预录签名已保存，审批通过的单据下载时将自动盖章');loadSigInfo()}
+  else alert(r.error||'保存失败');
+}
+async function delLeaderSig(){
+  if(!confirm('确认删除预录签名？删除后单据不再自动盖章'))return;
+  const r=await api('/signature/delete',{method:'POST',body:'{}'});
+  if(r.success){alert('已删除预录签名');loadSigInfo();clearSigPad2()}
+  else alert(r.error||'删除失败');
 }
 async function submitSign(bt,bid){
   const cv=id('signPad');if(!cv||!SIGN_CTX)return;
@@ -2751,6 +2815,8 @@ async function loadSystem(){
     if(id('writeLockChk'))id('writeLockChk').checked=(s.write_lock!='0');
   }catch(e){}
   loadTpls();loadSysLogs();loadSecUsers();loadConfigUsers();loadApprConfigCheck();loadApprovalFlowEdit();
+  // V11.27: 预录签名板初始化+状态加载
+  setTimeout(()=>{initSigPad2();loadSigInfo()},200);
 }
 async function loadApprConfigCheck(){
   // V5.0: 审批人配置检查 — 每级角色审批人是否有效/绑定通讯录
