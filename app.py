@@ -1631,6 +1631,8 @@ def dt_build_detail(biz_type, r, c):
         if r['remark']: lines['备注'] = r['remark']
     elif biz_type == 'receiving':
         lines['入库单号'] = r['receive_no']; lines['单据类型'] = '入库单'
+        # V11.29: 归属部门(钉钉审批也可见)
+        lines['归属部门'] = r['dept'] if 'dept' in r.keys() and r['dept'] else '-'
         lines['关联订单'] = r['order_no'] if 'order_no' in r.keys() and r['order_no'] else ('#' + str(r['order_id']) if r['order_id'] else '-')
         lines['供应商'] = r['supplier'] if 'supplier' in r.keys() and r['supplier'] else '-'
         lines['仓库'] = r['warehouse'] or '主库房'
@@ -4171,8 +4173,21 @@ def api_sign_delivery(did):
 @app.route('/api/receivings')
 @login_required
 def api_receivings():
-    conn = db(); rows = conn.execute("""SELECT r.*, po.trade_mode, po.order_no, po.supplier
-        FROM receivings r LEFT JOIN purchase_orders po ON r.order_id=po.id ORDER BY r.id DESC LIMIT 80""").fetchall()
+    # V11.29: 部门/类别筛选
+    f_dept = (request.args.get('dept') or '').strip()
+    f_cat = (request.args.get('cat') or '').strip()
+    conn = db()
+    sql = "SELECT r.*, po.trade_mode, po.order_no, po.supplier FROM receivings r LEFT JOIN purchase_orders po ON r.order_id=po.id"
+    where = []; args = []
+    if f_dept:
+        where.append("r.dept=?"); args.append(f_dept)
+    if f_cat:
+        where.append("(r.item_name IN (SELECT item_name FROM inventory WHERE cat_code=(SELECT code FROM categories WHERE name=?)))")
+        args.append(f_cat)
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY r.id DESC LIMIT 80"
+    rows = conn.execute(sql, args).fetchall()
     out = []
     for r in rows:
         d = dict_row(r)
@@ -4476,9 +4491,10 @@ def api_receiving_download(rid):
     ws['E2'] = '供应商：'; ws.merge_cells('F2:J2'); ws['F2'] = supplier
     for cc in ('A2','B2','C2','D2','E2','F2'):
         ws[cc].font = CN()
-    # 第3行: 仓库/品种数
+    # 第3行: 仓库/品种数 + V11.29 归属部门
     ws['A3'] = '仓库：'; ws.merge_cells('B3:C3'); ws['B3'] = rn['warehouse'] or '生产库房'
     ws['D3'] = '品种数：'; ws['E3'] = len(rows)
+    ws['F3'] = '归属部门：'; ws.merge_cells('G3:J3'); ws['G3'] = rn['dept'] if 'dept' in rn.keys() and rn['dept'] else ''
     for cc in ('A3','B3','D3','E3'):
         ws[cc].font = CN()
     # 第4行表头 (10列连续, 无空白列)
@@ -4716,10 +4732,12 @@ def api_create_receiving():
     # V11.26: 验收照片/视频附件(责任留证)
     _atts = d.get('attachments') or []
     _atts_json = json.dumps([str(a) for a in _atts if a], ensure_ascii=False) if _atts else ''
-    conn.execute("INSERT INTO receivings(receive_no,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,items_json,attachments) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+    # V11.29: 归属部门(必选, 按部门分类入库)
+    _dept = (d.get('dept') or '').strip()[:30]
+    conn.execute("INSERT INTO receivings(receive_no,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,items_json,attachments,dept) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                  (no, d.get('order_id'), first['item_name'], first.get('spec', ''), total_q,
                   first.get('unit', '个'), 0, '待审批', now(), '手动入库单: %d项商品' % len(items),
-                  json.dumps(items, ensure_ascii=False), _atts_json))
+                  json.dumps(items, ensure_ascii=False), _atts_json, _dept))
     rid = conn.execute("SELECT id FROM receivings WHERE receive_no=?", (no,)).fetchone()[0]
     # 手动入库单没有 order_items, 明细暂存 remark; 审批通过时按 quantity 入库
     conn.commit()

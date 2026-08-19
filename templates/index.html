@@ -310,7 +310,10 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
 <div class="page" id="pcontracts"><h2>📄 合同管理</h2><div style="margin-bottom:4px"><button class="btn btn-p btn-sm" onclick="showForm('contract')">+ 新建合同</button></div><div class="card"><div class="cb" id="contractsTable"><div class="loading">加载中...</div></div></div></div>
 <div class="page" id="preceivings"><h2>📦 入库验收</h2>
   <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap">
-    <span style="font-size:9px;color:#666">入库单提交审批→审批通过自动增加库存；草稿/驳回/作废不动库存</span>
+    <span style="font-size:9px;color:#666">入库三步：①选部门 ②选物资数量 ③提交审批；审批通过自动增加库存</span>
+    <!-- V11.29: 部门/类别 筛选下拉 -->
+    <select id="rcvFDept" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px" onchange="loadReceivings()"><option value="">全部部门</option></select>
+    <select id="rcvFCat" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px" onchange="loadReceivings()"><option value="">全部类别</option></select>
     <button class="btn btn-p btn-sm" style="margin-left:auto" onclick="showRcvForm()">➕ 新建入库单</button>
   </div>
   <div class="card"><div class="cb" id="receivingsTable"><div class="loading">加载中...</div></div></div></div>
@@ -1694,7 +1697,7 @@ async function showRcvDetail(id){
   if(!r){alert('入库单不存在');return}
   const items=r.items||[];
   let h=`<div class="c2"><div><dt>入库单号</dt><dd><b>${esc(r.receive_no)}</b></dd><dt>状态</dt><dd>${tag(r.status)}</dd><dt>仓库</dt><dd>${esc(r.warehouse||'主库房')}</dd><dt>验收人</dt><dd>${esc(r.inspector||'-')}</dd></div>
-    <div><dt>订单号</dt><dd>${esc(r.order_no||'-')}</dd><dt>供应商</dt><dd>${esc(r.supplier||'-')}</dd><dt>交易模式</dt><dd>${esc(r.trade_mode||'-')}</dd><dt>创建时间</dt><dd>${esc((r.created_at||'').slice(0,16))}</dd></div></div>`;
+    <div><dt>订单号</dt><dd>${esc(r.order_no||'-')}</dd><dt>供应商</dt><dd>${esc(r.supplier||'-')}</dd><dt>交易模式</dt><dd>${esc(r.trade_mode||'-')}</dd><dt>创建时间</dt><dd>${esc((r.created_at||'').slice(0,16))}</dd>${r.dept?`<dt>归属部门</dt><dd><span class="tag" style="background:#eef7ee;color:#2e7d32">${esc(r.dept)}</span></dd>`:''}</div></div>`;
   if(items.length){
     h+=`<h4 style="font-size:10px;margin:8px 0 3px">📦 商品明细（${items.length}项，累计 ${r.total_qty||r.quantity}${esc(r.unit||'')}）</h4>
       <table class="tb" style="font-size:9px"><thead><tr><th>物资名称</th><th>规格</th><th>单价</th><th>数量</th><th>税率</th><th>金额</th></tr></thead>
@@ -1724,9 +1727,27 @@ async function showRcvDetail(id){
   showDetail(`入库单 ${r.receive_no}`,h,btns);
 }
 async function loadReceivings(){
-  const r=await api('/receivings');
-  id('receivingsTable').innerHTML=rnder(r,['receive_no','item_name','quantity','trade_mode','status','id'],['单号','物资','数量','交易模式','状态','操作'],
-    x=>`<td><b>${esc(x.receive_no)}</b></td><td>${esc(x.item_name)}${x.item_count?` <span class="tag" style="background:#e8f0fe;color:#1a6bff">${x.item_count}项</span>`:''}${x.urgent?' <span style="color:#e74c3c;font-weight:700">加急</span>':''}</td><td>${x.total_qty||x.quantity}${esc(x.unit||'')}</td>
+  // V11.29: 部门/类别筛选
+  const fDept=id('rcvFDept')?.value||'', fCat=id('rcvFCat')?.value||'';
+  const qs=new URLSearchParams();if(fDept)qs.set('dept',fDept);if(fCat)qs.set('cat',fCat);
+  const r=await api('/receivings'+(qs.toString()?'?'+qs:''));
+  // 填充筛选下拉(部门/类别选项)
+  try{
+    if(id('rcvFDept')){
+      const depts=await api('/departments').catch(()=>[]);
+      const cur=id('rcvFDept').value;
+      id('rcvFDept').innerHTML='<option value="">全部部门</option>'+depts.map(d=>`<option>${esc(d.name)}</option>`).join('');
+      id('rcvFDept').value=cur;
+    }
+    if(id('rcvFCat')){
+      const cats=await api('/categories').catch(()=>[]);
+      const cur=id('rcvFCat').value;
+      id('rcvFCat').innerHTML='<option value="">全部类别</option>'+cats.map(c=>`<option>${esc(c.name)}</option>`).join('');
+      id('rcvFCat').value=cur;
+    }
+  }catch(e){}
+  id('receivingsTable').innerHTML=rnder(r,['receive_no','dept','item_name','quantity','trade_mode','status','id'],['单号','部门','物资','数量','交易模式','状态','操作'],
+    x=>`<td><b>${esc(x.receive_no)}</b></td><td>${x.dept?`<span class="tag" style="background:#eef7ee;color:#2e7d32">${esc(x.dept)}</span>`:'<span style="color:#bbb">—</span>'}</td><td>${esc(x.item_name)}${x.item_count?` <span class="tag" style="background:#e8f0fe;color:#1a6bff">${x.item_count}项</span>`:''}${x.urgent?' <span style="color:#e74c3c;font-weight:700">加急</span>':''}</td><td>${x.total_qty||x.quantity}${esc(x.unit||'')}</td>
     <td><span class="tag ${x.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(x.trade_mode||'货到付款')}</span></td><td>${tag(x.status)}</td>
     <td><button class="lnk" onclick="showRcvDetail(${x.id})">查看详情</button>
       ${x.status=='待入库'?`<button class="lnk" style="color:var(--s);font-weight:600" onclick="completeRcv(${x.id},${x.total_qty||x.quantity},${x.order_id||0})">📤 提交审批</button>`:''}${x.status=='待审批'?`<span style="color:#b08900;font-size:8px">审批中</span>`:''}
@@ -1762,14 +1783,25 @@ function addRcvItem(){
   row.id='rcvRow'+i;
   row.style.cssText='display:flex;gap:4px;margin-bottom:4px;align-items:center';
   row.innerHTML=`
-    <input class="fc" style="flex:2;min-width:0" placeholder="物资名称 *" id="rcN${i}" list="invNames">
+    <input class="fc" style="flex:2;min-width:0" placeholder="物资名称 *" id="rcN${i}" list="invNames" onchange="rcvAutoCat(${i})">
     <input class="fc" style="flex:1.2;min-width:0" placeholder="规格" id="rcS${i}">
     <input class="fc" style="flex:0.8;min-width:0" type="number" placeholder="数量 *" id="rcQ${i}" value="1">
     <input class="fc" style="flex:1;min-width:0" type="number" placeholder="含税单价" id="rcP${i}">
+    <span id="rcCat${i}" style="font-size:8px;color:#1a6bff;background:#e8f0fe;border-radius:3px;padding:1px 4px;display:none"></span>
     <button class="btn btn-o btn-sm" style="flex:0.4;min-width:0;padding:2px 4px" onclick="this.parentElement.remove()">✕</button>`;
   box.appendChild(row);
   if(!id('invNames')){const dl=document.createElement('datalist');dl.id='invNames';document.body.appendChild(dl)}
-  api('/inventory').then(inv=>{id('invNames').innerHTML=inv.map(x=>`<option value="${esc(x.item_name)}">`).join('')});
+  api('/inventory').then(inv=>{window._invCat=inv;id('invNames').innerHTML=inv.map(x=>`<option value="${esc(x.item_name)}">`).join('')});
+}
+// V11.29: 选物资自动带出类别标签(新手友好: 类别不用手动填)
+function rcvAutoCat(i){
+  const n=id('rcN'+i)?.value||'';
+  const catEl=id('rcCat'+i);if(!catEl)return;
+  if(!n){catEl.style.display='none';return}
+  const inv=(window._invCat||[]).find(x=>x.item_name===n);
+  let cat='';
+  if(inv&&inv.cat_name)cat=inv.cat_name;
+  if(cat){catEl.textContent='📂 '+cat;catEl.style.display='inline'}else{catEl.style.display='none'}
 }
 async function rcvUpAtt(inp){
   const fs=inp.files||[];
@@ -1794,7 +1826,10 @@ async function createRcv(){
       quantity:parseFloat(id('rcQ'+i)?.value)||0,price:parseFloat(id('rcP'+i)?.value)||0,tax_rate:13};
   }).filter(Boolean);
   if(!items.length){alert('请至少填写一个商品');return}
-  const r=await api('/receivings',{method:'POST',body:JSON.stringify({items,attachments:window._rcvAtts||[]})});
+  // V11.29: 部门必选
+  const dept=(id('rcvDept')?.value||'').trim();
+  if(!dept){alert('请选择归属部门（这批货是给哪个部门的）');return}
+  const r=await api('/receivings',{method:'POST',body:JSON.stringify({items,attachments:window._rcvAtts||[],dept})});
   if(r.success){alert(`✅ ${r.receive_no} 已提交入库审批，审批通过后自动增加库存`);closeMod();loadReceivings();loadDashboard()}
   else alert(r.error||'提交失败');
 }
