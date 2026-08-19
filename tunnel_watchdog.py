@@ -12,7 +12,7 @@ LOCAL = 'http://127.0.0.1:5899'
 PROXY = '127.0.0.1:7897'
 
 SSH_CMD = [
-    'ssh', '-T',
+    '/usr/bin/ssh', '-T',
     '-o', 'StrictHostKeyChecking=no',
     '-o', 'ServerAliveInterval=5',
     '-o', 'ServerAliveCountMax=120',
@@ -20,7 +20,6 @@ SSH_CMD = [
     '-o', 'TCPKeepAlive=yes',
     '-o', 'ConnectionAttempts=3',
     '-o', 'ConnectTimeout=15',
-    '-o', 'ProxyCommand=nc -X connect -x %s %%h %%p' % PROXY,
     '-R', '80:127.0.0.1:5899',
     'nokey@localhost.run',
 ]
@@ -49,7 +48,11 @@ def write_url(u):
 def start_tunnel():
     global proc
     print('[%s] 启动隧道...' % time.strftime('%H:%M:%S'))
-    proc = subprocess.Popen(SSH_CMD, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+    # V11.27b: 隔离 conda 环境(ssh 被 conda 插件劫持 → code 255)
+    env = dict(os.environ)
+    env['CONDA_NO_PLUGINS'] = '1'
+    env['PATH'] = '/usr/bin:/bin:/usr/sbin:/sbin:' + env.get('PATH', '')
+    proc = subprocess.Popen(SSH_CMD, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, env=env)
     # 从输出抓 https://*.lhr.life (约10-25秒)
     deadline = time.time() + 60
     url = ''
