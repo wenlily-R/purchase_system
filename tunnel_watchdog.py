@@ -70,14 +70,54 @@ def start_tunnel():
             url = m.group(0)
             break
     if url:
+        old = read_cur()
         write_url(url)
         print('  新地址: %s' % url)
+        # V11.28b: 地址变化 → 飞书通知用户(免费隧道地址会变, 主动告知防失效)
+        if url != old:
+            notify_feishu(url)
         return True
     else:
         print('  60秒内未抓到地址')
         if proc.poll() is None:
             proc.kill()
         return False
+
+def notify_feishu(url):
+    """向用户飞书推送新地址(独立实现, 不依赖 app.py)"""
+    try:
+        import urllib.request, json as _json
+        # 读取飞书配置
+        import sqlite3
+        _c = sqlite3.connect(os.path.join(BASE, 'data', 'purchase.db'), timeout=10)
+        _cfg = {}
+        for k, v in _c.execute("SELECT key, value FROM sys_config WHERE key IN ('feishu_app_id','feishu_app_secret')").fetchall():
+            _cfg[k] = v
+        _c.close()
+        app_id = _cfg.get('feishu_app_id', '')
+        app_secret = _cfg.get('feishu_app_secret', '')
+        if not app_id or not app_secret:
+            print('  飞书未配置, 跳过通知')
+            return
+        # 拿 tenant_access_token
+        req = urllib.request.Request('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal',
+                                     data=_json.dumps({'app_id': app_id, 'app_secret': app_secret}).encode(),
+                                     headers={'Content-Type': 'application/json'})
+        tok = _json.loads(urllib.request.urlopen(req, timeout=15).read()).get('tenant_access_token', '')
+        if not tok:
+            return
+        # 发消息给用户 open_id
+        USER_OPEN_ID = 'ou_8dff5598fa8288769546f51c113b8288'
+        text = '🔗 采购系统地址已更新（免费隧道自动重连）\n\n最新地址：%s\n\n打开即用；旧地址已失效请忽略。' % url
+        req2 = urllib.request.Request(
+            'https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id',
+            data=_json.dumps({'receive_id': USER_OPEN_ID, 'msg_type': 'text',
+                              'content': _json.dumps({'text': text}, ensure_ascii=False)}).encode(),
+            headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok})
+        urllib.request.urlopen(req2, timeout=15).read()
+        print('  已通知飞书: %s' % url)
+    except Exception as e:
+        print('  飞书通知失败: %s' % e)
 
 def stop():
     global running, proc
