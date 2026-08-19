@@ -1095,9 +1095,18 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
                     _oi = c.execute("SELECT * FROM order_items WHERE order_id=? ORDER BY id", (_po['id'],)).fetchall()
                     _name = _oi[0]['item_name'] if _oi else _po['item_name']
                     _qty = sum(float(x['quantity']) for x in _oi) if _oi else _po['quantity']
+                    # V11.31: 自动带出部门(申请单→订单→入库单链)
+                    _dept = _po['requester'] and '' or ''
+                    try:
+                        if _po['req_id']:
+                            _pr = c.execute("SELECT dept FROM purchase_requests WHERE id=?", (_po['req_id'],)).fetchone()
+                            if _pr and _pr['dept']:
+                                _dept = _pr['dept']
+                    except Exception:
+                        pass
                     _rno = gen_no('RK', 'receivings', 'receive_no', c)
-                    c.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                              (_rno, None, _po['id'], _name, '', _qty, '个', 0, '待入库', now(), '合同生效后自动进入入库板块(整批%d项)' % (len(_oi) if _oi else 1)))
+                    c.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,dept) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                              (_rno, None, _po['id'], _name, '', _qty, '个', 0, '待入库', now(), '合同生效后自动进入入库板块(整批%d项)' % (len(_oi) if _oi else 1), _dept))
     c.execute("UPDATE feishu_instances SET status='synced', updated_at=? WHERE biz_type=? AND biz_id=? AND status='pending'", (now(), biz_type, biz_id))
     c.execute("UPDATE dingtalk_instances SET status='synced', updated_at=? WHERE biz_type=? AND biz_id=? AND status='pending'", (now(), biz_type, biz_id))
     c.commit(); c.close()
@@ -3386,9 +3395,18 @@ def api_create_order():
     rno = None
     if tm == '货到付款':
         # 整批商品一张入库单, 待【确认验收入库】批量转入正式库存
+        # V11.31: 自动带出部门(申请单链)
+        _dept = ''
+        try:
+            if d.get('req_id'):
+                _pr = conn.execute("SELECT dept FROM purchase_requests WHERE id=?", (d.get('req_id'),)).fetchone()
+                if _pr and _pr['dept']:
+                    _dept = _pr['dept']
+        except Exception:
+            pass
         rno = gen_no('RK', 'receivings', 'receive_no', conn)
-        conn.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-            (rno, None, oid, first[0], first[1], total_qty, first[2], 0, '待入库', now(), '货到付款: 下单后自动进入入库板块(整批%d项)' % len(rows)))
+        conn.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,dept) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            (rno, None, oid, first[0], first[1], total_qty, first[2], 0, '待入库', now(), '货到付款: 下单后自动进入入库板块(整批%d项)' % len(rows), _dept))
     conn.commit()
     create_approvals('purchase_order', oid, grand_total)   # 一张订单一次审批
     start_instances('purchase_order', oid)
@@ -4162,9 +4180,19 @@ def api_sign_delivery(did):
         conn.execute("UPDATE receivings SET delivery_id=?, quantity=?, updated_at=datetime('now','localtime') WHERE id=?", (did, dn['quantity'], exist['id']))
         rno = conn.execute("SELECT receive_no FROM receivings WHERE id=?", (exist['id'],)).fetchone()[0]
     else:
+        # V11.31: 自动带出部门(订单→申请单链)
+        _dept = ''
+        try:
+            _po2 = conn.execute("SELECT req_id FROM purchase_orders WHERE id=?", (dn['order_id'],)).fetchone()
+            if _po2 and _po2['req_id']:
+                _pr2 = conn.execute("SELECT dept FROM purchase_requests WHERE id=?", (_po2['req_id'],)).fetchone()
+                if _pr2 and _pr2['dept']:
+                    _dept = _pr2['dept']
+        except Exception:
+            pass
         rno = gen_no('RK','receivings','receive_no')
-        conn.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
-            (rno,did,dn['order_id'],dn['item_name'],dn['spec'],dn['quantity'],dn['unit'],dn['quantity'],'待检验',now()))
+        conn.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,dept) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (rno,did,dn['order_id'],dn['item_name'],dn['spec'],dn['quantity'],dn['unit'],dn['quantity'],'待检验',now(),_dept))
     if dn['order_id']: conn.execute("UPDATE purchase_orders SET status='已到货',updated_at=? WHERE id=?", (now(),dn['order_id']))
     conn.commit(); conn.close()
     log(session['user_name'],'签收送货单',f'#{did}')
