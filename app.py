@@ -268,7 +268,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS credit_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, credit_no TEXT UNIQUE NOT NULL, order_id INTEGER, category TEXT, supplier TEXT, item_name TEXT, amount REAL DEFAULT 0, invoice_no TEXT, attachments TEXT, status TEXT DEFAULT '待审批', remark TEXT, created_at TEXT DEFAULT (datetime('now','localtime')), updated_at TEXT DEFAULT (datetime('now','localtime')));
         CREATE TABLE IF NOT EXISTS payment_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, payment_no TEXT UNIQUE NOT NULL, credit_id INTEGER, payment_type TEXT DEFAULT '正常付款', supplier TEXT, amount REAL DEFAULT 0, contract_id INTEGER, status TEXT DEFAULT '待审批', paid_at TEXT, remark TEXT, created_at TEXT DEFAULT (datetime('now','localtime')));
         CREATE TABLE IF NOT EXISTS inventory (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER, item_name TEXT, spec TEXT, cat_code TEXT, unit TEXT DEFAULT '个', quantity REAL DEFAULT 0, safe_stock REAL DEFAULT 0, warehouse TEXT DEFAULT '主库房', price REAL DEFAULT 0, updated_at TEXT DEFAULT (datetime('now','localtime')), UNIQUE(item_name,spec,warehouse));
-        CREATE TABLE IF NOT EXISTS requisitions (id INTEGER PRIMARY KEY AUTOINCREMENT, req_no TEXT UNIQUE NOT NULL, dept TEXT, requester TEXT, item_name TEXT, spec TEXT, quantity REAL DEFAULT 0, unit TEXT DEFAULT '个', purpose TEXT, status TEXT DEFAULT '待审批', issued_at TEXT, created_at TEXT DEFAULT (datetime('now','localtime')));
+        CREATE TABLE IF NOT EXISTS requisitions (id INTEGER PRIMARY KEY AUTOINCREMENT, req_no TEXT UNIQUE NOT NULL, dept TEXT, requester TEXT, item_name TEXT, spec TEXT, quantity REAL DEFAULT 0, unit TEXT DEFAULT '个', purpose TEXT, status TEXT DEFAULT '待审批', issued_at TEXT, receiver TEXT DEFAULT '', receive_dept TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now','localtime')), updated_at TEXT DEFAULT (datetime('now','localtime')));
         CREATE TABLE IF NOT EXISTS approval_flow_config (id INTEGER PRIMARY KEY AUTOINCREMENT, biz_type TEXT NOT NULL, level_no INTEGER NOT NULL, role TEXT NOT NULL, min_amount REAL DEFAULT 0, max_amount REAL DEFAULT 9999999, label TEXT DEFAULT '');
         CREATE TABLE IF NOT EXISTS approval_instances (id INTEGER PRIMARY KEY AUTOINCREMENT, biz_type TEXT NOT NULL, biz_id INTEGER NOT NULL, level_no INTEGER NOT NULL, role TEXT, approver TEXT DEFAULT '', approver_id INTEGER, status TEXT DEFAULT 'pending', comment TEXT DEFAULT '', processed_at TEXT, created_at TEXT DEFAULT (datetime('now','localtime')));
         CREATE TABLE IF NOT EXISTS notifications (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, type TEXT, title TEXT, content TEXT, biz_type TEXT, biz_id INTEGER, is_read INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now','localtime')));
@@ -1652,6 +1652,9 @@ def dt_build_detail(biz_type, r, c):
     elif biz_type == 'requisition':
         lines['出库单号'] = r['req_no']; lines['单据类型'] = '出库单'
         lines['领用部门'] = r['dept'] or '-'; lines['领用人'] = r['requester'] or '-'
+        # V11.25: 领取人/领取部门(出库追溯)
+        lines['领取人'] = r['receiver'] or r['requester'] or '-'
+        lines['领取部门'] = r['receive_dept'] or r['dept'] or '-'
         lines['提交时间'] = str(r['created_at'] or '')[:16]
         lines['数量'] = f"{r['quantity'] or 0}{r['unit'] or ''}"
         lines['用途'] = r['purpose'] or '-'
@@ -4420,16 +4423,16 @@ def api_requisition_download(rid):
     c = ws['A1']; c.value = '河曲县洗选煤有限责任公司部门出库单'
     c.font = CN(bold=True, size=14); c.alignment = Alignment(horizontal='center', vertical='center')
     ws.row_dimensions[1].height = 26
-    # 第2行: 日期/票号/库管员
+    # 第2行: 日期/票号/领取人
     ws['A2'] = '日期：'; ws['B2'] = (rq['issued_at'] or rq['created_at'] or '')[:10]
     ws['C2'] = '票号：'; ws['D2'] = rq['req_no']
-    ws['E2'] = '库管员：'; ws['F2'] = ''
+    ws['E2'] = '领取人：'; ws['F2'] = rq['receiver'] or rq['requester'] or ''
     for cc in ('A2','B2','C2','D2','E2','F2'):
         ws[cc].font = CN()
     # 第3行: 部门/仓库/品种数
     ws['A3'] = '部门：'; ws['B3'] = rq['dept'] or ''
     ws['C3'] = '仓库：'; ws['D3'] = '主库房'
-    ws['E3'] = '品种数：'; ws['F3'] = len(its)
+    ws['E3'] = '领取部门：'; ws['F3'] = rq['receive_dept'] or rq['dept'] or ''
     for cc in ('A3','B3','C3','D3','E3','F3'):
         ws[cc].font = CN()
     # 第4行表头 (7列连续, 无空白列)
@@ -4523,9 +4526,14 @@ def api_create_requisition():
     no = gen_no('CK', 'requisitions', 'req_no', conn)
     total_q = sum(float(it['quantity']) for it in items)
     first = items[0]
-    conn.execute("INSERT INTO requisitions(req_no,dept,requester,item_name,spec,quantity,unit,purpose,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+    # V11.25: 领取人/领取部门 — 出库留痕可追溯(丢了东西能找到人)
+    receiver = (d.get('receiver') or '').strip()
+    receive_dept = (d.get('receive_dept') or '').strip()
+    if not receiver:
+        receiver = session['user_name']
+    conn.execute("INSERT INTO requisitions(req_no,dept,requester,item_name,spec,quantity,unit,purpose,status,receiver,receive_dept,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                  (no, d.get('dept', ''), session['user_name'], first['item_name'], first.get('spec', ''),
-                  total_q, first.get('unit', '个'), d.get('purpose', first.get('purpose', '')), '待审批', now()))
+                  total_q, first.get('unit', '个'), d.get('purpose', first.get('purpose', '')), '待审批', receiver, receive_dept, now()))
     rid = conn.execute("SELECT id FROM requisitions WHERE req_no=?", (no,)).fetchone()[0]
     for it in items:
         conn.execute("INSERT INTO requisition_items(requisition_id,item_name,spec,unit,quantity,purpose,created_at) VALUES(?,?,?,?,?,?,?)",

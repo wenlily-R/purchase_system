@@ -1945,7 +1945,13 @@ async function batchReqSubmit(){
   submitReq(items);
 }
 async function submitReq(items){
-  const r=await api('/requisitions',{method:'POST',body:JSON.stringify({items,purpose:prompt('出库用途(可留空):','')||''})});
+  // V11.25: 出库前采集领取人/领取部门(追溯用)
+  const recv=prompt('领取人(谁领走这批物资):',ME?.name||'');
+  if(recv===null)return;
+  if(!recv.trim()){alert('请填写领取人');return}
+  const rdept=prompt('领取部门(如:财务部/维修车间):','')||'';
+  const purpose=prompt('出库用途(可留空):','')||'';
+  const r=await api('/requisitions',{method:'POST',body:JSON.stringify({items,purpose,receiver:recv.trim(),receive_dept:rdept.trim()})});
   if(r.success){
     alert(`✅ ${r.req_no} 已提交出库审批，审批通过后自动扣减库存`);
     reqSel={};reqSelBar();
@@ -1954,8 +1960,8 @@ async function submitReq(items){
 }
 async function loadRequisitions(){
   const r=await api('/requisitions');
-  id('reqListBox').innerHTML=rnder(r,['req_no','item_count','total_qty','status','created_at','id'],['单号','商品数','数量','状态','时间','操作'],
-    x=>`<td><b>${esc(x.req_no)}</b></td><td>${x.item_count||1}项</td><td>${x.total_qty||x.quantity}</td><td>${tag(x.status)}</td><td style="font-size:8px;color:#999">${esc((x.created_at||'').slice(0,16))}</td>
+  id('reqListBox').innerHTML=rnder(r,['req_no','receiver','receive_dept','item_count','total_qty','status','created_at','id'],['单号','领取人','领取部门','商品数','数量','状态','时间','操作'],
+    x=>`<td><b>${esc(x.req_no)}</b></td><td>${esc(x.receiver||x.requester||'')}</td><td>${esc(x.receive_dept||x.dept||'')}</td><td>${x.item_count||1}项</td><td>${x.total_qty||x.quantity}</td><td>${tag(x.status)}</td><td style="font-size:8px;color:#999">${esc((x.created_at||'').slice(0,16))}</td>
     <td><button class="lnk" style="color:#b08900" onclick="editDoc('requisition',${x.id},'出库单')">✏️修改</button> <button class="lnk" onclick="window.open('/api/requisitions/${x.id}/download','_blank')">⬇️下载</button> ${x.status=='已出库'||x.status=='待审批'?`<button class="lnk" style="color:var(--d)" onclick="voidReq(${x.id})">作废</button>`:''} ${(x.status=='待审批'||x.status=='已通过'||x.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('requisition',${x.id},'出库单')">↩️撤回</button>`:''}${(x.status=='待审批'||x.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('requisition',${x.id},'出库单')">🗑️删除</button>`:''}</td>`);
 }
 async function voidReq(id){
