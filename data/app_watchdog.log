@@ -15735,3 +15735,165 @@ Port 5899 is in use by another program. Either identify and stop that program, o
 127.0.0.1 - - [19/Aug/2026 11:00:32] "GET / HTTP/1.1" 200 -
 127.0.0.1 - - [19/Aug/2026 11:01:07] "GET / HTTP/1.1" 200 -
 127.0.0.1 - - [19/Aug/2026 11:01:14] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:01:41] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:01:43] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:01:49] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:01:52] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:02:24] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:02:31] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:03:06] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:03:08] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:03:39] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:03:43] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:04:17] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:05:03] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:05:06] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:05:38] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:05:39] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:06:13] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:06:15] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:06:46] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:06:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:07:19] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:07:21] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:07:55] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:07:56] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:08:30] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:08:31] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:09:03] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:09:13] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:09:45] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:09:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:10:19] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:11:06] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:11:08] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:11:40] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:11:42] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:12:15] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:12:16] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:12:48] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:12:49] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [19/Aug/2026 11:13:22] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:13:24] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [19/Aug/2026 11:13:56] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:13:57] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [19/Aug/2026 11:14:28] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:14:30] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:15:02] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:15:13] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:15:44] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 11:15:53] "GET / HTTP/1.1" 200 -

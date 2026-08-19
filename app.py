@@ -263,7 +263,7 @@ def init_db():
         );
         CREATE TABLE IF NOT EXISTS contracts (id INTEGER PRIMARY KEY AUTOINCREMENT, contract_no TEXT UNIQUE NOT NULL, order_id INTEGER, contract_name TEXT, supplier TEXT, amount REAL DEFAULT 0, sign_date TEXT, start_date TEXT, end_date TEXT, content TEXT, file_path TEXT, status TEXT DEFAULT '执行中', remark TEXT, created_at TEXT DEFAULT (datetime('now','localtime')));
         CREATE TABLE IF NOT EXISTS deliveries (id INTEGER PRIMARY KEY AUTOINCREMENT, delivery_no TEXT UNIQUE NOT NULL, order_id INTEGER, contract_id INTEGER, supplier TEXT, item_name TEXT, spec TEXT, quantity REAL DEFAULT 0, unit TEXT DEFAULT '个', driver_name TEXT, vehicle_no TEXT, delivery_date TEXT, receiver TEXT, sign_status TEXT DEFAULT '待签收', sign_time TEXT, remark TEXT, created_at TEXT DEFAULT (datetime('now','localtime')));
-        CREATE TABLE IF NOT EXISTS receivings (id INTEGER PRIMARY KEY AUTOINCREMENT, receive_no TEXT UNIQUE NOT NULL, delivery_id INTEGER, order_id INTEGER, item_name TEXT, spec TEXT, quantity REAL DEFAULT 0, unit TEXT DEFAULT '个', qualified_qty REAL DEFAULT 0, defective_qty REAL DEFAULT 0, inspector TEXT, warehouse TEXT DEFAULT '主库房', status TEXT DEFAULT '待检验', received_at TEXT, remark TEXT, created_at TEXT DEFAULT (datetime('now','localtime')));
+        CREATE TABLE IF NOT EXISTS receivings (id INTEGER PRIMARY KEY AUTOINCREMENT, receive_no TEXT UNIQUE NOT NULL, delivery_id INTEGER, order_id INTEGER, item_name TEXT, spec TEXT, quantity REAL DEFAULT 0, unit TEXT DEFAULT '个', qualified_qty REAL DEFAULT 0, defective_qty REAL DEFAULT 0, inspector TEXT, warehouse TEXT DEFAULT '主库房', status TEXT DEFAULT '待检验', received_at TEXT, remark TEXT, attachments TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now','localtime')));
         CREATE TABLE IF NOT EXISTS invoices (id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_no TEXT, invoice_code TEXT, order_id INTEGER, supplier TEXT, amount REAL DEFAULT 0, tax_amount REAL DEFAULT 0, total_amount REAL DEFAULT 0, invoice_date TEXT, invoice_type TEXT DEFAULT '增值税专用发票', file_path TEXT, status TEXT DEFAULT '待验证', remark TEXT, created_at TEXT DEFAULT (datetime('now','localtime')));
         CREATE TABLE IF NOT EXISTS credit_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, credit_no TEXT UNIQUE NOT NULL, order_id INTEGER, category TEXT, supplier TEXT, item_name TEXT, amount REAL DEFAULT 0, invoice_no TEXT, attachments TEXT, status TEXT DEFAULT '待审批', remark TEXT, created_at TEXT DEFAULT (datetime('now','localtime')), updated_at TEXT DEFAULT (datetime('now','localtime')));
         CREATE TABLE IF NOT EXISTS payment_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, payment_no TEXT UNIQUE NOT NULL, credit_id INTEGER, payment_type TEXT DEFAULT '正常付款', supplier TEXT, amount REAL DEFAULT 0, contract_id INTEGER, status TEXT DEFAULT '待审批', paid_at TEXT, remark TEXT, created_at TEXT DEFAULT (datetime('now','localtime')));
@@ -4565,10 +4565,13 @@ def api_create_receiving():
     first = items[0]
     try: conn.execute("ALTER TABLE receivings ADD COLUMN items_json TEXT DEFAULT ''")
     except Exception: pass
-    conn.execute("INSERT INTO receivings(receive_no,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,items_json) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+    # V11.26: 验收照片/视频附件(责任留证)
+    _atts = d.get('attachments') or []
+    _atts_json = json.dumps([str(a) for a in _atts if a], ensure_ascii=False) if _atts else ''
+    conn.execute("INSERT INTO receivings(receive_no,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,items_json,attachments) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                  (no, d.get('order_id'), first['item_name'], first.get('spec', ''), total_q,
                   first.get('unit', '个'), 0, '待审批', now(), '手动入库单: %d项商品' % len(items),
-                  json.dumps(items, ensure_ascii=False)))
+                  json.dumps(items, ensure_ascii=False), _atts_json))
     rid = conn.execute("SELECT id FROM receivings WHERE receive_no=?", (no,)).fetchone()[0]
     # 手动入库单没有 order_items, 明细暂存 remark; 审批通过时按 quantity 入库
     conn.commit()
@@ -5746,11 +5749,11 @@ def api_upload():
     fn = os.path.basename(f.filename)  # 去路径, 防穿越
     if not fn or fn in ('.', '..'):
         return jsonify({'error': '非法文件名'}), 400
-    # 限制扩展名: 文档/图片/表格
+    # 限制扩展名: 文档/图片/表格/视频(V11.26: 入库验收照片视频)
     ext = os.path.splitext(fn)[1].lower()
-    allow = {'.doc', '.docx', '.pdf', '.xls', '.xlsx', '.png', '.jpg', '.jpeg', '.gif', '.txt', '.zip', '.rar'}
+    allow = {'.doc', '.docx', '.pdf', '.xls', '.xlsx', '.png', '.jpg', '.jpeg', '.gif', '.txt', '.zip', '.rar', '.mp4', '.mov', '.avi', '.webm'}
     if ext not in allow:
-        return jsonify({'error': f'不支持的文件类型 {ext or "空"}（允许: doc/docx/pdf/xls/xlsx/图片/txt/zip/rar）'}), 400
+        return jsonify({'error': f'不支持的文件类型 {ext or "空"}（允许: doc/docx/pdf/xls/xlsx/图片/视频/zip/rar）'}), 400
     os.makedirs(os.path.join(BASE, 'uploads'), exist_ok=True)
     # 时间戳前缀防重名
     ts = datetime.datetime.now().strftime('%Y%m%d%H%M%S')

@@ -1634,6 +1634,22 @@ async function showRcvDetail(id){
       <tr style="font-weight:700;background:#f4f7fd"><td colspan="3">合计</td><td>${r.total_qty||r.quantity}</td><td></td><td>¥${(r.amount||0).toFixed(2)}</td></tr></tbody></table>`;
   }
   if(r.remark)h+=`<div style="font-size:9px;color:#666;margin-top:6px">备注: ${esc(r.remark)}</div>`;
+  // V11.26: 验收照片/视频展示(责任留证)
+  if(r.attachments){
+    try{
+      const atts=JSON.parse(r.attachments||'[]');
+      if(atts.length){
+        h+=`<h4 style="font-size:10px;margin:8px 0 3px">📷 验收留证（${atts.length}项）</h4><div style="display:flex;flex-wrap:wrap;gap:6px">`;
+        atts.forEach(a=>{
+          const isImg=/\.(png|jpe?g|gif)$/i.test(a||'');
+          h+=isImg
+            ?`<a href="/uploads/${esc(a)}" target="_blank" style="display:block;width:90px;height:90px;border:1px solid var(--b);border-radius:6px;overflow:hidden"><img src="/uploads/${esc(a)}" style="width:100%;height:100%;object-fit:cover" alt="验收照片"></a>`
+            :`<a href="/uploads/${esc(a)}" target="_blank" style="display:flex;align-items:center;justify-content:center;width:90px;height:90px;border:1px solid var(--b);border-radius:6px;background:#f8f9fb;color:#555;font-size:10px">🎬 视频</a>`;
+        });
+        h+=`</div><div style="font-size:8px;color:#999;margin-top:3px">点击照片/视频可放大查看</div>`;
+      }
+    }catch(e){}
+  }
   const btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button>
     ${r.status=='待入库'?`<button class="btn btn-p btn-sm" onclick="completeRcv(${r.id},${r.total_qty||r.quantity},${r.order_id||0})">📤 提交审批</button>`:''}
     <button class="btn btn-o btn-sm" style="color:#b08900;border-color:#b08900" onclick="editDoc('receiving',${r.id},'入库单')">✏️ 修改</button>`;
@@ -1649,11 +1665,18 @@ async function loadReceivings(){
       <button class="lnk" style="color:#b08900" onclick="editDoc('receiving',${x.id},'入库单')">✏️修改</button> <button class="lnk" onclick="window.open('/api/receivings/${x.id}/download','_blank')">⬇️ 下载</button> ${x.status=='已入库'?`<button class="lnk" style="color:var(--d)" onclick="voidRcv(${x.id})">作废</button>`:''} ${(x.status=='待审批'||x.status=='已通过'||x.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('receiving',${x.id},'入库单')">↩️撤回</button>`:''}${(x.status=='待审批'||x.status=='待入库'||x.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('receiving',${x.id},'入库单')">🗑️删除</button>`:''}</td>`)}
 async function showRcvForm(){
   // V5.0: 新建手动入库单(商品/数量/含税单价) → 提交走审批
+  // V11.26: 支持验收照片/视频上传(责任留证)
+  window._rcvAtts=[];
   id('dmTitle').textContent='➕ 新建入库单';
   id('dmBody').innerHTML=`
     <div style="font-size:9px;color:#666;margin-bottom:4px">填写商品/数量/含税单价，提交后走审批，审批通过自动增加库存</div>
     <div id="rcvItemList"></div>
-    <button class="btn btn-o btn-sm" style="margin-top:4px" onclick="addRcvItem()">+ 添加商品</button>`;
+    <button class="btn btn-o btn-sm" style="margin-top:4px" onclick="addRcvItem()">+ 添加商品</button>
+    <div style="margin-top:8px;border:1px dashed var(--b);border-radius:6px;padding:8px">
+      <div style="font-size:10px;color:#555;margin-bottom:4px">📷 验收照片/视频（责任留证：拍外观/铭牌/包装，大件可录开箱视频）</div>
+      <input type="file" accept="image/*,video/*,.mp4,.mov" multiple style="font-size:10px;width:100%" onchange="rcvUpAtt(this)">
+      <div id="rcvAttList" style="margin-top:4px;font-size:9px;color:#666"></div>
+    </div>`;
   id('detailModal').classList.add('show');
   id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="createRcv()">提交入库审批</button>';
   addRcvItem();
@@ -1675,6 +1698,21 @@ function addRcvItem(){
   if(!id('invNames')){const dl=document.createElement('datalist');dl.id='invNames';document.body.appendChild(dl)}
   api('/inventory').then(inv=>{id('invNames').innerHTML=inv.map(x=>`<option value="${esc(x.item_name)}">`).join('')});
 }
+async function rcvUpAtt(inp){
+  const fs=inp.files||[];
+  if(!fs.length)return;
+  for(const f of fs){
+    const fd=new FormData();fd.append('file',f);
+    try{
+      const up=await fetch('/api/upload',{method:'POST',body:fd,credentials:'include'}).then(r=>r.json());
+      if(up&&up.file_path){window._rcvAtts.push(up.file_path);
+        const isImg=/\.(png|jpe?g|gif)$/i.test(up.file_path);
+        id('rcvAttList').insertAdjacentHTML('beforeend',`<div style="display:inline-flex;align-items:center;gap:4px;margin:2px 6px 2px 0;background:#f0f4ff;border:1px solid #d0d9f0;border-radius:4px;padding:2px 6px">${isImg?'🖼️':'🎬'} ${esc(up.file_path.split('_').pop().slice(-20))} <span style="cursor:pointer;color:var(--d)" onclick="this.parentElement.remove();window._rcvAtts.splice(window._rcvAtts.indexOf('${up.file_path}'),1)">✕</span></div>`);
+      }else alert(up.error||'上传失败');
+    }catch(e){alert('上传失败:'+e.message)}
+  }
+  inp.value='';
+}
 async function createRcv(){
   const items=window._rcvIdx.map(i=>{
     const n=id('rcN'+i);
@@ -1683,7 +1721,7 @@ async function createRcv(){
       quantity:parseFloat(id('rcQ'+i)?.value)||0,price:parseFloat(id('rcP'+i)?.value)||0,tax_rate:13};
   }).filter(Boolean);
   if(!items.length){alert('请至少填写一个商品');return}
-  const r=await api('/receivings',{method:'POST',body:JSON.stringify({items})});
+  const r=await api('/receivings',{method:'POST',body:JSON.stringify({items,attachments:window._rcvAtts||[]})});
   if(r.success){alert(`✅ ${r.receive_no} 已提交入库审批，审批通过后自动增加库存`);closeMod();loadReceivings();loadDashboard()}
   else alert(r.error||'提交失败');
 }
