@@ -617,11 +617,15 @@ const API='/api'; let ME={};
 async function api(url,opts={}){
   try{
     const r=await fetch(API+url,{headers:{'Content-Type':'application/json'},...opts,credentials:'include'});
+    // V11.30: 只有真正的 401(会话失效)才跳登录页; 网络错误/服务端HTML错误页不跳(避免误登出)
     if(r.status==401){showLogin();throw new Error('login')}
     const ct=r.headers.get('content-type')||'';
-    if(!ct.includes('application/json')){showLogin();throw new Error('not-json')}
+    if(!ct.includes('application/json')){
+      if(r.status>=400){const e=new Error('服务暂时不可用('+r.status+')，请稍后刷新');e.soft=true;throw e}
+      showLogin();throw new Error('not-json')
+    }
     return r.json()
-  }catch(e){if(e&&e.message!=='login'&&e.message!=='not-json')throw e;throw e}
+  }catch(e){throw e}
 }
 function id(s){return document.getElementById(s)}
 function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML}
@@ -1730,10 +1734,15 @@ async function loadReceivings(){
 async function showRcvForm(){
   // V5.0: 新建手动入库单(商品/数量/含税单价) → 提交走审批
   // V11.26: 支持验收照片/视频上传(责任留证)
+  // V11.29: 入库必选部门(按部门分类, 采购/库房按部门查询)
   window._rcvAtts=[];
   id('dmTitle').textContent='➕ 新建入库单';
+  if(!window._depts||!window._depts.length){try{window._depts=await api('/departments').catch(()=>[])}catch(e){window._depts=[]}}
+  const _deptOpts=window._depts&&window._depts.length?window._depts.map(d=>`<option>${esc(d.name)}</option>`).join(''):'<option>财务部</option><option>生产部</option><option>采购与供应链部</option><option>质量管理部</option><option>综合管理部</option><option>维修车间</option>';
   id('dmBody').innerHTML=`
-    <div style="font-size:9px;color:#666;margin-bottom:4px">填写商品/数量/含税单价，提交后走审批，审批通过自动增加库存</div>
+    <div style="font-size:9px;color:#666;margin-bottom:4px">入库三步：①选部门 ②选物资和数量 ③提交审批（类别自动带出）</div>
+    <div style="margin-bottom:8px"><label style="font-size:10px;color:#555;display:block;margin-bottom:3px">🏷️ 归属部门 *（这批货是给哪个部门的）</label>
+    <select id="rcvDept" style="width:100%;padding:6px;border:1px solid var(--b);border-radius:4px;font-size:11px"><option value="">— 请选择部门 —</option>${_deptOpts}</select></div>
     <div id="rcvItemList"></div>
     <button class="btn btn-o btn-sm" style="margin-top:4px" onclick="addRcvItem()">+ 添加商品</button>
     <div style="margin-top:8px;border:1px dashed var(--b);border-radius:6px;padding:8px">
