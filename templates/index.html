@@ -341,7 +341,9 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
   <div class="card"><div class="ch"><h3>新建盘点</h3></div>
     <div class="cb" style="font-size:10px"><div class="fr"><div class="fg" style="flex:3"><input class="fc" id="countRemark" placeholder="盘点说明(如: 月度例行盘点)"></div>
       <div class="fg" style="flex:1"><button class="btn btn-p" onclick="createCount()">开始盘点</button></div></div>
-      <div style="color:#999;margin-top:4px">创建后自动从当前库存生成盘点明细，逐项核对可发现账实差异</div></div></div>
+      <div style="color:#999;margin-top:4px">创建后自动从当前库存生成盘点明细，逐项核对可发现账实差异；差异项自动生成报溢/报损单待审批</div></div></div>
+  <div class="card"><div class="ch"><h3>⚠️ 报溢/报损（V11.34 库存账实相符）</h3><button class="btn btn-p btn-sm" onclick="showAdjForm()">➕ 手动报溢/报损</button></div>
+    <div class="cb" id="adjListBox"><div class="loading">加载中...</div></div></div>
 </div>
 <div class="page" id="pexpenses"><h2>💸 费用登记</h2>
   <div class="card"><div class="ch"><h3>费用记录</h3><button class="btn btn-p btn-sm" onclick="showExpenseForm()">+ 新增费用</button></div>
@@ -807,6 +809,7 @@ function sw(name){
     'contracts':loadContracts,'receivings':loadReceivings,
     'payments':loadPayments,'inventory':loadInventory,'requisitions':()=>{reqTab(Array.from(document.querySelectorAll('#reqTabs button')).find(b=>b.classList.contains('act'))?.dataset?.z||'inv');loadReqInv();loadRequisitions()},'suppliers':loadSuppliers,'reports':loadReports,'feishu':loadFeishu,
     'dingtalk':loadDingTalk,
+    'counts':()=>{loadAdjustments()},
     'settlements':loadSettlements,'invoices':loadInvoicePage,'ledger':loadLedger,'system':loadSystem};
   if(fn[name])fn[name]();
 }
@@ -2185,6 +2188,50 @@ async function loadCounts(){
   id('countListCard').style.display='block';
   id('countListBox').innerHTML=rnder(r,['count_no','status','remark','created_at'],['单号','状态','说明','创建时间'],
     x=>`<td><b>${esc(x.count_no)}</b></td><td>${tag(x.status)}</td><td>${esc(x.remark||'')}</td><td>${esc(x.created_at)}</td>`);
+}
+
+// ── V11.34 报溢/报损(库存账实相符) ──
+async function loadAdjustments(){
+  try{
+    const r=await api('/adjustments');
+    id('adjListBox').innerHTML=rnder(r,['adj_no','adj_type','item_name','adj_qty','unit','status','reason','created_by','created_at','id'],
+      ['单号','类型','物资','数量','单位','状态','原因','经办人','时间','操作'],
+      x=>`<td><b>${esc(x.adj_no)}</b></td><td>${x.adj_type=='报溢'?'<span class="tag" style="background:#e8f5e9;color:#2e7d32">🟢 报溢</span>':'<span class="tag" style="background:#fff3e0;color:#e65100">🟠 报损</span>'}</td><td>${esc(x.item_name)}${x.spec?`<span style="color:#999">(${esc(x.spec)})</span>`:''}</td><td style="font-weight:600">${x.adj_qty}</td><td>${esc(x.unit||'个')}</td><td>${tag(x.status)}</td><td style="font-size:8px">${esc((x.reason||'').slice(0,20))}</td><td style="font-size:8px">${esc(x.created_by||'')}</td><td style="font-size:8px;color:#999">${esc((x.created_at||'').slice(0,16))}</td>
+      <td>${x.status=='待审批'?`<button class="lnk" style="color:var(--s)" onclick="adjApprove(${x.id},'approved')">✅通过</button> <button class="lnk" style="color:var(--d)" onclick="adjApprove(${x.id},'rejected')">❌驳回</button>`:'—'}</td>`);
+  }catch(e){id('adjListBox').innerHTML='<div style="color:#e74c3c">加载失败</div>'}
+}
+function showAdjForm(){
+  // 手动报溢/报损: 选择物资+类型+数量+原因
+  api('/inventory').then(inv=>{
+    const opts=inv.map(x=>`<option value="${x.id}">${esc(x.item_name)}${x.spec?`(${esc(x.spec)})`:''} 当前${x.quantity}${esc(x.unit||'个')}</option>`).join('');
+    id('dmTitle').textContent='⚠️ 手动报溢/报损';
+    id('dmBody').innerHTML=`
+      <div style="font-size:9px;color:#666;margin-bottom:6px">库存比实际<u>多</u>了用「报溢」，比实际<u>少/坏了</u>用「报损」。提交后走审批，审批通过才调库存。</div>
+      <div class="fr"><div class="fg" style="flex:2"><label class="fl2">物资 *</label><select class="fc" id="adjInv">${opts}</select></div>
+      <div class="fg"><label class="fl2">类型 *</label><select class="fc" id="adjType"><option value="报溢">🟢 报溢(多了)</option><option value="报损">🟠 报损(少了/坏)</option></select></div></div>
+      <div class="fr"><div class="fg"><label class="fl2">数量 *</label><input class="fc" id="adjQty" type="number" min="0.01" step="0.01" placeholder="差异数量"></div></div>
+      <div class="fg"><label class="fl2">原因 *</label><input class="fc" id="adjReason" placeholder="如: 供应商多发/受潮报废/盘点差异"></div>`;
+    id('detailModal').classList.add('show');
+    id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="createAdj()">提交审批</button>';
+  }).catch(()=>alert('库存加载失败'));
+}
+async function createAdj(){
+  const inventory_id=parseInt(id('adjInv')?.value||0);
+  const adj_type=id('adjType')?.value||'';
+  const adj_qty=parseFloat(id('adjQty')?.value)||0;
+  const reason=(id('adjReason')?.value||'').trim();
+  if(!inventory_id){alert('请选择物资');return}
+  if(adj_qty<=0){alert('请填写有效数量');return}
+  if(!reason){alert('请填写原因');return}
+  const r=await api('/adjustments',{method:'POST',body:JSON.stringify({inventory_id,adj_type,adj_qty,reason})});
+  if(r.success){alert(`✅ ${r.adj_no} 已提交审批，审批通过后自动调库存`);closeMod();loadAdjustments()}
+  else alert(r.error||'提交失败');
+}
+async function adjApprove(id,action){
+  if(action=='approved'&&!confirm('确认通过？库存将按单据数量调整'))return;
+  const r=await api(`/adjustments/${id}/approve`,{method:'POST',body:JSON.stringify({action})});
+  if(r.success){alert(action=='approved'?'✅ 已通过，库存已调整':'已驳回');loadAdjustments();loadInventory()}
+  else alert(r.error||'操作失败');
 }
 
 // Feishu 飞书对接

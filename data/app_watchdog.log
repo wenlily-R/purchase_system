@@ -17653,3 +17653,415 @@ Port 5899 is in use by another program. Either identify and stop that program, o
 
  * Serving Flask app 'app'
  * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [19/Aug/2026 16:34:21] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:34:23] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:34:41] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:34:42] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:35:13] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:35:14] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:35:46] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:35:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:36:18] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:36:19] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:36:51] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:36:52] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:37:23] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:37:24] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:37:55] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:37:56] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:38:28] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:38:29] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:39:00] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:39:03] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:39:34] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:39:36] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:40:07] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:40:08] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:40:39] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:41:14] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:43:26] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:45:27] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:50:16] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:55:18] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:56:47] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 16:57:30] "GET / HTTP/1.1" 200 -
+192.168.110.214 - - [19/Aug/2026 16:57:30] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 16:57:47] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 16:57:47] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+192.168.110.89 - - [19/Aug/2026 16:57:47] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+192.168.110.89 - - [19/Aug/2026 16:57:47] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+192.168.110.89 - - [19/Aug/2026 16:57:48] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+192.168.110.89 - - [19/Aug/2026 16:58:04] "POST /api/login HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 16:58:04] "GET /api/public-url HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 16:58:04] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 16:58:04] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 16:58:06] "GET /api/inquiries HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 16:58:07] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 16:58:09] "GET /api/receivings HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 16:58:09] "GET /api/departments HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 16:58:09] "GET /api/categories HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 16:58:12] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 16:58:12] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 16:58:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 16:58:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 16:59:27] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 16:59:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 16:59:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:00:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:00:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:01:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:01:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:02:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:02:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:03:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:03:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 17:04:38] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:04:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:04:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 17:05:32] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:05:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:05:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:06:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:06:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:07:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:07:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:08:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:08:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 17:09:21] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 17:09:35] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:09:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:09:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:10:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:10:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:11:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:11:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:12:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:12:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:13:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:13:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:14:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:14:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:15:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:15:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:16:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:16:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:17:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:17:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:18:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:18:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:19:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:19:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:20:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:20:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:21:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:21:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:22:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:22:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:23:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:23:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:24:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:24:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:25:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:25:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:26:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:26:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:27:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:27:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:28:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:28:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 17:28:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 17:29:04] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [19/Aug/2026 17:29:18] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:29:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:29:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:30:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:30:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:31:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:31:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:32:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:32:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:33:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:33:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:34:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:34:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:35:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:35:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:36:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:36:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:37:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:37:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:38:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:38:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:39:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:39:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:40:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:40:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:41:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:41:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:42:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:42:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:43:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:43:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:44:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:44:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:45:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:45:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:46:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:46:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:47:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:47:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:48:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:48:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:49:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:49:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:50:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:50:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:51:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:51:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:52:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:52:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:53:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:53:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:54:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:54:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:55:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:55:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:56:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:56:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:57:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:57:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:58:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:58:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:59:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 17:59:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:00:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:00:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:01:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:01:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:02:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:02:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:03:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:03:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:04:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:04:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:05:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:05:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:06:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:06:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:07:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:07:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:08:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:08:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:09:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:09:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:10:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:10:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:11:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:11:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:12:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:12:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:13:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:13:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:14:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:14:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:15:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:15:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:16:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:16:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:17:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:17:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:18:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:18:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:19:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:19:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:20:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:20:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:21:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:21:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:22:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:22:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:23:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:23:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:24:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:24:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:25:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:25:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:26:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:26:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:27:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:27:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:28:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:28:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:29:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:29:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:30:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:30:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:31:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:31:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:32:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:32:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:33:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:33:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:34:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:34:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:35:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:35:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:36:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:36:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:37:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:37:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:38:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:38:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:39:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:39:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:40:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:40:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:41:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:41:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:42:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:42:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:43:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:43:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:44:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:44:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:45:47] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 18:45:47] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 19:00:51] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 19:00:51] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 19:01:51] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [19/Aug/2026 19:01:51] "GET /api/approvals/overdue HTTP/1.1" 200 -
+  [自动备份] 定时备份完成: purchase_20260820_030001.db
+192.168.110.89 - - [20/Aug/2026 08:02:59] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:02:59] "GET /api/me HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:02:59] "GET /api/public-url HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:02:59] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:02:59] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:03:05] "GET /api/receivings HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:03:05] "GET /api/departments HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:03:05] "GET /api/categories HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:03:11] "GET /api/inventory HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:03:11] "GET /api/requisitions HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:03:11] "GET /api/inventory HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:03:13] "GET /api/inventory HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:03:13] "GET /api/categories HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:03:20] "GET /api/receivings HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:03:20] "GET /api/departments HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:03:20] "GET /api/categories HTTP/1.1" 200 -
+127.0.0.1 - - [20/Aug/2026 08:08:44] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [20/Aug/2026 08:08:54] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:39:50] "GET /api/receivings?dept=维修车间 HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:39:50] "GET /api/departments HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:39:50] "GET /api/categories HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:39:55] "GET /api/receivings?dept=后勤部 HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:39:55] "GET /api/departments HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:39:55] "GET /api/categories HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:39:57] "GET /api/receivings?dept=后勤部&cat=备品备件 HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:39:57] "GET /api/departments HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:39:57] "GET /api/categories HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:39:59] "GET /api/receivings?dept=后勤部&cat=维修耗材 HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:39:59] "GET /api/departments HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:39:59] "GET /api/categories HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:40:02] "GET /api/receivings?cat=维修耗材 HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:40:02] "GET /api/departments HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:40:02] "GET /api/categories HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:40:04] "GET /api/receivings HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:40:04] "GET /api/departments HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:40:04] "GET /api/categories HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:40:07] "GET /api/departments HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 08:40:07] "GET /api/inventory HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 09:12:28] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 09:12:30] "GET /api/inquiries HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 09:12:33] "GET /api/orders HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 09:12:35] "GET /api/contracts HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 09:12:37] "GET /api/suppliers HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 09:12:39] "GET /api/receivings HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 09:12:39] "GET /api/departments HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 09:12:39] "GET /api/categories HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 09:12:44] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 09:12:45] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 09:12:45] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 09:13:16] "GET /api/prequests HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+192.168.110.89 - - [20/Aug/2026 09:39:07] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 09:39:07] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 09:39:07] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 09:39:07] "GET /api/inquiries HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 09:39:07] "GET /api/settings HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 09:39:07] "GET /api/contract-templates HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 09:39:07] "GET /api/approval-flow HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 09:39:07] "GET /api/approval-config/check HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 09:39:07] "GET /api/users HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 09:39:07] "GET /api/config-users HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 09:39:07] "GET /api/logs HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 09:39:07] "GET /api/users HTTP/1.1" 200 -
+192.168.110.89 - - [20/Aug/2026 09:39:07] "GET /api/signature/info HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off

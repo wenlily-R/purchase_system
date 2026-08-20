@@ -296,6 +296,11 @@ def init_db():
         CREATE TABLE IF NOT EXISTS inventory_count_items (
             id INTEGER PRIMARY KEY AUTOINCREMENT, count_id INTEGER NOT NULL, inventory_id INTEGER,
             item_name TEXT, book_qty REAL DEFAULT 0, actual_qty REAL DEFAULT 0);
+        CREATE TABLE IF NOT EXISTS inventory_adjustments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, adj_no TEXT UNIQUE NOT NULL, adj_type TEXT NOT NULL,
+            inventory_id INTEGER, item_name TEXT, spec TEXT, unit TEXT DEFAULT '个', book_qty REAL DEFAULT 0,
+            adj_qty REAL DEFAULT 0, reason TEXT, status TEXT DEFAULT '待审批', source TEXT DEFAULT '手动',
+            created_by TEXT, created_at TEXT DEFAULT (datetime('now','localtime')), approved_at TEXT);
         CREATE TABLE IF NOT EXISTS contract_templates (
             id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, file_path TEXT,
             version TEXT DEFAULT 'V1', status TEXT DEFAULT '启用', is_default INTEGER DEFAULT 0,
@@ -5269,6 +5274,7 @@ def api_count(cid):
 @app.route('/api/counts/<int:cid>/finish', methods=['POST'])
 @login_required
 def api_finish_count(cid):
+    """完成盘点: 差异项自动生成报溢/报损单(待审批), 审批通过后才调库存(V11.34 账实相符闭环)"""
     d = request.json
     c = db()
     diffs = 0
@@ -5279,11 +5285,89 @@ def api_finish_count(cid):
         c.execute("UPDATE inventory_count_items SET actual_qty=? WHERE id=?", (aq, row['id']))
         if abs(aq - row['book_qty']) > 0.001:
             diffs += 1
-            c.execute("UPDATE inventory SET quantity=? WHERE id=?", (aq, row['inventory_id']))
+            # V11.34: 差异 → 报溢/报损单(待审批), 不再直接改库存
+            diff_qty = aq - row['book_qty']
+            adj_type = '报溢' if diff_qty > 0 else '报损'
+            inv = c.execute("SELECT * FROM inventory WHERE id=?", (row['inventory_id'],)).fetchone()
+            adj_no = gen_no('SY' if diff_qty > 0 else 'BS', 'inventory_adjustments', 'adj_no')
+            c.execute("""INSERT INTO inventory_adjustments(adj_no,adj_type,inventory_id,item_name,spec,unit,book_qty,adj_qty,reason,status,source,created_by)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (adj_no, adj_type, row['inventory_id'], row['item_name'], inv['spec'] if inv else '',
+                 inv['unit'] if inv else '个', row['book_qty'], abs(diff_qty),
+                 f'盘点差异自动生成: 账面{row["book_qty"]:g} 实盘{aq:g}', '待审批', '盘点', session['user_name']))
     c.execute("UPDATE inventory_counts SET status='已完成', finished_at=? WHERE id=?", (now(), cid))
     c.commit(); c.close()
-    log(session['user_name'], '完成盘点', f'#{cid} 差异{diffs}项')
+    log(session['user_name'], '完成盘点', f'#{cid} 差异{diffs}项(已生成报溢/报损单待审批)')
     return jsonify({'success': True, 'diff_items': diffs})
+
+# ============================================================
+# V11.34 ── 报溢/报损单(库存账实相符)
+# ============================================================
+@app.route('/api/adjustments')
+@login_required
+def api_adjustments():
+    """报溢/报损单列表"""
+    c = db()
+    rows = c.execute("SELECT * FROM inventory_adjustments ORDER BY id DESC LIMIT 100").fetchall()
+    c.close()
+    return jsonify([dict_row(r) for r in rows])
+
+@app.route('/api/adjustments', methods=['POST'])
+@login_required
+def api_create_adjustment():
+    """手动报溢/报损单(未盘点也可用: 到货多/物资损坏)"""
+    d = request.json
+    inv_id = d.get('inventory_id')
+    adj_type = d.get('adj_type', '')
+    qty = float(d.get('adj_qty') or 0)
+    reason = (d.get('reason') or '').strip()
+    if adj_type not in ('报溢', '报损') or qty <= 0:
+        return jsonify({'error': '请选择类型(报溢/报损)并填写数量'}), 400
+    if not reason:
+        return jsonify({'error': '请填写原因(审批依据)'}), 400
+    c = db()
+    inv = c.execute("SELECT * FROM inventory WHERE id=?", (inv_id,)).fetchone() if inv_id else None
+    if not inv:
+        c.close(); return jsonify({'error': '库存物资不存在'}), 404
+    adj_no = gen_no('SY' if adj_type == '报溢' else 'BS', 'inventory_adjustments', 'adj_no')
+    c.execute("""INSERT INTO inventory_adjustments(adj_no,adj_type,inventory_id,item_name,spec,unit,book_qty,adj_qty,reason,status,source,created_by)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (adj_no, adj_type, inv_id, inv['item_name'], inv['spec'] or '', inv['unit'] or '个',
+         inv['quantity'] or 0, qty, reason, '待审批', '手动', session['user_name']))
+    aid = c.execute("SELECT id FROM inventory_adjustments WHERE adj_no=?", (adj_no,)).fetchone()[0]
+    c.commit(); c.close()
+    log(session['user_name'], f'新建{adj_type}单', f'{adj_no} {inv["item_name"]} x{qty:g} {reason[:30]}')
+    return jsonify({'success': True, 'adj_no': adj_no, 'id': aid})
+
+@app.route('/api/adjustments/<int:aid>/approve', methods=['POST'])
+@login_required
+def api_adjust_approve(aid):
+    """审批报溢/报损单: 通过→调库存; 驳回→不改库存"""
+    d = request.json or {}
+    action = d.get('action', 'approved')
+    c = db()
+    r = c.execute("SELECT * FROM inventory_adjustments WHERE id=?", (aid,)).fetchone()
+    if not r:
+        c.close(); return jsonify({'error': '单据不存在'}), 404
+    if r['status'] != '待审批':
+        c.close(); return jsonify({'error': '该单据已处理'}), 400
+    if action == 'rejected':
+        c.execute("UPDATE inventory_adjustments SET status='已驳回' WHERE id=?", (aid,))
+        c.commit(); c.close()
+        log(session['user_name'], '驳回' + r['adj_type'], f"{r['adj_no']} {r['item_name']}")
+        return jsonify({'success': True})
+    # 通过 → 调库存
+    if r['adj_type'] == '报溢':
+        c.execute("UPDATE inventory SET quantity=quantity+? WHERE id=?", (r['adj_qty'], r['inventory_id']))
+    else:
+        # 报损: 库存不够则按现有量扣(不扣成负)
+        inv = c.execute("SELECT quantity FROM inventory WHERE id=?", (r['inventory_id'],)).fetchone()
+        cur = float(inv['quantity'] or 0) if inv else 0
+        c.execute("UPDATE inventory SET quantity=? WHERE id=?", (max(0, cur - r['adj_qty']), r['inventory_id']))
+    c.execute("UPDATE inventory_adjustments SET status='已通过', approved_at=? WHERE id=?", (now(), aid))
+    c.commit(); c.close()
+    log(session['user_name'], f'{r["adj_type"]}审批通过', f"{r['adj_no']} {r['item_name']} x{r['adj_qty']:g}{r['unit']} 已调库存")
+    return jsonify({'success': True})
 
 # ============================================================
 # V4.4 ── 需求文档补充: 加购下单/月度对账/合并开票/往来台账
