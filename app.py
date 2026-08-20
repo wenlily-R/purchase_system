@@ -5339,6 +5339,19 @@ def api_create_adjustment():
     log(session['user_name'], f'新建{adj_type}单', f'{adj_no} {inv["item_name"]} x{qty:g} {reason[:30]}')
     return jsonify({'success': True, 'adj_no': adj_no, 'id': aid})
 
+@app.route('/api/inventory/<int:iid>/trace')
+@login_required
+def api_inventory_trace(iid):
+    """V11.36: 库存溯源 — 该物资全部出入库/报溢报损流水"""
+    c = db()
+    inv = c.execute("SELECT * FROM inventory WHERE id=?", (iid,)).fetchone()
+    if not inv:
+        c.close(); return jsonify({'error': '库存物资不存在'}), 404
+    flows = c.execute("""SELECT * FROM inventory_flows WHERE item_name=? AND (spec=? OR (?='' AND (spec='' OR spec IS NULL)))
+        ORDER BY id DESC LIMIT 50""", (inv['item_name'], inv['spec'] or '', inv['spec'] or '')).fetchall()
+    c.close()
+    return jsonify({'inventory': dict_row(inv), 'flows': [dict_row(f) for f in flows]})
+
 @app.route('/api/adjustments/<int:aid>/approve', methods=['POST'])
 @login_required
 def api_adjust_approve(aid):
@@ -5364,6 +5377,13 @@ def api_adjust_approve(aid):
         inv = c.execute("SELECT quantity FROM inventory WHERE id=?", (r['inventory_id'],)).fetchone()
         cur = float(inv['quantity'] or 0) if inv else 0
         c.execute("UPDATE inventory SET quantity=? WHERE id=?", (max(0, cur - r['adj_qty']), r['inventory_id']))
+    # V11.36: 报溢/报损写入库存流水(溯源完整闭环)
+    _new_qty = c.execute("SELECT quantity FROM inventory WHERE id=?", (r['inventory_id'],)).fetchone()
+    _bal = float(_new_qty[0] or 0) if _new_qty else 0
+    c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+              (r['item_name'], r['spec'] or '', r['unit'] or '个', r['adj_type'], 'adjustment', aid, r['adj_no'],
+               r['adj_qty'] if r['adj_type'] == '报溢' else -r['adj_qty'], _bal, session['user_name'],
+               f'{r["adj_type"]}单{r["adj_no"]}审批通过', now()))
     c.execute("UPDATE inventory_adjustments SET status='已通过', approved_at=? WHERE id=?", (now(), aid))
     c.commit(); c.close()
     log(session['user_name'], f'{r["adj_type"]}审批通过', f"{r['adj_no']} {r['item_name']} x{r['adj_qty']:g}{r['unit']} 已调库存")
