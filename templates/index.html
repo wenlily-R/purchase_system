@@ -1759,11 +1759,22 @@ async function loadReceivings(){
     }
   }catch(e){}
   id('receivingsTable').innerHTML=rnder(r,['receive_no','dept','item_name','quantity','trade_mode','status','id'],['单号','部门','物资','数量','交易模式','状态','操作'],
-    x=>`<td><b>${esc(x.receive_no)}</b></td><td>${x.dept?`<span class="tag" style="background:#eef7ee;color:#2e7d32">${esc(x.dept)}</span>`:'<span style="color:#bbb">—</span>'}</td><td>${esc(x.item_name)}${x.item_count?` <span class="tag" style="background:#e8f0fe;color:#1a6bff">${x.item_count}项</span>`:''}${x.urgent?' <span style="color:#e74c3c;font-weight:700">加急</span>':''}</td><td>${x.total_qty||x.quantity}${esc(x.unit||'')}</td>
-    <td><span class="tag ${x.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(x.trade_mode||'货到付款')}</span></td><td>${tag(x.status)}</td>
-    <td><button class="lnk" onclick="showRcvDetail(${x.id})">查看详情</button>
-      ${x.status=='待入库'?`<button class="lnk" style="color:var(--s);font-weight:600" onclick="completeRcv(${x.id},${x.total_qty||x.quantity},${x.order_id||0})">📤 提交审批</button>`:''}${x.status=='待审批'?`<span style="color:#b08900;font-size:8px">审批中</span>`:''}
-      <button class="lnk" style="color:#b08900" onclick="editDoc('receiving',${x.id},'入库单')">✏️修改</button> <button class="lnk" onclick="window.open('/api/receivings/${x.id}/download','_blank')">⬇️ 下载</button> ${x.status=='已入库'?`<button class="lnk" style="color:var(--d)" onclick="voidRcv(${x.id})">作废</button>`:''} ${(x.status=='待审批'||x.status=='已通过'||x.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('receiving',${x.id},'入库单')">↩️撤回</button>`:''}${(x.status=='待审批'||x.status=='待入库'||x.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('receiving',${x.id},'入库单')">🗑️删除</button>`:''}</td>`)}
+    x=>{
+      // V11.37: 合同自动生成的待入库单 = 到货提醒(需先确认到货)
+      const isAuto=(x.remark||'').includes('合同生效后自动')||(x.remark||'').includes('自动进入库');
+      const stTag = x.status=='待入库'&&isAuto?'<span class="tag" style="background:#e3f2fd;color:#1565c0">📦 到货提醒</span>'
+                  : x.status=='入库中'?'<span class="tag" style="background:#fff8e1;color:#f57f17">🚚 入库中</span>'
+                  : tag(x.status);
+      const ops=`<button class="lnk" onclick="showRcvDetail(${x.id})">查看详情</button>`;
+      const ops2= x.status=='待入库'&&isAuto?`<button class="lnk" style="color:var(--s);font-weight:600" onclick="confirmArrived(${x.id})">✅ 确认到货</button>`
+                : x.status=='待入库'?`<button class="lnk" style="color:var(--s);font-weight:600" onclick="completeRcv(${x.id},${x.total_qty||x.quantity},${x.order_id||0})">📤 提交审批</button>`
+                : x.status=='入库中'?`<button class="lnk" style="color:var(--s);font-weight:600" onclick="completeRcv(${x.id},${x.total_qty||x.quantity},${x.order_id||0})">📤 提交审批</button>`
+                : x.status=='待审批'?'<span style="color:#b08900;font-size:8px">审批中</span>':'';
+      return `<td><b>${esc(x.receive_no)}</b></td><td>${x.dept?`<span class="tag" style="background:#eef7ee;color:#2e7d32">${esc(x.dept)}</span>`:'<span style="color:#bbb">—</span>'}</td><td>${esc(x.item_name)}${x.item_count?` <span class="tag" style="background:#e8f0fe;color:#1a6bff">${x.item_count}项</span>`:''}${x.urgent?' <span style="color:#e74c3c;font-weight:700">加急</span>':''}</td><td>${x.total_qty||x.quantity}${esc(x.unit||'')}</td>
+    <td><span class="tag ${x.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(x.trade_mode||'货到付款')}</span></td><td>${stTag}</td>
+    <td>${ops}${ops2}
+      <button class="lnk" style="color:#b08900" onclick="editDoc('receiving',${x.id},'入库单')">✏️修改</button> <button class="lnk" onclick="window.open('/api/receivings/${x.id}/download','_blank')">⬇️ 下载</button> ${x.status=='已入库'?`<button class="lnk" style="color:var(--d)" onclick="voidRcv(${x.id})">作废</button>`:''} ${(x.status=='待审批'||x.status=='已通过'||x.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('receiving',${x.id},'入库单')">↩️撤回</button>`:''}${(x.status=='待审批'||x.status=='待入库'||x.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('receiving',${x.id},'入库单')">🗑️删除</button>`:''}</td>`;
+    })}
 async function showRcvForm(){
   // V5.0: 新建手动入库单(商品/数量/含税单价) → 提交走审批
   // V11.26: 支持验收照片/视频上传(责任留证)
@@ -1849,6 +1860,13 @@ async function voidRcv(id){
   if(!confirm('确认作废该入库单？已入库单据作废将回滚库存'))return;
   const r=await api(`/receivings/${id}/void`,{method:'POST',body:'{}'});
   if(r.success){alert(r.message);loadReceivings();loadDashboard()}else alert(r.error||'作废失败');
+}
+async function confirmArrived(rid){
+  // V11.37: 到货提醒单确认到货 → 状态待入库→入库中, 然后走验收
+  if(!confirm('确认这批货已到库房？确认后即可提交验收'))return;
+  const r=await api(`/receivings/${rid}/arrived`,{method:'POST',body:'{}'});
+  if(r.success){alert('✅ 已确认到货，可提交验收入库');loadReceivings()}
+  else alert(r.error||'操作失败');
 }
 async function completeRcv(rid,defQty,orderId){
   // V8.1: 批量验收 — 明细按行确认验收数量(支持同名不同规格), 逐行提交

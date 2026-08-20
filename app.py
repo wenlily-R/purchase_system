@@ -4283,11 +4283,27 @@ def api_receivings():
     conn.close()
     return jsonify(out)
 
+@app.route('/api/receivings/<int:rid>/arrived', methods=['POST'])
+@login_required
+def api_receiving_arrived(rid):
+    """V11.37: 到货提醒单确认到货 — 货实际到了, 状态 待入库→入库中(可提交验收)"""
+    conn = db()
+    rn = conn.execute("SELECT * FROM receivings WHERE id=?", (rid,)).fetchone()
+    if not rn:
+        conn.close(); return jsonify({'error': '入库单不存在'}), 404
+    if rn['status'] != '待入库':
+        conn.close(); return jsonify({'error': f'当前状态({rn["status"]})无需确认到货'}), 400
+    conn.execute("UPDATE receivings SET status='入库中', received_at=? WHERE id=?", (now(), rid))
+    conn.commit(); conn.close()
+    log(session['user_name'], '确认到货', f'#{rid} {rn["item_name"]} 合同自动生成单已确认到货')
+    return jsonify({'success': True})
+
 @app.route('/api/receivings/<int:rid>/complete', methods=['POST'])
 @login_required
 def api_complete_receiving(rid):
     """V5.0: 入库单提交审批 → 审批通过后由 finish_approvals 实际增加库存
-    兼容旧调用(直接确认验收): 提交后自动走审批, 审批通过即入库"""
+    兼容旧调用(直接确认验收): 提交后自动走审批, 审批通过即入库
+    V11.37: 到货提醒单(合同自动生成)需先点"确认到货"→状态入库中→再提交验收"""
     d = request.json; conn = db()
     rn = conn.execute("SELECT * FROM receivings WHERE id=?", (rid,)).fetchone()
     if not rn:
