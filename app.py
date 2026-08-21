@@ -6285,6 +6285,11 @@ def api_prequest_download(rid):
         # V11.46: 行级附件图片(备注列插图)
         _attach = (it['attach'] if 'attach' in it.keys() and it['attach'] else '').strip()
         remark_txt = it['remark'] or ''
+        # V11.47b: 填了到货日期 → 备注带"需到货:xx"(没填不显示)
+        _arr = (it['arrival_date'] if 'arrival_date' in it.keys() and it['arrival_date'] else '') or ''
+        if _arr:
+            _arr = str(_arr)[:10]
+            remark_txt = (remark_txt + ' ' if remark_txt else '') + f'【需到货:{_arr}】'
         vals = [i, cat, it['item_name'], brand, it['spec'] or '', it['unit'] or '个', it['quantity'],
                 use, stock_map.get(it['item_name'], 0), it['quantity'], remark_txt]
         for j, v in enumerate(vals, 1):
