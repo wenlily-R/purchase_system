@@ -4154,39 +4154,98 @@ def api_inquiry_export(iid):
 
     row += 2
     ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=10)
-    ws.cell(row, 1, '二、供应商报价与比价对比表').font = head_font
+    ws.cell(row, 1, '二、供应商报价比价表（逐项对比）').font = head_font
     for col in range(1, 11):
         ws.cell(row, col).fill = head_fill; ws.cell(row, col).border = border
     row += 1
-    sup_head = ['序号', '供应商名称', '联系人/电话', '报价总金额(元)', '交付日期', '质保时间', '备注', '报价时间', '是否最低价', '选中状态']
+    # V11.51: 逐行三家对比 — 每物料一行, 各家单价/总价并排, 最低价标红
+    quoted = [s for s in sups if s['quote_price'] and s['quote_price'] > 0]
+    # 解析每家行明细(商家按申请明细顺序报价)
+    sup_details = []
+    for s in sups:
+        try:
+            sup_details.append(json.loads(s['quote_details']) if s['quote_details'] else None)
+        except Exception:
+            sup_details.append(None)
+    n_sup = len(sups)
+    # 表头: 序号/物料/数量/规格 | 每家2列(单价/总价) | 备注
+    sup_head = ['序号', '物料名称', '数量', '规格型号']
+    for s in sups:
+        sup_head += [f"{s['supplier_name']} 单价", f"{s['supplier_name']} 总价"]
+    sup_head.append('各商家备注/品牌')
+    col_count = 4 + n_sup * 2 + 1
     for ci, h in enumerate(sup_head, 1):
         c = ws.cell(row, ci, h); c.font = head_font; c.fill = head_fill; c.border = border
         c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-    ws.row_dimensions[row].height = 24
+    ws.row_dimensions[row].height = 30
     row += 1
-
-    quoted = [s for s in sups if s['quote_price'] and s['quote_price'] > 0]
-    min_price = min((s['quote_price'] for s in quoted), default=None)
-    for idx, s in enumerate(sups, 1):
-        is_min = (s['quote_price'] and s['quote_price'] > 0 and s['quote_price'] == min_price)
-        vals = [idx, s['supplier_name'] or '', (s['contact'] or '') + (' ' + (s['phone'] or '') if s['phone'] else ''),
-                (s['quote_price'] or 0), s['quote_delivery'] or '', s['quote_warranty'] or '', s['quote_remark'] or '',
-                s['quote_time'] or '未报价',
-                '★ 最低价' if is_min else '', '✅ 已选中' if s['is_selected'] else '未选中']
-        for ci, v in enumerate(vals, 1):
-            c = ws.cell(row, ci, v)
-            c.border = border
-            c.alignment = Alignment(horizontal='center' if ci in (1, 4, 5, 6, 8) else 'left', vertical='center', wrap_text=True)
-            if s['is_selected']:
-                c.fill = sel_fill                      # 选中行浅黄底
-                c.font = Font(name='微软雅黑', size=10, bold=True, color='C00000')  # 加粗标红
-            elif is_min:
-                c.font = min_font                       # 最低价标红加粗
+    # 每物料一行
+    total_per_sup = [0.0] * n_sup
+    min_font_s = Font(name='微软雅黑', size=10, bold=True, color='C00000')
+    for idx, it in enumerate(items, 1):
+        qty = float(it['quantity'] or 0)
+        vals = [idx, it['item_name'] or '', ('%g' % qty) + (it['unit'] or '个'), it['spec'] or '']
+        # 每家: 单价/总价(行明细优先, 无则空)
+        row_prices = []  # (unit_price, total)
+        for si, s in enumerate(sups):
+            det = sup_details[si]
+            unit_p = None; total_p = None
+            if det and idx - 1 < len(det):
+                d_i = det[idx - 1]
+                if d_i.get('unit_price') is not None:
+                    unit_p = float(d_i.get('unit_price') or 0)
+                    total_p = unit_p * qty
+            if unit_p is not None:
+                vals += [round(unit_p, 2), round(total_p, 2)]
+                total_per_sup[si] += total_p
             else:
-                c.font = base_font
+                vals += ['', '']
+            row_prices.append((unit_p, total_p))
+        # 备注: 汇总各商家该行备注
+        notes = []
+        for si, s in enumerate(sups):
+            det = sup_details[si]
+            if det and idx - 1 < len(det) and det[idx - 1].get('remark'):
+                notes.append(f"{s['supplier_name']}:{det[idx - 1].get('remark')}")
+        vals.append('；'.join(notes))
+        # 最低单价标红
+        unit_prices = [p[0] for p in row_prices if p[0] is not None]
+        min_unit = min(unit_prices) if unit_prices else None
+        for ci, v in enumerate(vals, 1):
+            c = ws.cell(row, ci, v); c.border = border
+            c.alignment = Alignment(horizontal='center' if ci <= 4 or ci % 2 == 0 else 'left', vertical='center', wrap_text=True)
+            # 单价列(4+2k+1): 最低标红加粗
+            if unit_prices and min_unit is not None:
+                k = (ci - 5) // 2
+                if 0 <= k < n_sup and (ci - 5) % 2 == 0:
+                    if row_prices[k][0] is not None and abs(row_prices[k][0] - min_unit) < 0.001:
+                        c.font = min_font_s
+                        continue
+            c.font = base_font
+        ws.row_dimensions[row].height = 26
         row += 1
+    # 合计行
+    ws.cell(row, 1, '').border = border
+    ws.cell(row, 2, '合计').font = label_font; ws.cell(row, 2).border = border
+    for cc in (3, 4):
+        ws.cell(row, cc).border = border
+    total_min = None
+    for si, t in enumerate(total_per_sup):
+        ws.cell(row, 5 + si * 2, '').border = border
+        c = ws.cell(row, 6 + si * 2, round(t, 2))
+        c.border = border; c.font = label_font
+        c.alignment = Alignment(horizontal='center', vertical='center')
+        if t > 0 and (total_min is None or t < total_min):
+            total_min = t
+    for si, t in enumerate(total_per_sup):
+        if t > 0 and total_min is not None and abs(t - total_min) < 0.001:
+            ws.cell(row, 6 + si * 2).font = min_font_s
+    ws.cell(row, 4 + n_sup * 2 + 1, '★=该项最低价').font = note_font
+    ws.cell(row, 4 + n_sup * 2 + 1).border = border
+    ws.row_dimensions[row].height = 22
+    row += 1
     if not sups:
-        for ci in range(1, 11):
+        for ci in range(1, col_count + 1):
             ws.cell(row, ci, '（暂无供应商）').border = border
         row += 1
 
