@@ -1008,14 +1008,22 @@ async function loadPRequests(){
   keys.forEach(k=>{
     const list=groups[k];
     html+=`<div style="margin:8px 0 4px;font-size:12px;font-weight:700;color:#1f6feb;background:#eef4ff;padding:5px 10px;border-radius:5px">📅 ${k} <span style="font-weight:400;color:#888;font-size:10px">${list.length}单</span></div>`;
-    html+=rnder(list,['req_no','dept','purpose','status','id'],['编号','部门','用途','状态','操作'],
-      x=>`<td><b>${esc(x.req_no)}</b>${x.urgent?' <span style="color:#e74c3c;font-weight:700">🚨加急</span>':''}</td><td>${esc(x.dept)}</td><td>${esc(x.purpose||'')}</td>
+    html+=rnder(list,['req_no','dept','purpose','status','progress','id'],['编号','部门','用途','状态','采购进度','操作'],
+      x=>{
+        // V11.49: 红=未联系厂家 黄=已下单在途 绿=已到货
+        const pg = x.progress=='contact'?'<span class="tag" style="background:#fdecea;color:#c0392b">🟥 未联系厂家</span>'
+                : x.progress=='shipped'?'<span class="tag" style="background:#fff8e1;color:#b7791f">🟨 已下单在途</span>'
+                : x.progress=='arrived'?'<span class="tag" style="background:#e8f5e9;color:#2e7d32">🟩 已到货</span>'
+                : '<span style="color:#bbb">—</span>';
+        return `<td><b>${esc(x.req_no)}</b>${x.urgent?' <span style="color:#e74c3c;font-weight:700">🚨加急</span>':''}</td><td>${esc(x.dept)}</td><td>${esc(x.purpose||'')}</td>
         <td>${tag(x.status)}${x.status=='已驳回'&&x.rejected_reason?`<div style="font-size:8px;color:var(--d)">驳回: ${esc(x.rejected_reason)}</div>`:''}</td>
+        <td>${pg}</td>
         <td style="white-space:nowrap"><button class="lnk" onclick="showPRequest(${x.id})">详情</button>
         <button class="lnk" style="color:var(--s)" onclick="window.open('/api/prequests/${x.id}/download','_blank')">⬇️下载</button>
         <button class="lnk" style="color:#b08900" onclick="editDoc('purchase_request',${x.id},'采购申请')">✏️修改</button>
         ${(x.status=='待审批'||x.status=='已通过'||x.status=='已驳回'||x.status=='草稿')?` <button class="lnk" style="color:var(--o)" onclick="withdrawDoc('purchase_request',${x.id},'采购申请')">↩️撤回</button>`:''}
-        ${x.status!='已作废'?` <button class="lnk" style="color:var(--d)" onclick="delDoc('purchase_request',${x.id},'采购申请')">🗑️删除</button>`:''}</td>`);
+        ${x.status!='已作废'?` <button class="lnk" style="color:var(--d)" onclick="delDoc('purchase_request',${x.id},'采购申请')">🗑️删除</button>`:''}</td>`;
+      });
   });
   id('prequestsTable').innerHTML=html;
 }

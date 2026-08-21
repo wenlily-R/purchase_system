@@ -3250,8 +3250,23 @@ def stamp_leader_sign(ws, sign_row, biz_type='', biz_id=0):
 @app.route('/api/prequests')
 @login_required
 def api_prequests():
-    conn = db(); rows = conn.execute("SELECT * FROM purchase_requests ORDER BY id DESC LIMIT 100").fetchall(); conn.close()
-    return jsonify([dict_row(r) for r in rows])
+    conn = db(); rows = conn.execute("SELECT * FROM purchase_requests ORDER BY id DESC LIMIT 100").fetchall()
+    out = []
+    for r in rows:
+        d = dict_row(r)
+        # V11.49: 采购进度状态(红=未联系厂家/黄=已下单在途/绿=已到货)
+        d['progress'] = 'none'
+        if d.get('status') == '已通过':
+            po = conn.execute("SELECT status FROM purchase_orders WHERE req_id=? ORDER BY id DESC LIMIT 1", (r['id'],)).fetchone()
+            if po and po['status'] == '已入库':
+                d['progress'] = 'arrived'      # 绿: 已入库
+            elif po:
+                d['progress'] = 'shipped'      # 黄: 已下单/在途
+            else:
+                d['progress'] = 'contact'      # 红: 未联系厂家
+        out.append(d)
+    conn.close()
+    return jsonify(out)
 
 @app.route('/api/prequests/next_no')
 @login_required
