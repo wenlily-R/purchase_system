@@ -18502,3 +18502,121 @@ Port 5899 is in use by another program. Either identify and stop that program, o
 
  * Serving Flask app 'app'
  * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [21/Aug/2026 08:18:43] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:23:40] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:23:40] "GET /api/me HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:23:40] "GET /api/public-url HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:23:40] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:23:40] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:23:42] "GET /api/inquiries HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:23:42] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:23:46] "GET /api/suppliers HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:23:46] "GET /api/categories HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:23:46] "GET /api/departments HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:23:46] "GET /api/budgets HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:23:46] "GET /api/prequests/next_no HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:23:58] "GET /api/suppliers HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:23:58] "GET /api/categories HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:23:58] "GET /api/departments HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:23:58] "GET /api/budgets HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:23:58] "GET /api/prequests/next_no HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:24:07] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:24:07] "GET /api/me HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:24:07] "GET /api/public-url HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:24:07] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:24:07] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:24:08] "GET /api/inquiries HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:24:09] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:24:10] "GET /api/suppliers HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:24:10] "GET /api/categories HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:24:10] "GET /api/departments HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:24:10] "GET /api/budgets HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:24:10] "GET /api/prequests/next_no HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:24:30] "GET /api/inventory/stock-check?name=电脑 HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:24:41] "GET /api/inventory/stock-check?name=螺丝 HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 08:37:34] "GET /api/inventory/stock-check?name=风格化 HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:39:33] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:54:02] "GET /api/suppliers HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:54:02] "GET /api/categories HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:54:02] "GET /api/departments HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:54:02] "GET /api/budgets HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:54:02] "GET /api/prequests/next_no HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:54:46] "GET /api/inventory/stock-check?name=电脑 HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:56:56] "POST /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:56:57] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:56:57] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:56:57] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:57:16] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:57:27] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:57:35] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:57:37] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:57:37] "GET /api/me HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:57:37] "GET /api/public-url HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:57:37] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:57:37] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:57:38] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:57:39] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:57:47] "GET /api/prequests/25 HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:57:59] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:58:42] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:58:44] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:58:44] "GET /api/me HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:58:44] "GET /api/public-url HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:58:44] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:58:44] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:58:45] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:58:48] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:58:48] "GET /api/me HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:58:48] "GET /api/public-url HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:58:48] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:58:48] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:58:50] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:58:50] "GET /api/me HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:58:50] "GET /api/public-url HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:58:50] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:58:50] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:58:51] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:58:53] "GET /api/inquiries HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:58:54] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:59:10] "GET /api/prequests/25 HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:59:20] "GET /api/inquiries HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:59:22] "GET /api/inquiries/eligible HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:59:26] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:59:32] "GET /api/inquiries HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 09:59:34] "GET /api/inquiries/eligible HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:00:18] "POST /api/inquiries HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:00:20] "GET /api/inquiries HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:00:21] "GET /api/inquiries/9 HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 10:01:49] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 10:02:05] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 10:02:30] "GET /inq/0eaa09c6e38b4692be8f3e159abd1c9a HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 10:02:32] "GET /inq/6707860e22734bc98597cf7b1e8ed8f1 HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 10:02:33] "GET /inq/1eb37a217ea04e208158489d2df01f32 HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [21/Aug/2026 10:03:43] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 10:04:35] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 10:04:44] "GET /inq/0eaa09c6e38b4692be8f3e159abd1c9a HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 10:04:46] "GET /inq/6707860e22734bc98597cf7b1e8ed8f1 HTTP/1.1" 200 -
