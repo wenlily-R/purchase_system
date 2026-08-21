@@ -2405,6 +2405,15 @@ async function loadDtInstances(){
 async function dtRemindNow(){const r=await api('/dingtalk/remind-now',{method:'POST',body:'{}'});alert(r.success?'✅ 预警扫描已执行(按规则推送)':'失败')}
 async function dtSyncInsts(){const r=await api('/dingtalk/sync-instances',{method:'POST',body:'{}'});alert(r.success?`✅ 补发完成: ${r.pushed}/${r.total} 条`:'失败')}
 
+// V11.45b: 申请单号随部门变化(前缀按部门, 序号当天总序)
+async function reqNoByDept(){
+  try{
+    const dept=id('fReqDept')?.value||'';
+    const n=await api('/prequests/next_no'+(dept?'?dept='+encodeURIComponent(dept):''));
+    if(id('fReqNo'))id('fReqNo').value=n.req_no;
+  }catch(e){}
+}
+
 // Forms
 async function showForm(type){
   const sups=await api('/suppliers');const cats=await api('/categories');const depts=await api('/departments');
@@ -2414,7 +2423,7 @@ async function showForm(type){
     id('dmBody').innerHTML=`
       <div class="fr"><div class="fg"><label class="fl2">申请单号</label><input class="fc" id="fReqNo" readonly style="background:#f5f5f5"></div>
       <div class="fg"><label class="fl2">申请日期</label><input class="fc" id="fReqApplyDate" readonly style="background:#f5f5f5"></div></div>
-      <div class="fr"><div class="fg"><label class="fl2">申请部门</label><select class="fc" id="fReqDept"><option value="">请选择（选填）</option>${depts.map(d=>`<option>${esc(d.name)}</option>`).join('')}</select></div>
+      <div class="fr"><div class="fg"><label class="fl2">申请部门</label><select class="fc" id="fReqDept" onchange="reqNoByDept()"><option value="">请选择（选填）</option>${depts.map(d=>`<option>${esc(d.name)}</option>`).join('')}</select></div>
       <div class="fg"><label class="fl2">预算科目</label><select class="fc" id="fReqBud"><option value="">无</option></select></div></div>
       <div class="fr"><div class="fg"><label class="fl2">用途说明 *</label><input class="fc" id="fReqPurp"></div>
       <div class="fg"><label class="fl2">目标到货日</label><input class="fc" id="fReqDate" type="date" value="${d.toISOString().split('T')[0]}"></div></div>
@@ -2431,8 +2440,8 @@ async function showForm(type){
     id('dmFooter').innerHTML=`<button class="btn btn-o" onclick="closeMod()">取消</button>
       <button class="btn btn-p" onclick="createPRequest()">提交申请</button>`;
     addReqItem();addReqItem();
-    // 申请单号(SC年月日第几份) + 当日日期 自动带出
-    api('/prequests/next_no').then(n=>{id('fReqNo').value=n.req_no}).catch(()=>{});
+    // 申请单号(前缀随部门, 序号当天总序) + 当日日期 自动带出
+    reqNoByDept();
     const _td=new Date();id('fReqApplyDate').value=_td.getFullYear()+'年'+( _td.getMonth()+1)+'月'+_td.getDate()+'日';
     // Load budgets
     api('/budgets').then(bs=>{
