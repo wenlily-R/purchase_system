@@ -4867,6 +4867,25 @@ def api_inventory():
         out.append(d)
     return jsonify(out)
 
+@app.route('/api/inventory/stock-check')
+@login_required
+def api_inventory_stock_check():
+    """V11.38: 申请单填物资时查库存 — 按物资名称(支持规格模糊)返回库存情况"""
+    name = (request.args.get('name') or '').strip()
+    if not name:
+        return jsonify({'error': '缺少物资名称'}), 400
+    conn = db()
+    rows = conn.execute("SELECT * FROM inventory WHERE item_name=? ORDER BY id", (name,)).fetchall()
+    if not rows:
+        # 模糊匹配(名称包含)
+        rows = conn.execute("SELECT * FROM inventory WHERE item_name LIKE ? ORDER BY id LIMIT 5", ('%' + name + '%',)).fetchall()
+    conn.close()
+    out = [{'id': r['id'], 'item_name': r['item_name'], 'spec': r['spec'] or '', 'unit': r['unit'] or '个',
+            'quantity': r['quantity'] or 0, 'warehouse': r['warehouse'] or '主库房',
+            'supplier': r['supplier'] or '', 'cat_name': ''} for r in rows]
+    total = sum(float(x['quantity']) for x in out)
+    return jsonify({'matches': out, 'total_qty': total, 'found': len(out) > 0})
+
 @app.route('/api/logs')
 @login_required
 def api_logs():
