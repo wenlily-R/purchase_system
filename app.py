@@ -3254,6 +3254,7 @@ def api_prequests():
     out = []
     for r in rows:
         d = dict_row(r)
+        d['req_type'] = r['req_type'] if 'req_type' in r.keys() and r['req_type'] else '物资采购'
         # V11.49: 采购进度状态(红=未联系厂家/黄=已下单在途/绿=已到货)
         d['progress'] = 'none'
         if d.get('status') == '已通过':

@@ -292,7 +292,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
       <div class="v9-quick" onclick="sw('inventory')"><span class="ic">📦</span>库存查询</div>
     </div></div>
 </div>
-<div class="page" id="pprequests"><h2>📝 采购申请</h2><div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="showForm('prequest')">+ 新建申请</button><button class="btn btn-w btn-sm" onclick="showAddCart()">🛒 加购下单(汇总已通过申请)</button></div><div class="card"><div class="cb" id="prequestsTable"><div class="loading">加载中...</div></div></div></div>
+<div class="page" id="pprequests"><h2>📝 采购申请</h2><div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="showForm('prequest')">+ 新建申请</button><button class="btn btn-w btn-sm" onclick="showAddCart()">🛒 加购下单(汇总已通过申请)</button><select id="reqTypeFilter" onchange="loadPRequests()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="">全部类型</option><option>物资采购</option><option>设备维修</option></select></div><div class="card"><div class="cb" id="prequestsTable"><div class="loading">加载中...</div></div></div></div>
 <div class="page" id="porders"><h2>📋 采购订单</h2><div style="margin-bottom:4px"><button class="btn btn-p btn-sm" onclick="showForm('order')">+ 新建订单</button></div><div class="card"><div class="cb" id="ordersTable"><div class="loading">加载中...</div></div></div></div>
 <div class="page" id="pinquiries"><h2>🔍 三方询价</h2><div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="showInquiryForm()">+ 发起三方询价</button><button class="btn btn-w btn-sm" onclick="loadInquiries()">🔄 刷新</button></div><div class="card"><div class="cb" id="inquiriesTable"><div class="loading">加载中...</div></div></div></div>
 <div class="page" id="papprovals"><h2>✅ 审批中心</h2>
@@ -995,27 +995,35 @@ function apprZone(z){
 function canSeePrice(){return ['系统管理员','财务','分管领导','总经理'].includes(ME.role)}
 async function loadPRequests(){
   const r=await api('/prequests');
+  // V11.50: 类型筛选(物资采购/设备维修)
+  const fType=id('reqTypeFilter')?.value||'';
+  const filtered=fType?r.filter(x=>(x.req_type||'物资采购')===fType):r;
   // V11.48: 按申请日期分组展示(像"采购清单8月"按日期分sheet一样)
   const groups={};
-  r.forEach(x=>{
+  filtered.forEach(x=>{
     const d=(x.apply_date||x.created_at||'').slice(0,10);
     const key=d?d.slice(5).replace('-','.')+'' : '未填日期';  // 2026-08-21 → 08.21
     (groups[key]=groups[key]||[]).push(x);
   });
   const keys=Object.keys(groups).sort((a,b)=>b.localeCompare(a));
-  if(!keys.length){id('prequestsTable').innerHTML='<div style="padding:8px;color:#999">暂无采购申请</div>';return}
+  if(!keys.length){id('prequestsTable').innerHTML='<div style="padding:8px;color:#999">暂无申请</div>';return}
   let html='';
   keys.forEach(k=>{
     const list=groups[k];
     html+=`<div style="margin:8px 0 4px;font-size:12px;font-weight:700;color:#1f6feb;background:#eef4ff;padding:5px 10px;border-radius:5px">📅 ${k} <span style="font-weight:400;color:#888;font-size:10px">${list.length}单</span></div>`;
-    html+=rnder(list,['req_no','dept','purpose','status','progress','id'],['编号','部门','用途','状态','采购进度','操作'],
+    html+=rnder(list,['req_no','dept','purpose','req_type','status','progress','id'],['编号','部门','用途','类型','状态','采购进度','操作'],
       x=>{
-        // V11.49: 红=未联系厂家 黄=已下单在途 绿=已到货
+        // V11.49: 红=未联系厂家 黄=已下单在途 绿=已到货 (仅已通过显示)
         const pg = x.progress=='contact'?'<span class="tag" style="background:#fdecea;color:#c0392b">🟥 未联系厂家</span>'
                 : x.progress=='shipped'?'<span class="tag" style="background:#fff8e1;color:#b7791f">🟨 已下单在途</span>'
                 : x.progress=='arrived'?'<span class="tag" style="background:#e8f5e9;color:#2e7d32">🟩 已到货</span>'
                 : '<span style="color:#bbb">—</span>';
+        // 类型: 灰色小字不抢色
+        const tp = (x.req_type||'物资采购')=='设备维修'
+          ? '<span style="color:#8a6d3b;background:#f8f0e3;padding:1px 6px;border-radius:3px;font-size:9px">🛠 维修</span>'
+          : '<span style="color:#666;background:#f0f0f0;padding:1px 6px;border-radius:3px;font-size:9px">📦 采购</span>';
         return `<td><b>${esc(x.req_no)}</b>${x.urgent?' <span style="color:#e74c3c;font-weight:700">🚨加急</span>':''}</td><td>${esc(x.dept)}</td><td>${esc(x.purpose||'')}</td>
+        <td>${tp}</td>
         <td>${tag(x.status)}${x.status=='已驳回'&&x.rejected_reason?`<div style="font-size:8px;color:var(--d)">驳回: ${esc(x.rejected_reason)}</div>`:''}</td>
         <td>${pg}</td>
         <td style="white-space:nowrap"><button class="lnk" onclick="showPRequest(${x.id})">详情</button>
