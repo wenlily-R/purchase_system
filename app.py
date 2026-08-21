@@ -3866,7 +3866,7 @@ def inquiry_vendor_page(token):
                 '<div style="overflow-x:auto"><table style="width:100%%;border-collapse:collapse;font-size:13px;margin-bottom:10px;min-width:700px">'
                 '<tr style="background:#f5f8ff"><th style="padding:6px 8px;text-align:left">物资名称</th>'
                 '<th style="padding:6px 8px;text-align:left">规格</th><th style="padding:6px 8px;text-align:left">数量</th>'
-                '<th style="padding:6px 8px;text-align:left">单价(元)</th><th style="padding:6px 8px;text-align:left">总价</th>'
+                '<th style="padding:6px 8px;text-align:left">单价(元)</th><th style="padding:6px 8px;text-align:left">总价(含税含运)</th>'
                 '<th style="padding:6px 8px;text-align:left">交付日期</th><th style="padding:6px 8px;text-align:left">质保时间</th>'
                 '<th style="padding:6px 8px;text-align:left">备注</th></tr>%s</table></div>'
                 '<div style="background:#f0faf0;border-radius:8px;padding:10px 14px;font-size:14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">'
