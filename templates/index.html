@@ -2588,8 +2588,10 @@ function addReqItem(){
   const c=++reqItemCount;
   const d=new Date();d.setDate(d.getDate()+14);
   id('reqItemList').insertAdjacentHTML('beforeend',`<div style="display:flex;gap:4px;margin:2px 0;align-items:center;flex-wrap:wrap" id="ritem${c}">
-    <input placeholder="物资名称" id="rin${c}" style="flex:1.4;min-width:80px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px" onchange="checkStock(this,${c})">
-    <span id="rstk${c}" style="font-size:8px;display:none"></span>
+    <span style="position:relative;flex:1.4;min-width:80px;display:inline-flex;align-items:center">
+      <input placeholder="物资名称" id="rin${c}" style="flex:1;min-width:70px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px" onchange="checkStock(this,${c})">
+      <span id="rstk${c}" style="position:absolute;right:0;top:-1px;font-size:7px;padding:0 2px;border-radius:2px;white-space:nowrap;display:none;pointer-events:none"></span>
+    </span>
     <select id="ric${c}" style="width:64px;padding:2px;border:1px solid var(--b);border-radius:3px;font-size:9px"><option value="">类别</option><option>固定资产</option><option>行政办公</option><option>酒店日耗</option><option>工程采购</option><option>基础材料</option><option>备品备件</option></select>
     <input placeholder="厂家/品牌/参数" id="rib${c}" style="flex:1.2;min-width:70px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px">
     <input placeholder="规格" id="ris${c}" style="flex:0.9;min-width:50px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px">
@@ -2604,22 +2606,27 @@ function addReqItem(){
   </div>`);
 }
 // V11.38: 填物资名称后自动查库存(采购员不用跑库房)
+// V11.49b: 提示改为悬浮小标签(不占行空间, 行保持整齐)
 async function checkStock(inp,c){
   const name=(inp.value||'').trim();
   const el=id('rstk'+c);
   if(!name){el.style.display='none';return}
   try{
     const r=await api('/inventory/stock-check?name='+encodeURIComponent(name));
+    el.style.display='inline';
     if(r.found){
       const m=r.matches[0];
-      const col=(r.total_qty||0)>0?'var(--s)':'#e74c3c';
-      const txt=(r.total_qty||0)>0?`🔵 库存:${r.total_qty}${m.unit}(${m.warehouse})`:`🔴 库存:0,需采购`;
-      el.style.display='inline';el.style.color=col;el.style.fontWeight='600';
-      el.textContent=txt;
+      if((r.total_qty||0)>0){
+        el.textContent=`🔵 库存${r.total_qty}${m.unit}`;
+        el.style.background='#e8f5e9';el.style.color='#2e7d32';
+      }else{
+        el.textContent='🔴 无货';
+        el.style.background='#fdecea';el.style.color='#c0392b';
+      }
       if(m.supplier)el.title='最近供应商:'+m.supplier;
     }else{
-      el.style.display='inline';el.style.color='#b08900';
-      el.textContent='🆕 无库存记录,需采购';
+      el.textContent='🆕 新物资';
+      el.style.background='#fff8e1';el.style.color='#b7791f';
     }
   }catch(e){el.style.display='none'}
 }
