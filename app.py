@@ -5701,6 +5701,99 @@ def api_confirm_settlement(sid):
     log(session['user_name'], '确认对账单', f'#{sid}')
     return jsonify({'success': True})
 
+# ============================================================
+# V11.53 ── 月底三表(领导流程: 暂估/红冲/白入 导出Excel给财务)
+# ============================================================
+def _gen_est_export(kind):
+    """生成 暂估/红冲/白入 明细表Excel
+    kind: est=暂估入库明细(货到发票未到) / hc=红字冲销明细(发票到已冲) / br=白入明细(正式入库)"""
+    import io as _io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+    conn = db()
+    rows = conn.execute("SELECT * FROM receivings WHERE status IN ('已入库','已通过','审批通过') ORDER BY received_at DESC").fetchall()
+    conn.close()
+    wb = Workbook(); ws = wb.active
+    thin = Side(style='thin', color='B0B0B0')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    tf = Font(name='微软雅黑', size=14, bold=True)
+    hf = Font(name='微软雅黑', size=10, bold=True, color='FFFFFF')
+    hfill = PatternFill('solid', fgColor='2F5597')
+    bf = Font(name='微软雅黑', size=10)
+    titles = {'est': '暂估入库明细表', 'hc': '红字冲销明细表', 'br': '白入(正式入库)明细表'}
+    heads = ['入库单号', '物资名称', '规格', '数量', '单位', '暂估金额(元)', '发票号', '入库日期', '备注']
+    ws.merge_cells('A1:I1')
+    ws['A1'] = titles[kind]; ws['A1'].font = tf
+    ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
+    ws.row_dimensions[1].height = 30
+    for ci, h in enumerate(heads, 1):
+        c = ws.cell(3, ci, h); c.font = hf; c.fill = hfill; c.border = border
+        c.alignment = Alignment(horizontal='center', vertical='center')
+    r = 4
+    cnt = 0
+    for row in rows:
+        is_est = bool(row['is_est'])
+        has_inv = bool(row['invoice_no'])
+        # 过滤: est=暂估未红冲 / hc=已红冲 / br=正式入库
+        if kind == 'est' and (not is_est or has_inv): continue
+        if kind == 'hc' and not (is_est and has_inv): continue
+        if kind == 'br' and is_est: continue
+        vals = [row['receive_no'], row['item_name'], row['spec'] or '', row['quantity'],
+                row['unit'] or '个', row['est_amount'] or 0, row['invoice_no'] or '',
+                str(row['received_at'] or '')[:10], row['remark'] or '']
+        for ci, v in enumerate(vals, 1):
+            c = ws.cell(r, ci, v); c.border = border; c.font = bf
+            c.alignment = Alignment(horizontal='center' if ci in (1, 3, 4, 5, 6, 7, 8) else 'left', vertical='center', wrap_text=True)
+        ws.row_dimensions[r].height = 22
+        r += 1; cnt += 1
+    if cnt == 0:
+        ws.merge_cells(f'A{r}:I{r}')
+        ws.cell(r, 1, '（本月暂无数据）').font = bf
+    widths = [16, 20, 14, 10, 6, 14, 14, 12, 26]
+    for j, w in enumerate(widths, 1):
+        ws.column_dimensions[chr(64 + j)].width = w
+    ws.page_setup.orientation = 'landscape'
+    ws.page_setup.paperSize = 9
+    ws.page_setup.fitToWidth = 1
+    bio = _io.BytesIO(); wb.save(bio); bio.seek(0)
+    return bio, titles[kind]
+
+@app.route('/api/reports/est-export')
+@login_required
+def api_est_export():
+    """月底三表导出: ?kind=est|hc|br"""
+    kind = request.args.get('kind', 'est')
+    if kind not in ('est', 'hc', 'br'):
+        return jsonify({'error': 'kind 只能是 est/hc/br'}), 400
+    from flask import send_file
+    bio, title = _gen_est_export(kind)
+    return send_file(bio, as_attachment=True, download_name=f'{title}.xlsx',
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+@app.route('/api/receivings/<int:rid>/invoice-match', methods=['POST'])
+@login_required
+def api_receiving_invoice_match(rid):
+    """V11.53: 采购发票核对 — 暂估入库单收到发票后, 填发票号/金额 → 红冲转正式入库"""
+    d = request.json or {}
+    invoice_no = (d.get('invoice_no') or '').strip()
+    amount = float(d.get('amount') or 0)
+    if not invoice_no:
+        return jsonify({'error': '请填写发票号'}), 400
+    conn = db()
+    rn = conn.execute("SELECT * FROM receivings WHERE id=?", (rid,)).fetchone()
+    if not rn:
+        conn.close(); return jsonify({'error': '入库单不存在'}), 404
+    if not rn['is_est']:
+        conn.close(); return jsonify({'error': '该入库单不是暂估单,无需红冲'}), 400
+    if rn['invoice_no']:
+        conn.close(); return jsonify({'error': f'该暂估单已红冲(发票{rn["invoice_no"]})'}), 400
+    # 红冲: 暂估→正式, 记发票号
+    conn.execute("UPDATE receivings SET is_est=0, invoice_no=?, est_amount=? WHERE id=?",
+                 (invoice_no, amount if amount > 0 else rn['est_amount'], rid))
+    conn.commit(); conn.close()
+    log(session['user_name'], '发票核对红冲', f'{rn["receive_no"]} 发票{invoice_no} 已红冲转正式')
+    return jsonify({'success': True, 'receive_no': rn['receive_no']})
+
 @app.route('/api/invoices/merge', methods=['POST'])
 @login_required
 def api_merge_invoice():

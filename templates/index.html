@@ -401,6 +401,13 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <button onclick="reportTab('traffic')">往来报表</button>
   </div>
   <div id="reportBuy">
+    <div class="card" style="margin-bottom:6px"><div class="ch"><h3>📋 月底三表（暂估/红冲/白入，导出给财务）</h3></div>
+      <div class="cb" style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btn-p btn-sm" onclick="window.open('/api/reports/est-export?kind=est','_blank')">⬇️ 暂估入库明细表</button>
+        <button class="btn btn-w btn-sm" onclick="window.open('/api/reports/est-export?kind=hc','_blank')">⬇️ 红字冲销明细表</button>
+        <button class="btn btn-o btn-sm" onclick="window.open('/api/reports/est-export?kind=br','_blank')">⬇️ 白入(正式入库)明细表</button>
+        <span style="font-size:9px;color:#999;align-self:center">暂估=货到发票未到 ｜ 红冲=发票到已冲 ｜ 白入=正式入库</span>
+      </div></div>
     <div class="kpi" id="reportKpi"><div class="loading">加载中...</div></div>
     <div class="card"><div class="ch"><h3>📈 月度采购趋势（近12个月）</h3></div>
       <div class="cb"><div class="chart-placeholder" id="reportChart" style="height:150px"><div class="loading">加载中...</div></div></div></div>
