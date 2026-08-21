@@ -71,8 +71,19 @@ def main():
             with open(PUB, 'w') as f:
                 f.write(url + '\n')
             log(f'✅ {label}: {url} (公网已验证)')
-            # 等进程退出(连接断开), 然后立即重连
-            proc.wait()
+            # 持续健康检查: 每30秒验证一次, 连续2次失败 → 杀进程强制重连
+            fail_cnt = 0
+            while proc.poll() is None:
+                time.sleep(30)
+                if check_url(url):
+                    fail_cnt = 0
+                else:
+                    fail_cnt += 1
+                    log(f'健康检查失败 {fail_cnt}/2 ({url})')
+                    if fail_cnt >= 2:
+                        log('连续2次失败, 强制杀进程重连')
+                        proc.kill()
+                        break
             log(f'{label} 断开, 立即重连...')
             time.sleep(2)
         else:

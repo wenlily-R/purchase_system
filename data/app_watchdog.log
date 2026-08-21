@@ -18765,3 +18765,32 @@ Port 5899 is in use by another program. Either identify and stop that program, o
  * Running on http://127.0.0.1:5899
  * Running on http://192.168.110.89:5899
 [33mPress CTRL+C to quit[0m
+127.0.0.1 - - [21/Aug/2026 10:41:24] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [21/Aug/2026 10:43:46] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 10:44:18] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 10:44:50] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 10:45:08] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 10:45:18] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 10:45:20] "GET /inq/0eaa09c6e38b4692be8f3e159abd1c9a HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 10:45:21] "GET /inq/6707860e22734bc98597cf7b1e8ed8f1 HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 10:45:22] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 10:45:23] "GET /inq/1eb37a217ea04e208158489d2df01f32 HTTP/1.1" 200 -
