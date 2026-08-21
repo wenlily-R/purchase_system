@@ -173,14 +173,24 @@ def dept_prefix(dept):
     return 'SC'
 
 def gen_req_no(dept=None, c=None):
-    """采购申请单号: 部门前缀 + 年月日 + 当日第几份, 如 SC2026080401(生产部) / CW2026080401(财务部)
-    用 MAX 取当前最大序号(并发安全, 避免 COUNT 竞态导致重复单号)"""
+    """采购申请单号: 部门前缀 + 年月日 + 当日总序号, 如 SC2026082101(生产部当天第1张) / CW2026082102(财务部当天第2张)
+    序号=当天所有部门申请单的总序号(不分部门), 前缀按部门; 用 MAX 取当天最大序号(并发安全)"""
     conn = c if c else db()
     m = datetime.date.today().strftime('%Y%m%d')
     prefix = dept_prefix(dept)
-    r = conn.execute("SELECT MAX(req_no) m FROM purchase_requests WHERE req_no LIKE ?", (f"{prefix}{m}%",)).fetchone()
+    # V11.45b: 序号按当天所有申请单(不分部门前缀), 取当天任意前缀下的最大尾号
+    r = conn.execute("SELECT req_no m FROM purchase_requests WHERE req_no LIKE ?", (f"__{m}%",)).fetchall()
+    cur = 0
+    for row in r:
+        no = str(row['m'])
+        # 尾号 = 最后2位
+        try:
+            tail = int(no[-2:])
+            if tail > cur:
+                cur = tail
+        except Exception:
+            continue
     if not c: conn.close()
-    cur = int(r['m'][-2:]) if r and r['m'] else 0
     return f"{prefix}{m}{cur+1:02d}"
 
 def gen_contract_no(c=None):
