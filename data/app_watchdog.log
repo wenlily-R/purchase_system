@@ -18658,3 +18658,110 @@ Port 5899 is in use by another program. Either identify and stop that program, o
 127.0.0.1 - - [21/Aug/2026 10:10:26] "GET /inq/0eaa09c6e38b4692be8f3e159abd1c9a HTTP/1.1" 200 -
 127.0.0.1 - - [21/Aug/2026 10:10:28] "GET /inq/6707860e22734bc98597cf7b1e8ed8f1 HTTP/1.1" 200 -
 127.0.0.1 - - [21/Aug/2026 10:10:30] "GET /inq/1eb37a217ea04e208158489d2df01f32 HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 10:11:25] "POST /api/inquiry/vendor/0eaa09c6e38b4692be8f3e159abd1c9a/quote HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 10:11:29] "GET /inq/0eaa09c6e38b4692be8f3e159abd1c9a HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:11:30] "GET /api/inquiries HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:11:31] "GET /api/inquiries/9 HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:12:55] "GET /api/inquiries/9/export HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:13:01] "POST /api/inquiries/9/select HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:13:04] "GET /api/inquiries HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:13:04] "GET /api/orders HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:13:05] "GET /api/inquiries/9 HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:13:06] "GET /api/inquiries/9/export HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:17:42] "GET /api/orders HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:17:55] "[31m[1mPOST /api/orders/19/submit HTTP/1.1[0m" 400 -
+192.168.110.89 - - [21/Aug/2026 10:17:55] "POST /api/orders/19/submit HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:18:00] "GET /api/orders HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:18:00] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:18:00] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:21:56] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:21:56] "GET /api/me HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:21:56] "GET /api/public-url HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:21:56] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:21:56] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:21:57] "GET /api/orders HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:22:11] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:22:11] "GET /api/me HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:22:11] "GET /api/public-url HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:22:11] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:22:11] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:22:12] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:22:12] "GET /api/me HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:22:13] "GET /api/public-url HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:22:13] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:22:13] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:22:14] "GET /api/orders HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:22:18] "GET /api/orders/19 HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:22:20] "GET /api/orders/19/download HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:23:53] "GET /api/settings HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:23:53] "GET /api/contract-templates HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:23:53] "GET /api/users HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:23:53] "GET /api/approval-flow HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:23:53] "GET /api/config-users HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:23:53] "GET /api/approval-config/check HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:23:53] "GET /api/logs HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:23:53] "GET /api/users HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:23:53] "GET /api/signature/info HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 10:24:35] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 10:34:48] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
