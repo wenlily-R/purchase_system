@@ -2574,6 +2574,9 @@ function addReqItem(){
     <select id="riu${c}" style="width:42px;padding:2px;border:1px solid var(--b);border-radius:3px;font-size:9px"><option>个</option><option>箱</option><option>桶</option><option>条</option></select>
     <input type="date" id="ria${c}" value="${d.toISOString().split('T')[0]}" style="width:100px;padding:2px;border:1px solid var(--b);border-radius:3px;font-size:9px" title="到货日期">
     <input type="hidden" id="rip${c}" value="0">
+    <input placeholder="备注" id="rir${c}" style="width:80px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px">
+    <label style="font-size:8px;color:#666;cursor:pointer" title="上传该行物资的附图(打印时显示在备注栏)">📎<input type="file" id="ria_${c}" style="display:none" onchange="uploadRowAtt(this,${c})"></label>
+    <span id="riatt${c}" style="font-size:8px;color:#2e7d32"></span>
     <span onclick="this.parentElement.remove()" style="cursor:pointer;color:var(--d);font-size:12px">✕</span>
   </div>`);
 }
@@ -2610,9 +2613,24 @@ async function uploadReqAtt(inp){
   }
   inp.value='';
 }
+// V11.46: 行级附图上传(打印时显示在该行备注栏)
+async function uploadRowAtt(inp,c){
+  const f=inp.files[0];
+  if(!f)return;
+  const fd=new FormData();fd.append('file',f);
+  try{
+    const up=await fetch('/api/upload',{method:'POST',body:fd,credentials:'include'}).then(r=>r.json());
+    if(up.file_path){
+      id('riatt'+c).textContent='✅ 已附图';
+      id('riatt'+c).dataset.attach=up.file_path;
+    }else alert('上传失败: '+(up.error||''));
+  }catch(e){alert('上传失败: '+e.message)}
+  inp.value='';
+}
+
 async function createPRequest(){
   const items=[];const divs=id('reqItemList').querySelectorAll('[id^="ritem"]');
-  divs.forEach(d=>{const idx=d.id.replace('ritem','');const n=id('rin'+idx)?.value;if(n){items.push({item_name:n,spec:id('ris'+idx)?.value||'',quantity:parseFloat(id('riq'+idx)?.value)||1,unit:id('riu'+idx)?.value||'个',estimated_price:parseFloat(id('rip'+idx)?.value)||0,category:id('ric'+idx)?.value||'',brand_param:id('rib'+idx)?.value||'',arrival_date:id('ria'+idx)?.value||''})}});
+  divs.forEach(d=>{const idx=d.id.replace('ritem','');const n=id('rin'+idx)?.value;if(n){items.push({item_name:n,spec:id('ris'+idx)?.value||'',quantity:parseFloat(id('riq'+idx)?.value)||1,unit:id('riu'+idx)?.value||'个',estimated_price:parseFloat(id('rip'+idx)?.value)||0,category:id('ric'+idx)?.value||'',brand_param:id('rib'+idx)?.value||'',arrival_date:id('ria'+idx)?.value||'',remark:id('rir'+idx)?.value||'',attach:id('riatt'+idx)?.dataset?.attach||''})}});
   if(!items.length){alert('请添加至少一行物资');return}
   const d={dept:id('fReqDept').value,budget_code:id('fReqBud').value,purpose:id('fReqPurp').value,target_date:id('fReqDate').value,remark:id('fReqRem').value,items,urgent:id('fReqUrgent')?.checked?1:0,attachments:reqAtts,apply_date:(id('fReqApplyDate')?.value||'').replace(/年/g,'-').replace(/月/g,'-').replace(/日/g,'')};
   const r=await api('/prequests',{method:'POST',body:JSON.stringify(d)});

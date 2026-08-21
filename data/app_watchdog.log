@@ -19420,3 +19420,124 @@ Port 5899 is in use by another program. Either identify and stop that program, o
  * Running on http://127.0.0.1:5899
  * Running on http://192.168.110.89:5899
 [33mPress CTRL+C to quit[0m
+127.0.0.1 - - [21/Aug/2026 14:21:39] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 14:22:00] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 14:22:33] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 14:23:05] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 14:23:19] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 14:23:19] "GET /api/me HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 14:23:19] "GET /api/public-url HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 14:23:19] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 14:23:19] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 14:23:21] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 14:23:22] "GET /api/suppliers HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 14:23:22] "GET /api/categories HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 14:23:22] "GET /api/departments HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 14:23:22] "GET /api/prequests/next_no HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 14:23:22] "GET /api/budgets HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 14:23:24] "GET /api/prequests/next_no?dept=生产部 HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 14:23:26] "GET /api/prequests/next_no?dept=维修车间 HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 14:23:28] "GET /api/prequests/next_no?dept=综合办 HTTP/1.1" 200 -
+192.168.110.89 - - [21/Aug/2026 14:23:30] "GET /api/prequests/next_no?dept=信息部 HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 14:23:37] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 14:24:16] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 14:24:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 14:25:19] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 14:25:51] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 14:26:23] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 14:27:00] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 14:27:33] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 14:28:08] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 14:28:40] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 14:29:12] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 14:29:44] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 14:30:17] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 14:30:49] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 14:31:21] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 14:32:37] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 14:33:09] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 14:33:42] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 14:34:14] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 14:34:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 14:35:18] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 14:35:51] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [21/Aug/2026 14:36:24] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [21/Aug/2026 14:36:59] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [21/Aug/2026 14:37:33] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [21/Aug/2026 14:38:11] "GET / HTTP/1.1" 200 -

@@ -3296,10 +3296,11 @@ def api_create_prequest():
     prid = conn.execute("SELECT id FROM purchase_requests WHERE req_no=?", (no,)).fetchone()[0]
     for it in items:
         tp = float(it.get('quantity',1)) * float(it.get('estimated_price',0))
-        conn.execute("INSERT INTO request_items(req_id,item_name,spec,unit,quantity,estimated_price,total_price,remark,category,brand_param,arrival_date) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        conn.execute("INSERT INTO request_items(req_id,item_name,spec,unit,quantity,estimated_price,total_price,remark,category,brand_param,arrival_date,attach) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                      (prid, it.get('item_name',''), it.get('spec',''), it.get('unit','个'), float(it.get('quantity',1)),
                       float(it.get('estimated_price',0)), tp, it.get('remark',''),
-                      it.get('category',''), it.get('brand_param',''), it.get('arrival_date','')))
+                      it.get('category',''), it.get('brand_param',''), it.get('arrival_date',''),
+                      it.get('attach','') or ''))
     conn.commit()
     create_approvals('purchase_request', prid, total)
     start_instances('purchase_request', prid)   # 飞书/钉钉同步发起审批(未配置则跳过)
@@ -6275,13 +6276,18 @@ def api_prequest_download(rid):
     ws.row_dimensions[3].height = 28
     # ── 明细行 (第4行起) ──
     r = 4
+    from openpyxl.drawing.image import Image as XLImage
+    import os as _os
     for i, it in enumerate(items, 1):
         use = (it['remark'] or '').strip() or (pr['purpose'] or '')
         cat = it['category'] if 'category' in it.keys() and it['category'] else ''
         brand = it['brand_param'] if 'brand_param' in it.keys() and it['brand_param'] else ''
         arrival = (it['arrival_date'] if 'arrival_date' in it.keys() and it['arrival_date'] else '') or (pr['target_date'] or '')
+        # V11.46: 行级附件图片(备注列插图)
+        _attach = (it['attach'] if 'attach' in it.keys() and it['attach'] else '').strip()
+        remark_txt = it['remark'] or ''
         vals = [i, cat, it['item_name'], brand, it['spec'] or '', it['unit'] or '个', it['quantity'],
-                use, arrival, stock_map.get(it['item_name'], 0), it['quantity'], it['remark'] or '']
+                use, arrival, stock_map.get(it['item_name'], 0), it['quantity'], remark_txt]
         for j, v in enumerate(vals, 1):
             cell = ws.cell(row=r, column=j, value=v)
             cell.border = border
@@ -6289,9 +6295,22 @@ def api_prequest_download(rid):
             # V11.44: 自动换行, 长文字(厂家/技术参数/规格/用途)不被遮挡
             cell.alignment = Alignment(horizontal='center' if j in (1, 2, 3, 5, 6, 7, 10, 11) else 'left',
                                        vertical='center', wrap_text=True)
-        # V11.44: 行高按内容自动计算(参考模板: 内容多行高30-93), 至少22
+        # V11.46: 备注列插入行级附件图片
+        if _attach:
+            _img_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'uploads', _attach.split('/')[-1])
+            if _os.path.exists(_img_path):
+                try:
+                    img = XLImage(_img_path)
+                    img.width = min(img.width, 90); img.height = min(img.height, 90)
+                    _anchor = f'L{r}'
+                    ws.add_image(img, _anchor)
+                except Exception:
+                    pass
+        # V11.44: 行高按内容自动计算(参考模板: 内容多行高30-93), 至少22; 有图的行加高到90
         _maxlen = max(len(str(v or '')) for v in vals)
         _rows_h = max(22, min(90, 22 + int(_maxlen / 6) * 9))
+        if _attach:
+            _rows_h = max(_rows_h, 90)
         ws.row_dimensions[r].height = _rows_h
         r += 1
     # ── 底部签字区 (动态下移) ──
