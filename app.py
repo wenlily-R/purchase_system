@@ -6249,7 +6249,7 @@ def api_prequest_download(rid):
     # V8.4: 全表统一宋体(兼容WPS/其他电脑)
     CN = lambda bold=False, size=11: Font(name='宋体', bold=bold, size=size)
     # ── 标题行 A1:L2 合并: 标题 + 部门/日期/编号 ──
-    ws.merge_cells('A1:L2')
+    ws.merge_cells('A1:K2')
     d = pr['apply_date'] or pr['created_at'] or ''
     ds = str(d)[:10]
     try:
@@ -6266,9 +6266,9 @@ def api_prequest_download(rid):
     ws['A1'].font = CN(bold=True, size=16)
     ws['A1'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
     ws.row_dimensions[1].height = 42
-    # ── 表头行 (第3行, 12列) ──
+    # ── 表头行 (第3行, 11列 — V11.47去掉到货日期列) ──
     headers = ['序号', '采购类别', '物品名称', '厂家/品牌/技术参数', '规格型号', '单位',
-               '数量', '用途', '到货日期', '库存', '请购数量', '备注']
+               '数量', '用途', '库存', '请购数量', '备注']
     for j, h in enumerate(headers, 1):
         cell = ws.cell(row=3, column=j, value=h)
         cell.font = CN(bold=True); cell.fill = fill; cell.border = border
@@ -6282,12 +6282,11 @@ def api_prequest_download(rid):
         use = (it['remark'] or '').strip() or (pr['purpose'] or '')
         cat = it['category'] if 'category' in it.keys() and it['category'] else ''
         brand = it['brand_param'] if 'brand_param' in it.keys() and it['brand_param'] else ''
-        arrival = (it['arrival_date'] if 'arrival_date' in it.keys() and it['arrival_date'] else '') or (pr['target_date'] or '')
         # V11.46: 行级附件图片(备注列插图)
         _attach = (it['attach'] if 'attach' in it.keys() and it['attach'] else '').strip()
         remark_txt = it['remark'] or ''
         vals = [i, cat, it['item_name'], brand, it['spec'] or '', it['unit'] or '个', it['quantity'],
-                use, arrival, stock_map.get(it['item_name'], 0), it['quantity'], remark_txt]
+                use, stock_map.get(it['item_name'], 0), it['quantity'], remark_txt]
         for j, v in enumerate(vals, 1):
             cell = ws.cell(row=r, column=j, value=v)
             cell.border = border
@@ -6302,7 +6301,7 @@ def api_prequest_download(rid):
                 try:
                     img = XLImage(_img_path)
                     img.width = min(img.width, 90); img.height = min(img.height, 90)
-                    _anchor = f'L{r}'
+                    _anchor = f'K{r}'
                     ws.add_image(img, _anchor)
                 except Exception:
                     pass
@@ -6316,22 +6315,22 @@ def api_prequest_download(rid):
     # ── 底部签字区 (动态下移) ──
     sign1 = r + 1
     sign2 = sign1 + 2
-    ws.merge_cells(f'A{sign1}:L{sign1 + 1}')
+    ws.merge_cells(f'A{sign1}:K{sign1 + 1}')
     ws.cell(row=sign1, column=1, value='经办人：                        部门负责人：')
     ws.cell(row=sign1, column=1).font = CN()
     ws.cell(row=sign1, column=1).alignment = Alignment(horizontal='left', vertical='center')
     for rr in range(sign1, sign1 + 2):
-        for cc in range(1, 13):
+        for cc in range(1, 12):
             ws.cell(row=rr, column=cc).border = border
-    ws.merge_cells(f'A{sign2}:L{sign2 + 2}')
+    ws.merge_cells(f'A{sign2}:K{sign2 + 2}')
     ws.cell(row=sign2, column=1, value='计划采购负责人：                         采购员：')
     ws.cell(row=sign2, column=1).font = CN()
     ws.cell(row=sign2, column=1).alignment = Alignment(horizontal='left', vertical='center')
     for rr in range(sign2, sign2 + 3):
-        for cc in range(1, 13):
+        for cc in range(1, 12):
             ws.cell(row=rr, column=cc).border = border
     # ── 列宽: 对齐桌面模板 申请单.xlsx ──
-    widths = [5.1, 10.9, 24.6, 12.1, 23.4, 5.2, 8.2, 17.2, 10.2, 7.3, 9.0, 14.0]
+    widths = [5.1, 10.9, 24.6, 12.1, 23.4, 5.2, 8.2, 17.2, 7.3, 9.0, 14.0]
     for j, w in enumerate(widths, 1):
         ws.column_dimensions[chr(64 + j)].width = w
     # V11.27: 审批通过 → 盖章领导预录签名

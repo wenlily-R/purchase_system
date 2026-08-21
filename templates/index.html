@@ -2426,7 +2426,7 @@ async function showForm(type){
       <div class="fr"><div class="fg"><label class="fl2">申请部门</label><select class="fc" id="fReqDept" onchange="reqNoByDept()"><option value="">请选择（选填）</option>${depts.map(d=>`<option>${esc(d.name)}</option>`).join('')}</select></div>
       <div class="fg"><label class="fl2">预算科目</label><select class="fc" id="fReqBud"><option value="">无</option></select></div></div>
       <div class="fr"><div class="fg"><label class="fl2">用途说明 *</label><input class="fc" id="fReqPurp"></div>
-      <div class="fg"><label class="fl2">目标到货日</label><input class="fc" id="fReqDate" type="date" value="${d.toISOString().split('T')[0]}"></div></div>
+      <div class="fg"><label class="fl2">目标到货日(选填)</label><input class="fc" id="fReqDate" type="date"></div></div>
       <div class="fg"><label class="fl2">备注</label><input class="fc" id="fReqRem"></div>
       <div class="fr"><div class="fg" style="display:flex;align-items:center;gap:6px;padding-top:6px"><input type="checkbox" id="fReqUrgent" style="width:14px;height:14px"> <label style="color:#e74c3c;font-weight:600">加急审批</label></div>
       <div class="fg"><label class="fl2">附件上传</label><input class="fc" id="fReqFiles" type="file" multiple onchange="uploadReqAtt(this)"></div></div>
@@ -2572,7 +2572,7 @@ function addReqItem(){
     <input placeholder="规格" id="ris${c}" style="flex:0.9;min-width:50px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px">
     <input type="number" placeholder="数量" id="riq${c}" value="1" style="width:48px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px">
     <select id="riu${c}" style="width:42px;padding:2px;border:1px solid var(--b);border-radius:3px;font-size:9px"><option>个</option><option>箱</option><option>桶</option><option>条</option></select>
-    <input type="date" id="ria${c}" value="${d.toISOString().split('T')[0]}" style="width:100px;padding:2px;border:1px solid var(--b);border-radius:3px;font-size:9px" title="到货日期">
+    <input type="date" id="ria${c}" style="width:100px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px" title="到货日期(选填)">
     <input type="hidden" id="rip${c}" value="0">
     <input placeholder="备注" id="rir${c}" style="width:80px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px">
     <label style="font-size:8px;color:#666;cursor:pointer" title="上传该行物资的附图(打印时显示在备注栏)">📎<input type="file" id="ria_${c}" style="display:none" onchange="uploadRowAtt(this,${c})"></label>
