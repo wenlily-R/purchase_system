@@ -6236,8 +6236,8 @@ def api_prequest_download(rid):
     for j, h in enumerate(headers, 1):
         cell = ws.cell(row=3, column=j, value=h)
         cell.font = CN(bold=True); cell.fill = fill; cell.border = border
-        cell.alignment = Alignment(horizontal='center', vertical='center')
-    ws.row_dimensions[3].height = 22
+        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    ws.row_dimensions[3].height = 28
     # ── 明细行 (第4行起) ──
     r = 4
     for i, it in enumerate(items, 1):
@@ -6251,9 +6251,13 @@ def api_prequest_download(rid):
             cell = ws.cell(row=r, column=j, value=v)
             cell.border = border
             cell.font = CN()
-            if j in (1, 2, 3, 5, 6, 7, 10, 11):
-                cell.alignment = Alignment(horizontal='center', vertical='center')
-        ws.row_dimensions[r].height = 20
+            # V11.44: 自动换行, 长文字(厂家/技术参数/规格/用途)不被遮挡
+            cell.alignment = Alignment(horizontal='center' if j in (1, 2, 3, 5, 6, 7, 10, 11) else 'left',
+                                       vertical='center', wrap_text=True)
+        # V11.44: 行高按内容自动计算(参考模板: 内容多行高30-93), 至少22
+        _maxlen = max(len(str(v or '')) for v in vals)
+        _rows_h = max(22, min(90, 22 + int(_maxlen / 6) * 9))
+        ws.row_dimensions[r].height = _rows_h
         r += 1
     # ── 底部签字区 (动态下移) ──
     sign1 = r + 1
