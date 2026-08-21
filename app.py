@@ -151,15 +151,37 @@ def gen_no(prefix, table, col, c=None):
     cur = int(str(r['m']).split('-')[-1]) if r and r['m'] else 0
     return f"{prefix}-{m}-{cur+1:04d}"
 
-def gen_req_no(c=None):
-    """采购申请单号: SC + 年月日 + 当日第几份, 如 SC2026080401
+# V11.45: 部门→单号前缀映射(申请单号前两位随部门变化, 如生产=SC 财务=CW)
+DEPT_PREFIX = {
+    '生产部': 'SC', '财务部': 'CW', '机电部': 'JD', '机电': 'JD', '信息部': 'XX',
+    '后勤部': 'HQ', '工程部': 'GC', '维修车间': 'WX', '综合办': 'ZH', '调度': 'DD',
+    '化验室': 'HY', '库房': 'KF', '绿化': 'LH', '环卫': 'HW', '生产车队': 'CD',
+    '采购部': 'CG', '采购与供应链部': 'CG',
+}
+
+def dept_prefix(dept):
+    """部门 → 单号前缀, 未知部门默认 SC(采购)"""
+    if not dept:
+        return 'SC'
+    d = str(dept).strip()
+    if d in DEPT_PREFIX:
+        return DEPT_PREFIX[d]
+    # 包含匹配(如 "机电部2" → JD)
+    for k, v in DEPT_PREFIX.items():
+        if k and k in d:
+            return v
+    return 'SC'
+
+def gen_req_no(dept=None, c=None):
+    """采购申请单号: 部门前缀 + 年月日 + 当日第几份, 如 SC2026080401(生产部) / CW2026080401(财务部)
     用 MAX 取当前最大序号(并发安全, 避免 COUNT 竞态导致重复单号)"""
     conn = c if c else db()
     m = datetime.date.today().strftime('%Y%m%d')
-    r = conn.execute("SELECT MAX(req_no) m FROM purchase_requests WHERE req_no LIKE ?", (f"SC{m}%",)).fetchone()
+    prefix = dept_prefix(dept)
+    r = conn.execute("SELECT MAX(req_no) m FROM purchase_requests WHERE req_no LIKE ?", (f"{prefix}{m}%",)).fetchone()
     if not c: conn.close()
     cur = int(r['m'][-2:]) if r and r['m'] else 0
-    return f"SC{m}{cur+1:02d}"
+    return f"{prefix}{m}{cur+1:02d}"
 
 def gen_contract_no(c=None):
     """合同编码规则(55.docx需求7): HQZC-SBCG-份号-年份, 如 HQZC-SBCG-019-2026
@@ -3224,7 +3246,9 @@ def api_prequests():
 @app.route('/api/prequests/next_no')
 @login_required
 def api_prequest_next_no():
-    return jsonify({'req_no': gen_req_no()})
+    # V11.45: 单号前缀随部门
+    dept = request.args.get('dept') or ''
+    return jsonify({'req_no': gen_req_no(dept)})
 
 @app.route('/api/prequests/<int:rid>')
 @login_required
@@ -3247,7 +3271,7 @@ def api_create_prequest():
     # 并发安全: 单号冲突(UNIQUE)时重新生成重试(最多5次)
     no = ''
     for _try in range(5):
-        no = gen_req_no(conn)
+        no = gen_req_no(d.get('dept', ''), conn)
         try:
             conn.execute("""INSERT INTO purchase_requests(req_no,dept,requester,requester_id,budget_code,purpose,target_date,total_estimated,remark,attachments,urgent,apply_date)
                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
@@ -3289,7 +3313,8 @@ def api_inventory_replenish(iid):
     est = buy_qty * price
     no = ''
     for _try in range(5):
-        no = gen_req_no(conn)
+        # V11.45: 补货申请归属采购部(CG前缀)
+        no = gen_req_no('采购与供应链部', conn)
         try:
             conn.execute("""INSERT INTO purchase_requests(req_no,dept,requester,requester_id,budget_code,purpose,target_date,total_estimated,remark,urgent,apply_date)
                 VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
