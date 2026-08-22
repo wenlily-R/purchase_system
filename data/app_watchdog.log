@@ -22565,3 +22565,42 @@ Port 5899 is in use by another program. Either identify and stop that program, o
 [33mPress CTRL+C to quit[0m
 192.168.110.89 - - [22/Aug/2026 09:08:56] "GET /api/inquiries HTTP/1.1" 200 -
 192.168.110.89 - - [22/Aug/2026 09:08:58] "GET /api/inquiries/eligible HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 09:09:06] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 09:09:06] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 09:09:38] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 09:10:10] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 09:10:44] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 09:11:16] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 09:11:48] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 09:11:53] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 09:11:53] "GET /api/me HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 09:11:53] "GET /api/public-url HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 09:11:53] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 09:11:53] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 09:11:54] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 09:11:55] "GET /api/receivings HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 09:11:55] "GET /api/departments HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 09:11:55] "GET /api/categories HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 09:11:55] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 09:12:22] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 09:12:56] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 09:13:29] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m

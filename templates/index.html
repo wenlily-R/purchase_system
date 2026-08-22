@@ -1369,8 +1369,8 @@ async function showInquiryForm(){
   if(!el.length){alert('暂无可询价的申请：需要「已通过审批且尚未下单」的采购申请');return}
   const opts=el.map(x=>`<option value="${x.id}">${esc(x.req_no)}｜${esc(x.purpose||'')}（${x.item_count||0}项，参考¥${(x.item_total||0).toFixed(0)}）</option>`).join('');
   IQ_SUPS=0;
-  // V11.24: 报价截止日期选项(默认7天)
-  const dlOpts=(()=>{const d=new Date(),arr=[];const days=[3,7,15,30];const fmt=x=>x.toISOString().slice(0,10);
+  // V11.24: 报价截止日期选项(默认7天) — V11.59: 加1天/2天
+  const dlOpts=(()=>{const d=new Date(),arr=[];const days=[1,2,3,7,15,30];const fmt=x=>x.toISOString().slice(0,10);
     for(const n of days){const t=new Date(d);t.setDate(t.getDate()+n);arr.push(`<option value="${fmt(t)}"${n==7?' selected':''}>${n}天后（${fmt(t)}）</option>`)}return arr.join('')})();
   showDetail('🔍 发起三方询价',
     `<div style="font-size:11px;margin-bottom:8px">选择已通过审批的采购申请，添加 <b>至少 3 家</b> 供应商，每家将生成专属免登录报价链接。</div>
