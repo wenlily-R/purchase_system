@@ -733,7 +733,25 @@ function initApp(){
 }
 function buildNav(){
   const role=ME.role;
-  // V9: 侧边菜单分组折叠
+  // V11.63: 角色菜单权限 — 每个菜单项允许的角色(空=所有人可见)
+  const MENU_ROLES={
+    'dashboard':['*'],'approvals':['*'],'reports':['*'],
+    'prequests':['*'],'inquiries':['系统管理员','分管领导','总经理','采购员','部门负责人'],
+    'orders':['系统管理员','分管领导','总经理','采购员','部门负责人'],
+    'contracts':['系统管理员','分管领导','总经理','采购员','部门负责人'],
+    'suppliers':['系统管理员','分管领导','总经理','采购员','财务'],
+    'receivings':['系统管理员','分管领导','总经理','库管员','部门负责人'],
+    'requisitions':['系统管理员','分管领导','总经理','库管员','部门负责人'],
+    'inventory':['系统管理员','分管领导','总经理','库管员','部门负责人'],
+    'counts':['系统管理员','分管领导','总经理','库管员','部门负责人'],
+    'payments':['系统管理员','分管领导','总经理','财务'],
+    'expenses':['系统管理员','分管领导','总经理','财务'],
+    'settlements':['系统管理员','分管领导','总经理','财务'],
+    'invoices':['系统管理员','分管领导','总经理','财务'],
+    'ledger':['系统管理员','分管领导','总经理','财务'],
+  };
+  const canSee=pg=>{const rl=MENU_ROLES[pg];if(!rl)return true;return rl.includes('*')||rl.includes(role)};
+  // V9: 侧边菜单分组折叠(按角色过滤)
   const groups=[
     ['工作台',[['dashboard','📊','工作台']]],
     ['采购管理',[['prequests','📝','采购申请'],['inquiries','🔍','三方询价'],['orders','📋','采购订单'],['contracts','📄','合同管理'],['suppliers','🏢','供应商']]],
@@ -743,7 +761,8 @@ function buildNav(){
     ['报表中心',[['reports','📊','报表中心']]],
   ];
   let html=groups.map((g,gi)=>{
-    const items=g[1].map(i=>`<div class="si si-sub" onclick="sw('${i[0]}')">${i[1]}${i[2]}</div>`).join('');
+    const items=g[1].filter(i=>canSee(i[0])).map(i=>`<div class="si si-sub" onclick="sw('${i[0]}')">${i[1]}${i[2]}</div>`).join('');
+    if(!items)return '';
     return `<div class="si-grp" onclick="toggleGrp(this,${gi})">${g[0]}<span style="margin-left:auto;font-size:8px">▾</span></div><div class="grp-body" id="grp${gi}">${items}</div>`;
   }).join('');
   if(ME.can_config){html+=`<div class="sl">系统配置</div><div class="si si-sub" onclick="sw('feishu')">✈️飞书</div><div class="si si-sub" onclick="sw('dingtalk')">💬钉钉</div><div class="si si-sub" onclick="sw('system')">⚙️系统设置</div>`}
@@ -764,10 +783,14 @@ function buildNav(){
     '分管领导':['dashboard','approvals','prequests','receivings','payments','reports'],
     '总经理':['dashboard','approvals','prequests','receivings','payments','reports'],
     '财务':['dashboard','approvals','payments','reports'],
+    '采购员':['dashboard','approvals','prequests','reports'],
+    '库管员':['dashboard','approvals','receivings','reports'],
     '部门负责人':['dashboard','approvals','prequests','reports'],
     '员工':['dashboard','approvals','reports'],
   };
   const vis=(roleVis[role]||['dashboard','approvals','prequests','receivings','payments','reports']);
+  // V11.63: 侧边菜单可见的页面集合 = 所有可见菜单项(顶部大类是它的大类)
+  const visiblePages=Object.keys(MENU_ROLES).filter(pg=>canSee(pg));
   let navHtml='';
   navCats.forEach(c=>{
     if(!vis.includes(c.page))return;
@@ -3350,7 +3373,7 @@ function addUserForm(){
     id('dmBody').innerHTML=`
       <div class="fg"><label class="fl2">用户名</label><input class="fc" id="uName" placeholder="登录账号"></div>
       <div class="fg"><label class="fl2">姓名</label><input class="fc" id="uReal"></div>
-      <div class="fg"><label class="fl2">角色</label><select class="fc" id="uRole"><option>员工</option><option>部门负责人</option><option>财务</option><option>分管领导</option><option>总经理</option><option>系统管理员</option></select></div>
+      <div class="fg"><label class="fl2">角色</label><select class="fc" id="uRole"><option>员工</option><option>采购员</option><option>库管员</option><option>部门负责人</option><option>财务</option><option>分管领导</option><option>总经理</option><option>系统管理员</option></select></div>
       <div class="fg"><label class="fl2">部门</label><select class="fc" id="uDept"><option value="">未分配</option>${deps.map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join('')}</select></div>
       <div class="fg"><label class="fl2">电话</label><input class="fc" id="uPhone"></div>
       <div class="fg"><label class="fl2">初始密码（至少6位）</label><input class="fc" id="uPwd" type="password" placeholder="默认123456"></div>`;
