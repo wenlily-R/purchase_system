@@ -944,7 +944,7 @@ async function loadDashboard(){
     apprZone('todo');
     // ③ 预警消息中心(V9: 按类型分组 + 红黄绿分级)
     const al=d.alerts||[];
-    const ALERT_GROUPS=[['库存预警',['库存','缺货','超储']],['订单交货预警',['订单','交货','到货']],['合同到期预警',['合同']],['付款逾期预警',['付款','应付']],['审批超时预警',['审批']]];
+    const ALERT_GROUPS=[['库存预警',['库存','缺货','超储']],['询价跟进',['询价超时']],['订单交货预警',['订单','交货','到货']],['合同到期预警',['合同']],['付款逾期预警',['付款','应付']],['审批超时预警',['审批']]];
     const groupOf=a=>ALERT_GROUPS.find(g=>g[1].some(k=>(a.alert_type||'').includes(k)))?.[0]||'其他预警';
     if(!al.length){id('alertCenter').innerHTML='<div style="color:#27ae60;font-size:11px;padding:8px">✅ 暂无预警，一切正常</div>'}
     else{
@@ -993,6 +993,7 @@ async function processAlert(id){
 }
 function jumpAlert(t,id2){
   if(t=='inventory')sw('inventory');
+  else if(t=='inquiry'){sw('inquiries');setTimeout(()=>showInquiry(id2),350)}
   else if(t=='purchase_order'){sw('orders');setTimeout(()=>showOrder(id2),350)}
   else if(t=='purchase_request'){sw('prequests');setTimeout(()=>showPRequest(id2),350)}
   else if(t=='contract'){sw('contracts');setTimeout(()=>showContract(id2),350)}

@@ -3651,6 +3651,22 @@ def api_dashboard():
         WHERE status='rejected' GROUP BY biz_type, biz_id ORDER BY cnt DESC LIMIT 8""").fetchall()
     # ── ③ 预警消息中心 ──
     alerts = c.execute("SELECT * FROM alert_items WHERE status='pending' ORDER BY CASE level WHEN 'red' THEN 0 WHEN 'orange' THEN 1 ELSE 2 END, id DESC LIMIT 30").fetchall()
+    # V11.60: 询价超3天未完成 → 动态加入预警(避免询价卡死没人管)
+    try:
+        inq_stale = c.execute("""SELECT id, inq_no, title, created_at FROM inquiries
+            WHERE status IN ('询价中') AND created_at < datetime('now','localtime','-3 days')
+            ORDER BY created_at""").fetchall()
+        for q in inq_stale:
+            days = max(1, int((datetime.datetime.now() - datetime.datetime.strptime(q['created_at'][:19], '%Y-%m-%d %H:%M:%S')).total_seconds() / 86400))
+            alerts.insert(0, {
+                'id': 0, 'alert_type': '询价超时', 'level': 'orange',
+                'title': f"询价单 {q['inq_no']}",
+                'content': f"已发起{days}天未完成, 请及时跟进商家报价/选中",
+                'biz_type': 'inquiry', 'biz_id': q['id'], 'created_at': q['created_at'],
+                'status': 'pending', 'link': f"sw('inquiries')",
+            })
+    except Exception:
+        pass
     # ── ④ 数据看板 ──
     trend = []
     for i in range(5, -1, -1):
