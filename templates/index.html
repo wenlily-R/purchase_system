@@ -747,14 +747,31 @@ function buildNav(){
   }).join('');
   if(ME.can_config){html+=`<div class="sl">系统配置</div><div class="si si-sub" onclick="sw('feishu')">✈️飞书</div><div class="si si-sub" onclick="sw('dingtalk')">💬钉钉</div><div class="si si-sub" onclick="sw('system')">⚙️系统设置</div>`}
   id('sideMenu').innerHTML=html;
-  // V11.5: 顶部导航 = 工作台 → 审批中心(醒目标签+待办数) → 其他常用
-  const allItems=groups.slice(0,5).flatMap(g=>g[1]);
-  const apprIdx=allItems.findIndex(i=>i[0]==='approvals');
-  let topItems=allItems.filter(i=>i[0]!=='approvals'&&i[0]!=='dashboard').slice(0,6);
-  let navHtml=`<a onclick="sw('dashboard')">📊工作台</a>`;
-  navHtml+=`<a class="appr-hl" onclick="sw('approvals')" title="待我审批">✅审批中心<span class="ab" id="navApprBadge"></span></a>`;
-  navHtml+=topItems.map(i=>`<a onclick="sw('${i[0]}')">${i[1]}${i[2]}</a>`).join('');
-  navHtml+=`<a onclick="sw('reports')">📊报表</a>`;
+  // V11.57: 顶部导航 = 六大业务大类(工作台/审批/采购/库房/财务/报表), 角色不同看到的类不同
+  // 大类 → 跳转目标(该组第一个功能页)
+  const navCats=[
+    {label:'📊 工作台',page:'dashboard'},
+    {label:'✅ 审批',page:'approvals',badge:true},
+    {label:'📝 采购',page:'prequests'},
+    {label:'📦 库房',page:'receivings'},
+    {label:'💰 财务',page:'payments'},
+    {label:'📈 报表',page:'reports'},
+  ];
+  // 角色可见大类(按系统真实角色): 管理员全看; 领导/财务/部门负责人 看采购+库房+财务; 员工 看工作台/审批/报表
+  const roleVis={
+    '系统管理员':['dashboard','approvals','prequests','receivings','payments','reports'],
+    '分管领导':['dashboard','approvals','prequests','receivings','payments','reports'],
+    '总经理':['dashboard','approvals','prequests','receivings','payments','reports'],
+    '财务':['dashboard','approvals','payments','reports'],
+    '部门负责人':['dashboard','approvals','prequests','reports'],
+    '员工':['dashboard','approvals','reports'],
+  };
+  const vis=(roleVis[role]||['dashboard','approvals','prequests','receivings','payments','reports']);
+  let navHtml='';
+  navCats.forEach(c=>{
+    if(!vis.includes(c.page))return;
+    navHtml+=`<a onclick="sw('${c.page}')"${c.page=='approvals'?' class="appr-hl" title="待我审批"':''}>${c.label}${c.badge?`<span class="ab" id="navApprBadge"></span>`:''}</a>`;
+  });
   id('topnav').innerHTML=navHtml;
   // 待办徽标: 由 loadDashboard 用 my_pending 更新
   window._setNavBadge=function(n){
