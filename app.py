@@ -639,6 +639,9 @@ def api_me():
 @app.route('/api/users')
 @login_required
 def api_users():
+    # V11.64: 用户列表仅 管理员/领导/财务 可见(防账号信息泄露)
+    if session.get('user_role') not in ('系统管理员', '分管领导', '总经理', '财务'):
+        return jsonify([])
     conn = db(); rows = conn.execute("SELECT u.*,d.name as dept_name FROM users u LEFT JOIN departments d ON u.dept_id=d.id ORDER BY u.id").fetchall(); conn.close()
     return jsonify([dict_row(r) for r in rows])
 
@@ -1065,6 +1068,47 @@ def biz_table(biz_type):
     return {'purchase_request': 'purchase_requests', 'purchase_order': 'purchase_orders',
             'contract': 'contracts', 'credit': 'credit_notes', 'payment': 'payment_requests',
             'receiving': 'receivings', 'requisition': 'requisitions'}[biz_type]
+
+# ============================================================
+# V11.64: 数据级权限 — 按角色过滤列表数据(前端隐藏菜单+后端过滤数据, 双保险)
+# 规则: 管理员/领导全看; 采购员看采购相关; 库管员看库房相关; 财务看单据+财务
+# ============================================================
+def can_see_all():
+    """管理员/领导 可看全部数据"""
+    return session.get('user_role') in ('系统管理员', '分管领导', '总经理')
+
+def filter_scope(role):
+    """返回角色可看的业务域: full=全部 / buy=采购 / stock=库房 / fin=财务 / own=仅自己的"""
+    if role in ('系统管理员', '分管领导', '总经理'):
+        return 'full'
+    if role == '采购员':
+        return 'buy'
+    if role == '库管员':
+        return 'stock'
+    if role == '财务':
+        return 'fin'
+    return 'own'  # 员工/部门负责人
+
+def can_see_price():
+    """价格可见: 管理员/领导/财务/采购员(谈价需要), 库管员/员工/部门负责人不可见"""
+    return session.get('user_role') in ('系统管理员', '分管领导', '总经理', '财务', '采购员')
+
+def mask_price(d):
+    """价格脱敏: 无权限的角色, 金额字段置 None(前端显示 ***)"""
+    for k in ('total_estimated', 'total_amount', 'price', 'amount', 'est_amount', 'tax_amount', 'quote_price', 'estimated_price'):
+        if k in d and d[k] is not None:
+            d[k] = None
+    return d
+
+def _scope_where(alias):
+    """按角色返回 SQL WHERE 片段(过滤数据范围):
+    own=只自己的(requester_id=当前用户) / 其余返回空(不过滤, 由调用方决定)"""
+    role = session.get('user_role')
+    if role in ('员工',):
+        return f"{alias}requester_id={session.get('user_id', 0)}"
+    if role == '部门负责人':
+        return f"{alias}requester_id={session.get('user_id', 0)}"  # 部门负责人仅看自己(暂简化, 后续按部门)
+    return ''  # 管理员/领导/采购/库管/财务 由各接口决定(业务域不同)
 
 def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_id=0, comment='飞书审批同步'):
     """result: 'ok'=通过, 'reject'=驳回; 同步更新审批节点/父单据/飞书实例状态 (幂等)
@@ -3250,10 +3294,20 @@ def stamp_leader_sign(ws, sign_row, biz_type='', biz_id=0):
 @app.route('/api/prequests')
 @login_required
 def api_prequests():
-    conn = db(); rows = conn.execute("SELECT * FROM purchase_requests ORDER BY id DESC LIMIT 100").fetchall()
+    # V11.64: 数据权限 — 员工/部门负责人只看自己的; 采购员/财务/领导/库管员看各自域
+    role = session.get('user_role')
+    scope = filter_scope(role)
+    conn = db()
+    if scope == 'own':
+        rows = conn.execute("SELECT * FROM purchase_requests WHERE requester_id=? ORDER BY id DESC LIMIT 100", (session.get('user_id', 0),)).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM purchase_requests ORDER BY id DESC LIMIT 100").fetchall()
     out = []
     for r in rows:
         d = dict_row(r)
+        # V11.64: 库管员/员工/部门负责人 价格脱敏
+        if scope in ('stock', 'own') and not can_see_price():
+            d = mask_price(d)
         d['req_type'] = r['req_type'] if 'req_type' in r.keys() and r['req_type'] else '物资采购'
         # V11.49: 采购进度状态(红=未联系厂家/黄=已下单在途/绿=已到货)
         d['progress'] = 'none'
@@ -4406,6 +4460,9 @@ def api_sign_delivery(did):
 @app.route('/api/receivings')
 @login_required
 def api_receivings():
+    # V11.64: 入库单 — 库管员/采购员/财务/领导/管理员可见(采购要发票核对+跟到货, 财务对账); 员工不看
+    if session.get('user_role') == '员工':
+        return jsonify([])
     # V11.29: 部门/类别筛选
     f_dept = (request.args.get('dept') or '').strip()
     f_cat = (request.args.get('cat') or '').strip()
@@ -4904,8 +4961,15 @@ def api_requisition_download(rid):
 @app.route('/api/requisitions')
 @login_required
 def api_requisitions():
-    """出库单列表"""
-    conn = db(); rows = conn.execute("SELECT * FROM requisitions ORDER BY id DESC LIMIT 100").fetchall()
+    """出库单列表 — V11.64: 库管员/领导/部门负责人可见; 员工只看自己的; 采购员/财务不看(库房的事)"""
+    role = session.get('user_role')
+    if role in ('采购员', '财务'):
+        return jsonify([])
+    conn = db()
+    if role in ('员工',):
+        rows = conn.execute("SELECT * FROM requisitions WHERE requester=? ORDER BY id DESC LIMIT 100", (session.get('user_name', ''),)).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM requisitions ORDER BY id DESC LIMIT 100").fetchall()
     out = []
     for r in rows:
         d = dict_row(r)
@@ -5021,6 +5085,9 @@ def api_inventory():
     out = []
     for r in rows:
         d = dict_row(r)
+        # V11.64: 库管员/员工/部门负责人 看库存数量但价格脱敏(防利益)
+        if not can_see_price():
+            d['price'] = None
         tr = float(d.get('tax_rate') or 13)
         price0 = d.get('price') or 0
         d['price_taxed'] = round(price0 * (1 + tr / 100.0), 4)
@@ -5051,6 +5118,9 @@ def api_inventory_stock_check():
 @app.route('/api/logs')
 @login_required
 def api_logs():
+    # V11.64: 操作日志仅管理员/领导可见(审计记录敏感)
+    if session.get('user_role') not in ('系统管理员', '分管领导', '总经理'):
+        return jsonify([])
     conn = db(); rows = conn.execute("SELECT * FROM logs ORDER BY id DESC LIMIT 100").fetchall(); conn.close()
     return jsonify([dict_row(r) for r in rows])
 
@@ -5955,10 +6025,13 @@ def api_search():
                               'inventory': [], 'invoices': [], 'settlements': [], 'approvals': []})
     like = f'%{q}%'
     c = db()
+    # V11.64: 搜索范围按角色域限制(员工只搜自己的申请; 库管员不搜采购/财务)
+    role = session.get('user_role')
+    _own = f" AND pr.requester_id={session.get('user_id', 0)}" if role in ('员工', '部门负责人') else ''
     # 主表搜索 + 明细表联查(物资名在 request_items/order_items 里, 必须覆盖否则搜不到)
     orders = c.execute("SELECT po.id,po.order_no,po.item_name,po.supplier,po.status FROM purchase_orders po WHERE po.order_no LIKE ? OR po.item_name LIKE ? OR po.supplier LIKE ? OR po.remark LIKE ? OR po.id IN (SELECT order_id FROM order_items WHERE item_name LIKE ? OR spec LIKE ? OR remark LIKE ?) LIMIT 8",
                        (like, like, like, like, like, like, like)).fetchall()
-    reqs = c.execute("SELECT pr.id,pr.req_no,pr.purpose,pr.dept,pr.status FROM purchase_requests pr WHERE pr.req_no LIKE ? OR pr.purpose LIKE ? OR pr.dept LIKE ? OR pr.requester LIKE ? OR pr.id IN (SELECT req_id FROM request_items WHERE item_name LIKE ? OR spec LIKE ? OR remark LIKE ?) LIMIT 8",
+    reqs = c.execute("SELECT pr.id,pr.req_no,pr.purpose,pr.dept,pr.status FROM purchase_requests pr WHERE pr.req_no LIKE ? OR pr.purpose LIKE ? OR pr.dept LIKE ? OR pr.requester LIKE ? OR pr.id IN (SELECT req_id FROM request_items WHERE item_name LIKE ? OR spec LIKE ? OR remark LIKE ?)" + _own + " LIMIT 8",
                      (like, like, like, like, like, like, like)).fetchall()
     cons = c.execute("SELECT id,contract_no,contract_name,supplier,status FROM contracts WHERE contract_no LIKE ? OR contract_name LIKE ? OR supplier LIKE ? OR remark LIKE ? LIMIT 8", (like, like, like, like)).fetchall()
     sups = c.execute("SELECT id,name,contact,phone FROM suppliers WHERE name LIKE ? OR contact LIKE ? OR phone LIKE ? OR category LIKE ? LIMIT 8", (like, like, like, like)).fetchall()
