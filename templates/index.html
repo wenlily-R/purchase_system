@@ -736,14 +736,14 @@ function buildNav(){
   // V11.63: 角色菜单权限 — 每个菜单项允许的角色(空=所有人可见)
   const MENU_ROLES={
     'dashboard':['*'],'approvals':['*'],'reports':['*'],
-    'prequests':['*'],'inquiries':['系统管理员','分管领导','总经理','采购员','部门负责人'],
-    'orders':['系统管理员','分管领导','总经理','采购员','部门负责人'],
-    'contracts':['系统管理员','分管领导','总经理','采购员','部门负责人'],
+    'prequests':['*'],'inquiries':['系统管理员','分管领导','总经理','采购员'],
+    'orders':['系统管理员','分管领导','总经理','采购员'],
+    'contracts':['系统管理员','分管领导','总经理','采购员'],
     'suppliers':['系统管理员','分管领导','总经理','采购员','财务'],
-    'receivings':['系统管理员','分管领导','总经理','库管员','部门负责人'],
-    'requisitions':['系统管理员','分管领导','总经理','库管员','部门负责人'],
-    'inventory':['系统管理员','分管领导','总经理','库管员','部门负责人'],
-    'counts':['系统管理员','分管领导','总经理','库管员','部门负责人'],
+    'receivings':['系统管理员','分管领导','总经理','库管员','采购员'],
+    'requisitions':['系统管理员','分管领导','总经理','库管员'],
+    'inventory':['系统管理员','分管领导','总经理','库管员','采购员'],
+    'counts':['系统管理员','分管领导','总经理','库管员'],
     'payments':['系统管理员','分管领导','总经理','财务'],
     'expenses':['系统管理员','分管领导','总经理','财务'],
     'settlements':['系统管理员','分管领导','总经理','财务'],
@@ -785,7 +785,7 @@ function buildNav(){
     '财务':['dashboard','approvals','payments','reports'],
     '采购员':['dashboard','approvals','prequests','reports'],
     '库管员':['dashboard','approvals','receivings','reports'],
-    '部门负责人':['dashboard','approvals','prequests','reports'],
+    '部门负责人':['dashboard','approvals','reports'],
     '员工':['dashboard','approvals','reports'],
   };
   const vis=(roleVis[role]||['dashboard','approvals','prequests','receivings','payments','reports']);
