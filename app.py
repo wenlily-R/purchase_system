@@ -5706,7 +5706,46 @@ def api_confirm_settlement(sid):
 
 # ============================================================
 # V11.53 ── 月底三表(领导流程: 暂估/红冲/白入 导出Excel给财务)
+# V11.56 ── 三表系统内展示 + 自动核对差异(不用人工核查)
 # ============================================================
+@app.route('/api/reports/est-view')
+@login_required
+def api_est_view():
+    """三表数据+自动核对: 返回 暂估/红冲/白入 三组明细 + 差异核对结果"""
+    conn = db()
+    rows = conn.execute("SELECT * FROM receivings WHERE status IN ('已入库','已通过','审批通过') ORDER BY received_at DESC").fetchall()
+    conn.close()
+    est, hc, br = [], [], []
+    for row in rows:
+        is_est = bool(row['is_est']); has_inv = bool(row['invoice_no'])
+        d = {
+            'receive_no': row['receive_no'], 'item_name': row['item_name'], 'spec': row['spec'] or '',
+            'quantity': row['quantity'], 'unit': row['unit'] or '个', 'amount': row['est_amount'] or 0,
+            'invoice_no': row['invoice_no'] or '', 'date': str(row['received_at'] or '')[:10],
+            'remark': row['remark'] or '', 'id': row['id'],
+        }
+        if is_est and not has_inv: est.append(d)     # 暂估未红冲(发票没回)
+        elif is_est and has_inv: hc.append(d)         # 已红冲
+        else: br.append(d)                            # 正式入库
+    # 自动核对(系统自己比对, 不用人工):
+    checks = []
+    # ① 暂估未红冲 = 发票没回, 要催采购
+    if est:
+        checks.append({'level': 'warn', 'msg': f'⚠️ {len(est)} 张暂估入库单发票未回(采购需核对红冲)', 'count': len(est)})
+    else:
+        checks.append({'level': 'ok', 'msg': '✅ 暂估入库单均已红冲, 无发票未回', 'count': 0})
+    # ② 红冲了但不在白入(异常: 红冲了却没转正式)
+    hc_nos = set(x['receive_no'] for x in hc)
+    br_nos = set(x['receive_no'] for x in br)
+    abnormal = hc_nos - br_nos
+    if abnormal:
+        checks.append({'level': 'danger', 'msg': f'🚨 {len(abnormal)} 张已红冲但未计入白入(异常, 需检查): {", ".join(list(abnormal)[:3])}', 'count': len(abnormal)})
+    else:
+        checks.append({'level': 'ok', 'msg': '✅ 红冲与白入一致, 无异常', 'count': 0})
+    # ③ 汇总
+    checks.append({'level': 'info', 'msg': f'📊 暂估 {len(est)} 张 / 红冲 {len(hc)} 张 / 白入 {len(br)} 张', 'count': len(est) + len(hc) + len(br)})
+    return jsonify({'est': est, 'hc': hc, 'br': br, 'checks': checks})
+
 def _gen_est_export(kind):
     """生成 暂估/红冲/白入 明细表Excel
     kind: est=暂估入库明细(货到发票未到) / hc=红字冲销明细(发票到已冲) / br=白入明细(正式入库)"""

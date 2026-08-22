@@ -401,12 +401,19 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <button onclick="reportTab('traffic')">往来报表</button>
   </div>
   <div id="reportBuy">
-    <div class="card" style="margin-bottom:6px"><div class="ch"><h3>📋 月底三表（暂估/红冲/白入，导出给财务）</h3></div>
-      <div class="cb" style="display:flex;gap:6px;flex-wrap:wrap">
-        <button class="btn btn-p btn-sm" onclick="window.open('/api/reports/est-export?kind=est','_blank')">⬇️ 暂估入库明细表</button>
-        <button class="btn btn-w btn-sm" onclick="window.open('/api/reports/est-export?kind=hc','_blank')">⬇️ 红字冲销明细表</button>
-        <button class="btn btn-o btn-sm" onclick="window.open('/api/reports/est-export?kind=br','_blank')">⬇️ 白入(正式入库)明细表</button>
-        <span style="font-size:9px;color:#999;align-self:center">暂估=货到发票未到 ｜ 红冲=发票到已冲 ｜ 白入=正式入库</span>
+    <div class="card" style="margin-bottom:6px"><div class="ch"><h3>📋 月底三表（暂估/红冲/白入 + 自动核对）</h3><button class="btn btn-p btn-sm" onclick="loadEstView()" style="margin-left:auto">🔄 刷新核对</button></div>
+      <div class="cb">
+        <div id="estChecks" style="font-size:11px;margin-bottom:6px"><span style="color:#999">加载中...</span></div>
+        <div id="estTabs" style="display:flex;gap:4px;margin-bottom:6px">
+          <button class="btn btn-sm act" id="estTabBtn_est" onclick="estTab('est')">📦 暂估（发票未回）</button>
+          <button class="btn btn-sm" id="estTabBtn_hc" onclick="estTab('hc')">🔴 红字冲销</button>
+          <button class="btn btn-sm" id="estTabBtn_br" onclick="estTab('br')">⚪ 白入（正式）</button>
+          <span style="flex:1"></span>
+          <button class="btn btn-o btn-sm" onclick="window.open('/api/reports/est-export?kind=est','_blank')">⬇️ 暂估表</button>
+          <button class="btn btn-o btn-sm" onclick="window.open('/api/reports/est-export?kind=hc','_blank')">⬇️ 红冲表</button>
+          <button class="btn btn-o btn-sm" onclick="window.open('/api/reports/est-export?kind=br','_blank')">⬇️ 白入表</button>
+        </div>
+        <div id="estTableWrap"><div style="color:#999;font-size:10px">点击上方标签查看各表明细</div></div>
       </div></div>
     <div class="kpi" id="reportKpi"><div class="loading">加载中...</div></div>
     <div class="card"><div class="ch"><h3>📈 月度采购趋势（近12个月）</h3></div>
@@ -626,7 +633,17 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
 </div>
 <script>
 const API='/api'; let ME={};
+// V11.55: 防重复提交锁 — 提交类请求(POST/无noDup标记)1.5秒内只发一次, 杜绝"点一下没反应多点几下建了好几张单"
+const __dupGuard=new Map();
 async function api(url,opts={}){
+  const method=(opts.method||'GET').toUpperCase();
+  if(method!=='GET'&&!opts.noDup){
+    const key=url+JSON.stringify(opts.body||'');
+    const now=Date.now();
+    const last=__dupGuard.get(key)||0;
+    if(now-last<1500){return {dup:true,success:true,message:'操作已提交'}}  // 重复点击 → 静默按成功处理, 不重复创建
+    __dupGuard.set(key,now);
+  }
   try{
     const r=await fetch(API+url,{headers:{'Content-Type':'application/json'},...opts,credentials:'include'});
     // V11.30: 只有真正的 401(会话失效)才跳登录页; 网络错误/服务端HTML错误页不跳(避免误登出)
@@ -640,6 +657,15 @@ async function api(url,opts={}){
   }catch(e){throw e}
 }
 function id(s){return document.getElementById(s)}
+// V11.55: 轻提示(toast) — 不阻塞操作, 2.5秒自动消失, 替代alert做成功提示
+function toast(msg){
+  let t=id('__toast');
+  if(!t){t=document.createElement('div');t.id='__toast';
+    t.style.cssText='position:fixed;top:18px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.78);color:#fff;padding:8px 18px;border-radius:20px;font-size:12px;z-index:99999;transition:opacity .3s;pointer-events:none';
+    document.body.appendChild(t)}
+  t.textContent=msg;t.style.opacity='1';
+  clearTimeout(t._tm);t._tm=setTimeout(()=>{t.style.opacity='0'},2500);
+}
 function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML}
 function showLogin(){id('loginPage').style.display='flex';id('appMain').style.display='none'}
 function showApp(){id('loginPage').style.display='none';id('appMain').style.display='block'}
@@ -2080,7 +2106,7 @@ async function doSupSave(oid){
   const r=await api(oid?'/suppliers/'+oid:'/suppliers',{method:'POST',body:JSON.stringify(d)});
   if(r.success){alert(oid?'✅ 已保存':'✅ 已新增');closeMod();loadSuppliers()}else alert(r.error||'失败');
 }
-async function loadReports(){loadReports2();
+async function loadReports(){loadReports2();loadEstView();
   try{
     const r=await api('/reports');
     const t=r.todo||{};
@@ -2706,12 +2732,19 @@ async function uploadRowAtt(inp,c){
 }
 
 async function createPRequest(){
-  const items=[];const divs=id('reqItemList').querySelectorAll('[id^="ritem"]');
-  divs.forEach(d=>{const idx=d.id.replace('ritem','');const n=id('rin'+idx)?.value;if(n){items.push({item_name:n,spec:id('ris'+idx)?.value||'',quantity:parseFloat(id('riq'+idx)?.value)||1,unit:id('riu'+idx)?.value||'个',estimated_price:parseFloat(id('rip'+idx)?.value)||0,category:id('ric'+idx)?.value||'',brand_param:id('rib'+idx)?.value||'',arrival_date:id('ria'+idx)?.value||'',remark:id('rir'+idx)?.value||'',attach:id('riatt'+idx)?.dataset?.attach||''})}});
-  if(!items.length){alert('请添加至少一行物资');return}
-  const d={dept:id('fReqDept').value,budget_code:id('fReqBud').value,purpose:id('fReqPurp').value,target_date:id('fReqDate').value,remark:id('fReqRem').value,items,urgent:id('fReqUrgent')?.checked?1:0,attachments:reqAtts,apply_date:(id('fReqApplyDate')?.value||'').replace(/年/g,'-').replace(/月/g,'-').replace(/日/g,'')};
-  const r=await api('/prequests',{method:'POST',body:JSON.stringify(d)});
-  if(r.success){alert(`✅ ${r.req_no} 已提交`);closeMod();reqAtts=[];loadPRequests();loadDashboard()}
+  // V11.55: 提交中防重复(按钮置灰+全局锁)
+  const btn=id('dmFooter')?.querySelector('button:last-child');
+  if(btn){btn.disabled=true;btn.textContent='提交中...'}
+  try{
+    const items=[];const divs=id('reqItemList').querySelectorAll('[id^="ritem"]');
+    divs.forEach(d=>{const idx=d.id.replace('ritem','');const n=id('rin'+idx)?.value;if(n){items.push({item_name:n,spec:id('ris'+idx)?.value||'',quantity:parseFloat(id('riq'+idx)?.value)||1,unit:id('riu'+idx)?.value||'个',estimated_price:parseFloat(id('rip'+idx)?.value)||0,category:id('ric'+idx)?.value||'',brand_param:id('rib'+idx)?.value||'',arrival_date:id('ria'+idx)?.value||'',remark:id('rir'+idx)?.value||'',attach:id('riatt'+idx)?.dataset?.attach||''})}});
+    if(!items.length){alert('请添加至少一行物资');return}
+    const d={dept:id('fReqDept').value,budget_code:id('fReqBud').value,purpose:id('fReqPurp').value,target_date:id('fReqDate').value,remark:id('fReqRem').value,items,urgent:id('fReqUrgent')?.checked?1:0,attachments:reqAtts,apply_date:(id('fReqApplyDate')?.value||'').replace(/年/g,'-').replace(/月/g,'-').replace(/日/g,'')};
+    const r=await api('/prequests',{method:'POST',body:JSON.stringify(d)});
+    if(r.success){toast('✅ 已提交'+(r.req_no?(' '+r.req_no):''));closeMod();reqAtts=[];loadPRequests();loadDashboard()}
+    else if(r.error){alert('提交失败: '+r.error)}
+  }catch(e){alert('提交失败,请重试')}
+  finally{if(btn){btn.disabled=false;btn.textContent='提交申请'}}
 }
 function tradeModeTip(){
   const t=id('fTradeMode').value;
@@ -3355,6 +3388,35 @@ async function loadApprTodo(){
       <span class="tag tg-o">${esc(groups[k]||k)}</span><b>${v}</b> 条待审批
       <button class="btn btn-o btn-sm" style="margin-left:auto" onclick="sw('approvals')">去处理</button></div>`).join('')||'<div style="color:#999;padding:4px;font-size:9px">✅ 暂无待审批</div>';
   }catch(e){}
+}
+// V11.56: 月底三表 — 系统内展示 + 自动核对(不直接下载)
+let __estData=null;
+async function loadEstView(){
+  try{
+    const d=await api('/reports/est-view');
+    __estData=d;
+    // 核对结果
+    id('estChecks').innerHTML=(d.checks||[]).map(c=>{
+      const col=c.level=='ok'?'#2e7d32':c.level=='warn'?'#e65100':c.level=='danger'?'#c0392b':'#1f6feb';
+      return `<div style="padding:2px 0;color:${col}">${esc(c.msg)}</div>`;
+    }).join('');
+    // 各tab计数
+    id('estTabBtn_est').textContent=`📦 暂估（发票未回）${d.est.length}`;
+    id('estTabBtn_hc').textContent=`🔴 红字冲销${d.hc.length}`;
+    id('estTabBtn_br').textContent=`⚪ 白入（正式）${d.br.length}`;
+    estTab('est');
+  }catch(e){id('estChecks').innerHTML='<span style="color:var(--d)">加载失败</span>'}
+}
+function estTab(kind){
+  const d=__estData;if(!d)return;
+  ['est','hc','br'].forEach(k=>{
+    id('estTabBtn_'+k).classList.toggle('act',k==kind);
+  });
+  const list=d[kind]||[];
+  if(!list.length){id('estTableWrap').innerHTML='<div style="color:#999;font-size:10px;padding:4px 0">（无数据）</div>';return}
+  id('estTableWrap').innerHTML=`<table class="tb" style="font-size:10px"><tr style="background:#f0f4ff"><th>入库单号</th><th>物资</th><th>规格</th><th>数量</th><th>金额(元)</th><th>发票号</th><th>日期</th></tr>`+
+    list.map(x=>`<tr><td><b>${esc(x.receive_no)}</b></td><td>${esc(x.item_name)}</td><td>${esc(x.spec)}</td><td>${x.quantity}${esc(x.unit)}</td><td>¥${(x.amount||0).toFixed(0)}</td><td>${x.invoice_no?esc(x.invoice_no):'<span style="color:#c0392b">未回</span>'}</td><td>${esc(x.date)}</td></tr>`).join('')+
+    `</table>`;
 }
 async function loadReports2(){
   try{
