@@ -5836,6 +5836,7 @@ def api_receiving_invoice_match(rid):
     d = request.json or {}
     invoice_no = (d.get('invoice_no') or '').strip()
     amount = float(d.get('amount') or 0)
+    invoice_type = d.get('invoice_type') or '增值税专用发票'
     if not invoice_no:
         return jsonify({'error': '请填写发票号'}), 400
     conn = db()
@@ -5846,9 +5847,11 @@ def api_receiving_invoice_match(rid):
         conn.close(); return jsonify({'error': '该入库单不是暂估单,无需红冲'}), 400
     if rn['invoice_no']:
         conn.close(); return jsonify({'error': f'该暂估单已红冲(发票{rn["invoice_no"]})'}), 400
-    # 红冲: 暂估→正式, 记发票号
-    conn.execute("UPDATE receivings SET is_est=0, invoice_no=?, est_amount=? WHERE id=?",
-                 (invoice_no, amount if amount > 0 else rn['est_amount'], rid))
+    # 红冲: 暂估→正式, 记发票号+类型
+    try: conn.execute("ALTER TABLE receivings ADD COLUMN invoice_type TEXT DEFAULT ''")
+    except Exception: pass
+    conn.execute("UPDATE receivings SET is_est=0, invoice_no=?, est_amount=?, invoice_type=? WHERE id=?",
+                 (invoice_no, amount if amount > 0 else rn['est_amount'], invoice_type, rid))
     conn.commit(); conn.close()
     log(session['user_name'], '发票核对红冲', f'{rn["receive_no"]} 发票{invoice_no} 已红冲转正式')
     return jsonify({'success': True, 'receive_no': rn['receive_no']})

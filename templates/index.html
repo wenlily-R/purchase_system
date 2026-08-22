@@ -1881,18 +1881,20 @@ async function showInvMatch(rid, rno){
         📋 该入库单为<b>暂估入库</b>（货到发票未到）。收到发票后在此核对，红冲转正式入库。</p>
       <div class="fg"><label class="fl2">入库单号</label><input class="fc" value="${esc(rno)}" readonly></div>
       <div class="fg"><label class="fl2">发票号 *</label><input class="fc" id="invMatchNo" placeholder="如: 04435021"></div>
+      <div class="fg"><label class="fl2">发票类型 *</label><select class="fc" id="invMatchType"><option value="增值税专用发票">专票(可抵税)</option><option value="增值税普通发票">普票(不可抵税)</option></select></div>
       <div class="fg"><label class="fl2">发票金额(元) *</label><input class="fc" id="invMatchAmt" type="number" min="0" placeholder="按发票实际金额填写"></div>
-      <p style="font-size:9px;color:#999">核对后: 该单由"暂估"转为"正式入库", 月底自动计入"红字冲销明细表"。</p>
+      <p style="font-size:9px;color:#999">专票可抵扣进项税(省钱), 普票不能抵。核对后该单转"正式入库", 月底计入红字冲销明细表。</p>
     </div>`;
   id('dmFooter').innerHTML=`<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="doInvMatch(${rid})">✅ 确认红冲</button>`;
   id('detailModal').classList.add('show');
 }
 async function doInvMatch(rid){
   const no=id('invMatchNo').value.trim(), amt=parseFloat(id('invMatchAmt').value)||0;
+  const itype=id('invMatchType')?.value||'增值税专用发票';
   if(!no){alert('请填写发票号');return}
   if(amt<=0){alert('请填写发票金额');return}
-  if(!confirm(`确认该暂估入库单已收到发票 ${no}(${amt}元)?\n红冲后转为正式入库, 不可撤销。`))return;
-  const r=await api(`/receivings/${rid}/invoice-match`,{method:'POST',body:JSON.stringify({invoice_no:no,amount:amt})});
+  if(!confirm(`确认该暂估入库单已收到发票 ${no}(${amt}元, ${itype==='增值税专用发票'?'专票可抵税':'普票不可抵税'})?\n红冲后转为正式入库, 不可撤销。`))return;
+  const r=await api(`/receivings/${rid}/invoice-match`,{method:'POST',body:JSON.stringify({invoice_no:no,amount:amt,invoice_type:itype})});
   if(r.success){alert('✅ 红冲完成: '+r.receive_no+' 已转正式入库');closeMod();loadReceivings()}
   else alert('操作失败: '+(r.error||''));
 }
