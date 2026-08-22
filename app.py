@@ -4966,10 +4966,13 @@ def api_create_receiving():
     _atts_json = json.dumps([str(a) for a in _atts if a], ensure_ascii=False) if _atts else ''
     # V11.29: 归属部门(必选, 按部门分类入库)
     _dept = (d.get('dept') or '').strip()[:30]
-    conn.execute("INSERT INTO receivings(receive_no,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,items_json,attachments,dept) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    # V11.54: 入库单默认"暂估"(货到发票未到), 采购收到发票后红冲转正式
+    _is_est = 1 if d.get('is_est', True) else 0
+    _est_amt = round(float(d.get('est_amount') or 0), 2)
+    conn.execute("INSERT INTO receivings(receive_no,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,items_json,attachments,dept,is_est,est_amount) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                  (no, d.get('order_id'), first['item_name'], first.get('spec', ''), total_q,
                   first.get('unit', '个'), 0, '待审批', now(), '手动入库单: %d项商品' % len(items),
-                  json.dumps(items, ensure_ascii=False), _atts_json, _dept))
+                  json.dumps(items, ensure_ascii=False), _atts_json, _dept, _is_est, _est_amt))
     rid = conn.execute("SELECT id FROM receivings WHERE receive_no=?", (no,)).fetchone()[0]
     # 手动入库单没有 order_items, 明细暂存 remark; 审批通过时按 quantity 入库
     conn.commit()

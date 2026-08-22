@@ -1796,23 +1796,55 @@ async function loadReceivings(){
       id('rcvFCat').value=cur;
     }
   }catch(e){}
-  id('receivingsTable').innerHTML=rnder(r,['receive_no','dept','item_name','quantity','trade_mode','status','id'],['单号','部门','物资','数量','交易模式','状态','操作'],
+  // V11.54: 未红冲暂估单提醒(发票没回的暂估入库单)
+  const estPending=(r||[]).filter(x=>x.is_est&&!x.invoice_no);
+  const estHint=estPending.length?`<div style="margin:4px 0 6px;padding:5px 8px;background:#fff3e0;border-left:3px solid #e65100;font-size:10px;color:#e65100">
+    📋 <b>${estPending.length}</b> 张暂估入库单发票未回, 收到发票后点单号旁"🧾发票核对"红冲转正式</div>`:'';
+  id('receivingsTable').innerHTML=estHint+rnder(r,['receive_no','dept','item_name','quantity','trade_mode','status','id'],['单号','部门','物资','数量','交易模式','状态','操作'],
     x=>{
       // V11.37: 合同自动生成的待入库单 = 到货提醒(需先确认到货)
       const isAuto=(x.remark||'').includes('合同生效后自动')||(x.remark||'').includes('自动进入库');
       const stTag = x.status=='待入库'&&isAuto?'<span class="tag" style="background:#e3f2fd;color:#1565c0">📦 到货提醒</span>'
                   : x.status=='入库中'?'<span class="tag" style="background:#fff8e1;color:#f57f17">🚚 入库中</span>'
                   : tag(x.status);
-      const ops=`<button class="lnk" onclick="showRcvDetail(${x.id})">查看详情</button>`;
+      const ops=`<button class="lnk" onclick="showRcvDetail(${x.id})">查看详情</button>${x.is_est&&!x.invoice_no?` <button class="lnk" style="color:var(--o);font-weight:600" onclick="showInvMatch(${x.id},'${esc(x.receive_no)}')">🧾 发票核对</button>`:''}`;
       const ops2= x.status=='待入库'&&isAuto?`<button class="lnk" style="color:var(--s);font-weight:600" onclick="confirmArrived(${x.id})">✅ 确认到货</button>`
                 : x.status=='待入库'?`<button class="lnk" style="color:var(--s);font-weight:600" onclick="completeRcv(${x.id},${x.total_qty||x.quantity},${x.order_id||0})">📤 提交审批</button>`
                 : x.status=='入库中'?`<button class="lnk" style="color:var(--s);font-weight:600" onclick="completeRcv(${x.id},${x.total_qty||x.quantity},${x.order_id||0})">📤 提交审批</button>`
                 : x.status=='待审批'?'<span style="color:#b08900;font-size:8px">审批中</span>':'';
-      return `<td><b>${esc(x.receive_no)}</b></td><td>${x.dept?`<span class="tag" style="background:#eef7ee;color:#2e7d32">${esc(x.dept)}</span>`:'<span style="color:#bbb">—</span>'}</td><td>${esc(x.item_name)}${x.item_count?` <span class="tag" style="background:#e8f0fe;color:#1a6bff">${x.item_count}项</span>`:''}${x.urgent?' <span style="color:#e74c3c;font-weight:700">加急</span>':''}</td><td>${x.total_qty||x.quantity}${esc(x.unit||'')}</td>
+      // V11.54: 暂估/正式标签(暂估=货到发票未到)
+      const estTag = x.is_est?'<span class="tag" style="background:#fff3e0;color:#e65100">暂估</span>'
+                   : x.invoice_no?'<span class="tag" style="background:#e8f5e9;color:#2e7d32">已红冲</span>'
+                   : '';
+      return `<td><b>${esc(x.receive_no)}</b> ${estTag}</td><td>${x.dept?`<span class="tag" style="background:#eef7ee;color:#2e7d32">${esc(x.dept)}</span>`:'<span style="color:#bbb">—</span>'}</td><td>${esc(x.item_name)}${x.item_count?` <span class="tag" style="background:#e8f0fe;color:#1a6bff">${x.item_count}项</span>`:''}${x.urgent?' <span style="color:#e74c3c;font-weight:700">加急</span>':''}</td><td>${x.total_qty||x.quantity}${esc(x.unit||'')}</td>
     <td><span class="tag ${x.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(x.trade_mode||'货到付款')}</span></td><td>${stTag}</td>
     <td>${ops}${ops2}
       <button class="lnk" style="color:#b08900" onclick="editDoc('receiving',${x.id},'入库单')">✏️修改</button> <button class="lnk" onclick="window.open('/api/receivings/${x.id}/download','_blank')">⬇️ 下载</button> ${x.status=='已入库'?`<button class="lnk" style="color:var(--d)" onclick="voidRcv(${x.id})">作废</button>`:''} ${(x.status=='待审批'||x.status=='已通过'||x.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('receiving',${x.id},'入库单')">↩️撤回</button>`:''}${(x.status=='待审批'||x.status=='待入库'||x.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('receiving',${x.id},'入库单')">🗑️删除</button>`:''}</td>`;
     })}
+// V11.54: 发票核对红冲弹窗(采购对暂估入库单填发票号/金额 → 红冲转正式)
+async function showInvMatch(rid, rno){
+  id('dmTitle').textContent='🧾 发票核对（红冲暂估）';
+  id('dmBody').innerHTML=`
+    <div style="font-size:11px;line-height:1.8">
+      <p style="color:#e65100;background:#fff3e0;padding:6px 8px;border-radius:4px;margin-bottom:8px">
+        📋 该入库单为<b>暂估入库</b>（货到发票未到）。收到发票后在此核对，红冲转正式入库。</p>
+      <div class="fg"><label class="fl2">入库单号</label><input class="fc" value="${esc(rno)}" readonly></div>
+      <div class="fg"><label class="fl2">发票号 *</label><input class="fc" id="invMatchNo" placeholder="如: 04435021"></div>
+      <div class="fg"><label class="fl2">发票金额(元) *</label><input class="fc" id="invMatchAmt" type="number" min="0" placeholder="按发票实际金额填写"></div>
+      <p style="font-size:9px;color:#999">核对后: 该单由"暂估"转为"正式入库", 月底自动计入"红字冲销明细表"。</p>
+    </div>`;
+  id('dmFooter').innerHTML=`<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="doInvMatch(${rid})">✅ 确认红冲</button>`;
+  id('detailModal').classList.add('show');
+}
+async function doInvMatch(rid){
+  const no=id('invMatchNo').value.trim(), amt=parseFloat(id('invMatchAmt').value)||0;
+  if(!no){alert('请填写发票号');return}
+  if(amt<=0){alert('请填写发票金额');return}
+  if(!confirm(`确认该暂估入库单已收到发票 ${no}(${amt}元)?\n红冲后转为正式入库, 不可撤销。`))return;
+  const r=await api(`/receivings/${rid}/invoice-match`,{method:'POST',body:JSON.stringify({invoice_no:no,amount:amt})});
+  if(r.success){alert('✅ 红冲完成: '+r.receive_no+' 已转正式入库');closeMod();loadReceivings()}
+  else alert('操作失败: '+(r.error||''));
+}
 async function showRcvForm(){
   // V5.0: 新建手动入库单(商品/数量/含税单价) → 提交走审批
   // V11.26: 支持验收照片/视频上传(责任留证)
