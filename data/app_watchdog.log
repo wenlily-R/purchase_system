@@ -22406,3 +22406,69 @@ Port 5899 is in use by another program. Either identify and stop that program, o
  * Running on http://127.0.0.1:5899
  * Running on http://192.168.110.89:5899
 [33mPress CTRL+C to quit[0m
+127.0.0.1 - - [22/Aug/2026 08:34:09] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 08:34:20] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 08:34:52] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 08:35:23] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 08:35:58] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 08:36:41] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 08:37:15] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 08:37:48] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 08:38:13] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 08:38:13] "GET /api/me HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 08:38:13] "GET /api/public-url HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 08:38:13] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 08:38:13] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 08:38:18] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 08:38:19] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 08:38:19] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 08:38:19] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 08:38:20] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 08:38:21] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 08:38:24] "GET /api/receivings HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 08:38:24] "GET /api/departments HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 08:38:24] "GET /api/categories HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 08:38:26] "[33mGET /api/payments HTTP/1.1[0m" 404 -
+192.168.110.89 - - [22/Aug/2026 08:38:27] "GET /api/reports/est-view HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 08:38:27] "GET /api/reports HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 08:38:28] "GET /api/reports2 HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 08:38:29] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 08:38:51] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
