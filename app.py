@@ -3299,11 +3299,12 @@ def api_create_prequest():
     for _try in range(5):
         no = gen_req_no(d.get('dept', ''), conn)
         try:
-            conn.execute("""INSERT INTO purchase_requests(req_no,dept,requester,requester_id,budget_code,purpose,target_date,total_estimated,remark,attachments,urgent,apply_date)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+            conn.execute("""INSERT INTO purchase_requests(req_no,dept,requester,requester_id,budget_code,purpose,target_date,total_estimated,remark,attachments,urgent,apply_date,req_type)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (no, d.get('dept',''), session['user_name'], session['user_id'], d.get('budget_code',''),
                  d.get('purpose',''), d.get('target_date'), total, d.get('remark',''),
-                 json.dumps(d.get('attachments') or [], ensure_ascii=False), 1 if d.get('urgent') else 0, apply_date))
+                 json.dumps(d.get('attachments') or [], ensure_ascii=False), 1 if d.get('urgent') else 0, apply_date,
+                 d.get('req_type') or '物资采购'))
             break
         except sqlite3.IntegrityError:
             continue
