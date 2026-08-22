@@ -23881,3 +23881,97 @@ Port 5899 is in use by another program. Either identify and stop that program, o
 
  * Serving Flask app 'app'
  * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [22/Aug/2026 18:02:39] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:03:05] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:03:36] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 18:04:07] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 18:04:07] "GET /api/me HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 18:04:07] "GET /api/public-url HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 18:04:07] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 18:04:07] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:04:08] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 18:04:09] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 18:04:09] "GET /api/me HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 18:04:09] "GET /api/public-url HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 18:04:09] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [22/Aug/2026 18:04:09] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:04:40] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:05:12] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:05:44] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:05:45] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:05:45] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [22/Aug/2026 18:05:45] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [22/Aug/2026 18:05:45] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [22/Aug/2026 18:05:46] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [22/Aug/2026 18:05:46] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:05:46] "GET /api/public-url HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:05:46] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:05:46] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:05:49] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:05:50] "GET /api/inventory HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:05:50] "GET /api/categories HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:06:15] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:06:51] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:07:22] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:07:28] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:07:28] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [22/Aug/2026 18:07:28] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [22/Aug/2026 18:07:29] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [22/Aug/2026 18:07:29] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:07:29] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:07:29] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:07:29] "GET /api/public-url HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:07:29] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:07:29] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:07:54] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:08:26] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [22/Aug/2026 18:09:00] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:09:08] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:09:08] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:09:09] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [22/Aug/2026 18:09:09] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [22/Aug/2026 18:09:09] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [22/Aug/2026 18:09:10] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:09:10] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:09:10] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:09:10] "GET /api/public-url HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:09:10] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 18:09:10] "GET /api/approvals/overdue HTTP/1.1" 200 -

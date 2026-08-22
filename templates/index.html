@@ -751,6 +751,11 @@ function buildNav(){
     'ledger':['系统管理员','分管领导','总经理','财务'],
   };
   const canSee=pg=>{const rl=MENU_ROLES[pg];if(!rl)return true;return rl.includes('*')||rl.includes(role)};
+  // V11.65b: 供工作台快捷导航复用(系统设置类仅管理员)
+  window._canSeeNav=pg=>{
+    if(['system','feishu','dingtalk'].includes(pg))return role==='系统管理员';
+    return canSee(pg);
+  };
   // V9: 侧边菜单分组折叠(按角色过滤)
   const groups=[
     ['工作台',[['dashboard','📊','工作台']]],
@@ -934,14 +939,15 @@ async function loadDashboard(){
   try{
     const d=await api('/dashboard');
     const k=d.kpi||{};
-    // ① 快捷功能导航(V9: 图标+文字, 分组, 高频高亮)
+    // ① 快捷功能导航(V9: 图标+文字, 分组, 高频高亮) — V11.65b: 按角色过滤(与侧边菜单同规则)
+    const __canSee = window._canSeeNav || (()=>true);
     const navGroups=[
       ['采购业务',[['📝','采购申请','prequests'],['📋','采购订单','orders'],['🏢','供应商','suppliers'],['📄','合同管理','contracts']]],
       ['仓储管理',[['📦','入库验收','receivings'],['📤','出库单','requisitions'],['📦','库存查询','inventory'],['📋','盘点单','counts']]],
       ['财务付款',[['📊','月度对账','settlements'],['💰','付款申请','payments'],['💸','费用登记','expenses'],['🧾','合并开票','invoices'],['🔍','往来台账','ledger']]],
       ['审批中心',[['✅','审批中心','approvals'],['🚨','加急审批','approvals']]],
       ['系统设置',[['⚙️','系统设置','system'],['📄','模板管理','system'],['🔐','权限设置','system'],['✈️','飞书对接','feishu'],['💬','钉钉集成','dingtalk']]],
-    ];
+    ].map(g=>[g[0], g[1].filter(b=>__canSee(b[2]))]).filter(g=>g[1].length);
     const heroBtn=(ic,txt,page)=>`<button class="v9-nav-btn hero" onclick="sw('${page}')"><span class="ic">${ic}</span>${txt}</button>`;
     const warnBtn=(ic,txt,page)=>`<button class="v9-nav-btn warn" onclick="sw('${page}')"><span class="ic">${ic}</span>${txt}</button>`;
     id('quickNav').innerHTML=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px">
