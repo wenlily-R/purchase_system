@@ -1198,6 +1198,36 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
     c.execute("UPDATE dingtalk_instances SET status='synced', updated_at=? WHERE biz_type=? AND biz_id=? AND status='pending'", (now(), biz_type, biz_id))
     c.commit(); c.close()
     log(approver, f'{biz_type}审批{"通过" if result=="ok" else "驳回"}', f'{biz_type}#{biz_id} → {st}')
+
+    # V11.70: 审批办结通知发起人(站内信+钉钉工作通知)
+    if result == 'ok' and st in ('已通过', '审批通过', '已入库', '已出库', '已签合同'):
+        try:
+            _d = c.execute(f"SELECT * FROM {biz_table(biz_type)} WHERE id=?", (biz_id,)).fetchone()
+            if _d:
+                _req = _d.get('requester') or _d.get('created_by') or _d.get('apply_by')
+                if _req:
+                    from app import find_user_by_name
+                    _u = find_user_by_name(_req)
+                    if _u and _u.get('dingtalk_userid'):
+                        import threading as _th
+                        def _notify():
+                            try:
+                                from app import dt_send_todo
+                                _doc_no = _d.get('req_no') or _d.get('order_no') or _d.get('contract_no') or ''
+                                dt_send_todo(
+                                    [_u['dingtalk_userid']],
+                                    f'✅ 审批通过 · {_doc_no}',
+                                    f'{biz_type}已审批通过，可继续后续操作',
+                                    f'单据: {_doc_no}',
+                                    biz_type, str(biz_id),
+                                    push_type='done',
+                                    operator=approver
+                                )
+                            except Exception as e:
+                                pass
+                        _th.Thread(target=_notify, args=(), daemon=True).start()
+        except Exception:
+            pass
     return True
 
 def fs_sync_result(instance_code, result):

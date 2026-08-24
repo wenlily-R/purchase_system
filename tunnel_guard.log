@@ -1214,3 +1214,62 @@
 [14:00:56] 连续2次失败, 强制杀进程重连
 [14:00:56] localhost.run 断开, 立即重连...
 [14:01:03] ✅ localhost.run: https://15de758227568d.lhr.life (公网已验证)
+[14:20:22] 健康检查失败 1/2 (https://15de758227568d.lhr.life)
+[14:20:54] 健康检查失败 2/2 (https://15de758227568d.lhr.life)
+[14:20:54] 连续2次失败, 强制杀进程重连
+[14:20:54] localhost.run 断开, 立即重连...
+[14:21:04] ✅ localhost.run: https://be19cd4de5645b.lhr.life (公网已验证)
+[14:40:09] 健康检查失败 1/2 (https://be19cd4de5645b.lhr.life)
+[14:40:41] 健康检查失败 2/2 (https://be19cd4de5645b.lhr.life)
+[14:40:41] 连续2次失败, 强制杀进程重连
+[14:40:41] localhost.run 断开, 立即重连...
+[14:40:48] ✅ localhost.run: https://913355082bea1f.lhr.life (公网已验证)
+[14:51:29] 健康检查失败 1/2 (https://913355082bea1f.lhr.life)
+[14:51:29] localhost.run 断开, 立即重连...
+[14:51:36] ✅ localhost.run: https://8e54b8ee00f5e2.lhr.life (公网已验证)
+[15:00:36] 健康检查失败 1/2 (https://8e54b8ee00f5e2.lhr.life)
+[15:01:12] 健康检查失败 2/2 (https://8e54b8ee00f5e2.lhr.life)
+[15:01:12] 连续2次失败, 强制杀进程重连
+[15:01:12] localhost.run 断开, 立即重连...
+[15:01:39] ✅ serveo: https://9f300ddbe9c8f4cc-183-203-148-242.serveousercontent.com (公网已验证)
+[15:11:48] 健康检查失败 1/2 (https://9f300ddbe9c8f4cc-183-203-148-242.serveousercontent.com)
+[15:12:20] 健康检查失败 2/2 (https://9f300ddbe9c8f4cc-183-203-148-242.serveousercontent.com)
+[15:12:20] 连续2次失败, 强制杀进程重连
+[15:12:20] serveo 断开, 立即重连...
+[15:12:36] ✅ localhost.run: https://bcb12951813538.lhr.life (公网已验证)
+[15:15:15] 健康检查失败 1/2 (https://bcb12951813538.lhr.life)
+[15:18:34] 健康检查失败 1/2 (https://bcb12951813538.lhr.life)
+[15:19:10] 健康检查失败 2/2 (https://bcb12951813538.lhr.life)
+[15:19:10] 连续2次失败, 强制杀进程重连
+[15:19:10] localhost.run 断开, 立即重连...
+[15:19:20] 抓到 https://052abaffae8407.lhr.life 但公网不通, 杀掉重试
+[15:19:25] ✅ serveo: https://be789de70de8adc5-183-203-148-242.serveousercontent.com (公网已验证)
+[15:29:39] 健康检查失败 1/2 (https://be789de70de8adc5-183-203-148-242.serveousercontent.com)
+[15:30:11] 健康检查失败 2/2 (https://be789de70de8adc5-183-203-148-242.serveousercontent.com)
+[15:30:11] 连续2次失败, 强制杀进程重连
+[15:30:11] serveo 断开, 立即重连...
+[15:30:29] ✅ localhost.run: https://dc72f9802fbc37.lhr.life (公网已验证)
+[15:35:07] 健康检查失败 1/2 (https://dc72f9802fbc37.lhr.life)
+[15:37:31] 健康检查失败 1/2 (https://dc72f9802fbc37.lhr.life)
+[15:38:07] 健康检查失败 2/2 (https://dc72f9802fbc37.lhr.life)
+[15:38:07] 连续2次失败, 强制杀进程重连
+[15:38:07] localhost.run 断开, 立即重连...
+[15:38:35] ✅ serveo: https://474b9709a9e8a77c-183-203-148-242.serveousercontent.com (公网已验证)
+[15:48:47] 健康检查失败 1/2 (https://474b9709a9e8a77c-183-203-148-242.serveousercontent.com)
+[15:49:21] 健康检查失败 2/2 (https://474b9709a9e8a77c-183-203-148-242.serveousercontent.com)
+[15:49:21] 连续2次失败, 强制杀进程重连
+[15:49:21] serveo 断开, 立即重连...
+[15:49:37] ✅ localhost.run: https://9459bc79665d07.lhr.life (公网已验证)
+[16:00:18] 健康检查失败 1/2 (https://9459bc79665d07.lhr.life)
+[16:00:49] 健康检查失败 2/2 (https://9459bc79665d07.lhr.life)
+[16:00:49] 连续2次失败, 强制杀进程重连
+[16:00:49] localhost.run 断开, 立即重连...
+[16:00:56] ✅ localhost.run: https://fd31cdb267ef1d.lhr.life (公网已验证)
+[16:16:52] 健康检查失败 1/2 (https://fd31cdb267ef1d.lhr.life)
+[16:16:52] localhost.run 断开, 立即重连...
+[16:17:00] ✅ localhost.run: https://31adffb0f6396c.lhr.life (公网已验证)
+[16:20:10] 健康检查失败 1/2 (https://31adffb0f6396c.lhr.life)
+[16:20:41] 健康检查失败 2/2 (https://31adffb0f6396c.lhr.life)
+[16:20:41] 连续2次失败, 强制杀进程重连
+[16:20:41] localhost.run 断开, 立即重连...
+[16:20:48] ✅ localhost.run: https://0b037b8f12d526.lhr.life (公网已验证)

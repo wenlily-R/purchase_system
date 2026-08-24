@@ -935,7 +935,7 @@ setInterval(()=>{
     'dingtalk':loadDingTalk,
     'settlements':loadSettlements,'invoices':loadInvoicePage,'ledger':loadLedger,'system':loadSystem}[_curPage];
   if(fn)fn().catch(()=>{});
-},60000);
+},15000);
 function showDetail(t,h,f){id('dmTitle').textContent=t;id('dmBody').innerHTML=h;id('dmFooter').innerHTML=f||'<button class="btn btn-o" onclick="closeMod()">关闭</button>';id('detailModal').classList.add('show')}
 
 function tag(s){const m={'已完成':'tg-g','已付款':'tg-g','已通过':'tg-g','已入库':'tg-g','已签收':'tg-g','待审批':'tg-o','待签收':'tg-o','待检验':'tg-o','待入库':'tg-o','验收中':'tg-o','验收完成':'tg-g','审批通过':'tg-b','已签合同':'tg-b','已发货':'tg-b','已到货':'tg-b','已挂账':'tg-b','已驳回':'tg-r','已关闭':'tg-gy','执行中':'tg-b'};return `<span class="tag ${m[s]||'tg-gy'}">${esc(s)}</span>`}
