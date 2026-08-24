@@ -4096,6 +4096,24 @@ def inquiry_vendor_quote(token):
                  (_final_price, (d.get('quote_remark') or '')[:200],
                   json.dumps(details, ensure_ascii=False) if details else '',
                   (d.get('quote_delivery') or '')[:20], (d.get('quote_warranty') or '')[:20], now(), s['id']))
+    # V11.74: 检查是否三家都报价完成, 是则通知领导定标
+    try:
+        total_count = conn.execute("SELECT COUNT(*) FROM inquiry_suppliers WHERE inquiry_id=?", (s['inquiry_id'],)).fetchone()[0]
+        quoted_count = conn.execute("SELECT COUNT(*) FROM inquiry_suppliers WHERE inquiry_id=? AND quote_price>0", (s['inquiry_id'],)).fetchone()[0]
+        if quoted_count >= total_count and total_count > 0:
+            # 全部报价完成, 推送给分管领导
+            i = conn.execute("SELECT * FROM inquiries WHERE id=?", (s['inquiry_id'],)).fetchone()
+            if i:
+                # 找分管领导
+                admin_user = conn.execute("SELECT * FROM users WHERE role='分管领导' AND is_active=1 ORDER BY id LIMIT 1").fetchone()
+                if admin_user and admin_user.get('dingtalk_userid'):
+                    dt_send_todo([admin_user['dingtalk_userid']],
+                                '📋 三方询价已完成，请定标',
+                                '询价单 %s 已完成三方比价，请登录系统查看比价表并选择供应商' % i['inq_no'],
+                                biz_type='inquiry', biz_id=i['id'],
+                                push_type='alert', operator='系统')
+    except Exception:
+        pass
     conn.commit(); conn.close()
     return jsonify({'success': True, 'quote_price': _final_price})
 
