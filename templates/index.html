@@ -733,30 +733,8 @@ function initApp(){
 }
 function buildNav(){
   const role=ME.role;
-  // V11.63: 角色菜单权限 — 每个菜单项允许的角色(空=所有人可见)
-  const MENU_ROLES={
-    'dashboard':['*'],'approvals':['*'],'reports':['*'],
-    'prequests':['*'],'inquiries':['系统管理员','分管领导','总经理','采购员'],
-    'orders':['系统管理员','分管领导','总经理','采购员'],
-    'contracts':['系统管理员','分管领导','总经理','采购员'],
-    'suppliers':['系统管理员','分管领导','总经理','采购员','财务'],
-    'receivings':['系统管理员','分管领导','总经理','库管员','采购员'],
-    'requisitions':['系统管理员','分管领导','总经理','库管员'],
-    'inventory':['系统管理员','分管领导','总经理','库管员','采购员'],
-    'counts':['系统管理员','分管领导','总经理','库管员'],
-    'payments':['系统管理员','分管领导','总经理','财务'],
-    'expenses':['系统管理员','分管领导','总经理','财务'],
-    'settlements':['系统管理员','分管领导','总经理','财务'],
-    'invoices':['系统管理员','分管领导','总经理','财务'],
-    'ledger':['系统管理员','分管领导','总经理','财务'],
-  };
-  const canSee=pg=>{const rl=MENU_ROLES[pg];if(!rl)return true;return rl.includes('*')||rl.includes(role)};
-  // V11.65b: 供工作台快捷导航复用(系统设置类仅管理员)
-  window._canSeeNav=pg=>{
-    if(['system','feishu','dingtalk'].includes(pg))return role==='系统管理员';
-    return canSee(pg);
-  };
-  // V9: 侧边菜单分组折叠(按角色过滤)
+  // V11.66: 界面统一 — 业务菜单全部显示(权限靠后端数据过滤兜底), 仅系统配置按管理员显示
+  // 无权限页面: 由 sw() 拦截显示提示(见 sw 函数)
   const groups=[
     ['工作台',[['dashboard','📊','工作台']]],
     ['采购管理',[['prequests','📝','采购申请'],['inquiries','🔍','三方询价'],['orders','📋','采购订单'],['contracts','📄','合同管理'],['suppliers','🏢','供应商']]],
@@ -766,14 +744,12 @@ function buildNav(){
     ['报表中心',[['reports','📊','报表中心']]],
   ];
   let html=groups.map((g,gi)=>{
-    const items=g[1].filter(i=>canSee(i[0])).map(i=>`<div class="si si-sub" onclick="sw('${i[0]}')">${i[1]}${i[2]}</div>`).join('');
-    if(!items)return '';
+    const items=g[1].map(i=>`<div class="si si-sub" onclick="sw('${i[0]}')">${i[1]}${i[2]}</div>`).join('');
     return `<div class="si-grp" onclick="toggleGrp(this,${gi})">${g[0]}<span style="margin-left:auto;font-size:8px">▾</span></div><div class="grp-body" id="grp${gi}">${items}</div>`;
   }).join('');
   if(ME.can_config){html+=`<div class="sl">系统配置</div><div class="si si-sub" onclick="sw('feishu')">✈️飞书</div><div class="si si-sub" onclick="sw('dingtalk')">💬钉钉</div><div class="si si-sub" onclick="sw('system')">⚙️系统设置</div>`}
   id('sideMenu').innerHTML=html;
-  // V11.57: 顶部导航 = 六大业务大类(工作台/审批/采购/库房/财务/报表), 角色不同看到的类不同
-  // 大类 → 跳转目标(该组第一个功能页)
+  // V11.66: 顶部导航 = 六大业务大类全部显示(界面统一, 权限由页面拦截)
   const navCats=[
     {label:'📊 工作台',page:'dashboard'},
     {label:'✅ 审批',page:'approvals',badge:true},
@@ -782,23 +758,8 @@ function buildNav(){
     {label:'💰 财务',page:'payments'},
     {label:'📈 报表',page:'reports'},
   ];
-  // 角色可见大类(按系统真实角色): 管理员全看; 领导/财务/部门负责人 看采购+库房+财务; 员工 看工作台/审批/报表
-  const roleVis={
-    '系统管理员':['dashboard','approvals','prequests','receivings','payments','reports'],
-    '分管领导':['dashboard','approvals','prequests','receivings','payments','reports'],
-    '总经理':['dashboard','approvals','prequests','receivings','payments','reports'],
-    '财务':['dashboard','approvals','payments','reports'],
-    '采购员':['dashboard','approvals','prequests','reports'],
-    '库管员':['dashboard','approvals','receivings','reports'],
-    '部门负责人':['dashboard','approvals','reports'],
-    '员工':['dashboard','approvals','reports'],
-  };
-  const vis=(roleVis[role]||['dashboard','approvals','prequests','receivings','payments','reports']);
-  // V11.63: 侧边菜单可见的页面集合 = 所有可见菜单项(顶部大类是它的大类)
-  const visiblePages=Object.keys(MENU_ROLES).filter(pg=>canSee(pg));
   let navHtml='';
   navCats.forEach(c=>{
-    if(!vis.includes(c.page))return;
     navHtml+=`<a onclick="sw('${c.page}')"${c.page=='approvals'?' class="appr-hl" title="待我审批"':''}>${c.label}${c.badge?`<span class="ab" id="navApprBadge"></span>`:''}</a>`;
   });
   id('topnav').innerHTML=navHtml;
@@ -886,6 +847,9 @@ function sideScrollInit(){
 function sw(name){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('act'));
   const t=id('p'+name);if(t)t.classList.add('act');
+  // V11.66: 切页前清理旧权限提示 + 恢复被权限隐藏的内容
+  document.querySelectorAll('.perm-tip').forEach(el=>el.remove());
+  document.querySelectorAll('[data-perm-hidden]').forEach(el=>{el.style.display='';el.removeAttribute('data-perm-hidden')});
   document.querySelectorAll('.si').forEach(a=>a.classList.remove('act'));
   document.querySelectorAll('.topnav a').forEach(a=>a.classList.remove('act'));
   document.querySelectorAll('.si').forEach(a=>{const m=a.getAttribute('onclick');if(m&&m.includes("'"+name+"'"))a.classList.add('act')});
@@ -896,7 +860,63 @@ function sw(name){
     'dingtalk':loadDingTalk,
     'counts':()=>{loadAdjustments()},
     'settlements':loadSettlements,'invoices':loadInvoicePage,'ledger':loadLedger,'system':loadSystem};
+  // V11.66: 页面级权限拦截 — 无权限角色看到友好提示(数据级过滤已在后端兜底)
+  if(!__pageAllowed(name)){
+    const wrap=id('p'+name);
+    if(wrap){
+      wrap.querySelectorAll('div,table,button,.card,.kpi,.ch,.cb,.tabs').forEach(el=>{
+        if(!el.querySelector('.perm-tip')&&el.style.display!=='none'&&!el.hasAttribute('data-perm-hidden')){
+          el.style.display='none';el.setAttribute('data-perm-hidden','1');
+        }
+      });
+      if(!wrap.querySelector('.perm-tip')){
+        wrap.insertAdjacentHTML('afterbegin',`<div class="perm-tip" style="padding:40px;text-align:center;color:#888;font-size:13px">
+          🔒 该功能仅限「${__pageRoles(name)||'特定角色'}」使用<br>
+          <span style="font-size:11px;color:#bbb">您的角色: ${esc(ME.role)} · 如需开通请联系管理员</span></div>`);
+      }
+    }
+    return;
+  }
   if(fn[name])fn[name]();
+}
+// V11.66: 页面→允许角色(空=所有人); 系统配置类仅管理员
+function __pageRoles(name){
+  const cfg={'feishu':'系统管理员','dingtalk':'系统管理员','system':'系统管理员'};
+  if(cfg[name])return cfg[name];
+  const m={
+    'inquiries':'采购员、财务、分管领导、总经理、系统管理员',
+    'orders':'采购员、财务、分管领导、总经理、系统管理员',
+    'contracts':'采购员、财务、分管领导、总经理、系统管理员',
+    'suppliers':'采购员、财务、分管领导、总经理、系统管理员',
+    'requisitions':'库管员、部门负责人、分管领导、总经理、系统管理员',
+    'counts':'库管员、分管领导、总经理、系统管理员',
+    'payments':'财务、分管领导、总经理、系统管理员',
+    'expenses':'财务、分管领导、总经理、系统管理员',
+    'settlements':'财务、分管领导、总经理、系统管理员',
+    'invoices':'财务、分管领导、总经理、系统管理员',
+    'ledger':'财务、分管领导、总经理、系统管理员',
+  };
+  return m[name]||'';
+}
+function __pageAllowed(name){
+  const cfg={'feishu':1,'dingtalk':1,'system':1};
+  if(cfg[name])return !!(ME.can_config);
+  const m={
+    'inquiries':['采购员','财务','分管领导','总经理','系统管理员'],
+    'orders':['采购员','财务','分管领导','总经理','系统管理员'],
+    'contracts':['采购员','财务','分管领导','总经理','系统管理员'],
+    'suppliers':['采购员','财务','分管领导','总经理','系统管理员'],
+    'requisitions':['库管员','部门负责人','分管领导','总经理','系统管理员'],
+    'counts':['库管员','分管领导','总经理','系统管理员'],
+    'payments':['财务','分管领导','总经理','系统管理员'],
+    'expenses':['财务','分管领导','总经理','系统管理员'],
+    'settlements':['财务','分管领导','总经理','系统管理员'],
+    'invoices':['财务','分管领导','总经理','系统管理员'],
+    'ledger':['财务','分管领导','总经理','系统管理员'],
+  };
+  const rl=m[name];
+  if(!rl)return true;
+  return rl.includes(ME.role);
 }
 
 function closeMod(){id('detailModal').classList.remove('show')}
@@ -947,7 +967,7 @@ async function loadDashboard(){
       ['财务付款',[['📊','月度对账','settlements'],['💰','付款申请','payments'],['💸','费用登记','expenses'],['🧾','合并开票','invoices'],['🔍','往来台账','ledger']]],
       ['审批中心',[['✅','审批中心','approvals'],['🚨','加急审批','approvals']]],
       ['系统设置',[['⚙️','系统设置','system'],['📄','模板管理','system'],['🔐','权限设置','system'],['✈️','飞书对接','feishu'],['💬','钉钉集成','dingtalk']]],
-    ].map(g=>[g[0], g[1].filter(b=>__canSee(b[2]))]).filter(g=>g[1].length);
+    ].map(g=>[g[0], g[1].filter(b=>__pageAllowed(b[2])||b[2]==='system')]).filter(g=>g[1].length);
     const heroBtn=(ic,txt,page)=>`<button class="v9-nav-btn hero" onclick="sw('${page}')"><span class="ic">${ic}</span>${txt}</button>`;
     const warnBtn=(ic,txt,page)=>`<button class="v9-nav-btn warn" onclick="sw('${page}')"><span class="ic">${ic}</span>${txt}</button>`;
     id('quickNav').innerHTML=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px">
