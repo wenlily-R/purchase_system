@@ -884,10 +884,10 @@ function __pageRoles(name){
   const cfg={'feishu':'系统管理员','dingtalk':'系统管理员','system':'系统管理员'};
   if(cfg[name])return cfg[name];
   const m={
-    'inquiries':'采购员、财务、分管领导、总经理、系统管理员',
-    'orders':'采购员、财务、分管领导、总经理、系统管理员',
-    'contracts':'采购员、财务、分管领导、总经理、系统管理员',
-    'suppliers':'采购员、财务、分管领导、总经理、系统管理员',
+    'inquiries':'采购员、分管领导、总经理、系统管理员',
+    'orders':'采购员、分管领导、总经理、系统管理员',
+    'contracts':'采购员、分管领导、总经理、系统管理员',
+    'suppliers':'采购员、分管领导、总经理、系统管理员',
     'requisitions':'库管员、部门负责人、分管领导、总经理、系统管理员',
     'counts':'库管员、分管领导、总经理、系统管理员',
     'payments':'财务、分管领导、总经理、系统管理员',
@@ -902,10 +902,10 @@ function __pageAllowed(name){
   const cfg={'feishu':1,'dingtalk':1,'system':1};
   if(cfg[name])return !!(ME.can_config);
   const m={
-    'inquiries':['采购员','财务','分管领导','总经理','系统管理员'],
-    'orders':['采购员','财务','分管领导','总经理','系统管理员'],
-    'contracts':['采购员','财务','分管领导','总经理','系统管理员'],
-    'suppliers':['采购员','财务','分管领导','总经理','系统管理员'],
+    'inquiries':['采购员','分管领导','总经理','系统管理员'],
+    'orders':['采购员','分管领导','总经理','系统管理员'],
+    'contracts':['采购员','分管领导','总经理','系统管理员'],
+    'suppliers':['采购员','分管领导','总经理','系统管理员'],
     'requisitions':['库管员','部门负责人','分管领导','总经理','系统管理员'],
     'counts':['库管员','分管领导','总经理','系统管理员'],
     'payments':['财务','分管领导','总经理','系统管理员'],
