@@ -4102,7 +4102,7 @@ def inquiry_vendor_quote(token):
 @app.route('/api/inquiries/<int:iid>/select', methods=['POST'])
 @login_required
 def api_inquiry_select(iid):
-    """V11.3: 选中供应商 → 生成采购订单(草稿态, 商家详细信息自动填入, 人工确认后提交审批)"""
+    """定标审批: 领导选定供应商 → 生成采购订单草稿 → 提交审批"""
     d = request.json
     sid = d.get('supplier_id')
     conn = db()
@@ -4142,7 +4142,7 @@ def api_inquiry_select(iid):
         grand_amt += amt
         rows.append((it['item_name'], it['spec'] or '', it['unit'] or '个', qty, price, amt))
     first = rows[0]
-    # V11.3: 商家详细信息自动填入订单(联系人/电话/报价/交期备注)
+    # 商家详细信息自动填入订单
     contact = (s['contact'] or '').strip()
     phone = (s['phone'] or '').strip()
     quote_remark = (s['quote_remark'] or '').strip()
@@ -4153,7 +4153,6 @@ def api_inquiry_select(iid):
         detail_parts.append('联系人: %s' % contact)
     if phone:
         detail_parts.append('电话: %s' % phone)
-    # V11.13: 交付日期/质保时间单独展示(不混在备注里)
     if quote_delivery:
         detail_parts.append('交付日期: %s' % quote_delivery)
     if quote_warranty:
@@ -4162,14 +4161,14 @@ def api_inquiry_select(iid):
         detail_parts.append('备注: %s' % quote_remark)
     detail_parts.append('询价单号: %s' % i['inq_no'])
     remark = '; '.join(detail_parts)
-    # 交易模式: 优先取商家报价备注中的模式词, 否则默认货到付款
     tm = '货到付款'
     if quote_remark:
         for kw in ('货到付款', '先款后货', '月结', '预付', '现款', '承兑'):
             if kw in quote_remark:
                 tm = kw
                 break
-    # 草稿态: 不创建审批实例、不发起钉钉, 人工确认后提交审批
+    # 定标审批: 领导选定后, 订单草稿 + 提交定标审批(必须领导审批通过才能下单)
+    settle_type = d.get('settle_type') or '现结'
     conn.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,
         supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (no, i['req_id'], first[0], first[1], sum(r[3] for r in rows), first[2], first[4], grand_amt, 0, 0, total,
@@ -4181,28 +4180,16 @@ def api_inquiry_select(iid):
         conn.execute("INSERT INTO order_items(order_id,item_name,spec,unit,quantity,price,amount,tax_rate,tax_amount,total_amount,remark) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                      (oid, r[0], r[1], r[2], r[3], r[4], r[5], 0, 0, r[5], ''))
     conn.execute("UPDATE inquiry_suppliers SET is_selected=1 WHERE id=?", (sid,))
-    # V11.67: 金额分级定标 — 小额(≤500)采购员直接决策, 订单直接生效(免审批); 大额(>500)走定标审批
-    INQUIRY_SELF_LIMIT = 500.0
-    settle_type = d.get('settle_type') or '现结'
-    if total <= INQUIRY_SELF_LIMIT:
-        conn.execute("UPDATE purchase_orders SET status='已通过', settle_type=? WHERE id=?", (settle_type, oid))
-        conn.execute("UPDATE inquiries SET status='已生成订单', selected_supplier_id=?, updated_at=? WHERE id=?", (sid, now(), iid))
-        conn.commit()
-        conn.close()
-        log(session['user_name'], '询价选中下单', '%s → 订单%s(小额自决,直接生效) 供应商%s ¥%.0f' % (i['inq_no'], no, s['supplier_name'], total))
-        return jsonify({'success': True, 'order_no': no, 'id': oid, 'total_amount': total, 'status': '已通过',
-                        'message': '小额订单(≤¥500)已直接生效，无需审批'})
-    # 大额: 订单草稿 + 定标审批(复用purchase_order审批流/钉钉模板)
-    conn.execute("UPDATE purchase_orders SET status='草稿', settle_type=? WHERE id=?", (settle_type, oid))
+    conn.execute("UPDATE purchase_orders SET status='定标审批中' WHERE id=?", (oid,))
     conn.execute("UPDATE inquiries SET status='定标审批中', selected_supplier_id=?, updated_at=? WHERE id=?", (sid, now(), iid))
     conn.commit()
     create_approvals('purchase_order', oid, total)
     conn.close()
     try: start_instances('purchase_order', oid)
     except Exception: pass
-    log(session['user_name'], '询价选中下单', '%s → 订单%s(大额,待定标审批) 供应商%s ¥%.0f' % (i['inq_no'], no, s['supplier_name'], total))
-    return jsonify({'success': True, 'order_no': no, 'id': oid, 'total_amount': total, 'status': '草稿',
-                    'message': '大额订单已提交定标审批(领导审批通过后自动生效)'})
+    log(session['user_name'], '询价定标', '%s → 订单%s(供应商:%s ¥%.0f,待领导审批)' % (i['inq_no'], no, s['supplier_name'], total))
+    return jsonify({'success': True, 'order_no': no, 'id': oid, 'total_amount': total, 'status': '定标审批中',
+                    'message': '已提交定标审批,领导审批通过后自动生效'})
 
 @app.route('/api/inquiries/<int:iid>/export')
 @login_required
