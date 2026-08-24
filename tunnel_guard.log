@@ -1150,3 +1150,67 @@
 [11:40:45] 连续2次失败, 强制杀进程重连
 [11:40:45] localhost.run 断开, 立即重连...
 [11:40:51] ✅ localhost.run: https://628776f460a311.lhr.life (公网已验证)
+[12:00:36] 健康检查失败 1/2 (https://628776f460a311.lhr.life)
+[12:01:08] 健康检查失败 2/2 (https://628776f460a311.lhr.life)
+[12:01:08] 连续2次失败, 强制杀进程重连
+[12:01:08] localhost.run 断开, 立即重连...
+[12:01:15] ✅ localhost.run: https://79efaf8cb56317.lhr.life (公网已验证)
+[12:06:49] 健康检查失败 1/2 (https://79efaf8cb56317.lhr.life)
+[12:06:49] localhost.run 断开, 立即重连...
+[12:07:03] ✅ localhost.run: https://e24b7c87a980e9.lhr.life (公网已验证)
+[12:07:46] 健康检查失败 1/2 (https://e24b7c87a980e9.lhr.life)
+[12:17:05] 健康检查失败 1/2 (https://e24b7c87a980e9.lhr.life)
+[12:17:48] 健康检查失败 2/2 (https://e24b7c87a980e9.lhr.life)
+[12:17:48] 连续2次失败, 强制杀进程重连
+[12:17:48] localhost.run 断开, 立即重连...
+[12:18:01] ✅ localhost.run: https://4f50722d5a4e23.lhr.life (公网已验证)
+[12:20:14] 健康检查失败 1/2 (https://4f50722d5a4e23.lhr.life)
+[12:20:54] 健康检查失败 2/2 (https://4f50722d5a4e23.lhr.life)
+[12:20:54] 连续2次失败, 强制杀进程重连
+[12:20:54] localhost.run 断开, 立即重连...
+[12:21:01] ✅ localhost.run: https://1e3982a6012f4c.lhr.life (公网已验证)
+[12:26:54] 健康检查失败 1/2 (https://1e3982a6012f4c.lhr.life)
+[12:32:10] 健康检查失败 1/2 (https://1e3982a6012f4c.lhr.life)
+[12:32:54] 健康检查失败 2/2 (https://1e3982a6012f4c.lhr.life)
+[12:32:54] 连续2次失败, 强制杀进程重连
+[12:32:54] localhost.run 断开, 立即重连...
+[12:33:16] ✅ localhost.run: https://4202cc35b2b814.lhr.life (公网已验证)
+[12:34:29] 健康检查失败 1/2 (https://4202cc35b2b814.lhr.life)
+[12:40:42] 健康检查失败 1/2 (https://4202cc35b2b814.lhr.life)
+[12:41:18] 健康检查失败 2/2 (https://4202cc35b2b814.lhr.life)
+[12:41:18] 连续2次失败, 强制杀进程重连
+[12:41:18] localhost.run 断开, 立即重连...
+[12:41:32] ✅ localhost.run: https://0d5aeaa568055f.lhr.life (公网已验证)
+[12:45:36] 健康检查失败 1/2 (https://0d5aeaa568055f.lhr.life)
+[12:50:37] 健康检查失败 1/2 (https://0d5aeaa568055f.lhr.life)
+[12:52:46] 健康检查失败 1/2 (https://0d5aeaa568055f.lhr.life)
+[12:53:17] 健康检查失败 2/2 (https://0d5aeaa568055f.lhr.life)
+[12:53:17] 连续2次失败, 强制杀进程重连
+[12:53:17] localhost.run 断开, 立即重连...
+[12:53:48] 抓到 https://714ea3d8b654a7.lhr.life 但公网不通, 杀掉重试
+[12:53:52] ✅ serveo: https://f5cd6a20b225a1b8-183-203-148-242.serveousercontent.com (公网已验证)
+[13:04:20] 健康检查失败 1/2 (https://f5cd6a20b225a1b8-183-203-148-242.serveousercontent.com)
+[13:04:59] 健康检查失败 2/2 (https://f5cd6a20b225a1b8-183-203-148-242.serveousercontent.com)
+[13:04:59] 连续2次失败, 强制杀进程重连
+[13:04:59] serveo 断开, 立即重连...
+[13:05:35] ✅ serveo: https://45f1aa5cfc5440c2-183-203-148-242.serveousercontent.com (公网已验证)
+[13:15:51] 健康检查失败 1/2 (https://45f1aa5cfc5440c2-183-203-148-242.serveousercontent.com)
+[13:16:22] 健康检查失败 2/2 (https://45f1aa5cfc5440c2-183-203-148-242.serveousercontent.com)
+[13:16:22] 连续2次失败, 强制杀进程重连
+[13:16:22] serveo 断开, 立即重连...
+[13:16:29] ✅ localhost.run: https://312e1aee26a13b.lhr.life (公网已验证)
+[13:20:11] 健康检查失败 1/2 (https://312e1aee26a13b.lhr.life)
+[13:20:42] 健康检查失败 2/2 (https://312e1aee26a13b.lhr.life)
+[13:20:42] 连续2次失败, 强制杀进程重连
+[13:20:42] localhost.run 断开, 立即重连...
+[13:20:48] ✅ localhost.run: https://1e3c07a63a098c.lhr.life (公网已验证)
+[13:40:29] 健康检查失败 1/2 (https://1e3c07a63a098c.lhr.life)
+[13:41:00] 健康检查失败 2/2 (https://1e3c07a63a098c.lhr.life)
+[13:41:00] 连续2次失败, 强制杀进程重连
+[13:41:00] localhost.run 断开, 立即重连...
+[13:41:07] ✅ localhost.run: https://47b16cc641c8d6.lhr.life (公网已验证)
+[14:00:25] 健康检查失败 1/2 (https://47b16cc641c8d6.lhr.life)
+[14:00:56] 健康检查失败 2/2 (https://47b16cc641c8d6.lhr.life)
+[14:00:56] 连续2次失败, 强制杀进程重连
+[14:00:56] localhost.run 断开, 立即重连...
+[14:01:03] ✅ localhost.run: https://15de758227568d.lhr.life (公网已验证)
