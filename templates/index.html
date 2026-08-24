@@ -308,7 +308,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <button data-t="rejected" onclick="apprTab('rejected')" style="color:#ea4335">❌未通过</button>
   </div>
   <div class="card"><div class="cb" id="approvalsTable"><div class="loading">加载中...</div></div></div></div>
-<div class="page" id="pcontracts"><h2>📄 合同管理</h2><div style="margin-bottom:4px"><button class="btn btn-p btn-sm" onclick="showForm('contract')">+ 新建合同</button></div><div class="card"><div class="cb" id="contractsTable"><div class="loading">加载中...</div></div></div></div>
+<div class="page" id="pcontracts"><h2>📄 合同管理</h2><div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="showForm('contract')">+ 新建合同</button><button class="btn btn-w btn-sm" onclick="loadMonthlySummary()">📅 月结汇总</button></div><div class="card"><div class="cb" id="contractsTable"><div class="loading">加载中...</div></div></div></div>
 <div class="page" id="preceivings"><h2>📦 入库验收</h2>
   <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap">
     <span style="font-size:9px;color:#666">入库三步：①选部门 ②选物资数量 ③提交审批；审批通过自动增加库存</span>
@@ -1814,6 +1814,25 @@ async function doReject(bt,bid){
 }
 
 // Contracts, Deliveries, Receivings, Credits, Payments, Inventory, Suppliers
+// V11.68: 月结汇总 — 按厂家分组当月待月结订单, 一键生成月度合同
+async function loadMonthlySummary(){
+  const d=await api('/contracts/monthly-summary');
+  if(!d.length){id('contractsTable').innerHTML='<div style="padding:10px;color:#999;font-size:11px">本月暂无待月结订单(月结订单生效后自动出现在这里)</div>';return}
+  id('contractsTable').innerHTML=`<div style="font-size:10px;color:#666;margin-bottom:6px">📅 本月待月结订单 — 按厂家分组, 月底点"生成月度合同"汇总</div>`+
+    d.map(g=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--b);border-radius:5px;margin-bottom:4px;background:#fff">
+      <span style="font-size:11px;font-weight:700">🏢 ${esc(g.supplier)}</span>
+      <span style="font-size:10px;color:#666">${g.cnt}单</span>
+      <span style="font-size:11px;color:var(--p);font-weight:700">¥${(g.amt||0).toFixed(0)}</span>
+      <span style="flex:1;font-size:9px;color:#aaa;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc((g.detail||'').slice(0,80))}</span>
+      <button class="btn btn-p btn-sm" onclick="genMonthlyContract('${esc(g.supplier)}')">📄 生成月度合同</button>
+    </div>`).join('');
+}
+async function genMonthlyContract(supplier){
+  if(!confirm(`确认将「${supplier}」本月的所有待月结订单汇总生成一份月度合同？\n生成后这些订单标记为已月结。`))return;
+  const r=await api('/contracts/monthly-generate',{method:'POST',body:JSON.stringify({supplier})});
+  if(r.success){alert(`✅ 月度合同 ${r.contract_no} 已生成(汇总${r.count}单, ¥${(r.amount||0).toFixed(0)}), 已进入合同审批`);loadContracts()}
+  else alert(r.error||'生成失败');
+}
 async function loadContracts(){const c=await api('/contracts');id('contractsTable').innerHTML=rnder(c,['contract_no','contract_name','supplier','amount','status','id'],['编号','名称','供应商','金额','状态','操作'],r=>`<td><b>${esc(r.contract_no)}</b></td><td>${esc(r.contract_name)}</td><td>${esc(r.supplier)}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}</td>
   <td style="white-space:nowrap"><button class="lnk" onclick="showContract(${r.id})">查看</button>${r.file_path?` <button class="lnk" style="color:var(--s)" onclick="window.open('/uploads/${esc(r.file_path)}','_blank')">📄下载</button>`:''} <button class="lnk" style="color:#b08900" onclick="editDoc('contract',${r.id},'合同')">✏️修改</button> ${(r.status=='待审批'||r.status=='已通过'||r.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('contract',${r.id},'合同')">↩️撤回</button>`:''}${(r.status=='待审批'||r.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('contract',${r.id},'合同')">🗑️删除</button>`:''}</td>`)}
 async function showContract(id){

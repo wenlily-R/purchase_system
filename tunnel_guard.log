@@ -1114,3 +1114,11 @@
 [10:00:27] 抓到 https://0cc251b7db3ce6.lhr.life 但公网不通, 杀掉重试
 [10:00:32] ✅ serveo: https://8e10503356d0ad09-183-203-148-242.serveousercontent.com (公网已验证)
 [10:02:11] 健康检查失败 1/2 (https://8e10503356d0ad09-183-203-148-242.serveousercontent.com)
+[10:10:40] 健康检查失败 1/2 (https://8e10503356d0ad09-183-203-148-242.serveousercontent.com)
+[10:11:11] 健康检查失败 2/2 (https://8e10503356d0ad09-183-203-148-242.serveousercontent.com)
+[10:11:11] 连续2次失败, 强制杀进程重连
+[10:11:11] serveo 断开, 立即重连...
+[10:11:25] 抓到 https://cca03c6d323fc2.lhr.life 但公网不通, 杀掉重试
+[10:11:34] 抓到 https://c309d4730b10c67e-183-203-148-242.serveousercontent.com 但公网不通, 杀掉重试
+[10:11:34] 两个隧道都失败, 30秒后重试
+[10:12:09] ✅ localhost.run: https://8258399f8478d1.lhr.life (公网已验证)

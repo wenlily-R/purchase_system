@@ -4420,6 +4420,73 @@ def api_create_contract():
     log(session['user_name'],'创建合同',f'{no}')
     return jsonify({'success':True,'contract_no':no})
 
+@app.route('/api/contracts/monthly-summary')
+@login_required
+def api_monthly_summary():
+    """V11.68: 月结汇总 — 按厂家分组当月待月结订单(settle_type=月结且未月结)"""
+    role = session.get('user_role')
+    if role not in ('系统管理员', '采购员', '分管领导', '总经理'):
+        return jsonify({'error': '无权限'}), 403
+    conn = db()
+    try: conn.execute("ALTER TABLE purchase_orders ADD COLUMN settled_at TEXT DEFAULT ''")
+    except Exception: pass
+    m = datetime.date.today().strftime('%Y-%m')
+    rows = conn.execute("""SELECT supplier, COUNT(*) cnt, COALESCE(SUM(total_amount),0) amt,
+        GROUP_CONCAT(order_no || ':' || item_name || 'x' || printf('%g',quantity) || ' ¥' || printf('%.2f',total_amount), '\n') detail
+        FROM purchase_orders WHERE settle_type='月结' AND status IN ('审批通过','已通过')
+        AND (settled_at IS NULL OR settled_at='') AND created_at LIKE ?
+        GROUP BY supplier ORDER BY amt DESC""", (m + '%',)).fetchall()
+    conn.close()
+    return jsonify([dict_row(r) for r in rows])
+
+@app.route('/api/contracts/monthly-generate', methods=['POST'])
+@login_required
+def api_monthly_generate():
+    """V11.68: 生成月度合同 — 指定厂家的当月待月结订单汇总成一份合同"""
+    role = session.get('user_role')
+    if role not in ('系统管理员', '采购员', '分管领导', '总经理'):
+        return jsonify({'error': '无权限'}), 403
+    d = request.json or {}
+    supplier = (d.get('supplier') or '').strip()
+    if not supplier:
+        return jsonify({'error': '请指定厂家'}), 400
+    conn = db()
+    m = datetime.date.today().strftime('%Y-%m')
+    orders = conn.execute("""SELECT * FROM purchase_orders WHERE supplier=? AND settle_type='月结'
+        AND status IN ('审批通过','已通过') AND (settled_at IS NULL OR settled_at='') AND created_at LIKE ?""",
+        (supplier, m + '%')).fetchall()
+    if not orders:
+        conn.close(); return jsonify({'error': '该厂家本月无待月结订单'}), 400
+    total = sum(float(o['total_amount'] or 0) for o in orders)
+    # 明细文本
+    lines = []
+    for o in orders:
+        lines.append(f"{o['order_no']} {o['item_name']} x{o['quantity']}{o['unit'] or '个'} ¥{float(o['total_amount'] or 0):.2f}")
+    content = '\n'.join(lines)
+    order_nos = '、'.join(o['order_no'] for o in orders)
+    # 生成月度合同(关联第一张单, 明细在content, 关联单号在remark)
+    no = gen_contract_no(conn)
+    y = datetime.date.today().strftime('%Y%m')
+    conn.execute("""INSERT INTO contracts(contract_no,order_id,contract_name,supplier,amount,sign_date,start_date,end_date,content,status,remark,urgent,attachment)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (no, orders[0]['id'], f'{supplier}{y}月结算合同', supplier, round(total, 2),
+         datetime.date.today().strftime('%Y-%m-%d'), '', '', content, '待审批',
+         f'月结汇总: {order_nos}', 0, ''))
+    cid = conn.execute("SELECT id FROM contracts WHERE contract_no=?", (no,)).fetchone()[0]
+    # 标记订单已月结
+    oids = [o['id'] for o in orders]
+    for oid in oids:
+        try: conn.execute("ALTER TABLE purchase_orders ADD COLUMN settled_at TEXT DEFAULT ''")
+        except Exception: pass
+        conn.execute("UPDATE purchase_orders SET settled_at=?, status='已签合同' WHERE id=?", (datetime.date.today().strftime('%Y-%m-%d'), oid))
+    conn.commit()
+    create_approvals('contract', cid, round(total, 2))
+    conn.close()
+    try: start_instances('contract', cid)
+    except Exception: pass
+    log(session['user_name'], '月结汇总', f'{supplier} {len(orders)}单 → 合同{no} ¥{total:.2f}')
+    return jsonify({'success': True, 'contract_no': no, 'count': len(orders), 'amount': round(total, 2)})
+
 @app.route('/api/deliveries')
 @login_required
 def api_deliveries():
