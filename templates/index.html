@@ -1533,13 +1533,13 @@ async function exportInquiry(iid){
   alert('✅ 询价单Excel已导出，请查看下载文件');
 }
 async function selectInquirySupplier(iid,sid){
-  // V11.72: 所有询价必须领导审批
+  // V11.73: 领导选中供应商后直接生效,无需再次审批
   const amt=parseFloat(id('inqTotalAmt')?.dataset?.val||'0');
-  const settle=confirm('请选择结算方式:\n【确定】=现结(立即生成合同)\n【取消】=月结(月底汇总生成合同)');
-  if(!confirm(settle?'确定选中该供应商并生成订单？(现结, 立即生成合同)':'确定选中该供应商并生成订单？(月结, 月底汇总)'))return;
+  const settle=confirm('请选择结算方式:\n【确定】=现结(立即生效)\n【取消】=月结(月底汇总)');
+  if(!confirm(settle?'确定选中该供应商并生成订单？':'确定选中该供应商并生成订单？'))return;
   const r=await api(`/inquiries/${iid}/select`,{method:'POST',body:JSON.stringify({supplier_id:sid,settle_type:settle?'现结':'月结'})});
   if(r.success){
-    const msg = `✅ ${r.order_no}（¥${(r.total_amount||0).toFixed(0)}）已提交定标审批，领导审批通过后自动生效${settle?'':'，月底汇总月结'}`;
+    const msg = `✅ ${r.order_no}（¥${(r.total_amount||0).toFixed(0)}）已生效${settle?'':'，月底生成月结合同'}`;
     alert(msg);closeMod();loadInquiries();loadOrders();
   }
   else alert(r.error||'操作失败');

@@ -4180,16 +4180,13 @@ def api_inquiry_select(iid):
         conn.execute("INSERT INTO order_items(order_id,item_name,spec,unit,quantity,price,amount,tax_rate,tax_amount,total_amount,remark) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                      (oid, r[0], r[1], r[2], r[3], r[4], r[5], 0, 0, r[5], ''))
     conn.execute("UPDATE inquiry_suppliers SET is_selected=1 WHERE id=?", (sid,))
-    conn.execute("UPDATE purchase_orders SET status='定标审批中' WHERE id=?", (oid,))
-    conn.execute("UPDATE inquiries SET status='定标审批中', selected_supplier_id=?, updated_at=? WHERE id=?", (sid, now(), iid))
+    # V11.73: 定标审批通过后直接生效(领导已选定供应商,无需再次审批)
+    conn.execute("UPDATE purchase_orders SET status='已通过', settle_type=?, updated_at=? WHERE id=?", (settle_type, now(), oid))
+    conn.execute("UPDATE inquiries SET status='已生成订单', selected_supplier_id=?, updated_at=? WHERE id=?", (sid, now(), iid))
     conn.commit()
-    create_approvals('purchase_order', oid, total)
-    conn.close()
-    try: start_instances('purchase_order', oid)
-    except Exception: pass
-    log(session['user_name'], '询价定标', '%s → 订单%s(供应商:%s ¥%.0f,待领导审批)' % (i['inq_no'], no, s['supplier_name'], total))
-    return jsonify({'success': True, 'order_no': no, 'id': oid, 'total_amount': total, 'status': '定标审批中',
-                    'message': '已提交定标审批,领导审批通过后自动生效'})
+    log(session['user_name'], '询价定标', '%s → 订单%s(供应商:%s ¥%.0f,已生效)' % (i['inq_no'], no, s['supplier_name'], total))
+    return jsonify({'success': True, 'order_no': no, 'id': oid, 'total_amount': total, 'status': '已通过',
+                    'message': '✅ 定标通过，订单已生效'})
 
 @app.route('/api/inquiries/<int:iid>/export')
 @login_required
