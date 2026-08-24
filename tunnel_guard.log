@@ -1273,3 +1273,8 @@
 [16:20:41] 连续2次失败, 强制杀进程重连
 [16:20:41] localhost.run 断开, 立即重连...
 [16:20:48] ✅ localhost.run: https://0b037b8f12d526.lhr.life (公网已验证)
+[16:40:26] 健康检查失败 1/2 (https://0b037b8f12d526.lhr.life)
+[16:40:57] 健康检查失败 2/2 (https://0b037b8f12d526.lhr.life)
+[16:40:57] 连续2次失败, 强制杀进程重连
+[16:40:57] localhost.run 断开, 立即重连...
+[16:41:04] ✅ localhost.run: https://797d0705ee8dd3.lhr.life (公网已验证)

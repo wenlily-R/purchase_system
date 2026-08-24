@@ -3301,14 +3301,19 @@ def stamp_leader_sign(ws, sign_row, biz_type='', biz_id=0):
         if not os.path.exists(img_path):
             return
         img = XLImage(img_path)
-        # V11.71: 签名尺寸自适应, 不超过签字区宽度(约200px宽)
-        orig_w, orig_h = img.size
-        max_w = 180  # 最大宽度180px
-        max_h = 60   # 最大高度60px
-        scale = min(max_w / orig_w, max_h / orig_h, 1.0)
-        img.width = int(orig_w * scale)
-        img.height = int(orig_h * scale)
-        # 放在签字区「部门负责人」右侧(列H起, 避开左侧空白)
+        # V11.71: 签名尺寸自适应(通过PIL获取原图尺寸)
+        try:
+            from PIL import Image as PILImage
+            pil_img = PILImage.open(img_path)
+            orig_w, orig_h = pil_img.size
+            max_w = 180  # 最大宽度180px
+            max_h = 60   # 最大高度60px
+            scale = min(max_w / orig_w, max_h / orig_h, 1.0)
+            img.width = int(orig_w * scale)
+            img.height = int(orig_h * scale)
+        except Exception:
+            img.width = 150; img.height = 50
+        # 放在签字区「部门负责人」右侧(列H起)
         anchor = ws.cell(row=sign_row, column=8).coordinate
         img.anchor = anchor
         ws.add_image(img)
