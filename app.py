@@ -1131,6 +1131,12 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
                   (approver, approver_id, comment, now(), biz_type, biz_id))
         st = biz_parent_status(biz_type, 'reject')
     c.execute(f"UPDATE {biz_table(biz_type)} SET status=?, updated_at=? WHERE id=?", (st, now(), biz_id))
+    # V11.67: 询价定标审批通过 → 同步询价单状态(定标审批中→已生成订单); 驳回→恢复询价中
+    if biz_type == 'purchase_order':
+        if result == 'ok' and st in ('已通过', '审批通过'):
+            c.execute("UPDATE inquiries SET status='已生成订单', updated_at=? WHERE id IN (SELECT i.id FROM inquiries i JOIN inquiry_suppliers s ON s.inquiry_id=i.id WHERE s.id=(SELECT selected_supplier_id FROM purchase_orders WHERE id=?))", (now(), biz_id))
+        elif result == 'reject':
+            c.execute("UPDATE inquiries SET status='询价中', updated_at=? WHERE id IN (SELECT i.id FROM inquiries i JOIN inquiry_suppliers s ON s.inquiry_id=i.id WHERE s.id=(SELECT selected_supplier_id FROM purchase_orders WHERE id=?))", (now(), biz_id))
     # V5.0 入库/出库审批通过 → 实际增减库存(仅通过时执行, 驳回不动库存)
     if result == 'ok':
         if biz_type == 'receiving' and st == '已入库':
@@ -4135,12 +4141,28 @@ def api_inquiry_select(iid):
         conn.execute("INSERT INTO order_items(order_id,item_name,spec,unit,quantity,price,amount,tax_rate,tax_amount,total_amount,remark) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                      (oid, r[0], r[1], r[2], r[3], r[4], r[5], 0, 0, r[5], ''))
     conn.execute("UPDATE inquiry_suppliers SET is_selected=1 WHERE id=?", (sid,))
-    conn.execute("UPDATE inquiries SET status='已生成订单', selected_supplier_id=?, updated_at=? WHERE id=?", (sid, now(), iid))
+    # V11.67: 金额分级定标 — 小额(≤500)采购员直接决策, 订单直接生效(免审批); 大额(>500)走定标审批
+    INQUIRY_SELF_LIMIT = 500.0
+    settle_type = d.get('settle_type') or '现结'
+    if total <= INQUIRY_SELF_LIMIT:
+        conn.execute("UPDATE purchase_orders SET status='已通过', settle_type=? WHERE id=?", (settle_type, oid))
+        conn.execute("UPDATE inquiries SET status='已生成订单', selected_supplier_id=?, updated_at=? WHERE id=?", (sid, now(), iid))
+        conn.commit()
+        conn.close()
+        log(session['user_name'], '询价选中下单', '%s → 订单%s(小额自决,直接生效) 供应商%s ¥%.0f' % (i['inq_no'], no, s['supplier_name'], total))
+        return jsonify({'success': True, 'order_no': no, 'id': oid, 'total_amount': total, 'status': '已通过',
+                        'message': '小额订单(≤¥500)已直接生效，无需审批'})
+    # 大额: 订单草稿 + 定标审批(复用purchase_order审批流/钉钉模板)
+    conn.execute("UPDATE purchase_orders SET status='草稿', settle_type=? WHERE id=?", (settle_type, oid))
+    conn.execute("UPDATE inquiries SET status='定标审批中', selected_supplier_id=?, updated_at=? WHERE id=?", (sid, now(), iid))
     conn.commit()
+    create_approvals('purchase_order', oid, total)
     conn.close()
-    log(session['user_name'], '询价选中下单', '%s → 订单%s(草稿) 供应商%s ¥%.0f' % (i['inq_no'], no, s['supplier_name'], total))
+    try: start_instances('purchase_order', oid)
+    except Exception: pass
+    log(session['user_name'], '询价选中下单', '%s → 订单%s(大额,待定标审批) 供应商%s ¥%.0f' % (i['inq_no'], no, s['supplier_name'], total))
     return jsonify({'success': True, 'order_no': no, 'id': oid, 'total_amount': total, 'status': '草稿',
-                    'message': '已生成采购订单草稿，商家信息已自动填入，请到采购订单中确认后提交审批'})
+                    'message': '大额订单已提交定标审批(领导审批通过后自动生效)'})
 
 @app.route('/api/inquiries/<int:iid>/export')
 @login_required

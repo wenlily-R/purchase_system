@@ -1078,3 +1078,39 @@
 [08:34:09] ✅ localhost.run: https://1aac43dcf6c2ea.lhr.life (公网已验证)
 [08:36:24] 健康检查失败 1/2 (https://1aac43dcf6c2ea.lhr.life)
 [08:37:35] 健康检查失败 1/2 (https://1aac43dcf6c2ea.lhr.life)
+[08:40:14] 健康检查失败 1/2 (https://1aac43dcf6c2ea.lhr.life)
+[08:40:45] 健康检查失败 2/2 (https://1aac43dcf6c2ea.lhr.life)
+[08:40:45] 连续2次失败, 强制杀进程重连
+[08:40:45] localhost.run 断开, 立即重连...
+[08:41:03] 抓到 https://9f656d2f36bb71.lhr.life 但公网不通, 杀掉重试
+[08:41:08] ✅ serveo: https://174beaf9f1f59c2b-183-203-148-242.serveousercontent.com (公网已验证)
+[08:51:06] 健康检查失败 1/2 (https://174beaf9f1f59c2b-183-203-148-242.serveousercontent.com)
+[08:51:37] 健康检查失败 2/2 (https://174beaf9f1f59c2b-183-203-148-242.serveousercontent.com)
+[08:51:37] 连续2次失败, 强制杀进程重连
+[08:51:37] serveo 断开, 立即重连...
+[08:51:43] ✅ localhost.run: https://457f508de84c50.lhr.life (公网已验证)
+[09:00:11] 健康检查失败 1/2 (https://457f508de84c50.lhr.life)
+[09:00:42] 健康检查失败 2/2 (https://457f508de84c50.lhr.life)
+[09:00:42] 连续2次失败, 强制杀进程重连
+[09:00:42] localhost.run 断开, 立即重连...
+[09:00:49] ✅ localhost.run: https://88b0da95a01bce.lhr.life (公网已验证)
+[09:20:29] 健康检查失败 1/2 (https://88b0da95a01bce.lhr.life)
+[09:20:29] localhost.run 断开, 立即重连...
+[09:20:35] ✅ localhost.run: https://bd4964359ba473.lhr.life (公网已验证)
+[09:40:34] 健康检查失败 1/2 (https://bd4964359ba473.lhr.life)
+[09:41:06] 健康检查失败 2/2 (https://bd4964359ba473.lhr.life)
+[09:41:06] 连续2次失败, 强制杀进程重连
+[09:41:06] localhost.run 断开, 立即重连...
+[09:41:12] ✅ localhost.run: https://7c6118a55ac24e.lhr.life (公网已验证)
+[09:45:00] 健康检查失败 1/2 (https://7c6118a55ac24e.lhr.life)
+[09:45:36] 健康检查失败 2/2 (https://7c6118a55ac24e.lhr.life)
+[09:45:36] 连续2次失败, 强制杀进程重连
+[09:45:36] localhost.run 断开, 立即重连...
+[09:46:02] ✅ localhost.run: https://c89fe35d2f78d2.lhr.life (公网已验证)
+[09:59:31] 健康检查失败 1/2 (https://c89fe35d2f78d2.lhr.life)
+[10:00:12] 健康检查失败 2/2 (https://c89fe35d2f78d2.lhr.life)
+[10:00:12] 连续2次失败, 强制杀进程重连
+[10:00:12] localhost.run 断开, 立即重连...
+[10:00:27] 抓到 https://0cc251b7db3ce6.lhr.life 但公网不通, 杀掉重试
+[10:00:32] ✅ serveo: https://8e10503356d0ad09-183-203-148-242.serveousercontent.com (公网已验证)
+[10:02:11] 健康检查失败 1/2 (https://8e10503356d0ad09-183-203-148-242.serveousercontent.com)
