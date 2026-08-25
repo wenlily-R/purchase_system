@@ -1553,12 +1553,10 @@ async function loadOrders(){
       <td><span class="tag ${r.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(r.trade_mode||'货到付款')}</span></td>
       <td>¥${(r.total_amount||0).toFixed(0)}</td><td>${tag(r.status)}</td>
       <td><button class="lnk" onclick="showOrder(${r.id})">详情</button> <button class="lnk" style="color:#b08900" onclick="editDoc('purchase_order',${r.id},'采购订单')">✏️修改</button>
-      ${r.status=='草稿'?` <button class="lnk" style="color:var(--s);font-weight:700" onclick="submitDraftOrder(${r.id})">🚀提交审批</button>`:''}
+      
       ${(r.status=='待审批'||r.status=='已通过'||r.status=='审批通过')?` <button class="lnk" style="color:var(--o)" onclick="withdrawDoc('purchase_order',${r.id},'采购订单')">↩️撤回</button>`:''}${(r.status=='待审批'||r.status=='已驳回'||r.status=='草稿')?` <button class="lnk" style="color:var(--d)" onclick="delDoc('purchase_order',${r.id},'采购订单')">🗑️删除</button>`:''}</td>`);
 }
-async function submitDraftOrder(oid){
-  if(!confirm('确认提交该草稿订单进入审批流程？提交后商家信息锁定，审批通过后自动进入后续流程'))return;
-  const r=await api(`/orders/${oid}/submit`,{method:'POST',body:'{}'});
+'});
   if(r.success){alert('✅ '+r.message);loadOrders();loadDashboard()}
   else alert(r.error||'提交失败');
 }
