@@ -958,7 +958,20 @@ def fs_biz_info(biz_type, biz_id):
         c.close()
         if not r: return None
         return (r['payment_no'], f"{r['payment_type']} {r['supplier'] or ''}".strip(), r['amount'], '系统', r['created_at'])
-    if biz_type == 'receiving':
+    if biz_type == 'inquiry_approval':
+        r = c.execute("SELECT * FROM inquiries WHERE id=?", (biz_id,)).fetchone()
+        c.close()
+        if not r: return None
+        return (r['inq_no'], r['title'] or r['inq_no'], 0, r['created_by'] or '', '')
+    r = c.execute("SELECT * FROM receivings WHERE id=?", (biz_id,)).fetchone()
+    c.close()
+    if not r: return None
+    return (r['receive_no'], r['item_name'] or r['receive_no'], r['quantity'] or 0, r['inspector'] or '系统', r['created_at'])
+    if biz_type == 'inquiry_approval':
+        r = c.execute("SELECT * FROM inquiries WHERE id=?", (biz_id,)).fetchone()
+        c.close()
+        if not r: return None
+        return (r['inq_no'], r['title'] or r['inq_no'], 0, r['created_by'] or '', '')
         r = c.execute("SELECT * FROM receivings WHERE id=?", (biz_id,)).fetchone()
         c.close()
         if not r: return None
