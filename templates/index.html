@@ -1452,7 +1452,7 @@ async function createInquiry(){
     if(n)suppliers.push({name:n,contact:id('iqc'+i)?.value?.trim()||'',phone:id('iqp'+i)?.value?.trim()||''});
   }
   if(!req_id){alert('请选择采购申请');return}
-  if(suppliers.length<3){alert('询价供应商需选择3家及以上，方可发起询价');return}
+  if(suppliers.length<2||suppliers.length>3){alert('询价供应商需选择2-3家，方可发起询价');return}
   const r=await api('/inquiries',{method:'POST',body:JSON.stringify({req_id,suppliers,deadline:id('iqDeadline')?.value||''})});
   if(r.success){alert(`✅ 询价单 ${r.inq_no} 已发起，请将报价链接发给各供应商`);closeMod();loadInquiries()}
   else alert(r.error||'发起失败');
