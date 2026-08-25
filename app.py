@@ -4045,7 +4045,7 @@ def inquiry_vendor_page(token):
                 '<h2 style="margin:0 0 4px;color:#1f6feb">✅ 报价已提交</h2>'
                 '<p style="color:#666;margin:0 0 20px">感谢 %s 参与本次询价，报价 ¥%.0f 已收到，等待采购方比价结果。</p>'
                 '<a href="%s" style="color:#1f6feb;font-size:13px">← 返回查看/修改报价</a></div>') % (
-                    esc_html(s['supplier_name']), s['quote_price'], request.url)
+                    esc_html(s['supplier_name']), s['quote_price'], request.url.replace('http://', 'https://') if request.url.startswith('http://') else request.url)
     else:
         # V11.24: 截止时间状态
         _deadline = (i['deadline'] or '') if i else ''
@@ -7496,6 +7496,10 @@ def api_settings():
 # ============================================================
 # ── PAGES ──
 # ============================================================
+@app.route('/test-login')
+def test_login():
+    return render_template('test_login.html')
+
 @app.route('/')
 def login_page():
     # V8.0: 禁用页面缓存 — 每次访问强制最新版本, 避免旧JS导致按钮失灵
@@ -7556,3 +7560,12 @@ def api_debug():
     except Exception as e:
         out['parse_err'] = str(e)
     return jsonify(out)
+
+@app.route('/simple-test')
+def simple_test():
+    return render_template('simple_test.html')
+
+@app.route('/test')
+def test_page():
+    return render_template('test.html')
+
