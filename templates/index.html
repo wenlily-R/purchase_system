@@ -1569,9 +1569,18 @@ async function showOrder(id){
   if(o.contract_no){const cf=(await api('/contracts')).find(x=>x.contract_no===o.contract_no);h+=`<div style="margin-top:6px;font-size:9px;color:var(--s)">已关联合同: ${esc(o.contract_no)} ${cf&&cf.file_path?`<a href="/uploads/${esc(cf.file_path)}" target="_blank" style="color:var(--b2,#3370ff)">📄下载</a>`:''}</div>`}
   if(d.items&&d.items.length){
     h+=`<h4 style="font-size:10px;margin:6px 0 3px">📋 商品明细（${d.items.length}项，累计数量 ${o.total_qty||o.quantity}）</h4>
-      <table class="tb" style="font-size:9px"><thead><tr><th>物资名称</th><th>规格</th><th>单价</th><th>数量</th><th>税率</th><th>金额</th></tr></thead>
-      <tbody>${d.items.map(it=>`<tr><td>${esc(it.item_name)}</td><td>${esc(it.spec||'')}</td><td>¥${(it.price||0).toFixed(2)}</td><td>${it.quantity}${esc(it.unit||'')}</td><td>${it.tax_rate||13}%</td><td>¥${(it.total_amount||0).toFixed(2)}</td></tr>`).join('')}
-      <tr style="font-weight:700;background:#f4f7fd"><td colspan="3">合计</td><td>${o.total_qty||o.quantity}</td><td></td><td>¥${(o.total_amount||0).toFixed(2)}</td></tr></tbody></table>`;
+      <table class="tb" style="font-size:9px"><thead><tr><th>物资名称</th><th>规格</th><th>单价</th><th>数量</th><th>税率</th><th>金额</th><th>状态</th><th>操作</th></tr></thead>
+      <tbody>${d.items.map(it=>{
+        const statusMap = {'未联系':'tg-r','已联系':'tg-b','已发货':'tg-o','已到货':'tg-g'};
+        const statusBtns = it.status==='未联系' ? 
+          `<button class="lnk" onclick="updateItemStatus(${it.id},'已联系')">联系厂家</button>` :
+          it.status==='已联系' ?
+          `<button class="lnk" onclick="updateItemStatus(${it.id},'已发货')">标记发货</button>` :
+          it.status==='已发货' ?
+          `<button class="lnk" onclick="updateItemStatus(${it.id},'已到货')">标记到货</button>` : '';
+        return `<tr><td>${esc(it.item_name)}</td><td>${esc(it.spec||'')}</td><td>¥${(it.price||0).toFixed(2)}</td><td>${it.quantity}${esc(it.unit||'')}</td><td>${it.tax_rate||13}%</td><td>¥${(it.total_amount||0).toFixed(2)}</td><td><span class="tag ${statusMap[it.status]||'tg-r'}">${esc(it.status||'未联系')}</span></td><td>${statusBtns}</td></tr>`;
+      }).join('')}
+      <tr style="font-weight:700;background:#f4f7fd"><td colspan="3">合计</td><td>${o.total_qty||o.quantity}</td><td></td><td>¥${(o.total_amount||0).toFixed(2)}</td><td colspan="2"></td></tr></tbody></table>`;
   }
   let btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button>
     <button class="btn btn-p btn-sm" onclick="downloadOrder(${id})">⬇️ 下载采购订单</button>
@@ -1583,6 +1592,15 @@ async function showOrder(id){
   btns+=`<button class="btn btn-o btn-sm" style="color:#e67e22;border-color:#e67e22" onclick="urgentRemind('purchase_order',${id})">⏰ 钉钉加急提醒</button>`;
   showDetail(`订单 ${o.order_no}`,h,btns);
 }
+async function updateItemStatus(iid, newStatus){
+  if(!confirm('确认更新物品状态为'+newStatus+'?'))return;
+  const r=await api(`/order_items/${iid}/status`,{method:'POST',body:JSON.stringify({status:newStatus})});
+  if(r.success){alert('✅ 状态已更新');showOrder(lastOrderId)}else alert(r.error||'更新失败');
+}
+var lastOrderId=null;
+const _orig_showOrder=showOrder;
+window.showOrder=function(id){lastOrderId=id;return _orig_showOrder(id)};
+
 async function downloadOrder(oid){
   const r=await fetch('/api/orders/'+oid+'/download',{credentials:'include'});
   if(!r.ok){const j=await r.json().catch(()=>({}));alert(j.error||'下载失败');return}

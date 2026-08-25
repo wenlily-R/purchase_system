@@ -3569,6 +3569,23 @@ def api_order(oid):
     conn.close()
     return jsonify({'order':dict_row(o),'items':[dict_row(i) for i in items],'approvals':[dict_row(a) for a in approvals],'comparisons':[dict_row(p) for p in pcs]})
 
+@app.route('/api/order_items/<int:iid>/status', methods=['POST'])
+@login_required
+def api_update_order_item_status(iid):
+    """V11.78: 更新订单物品状态"""
+    d = request.json
+    new_status = d.get('status', '未联系')
+    conn = db()
+    item = conn.execute("SELECT * FROM order_items WHERE id=?", (iid,)).fetchone()
+    if not item:
+        conn.close()
+        return jsonify({'error': '物品不存在'}), 404
+    conn.execute("UPDATE order_items SET status=?, updated_at=? WHERE id=?", (new_status, now(), iid))
+    conn.commit()
+    conn.close()
+    log(session['user_name'], '订单物品状态', '订单物品#%d: %s → %s' % (iid, item['status'] or '未联系', new_status))
+    return jsonify({'success': True})
+
 @app.route('/api/orders', methods=['POST'])
 @login_required
 def api_create_order():
