@@ -1565,7 +1565,6 @@ async function loadOrders(){
       
       ${(r.status=='待审批'||r.status=='已通过'||r.status=='审批通过')?` <button class="lnk" style="color:var(--o)" onclick="withdrawDoc('purchase_order',${r.id},'采购订单')">↩️撤回</button>`:''}${(r.status=='待审批'||r.status=='已驳回'||r.status=='草稿')?` <button class="lnk" style="color:var(--d)" onclick="delDoc('purchase_order',${r.id},'采购订单')">🗑️删除</button>`:''}</td>`);
 }
-}
 async function showOrder(id){
   const d=await api(`/orders/${id}`),o=d.order;
   let h=`<div class="c2"><div><dt>单号</dt><dd><b>${esc(o.order_no)}</b></dd><dt>物资</dt><dd>${esc(o.item_name)}</dd><dt>数量</dt><dd>${o.quantity}${esc(o.unit)}</dd><dt>金额</dt><dd>¥${(o.total_amount||0).toFixed(0)}</dd></div>
