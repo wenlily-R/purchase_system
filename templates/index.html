@@ -1423,7 +1423,7 @@ async function showInquiryForm(){
   const dlOpts=(()=>{const d=new Date(),arr=[];const days=[1,2,3,7,15,30];const fmt=x=>x.toISOString().slice(0,10);
     for(const n of days){const t=new Date(d);t.setDate(t.getDate()+n);arr.push(`<option value="${fmt(t)}"${n==7?' selected':''}>${n}天后（${fmt(t)}）</option>`)}return arr.join('')})();
   showDetail('🔍 发起三方询价',
-    `<div style="font-size:11px;margin-bottom:8px">选择已通过审批的采购申请，添加 <b>至少 3 家</b> 供应商，每家将生成专属免登录报价链接。</div>
+    `<div style="font-size:11px;margin-bottom:8px">选择已通过审批的采购申请，添加 <b>2-3 家</b> 供应商，每家将生成专属免登录报价链接。</div>
     <div style="margin-bottom:8px"><select id="iqReq" style="width:100%;padding:6px;border:1px solid var(--b);border-radius:4px;font-size:11px">${opts}</select></div>
     <div style="margin-bottom:8px"><label style="font-size:10px;color:#666;display:block;margin-bottom:3px">⏰ 报价截止日期（到期自动截止，商家无法再报价）</label>
     <select id="iqDeadline" style="width:100%;padding:6px;border:1px solid var(--b);border-radius:4px;font-size:11px">${dlOpts}</select></div>
