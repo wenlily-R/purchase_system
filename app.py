@@ -3932,11 +3932,11 @@ def api_create_inquiry():
     if not req_id:
         return jsonify({'error': '请选择要询价的申请'}), 400
     if not suppliers or len(suppliers) > 3:
-        return jsonify({'error': '请添加1-3家询价供应商'}), 400
-    # V11.1 需求升级: 询价供应商需达到3家及以上方可发起
+        return jsonify({'error': '请添加2-3家询价供应商'}), 400
+    # V11.77: 允许2-3家询价，少于2家不允许
     valid_names = [x for x in suppliers if (x.get('name') or '').strip()]
-    if len(valid_names) < 3:
-        return jsonify({'error': '询价供应商需选择3家及以上，方可发起询价'}), 400
+    if len(valid_names) < 2:
+        return jsonify({'error': '询价供应商需选择2家及以上，方可发起询价'}), 400
     conn = db()
     pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (req_id,)).fetchone()
     if not pr:
@@ -4042,6 +4042,7 @@ def inquiry_vendor_page(token):
                 '<td style="padding:6px 8px;border-bottom:1px solid #eef;text-align:right;font-weight:600;color:#2e7d32;white-space:nowrap">¥<span id="ut%d">0.00</span></td>'
                 '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="如7天" id="dl%d" style="width:52px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
                 '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="如3个月" id="wr%d" style="width:56px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
+                '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="品牌" id="br%d" style="width:72px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
                 '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="备注" id="rm%d" style="width:64px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
                 '</tr>' % (
                     esc_html(it['item_name']), esc_html(it['spec'] or ''),
@@ -4076,7 +4077,7 @@ def inquiry_vendor_page(token):
                 'async function sub(){const rows=document.querySelectorAll("[id^=up]");const details=[];let ok=false;'
                 'rows.forEach((e,i)=>{const p=parseFloat(e.value)||0;if(p>0)ok=true;details.push({unit_price:p,qty:parseFloat(e.getAttribute("data-q"))||1,'
                 'delivery:document.getElementById("dl"+i).value||"",warranty:document.getElementById("wr"+i).value||"",'
-                'remark:document.getElementById("rm"+i).value||""})});'
+                'brand:document.getElementById("br"+i).value||"",remark:document.getElementById("rm"+i).value||""})});'
                 'if(!ok){alert("请至少填写一项单价");return}'
                 'const total=parseFloat(document.getElementById("total").textContent);'
                 'const r=await fetch("%s",{method:"POST",headers:{"Content-Type":"application/json"},'
@@ -4118,7 +4119,8 @@ def inquiry_vendor_quote(token):
     conn.execute("UPDATE inquiry_suppliers SET quote_price=?, quote_remark=?, quote_details=?, quote_delivery=?, quote_warranty=?, quote_time=? WHERE id=?",
                  (_final_price, (d.get('quote_remark') or '')[:200],
                   json.dumps(details, ensure_ascii=False) if details else '',
-                  (d.get('quote_delivery') or '')[:20], (d.get('quote_warranty') or '')[:20], now(), s['id']))
+                  (d.get('quote_delivery') or '')[:20], (d.get('quote_warranty') or '')[:20],
+                  (details[0].get('brand') if details and len(details) > 0 else '')[:50], now(), s['id']))
     # V11.75: 三家报价完成 → 自动创建采购订单 + 发起钉钉定标审批
     try:
         total_count = conn.execute("SELECT COUNT(*) FROM inquiry_suppliers WHERE inquiry_id=?", (s['inquiry_id'],)).fetchone()[0]
@@ -4367,6 +4369,12 @@ def api_inquiry_export(iid):
         # 每家: 单价/总价/备注(行明细优先, 无则空)
         row_prices = []  # (unit_price, total)
         for si, s in enumerate(sups):
+            # V11.77: 自动搜索品牌信息并附到备注
+            brand_info = search_brand_info(s['supplier_name'], (pr['category'] if pr else ''))
+            if brand_info:
+                s_brand_remark = '%s 品牌分析: 优点-%s | 缺点-%s' % (s['supplier_name'], brand_info.get('优点',''), brand_info.get('缺点',''))
+            else:
+                s_brand_remark = ''
             det = sup_details[si]
             unit_p = None; total_p = None; remark = ''
             if det and idx - 1 < len(det):
