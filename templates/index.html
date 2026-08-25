@@ -221,7 +221,8 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <div class="sub">智慧采购管理系统 v5.1 专业加固版 · 请登录</div>
     <div class="fg"><label>用户名</label><input id="loginUser" placeholder="输入账号" autocomplete="username"></div>
     <div class="fg"><label>密码</label><input id="loginPass" type="password" placeholder="输入密码" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
-    <button class="btn" onclick="doLogin()">登 录</button>
+    <button class="btn" id="loginBtn" onclick="doLogin()" style="padding:12px;font-size:16px;border-radius:8px">登 录</button>
+<button class="btn btn-o" onclick="testDebug()" style="margin-top:8px;padding:8px;font-size:12px">🐛测试调试</button>
     <button class="btn btn-o" style="margin-top:8px" onclick="dingtalkLogin()">💬 钉钉免登</button>
     <div class="err" id="loginErr"></div>
     <div style="margin-top:6px;font-size:9px;color:#aaa;text-align:center" id="loginRememberTip"></div>
@@ -673,6 +674,10 @@ function esc(s){const d=document.createElement('div');d.textContent=s||'';return
 function showLogin(){id('loginPage').style.display='flex';id('appMain').style.display='none'}
 function showApp(){id('loginPage').style.display='none';id('appMain').style.display='block'}
 
+function testDebug(){
+  alert('JS正常！用户名输入框ID: '+id('loginUser').id+' 密码框ID: '+id('loginPass').id);
+  alert('点击了测试按钮，说明JS可以工作');
+}
 async function doLogin(){
   console.log('[DEBUG] doLogin called');
   const u=id('loginUser').value,p=id('loginPass').value,err=id('loginErr');
