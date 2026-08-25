@@ -4133,11 +4133,11 @@ def inquiry_vendor_quote(token):
         _sum = sum(float(x.get('unit_price') or 0) * float(x.get('qty') or 1) for x in details)
         if _sum > 0:
             _final_price = _sum
-    conn.execute("UPDATE inquiry_suppliers SET quote_price=?, quote_remark=?, quote_details=?, quote_delivery=?, quote_warranty=?, quote_time=? WHERE id=?",
+    conn.execute("UPDATE inquiry_suppliers SET quote_price=?, quote_remark=?, quote_details=?, quote_delivery=?, quote_warranty=?, quote_brand=?, quote_time=? WHERE id=?",
                  (_final_price, (d.get('quote_remark') or '')[:200],
                   json.dumps(details, ensure_ascii=False) if details else '',
                   (d.get('quote_delivery') or '')[:20], (d.get('quote_warranty') or '')[:20],
-                  (details[0].get('brand') if details and len(details) > 0 else '')[:50], now(), s['id']))
+                  (details[0].get('brand') if details and isinstance(details[0], dict) else '')[:50], now(), s['id']))
     # V11.75: 三家报价完成 → 自动创建采购订单 + 发起钉钉定标审批
     try:
         total_count = conn.execute("SELECT COUNT(*) FROM inquiry_suppliers WHERE inquiry_id=?", (s['inquiry_id'],)).fetchone()[0]
