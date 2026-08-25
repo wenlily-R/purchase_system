@@ -4167,6 +4167,8 @@ def inquiry_vendor_quote(token):
                         c2 = db()
                         c2.execute("INSERT INTO inquiry_approvals(inquiry_id, created_at) VALUES(?, ?)", (i['id'], now()))
                         aid = c2.execute("SELECT last_insert_rowid()").fetchone()[0]
+                        # 创建approval_instances记录供dt_start_instance使用
+                        c2.execute("INSERT INTO approval_instances(biz_type, biz_id, level_no, role, approver, status) VALUES(?, ?, 1, '分管领导', 'xingguo', 'pending')", ('inquiry_approval', aid))
                         c2.commit(); c2.close()
                         # 发起钉钉审批
                         try:
