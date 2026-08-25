@@ -1127,13 +1127,8 @@ async function loadPRequests(){
   keys.forEach(k=>{
     const list=groups[k];
     html+=`<div style="margin:8px 0 4px;font-size:12px;font-weight:700;color:#1f6feb;background:#eef4ff;padding:5px 10px;border-radius:5px">📅 ${k} <span style="font-weight:400;color:#888;font-size:10px">${list.length}单</span></div>`;
-    html+=rnder(list,['req_no','dept','purpose','req_type','status','progress','id'],['编号','部门','用途','类型','状态','采购进度','操作'],
+    html+=rnder(list,['req_no','dept','purpose','req_type','status','id'],['编号','部门','用途','类型','状态','操作'],
       x=>{
-        // V11.49: 红=未联系厂家 黄=已下单在途 绿=已到货 (仅已通过显示)
-        const pg = x.progress=='contact'?'<span class="tag" style="background:#fdecea;color:#c0392b">🟥 未联系厂家</span>'
-                : x.progress=='shipped'?'<span class="tag" style="background:#fff8e1;color:#b7791f">🟨 已下单在途</span>'
-                : x.progress=='arrived'?'<span class="tag" style="background:#e8f5e9;color:#2e7d32">🟩 已到货</span>'
-                : '<span style="color:#bbb">—</span>';
         // 类型: 灰色小字不抢色
         const tp = (x.req_type||'物资采购')=='设备维修'
           ? '<span style="color:#8a6d3b;background:#f8f0e3;padding:1px 6px;border-radius:3px;font-size:9px">🛠 维修</span>'
@@ -1141,7 +1136,7 @@ async function loadPRequests(){
         return `<td><b>${esc(x.req_no)}</b>${x.urgent?' <span style="color:#e74c3c;font-weight:700">🚨加急</span>':''}</td><td>${esc(x.dept)}</td><td>${esc(x.purpose||'')}</td>
         <td>${tp}</td>
         <td>${tag(x.status)}${x.status=='已驳回'&&x.rejected_reason?`<div style="font-size:8px;color:var(--d)">驳回: ${esc(x.rejected_reason)}</div>`:''}</td>
-        <td>${pg}</td>
+        
         <td style="white-space:nowrap"><button class="lnk" onclick="showPRequest(${x.id})">详情</button>
         <button class="lnk" style="color:var(--s)" onclick="window.open('/api/prequests/${x.id}/download','_blank')">⬇️下载</button>
         <button class="lnk" style="color:#b08900" onclick="editDoc('purchase_request',${x.id},'采购申请')">✏️修改</button>
@@ -1438,7 +1433,7 @@ async function showInquiryForm(){
     <select id="iqDeadline" style="width:100%;padding:6px;border:1px solid var(--b);border-radius:4px;font-size:11px">${dlOpts}</select></div>
     <div id="iqSups"></div>
     <button class="btn btn-o btn-sm" onclick="addIqSup()">+ 添加供应商</button>
-    <span style="font-size:10px;color:#999;margin-left:6px" id="iqSupTip">已添加 0/至少3 家</span>`,
+    <span style="font-size:10px;color:#999;margin-left:6px" id="iqSupTip">已添加 0/至少2 家</span>`,
     `<button class="btn btn-o" onclick="closeMod()">取消</button>
      <button class="btn btn-p" onclick="createInquiry()">🚀 发起询价</button>`);
   addIqSup();
@@ -1451,7 +1446,7 @@ function addIqSup(){
     <input placeholder="联系人" id="iqc${c}" style="flex:1;padding:4px 6px;border:1px solid var(--b);border-radius:3px;font-size:10px">
     <input placeholder="电话" id="iqp${c}" style="flex:1;padding:4px 6px;border:1px solid var(--b);border-radius:3px;font-size:10px">
     <span onclick="this.parentElement.remove()" style="cursor:pointer;color:var(--d);font-size:12px">✕</span></div>`);
-  const tip=id('iqSupTip'); if(tip)tip.textContent=`已添加 ${IQ_SUPS}/至少3 家`;
+  const tip=id('iqSupTip'); if(tip)tip.textContent=`已添加 ${IQ_SUPS}/至少2 家`;
 }
 async function createInquiry(){
   const req_id=parseInt(id('iqReq').value||0);
@@ -1962,8 +1957,7 @@ async function loadReceivings(){
       const estTag = x.is_est?'<span class="tag" style="background:#fff3e0;color:#e65100">暂估</span>'
                    : x.invoice_no?'<span class="tag" style="background:#e8f5e9;color:#2e7d32">已红冲</span>'
                    : '';
-      return `<td><b>${esc(x.receive_no)}</b> ${estTag}</td><td>${x.dept?`<span class="tag" style="background:#eef7ee;color:#2e7d32">${esc(x.dept)}</span>`:'<span style="color:#bbb">—</span>'}</td><td>${esc(x.item_name)}${x.item_count?` <span class="tag" style="background:#e8f0fe;color:#1a6bff">${x.item_count}项</span>`:''}${x.urgent?' <span style="color:#e74c3c;font-weight:700">加急</span>':''}</td><td>${x.total_qty||x.quantity}${esc(x.unit||'')}</td>
-    <td><span class="tag ${x.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(x.trade_mode||'货到付款')}</span></td><td>${stTag}</td>
+`<td><span class="tag ${x.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(x.trade_mode||'货到付款')}</span></td><td>${stTag}</td>
     <td>${ops}${ops2}
       <button class="lnk" style="color:#b08900" onclick="editDoc('receiving',${x.id},'入库单')">✏️修改</button> <button class="lnk" onclick="window.open('/api/receivings/${x.id}/download','_blank')">⬇️ 下载</button> ${x.status=='已入库'?`<button class="lnk" style="color:var(--d)" onclick="voidRcv(${x.id})">作废</button>`:''} ${(x.status=='待审批'||x.status=='已通过'||x.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('receiving',${x.id},'入库单')">↩️撤回</button>`:''}${(x.status=='待审批'||x.status=='待入库'||x.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('receiving',${x.id},'入库单')">🗑️删除</button>`:''}</td>`;
     })}
