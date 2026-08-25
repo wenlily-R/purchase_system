@@ -4168,10 +4168,10 @@ def inquiry_vendor_quote(token):
                     total = float(cheapest['quote_price'] or 0) if cheapest else 0
                     remark = '询价单:%s 商家已报价完成，最低报价¥%.0f(%s)，请领导定标' % (i['inq_no'], total, cheapest['supplier_name'] if cheapest else '待定')
                     conn.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,
-                        supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status,inquiry_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (no, i['req_id'], i['title'][:50], '', 1, '个', 0, total, 0, 0, total,
                          cheapest['supplier_name'] if cheapest else '待定', i['created_by'], '后勤类', i['created_by'], 1, i['deadline'] or '', '货到付款',
-                         remark, 0, json.dumps([], ensure_ascii=False), '草稿'))
+                         remark, 0, json.dumps([], ensure_ascii=False), '草稿', i['id']))
                     oid = conn.execute("SELECT id FROM purchase_orders WHERE order_no=?", (no,)).fetchone()[0]
                     conn.execute("UPDATE inquiries SET status='定标审批中', updated_at=? WHERE id=?", (now(), i['id']))
                     conn.commit()
