@@ -4120,15 +4120,14 @@ def inquiry_vendor_quote(token):
                     oid = conn.execute("SELECT id FROM purchase_orders WHERE order_no=?", (no,)).fetchone()[0]
                     conn.execute("UPDATE inquiries SET status='定标审批中', updated_at=? WHERE id=?", (now(), i['id']))
                     conn.commit()
-                    # 发起钉钉审批
+                    # 发起钉钉审批（在conn.close()后调用）
                     try:
                         create_approvals('purchase_order', oid, total)
                         start_instances('purchase_order', oid)
-                        log('系统', '询价定标审批', '%s → 订单%s 已提交钉钉审批' % (i['inq_no'], no))
-                    except Exception as e:
-                        log('系统', '询价定标审批失败', str(e))
-    except Exception as e:
-        log('系统', '询价定标异常', str(e))
+                    except Exception:
+                        pass
+    except Exception:
+        pass
     conn.commit(); conn.close()
     return jsonify({'success': True, 'quote_price': _final_price})
 
