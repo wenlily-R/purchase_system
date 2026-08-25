@@ -6180,6 +6180,19 @@ def api_receiving_invoice_match(rid):
     log(session['user_name'], '发票核对红冲', f'{rn["receive_no"]} 发票{invoice_no} 已红冲转正式')
     return jsonify({'success': True, 'receive_no': rn['receive_no']})
 
+@app.route('/api/invoices')
+@login_required
+def api_invoices():
+    """获取发票列表"""
+    conn = db()
+    rows = conn.execute("SELECT * FROM invoices ORDER BY id DESC LIMIT 100").fetchall()
+    out = []
+    for r in rows:
+        d = dict_row(r)
+        out.append(d)
+    conn.close()
+    return jsonify(out)
+
 @app.route('/api/invoices/merge', methods=['POST'])
 @login_required
 def api_merge_invoice():
@@ -7123,6 +7136,32 @@ def api_void_credit(cid):
     c = db(); c.execute("UPDATE credit_notes SET status='已作废' WHERE id=?", (cid,)); c.commit(); c.close()
     log(session['user_name'], '作废挂账', f'#{cid}')
     return jsonify({'success': True})
+
+
+@app.route('/api/payment_requests')
+@login_required
+def api_payment_requests():
+    """获取付款申请列表"""
+    conn = db()
+    rows = conn.execute("SELECT * FROM payment_requests ORDER BY id DESC LIMIT 100").fetchall()
+    out = []
+    for r in rows:
+        d = dict_row(r)
+        out.append(d)
+    conn.close()
+    return jsonify(out)
+@app.route('/api/payments')
+@login_required
+def api_payments():
+    """获取付款列表"""
+    conn = db()
+    rows = conn.execute("SELECT * FROM payment_requests ORDER BY id DESC LIMIT 100").fetchall()
+    out = []
+    for r in rows:
+        d = dict_row(r)
+        out.append(d)
+    conn.close()
+    return jsonify(out)
 
 @app.route('/api/payments/<int:pid>/void', methods=['POST'])
 @login_required
