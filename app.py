@@ -4113,8 +4113,9 @@ def inquiry_vendor_quote(token):
                                 '询价单 %s 已完成三方比价，请登录系统查看比价表并选择供应商' % i['inq_no'],
                                 biz_type='inquiry', biz_id=i['id'],
                                 push_type='alert', operator='系统')
-    except Exception:
-        pass
+                log('系统', '询价定标', '%s 三家报价完成，已通知领导定标' % i['inq_no'])
+    except Exception as e:
+        log('系统', '询价定标异常', str(e))
     conn.commit(); conn.close()
     return jsonify({'success': True, 'quote_price': _final_price})
 
