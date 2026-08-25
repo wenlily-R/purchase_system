@@ -1799,3 +1799,8 @@
 [18:36:55] 抓到 https://576a7689de6972.lhr.life 但公网不通, 杀掉重试
 [18:36:59] 抓到 https://a06fdd3a68972ce5-183-203-148-242.serveousercontent.com 但公网不通, 杀掉重试
 [18:36:59] 两个隧道都失败, 30秒后重试
+[18:37:35] 抓到 https://64597ffab47000.lhr.life 但公网不通, 杀掉重试
+[18:37:40] 抓到 https://a99deb267dcfe16b-183-203-148-242.serveousercontent.com 但公网不通, 杀掉重试
+[18:37:40] 两个隧道都失败, 30秒后重试
+[18:38:15] ✅ localhost.run: https://72fc49d6cbbe31.lhr.life (公网已验证)
+[18:40:22] 健康检查失败 1/2 (https://72fc49d6cbbe31.lhr.life)

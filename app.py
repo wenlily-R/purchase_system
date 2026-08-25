@@ -588,6 +588,44 @@ def init_db():
 # ============================================================
 # ── AUTH API ──
 # ============================================================
+
+def search_brand_info(supplier_name, category):
+    """V11.91: 简单品牌优缺点分析（本地数据，不调用AI）"""
+    # 行业常见品牌知识
+    brand_knowledge = {
+        '长城': {'优点': '国产老牌，性价比高', '缺点': '精度一般'},
+        '恒力': {'优点': '民营石化龙头，品质稳定', '缺点': '价格略高'},
+        '中石化': {'优点': '央企，质量可靠', '缺点': '交货周期长'},
+        '宝钢': {'优点': '国产钢材龙头', '缺点': '价格偏高'},
+        '鞍钢': {'优点': '北方钢厂，性价比高', '缺点': '运输距离远'},
+        '柳工': {'优点': '国产工程机械龙头', '缺点': '二手保值率一般'},
+        '徐工': {'优点': '规模大，服务网点多', '缺点': '价格中等'},
+        '三一': {'优点': ' innovation强', '缺点': '售后需预约'},
+        '施耐德': {'优点': '国际品牌，质量稳定', '缺点': '价格高'},
+        '西门子': {'优点': '德系品质，可靠性高', '缺点': '价格昂贵'},
+        'ABB': {'优点': '电力领域领先', '缺点': '交期长'},
+        '海尔': {'优点': '国产家电龙头', '缺点': '工业品线弱'},
+        '美的': {'优点': '性价比高', '缺点': '高端线弱'},
+        '格力': {'优点': '空调技术强', '缺点': '品类单一'},
+        '华为': {'优点': '技术领先', '缺点': '价格高，供货紧'},
+        '中兴': {'优点': '性价比高', '缺点': '品牌力弱'},
+        '联想': {'优点': '国内PC龙头', '缺点': '高端线弱'},
+        '戴尔': {'优点': '商务稳定', '缺点': '价格高'},
+        '惠普': {'优点': '外设强', '缺点': 'PC线一般'},
+        '金立': {'优点': '备用机', '缺点': '已退市'},
+    }
+    # 匹配供应商名称
+    for brand, info in brand_knowledge.items():
+        if brand in supplier_name or supplier_name in brand:
+            return info
+    # 按行业类别推荐
+    if category:
+        if '钢材' in category or '建材' in category:
+            return {'优点': '本地供应', '缺点': '需验厂'}
+        if '仪表' in category or '阀门' in category:
+            return {'优点': '专业厂家', '缺点': '交期1-2周'}
+    return {'优点': '', '缺点': ''}
+
 @app.route('/api/login', methods=['POST'])
 def api_login():
     d = request.json or {}
@@ -4072,14 +4110,13 @@ def inquiry_vendor_page(token):
                 '<td style="padding:6px 8px;border-bottom:1px solid #eef;text-align:right;font-weight:600;color:#2e7d32;white-space:nowrap">¥<span id="ut%d">0.00</span></td>'
                 '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="如7天" id="dl%d" style="width:52px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
                 '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="如3个月" id="wr%d" style="width:56px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
-                '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="品牌" id="br%d" style="width:72px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
                 '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="品牌" id="br%d" style="width:80px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
                 '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="备注" id="rm%d" style="width:64px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
                 '</tr>' % (
                     esc_html(it['item_name']), esc_html(it['spec'] or ''),
                     str(it['quantity']) + esc_html(it['unit'] or '个'),
                     '<span style="color:#bbb;font-size:11px">(参考¥%.0f)</span>' % ((it['total_price'] or 0) / it['quantity'] if it['quantity'] else 0),
-                    str(it['quantity']), idx, idx, idx, idx, idx))
+                    str(it['quantity']), idx, idx, idx, idx, idx, idx))
         _item_rows = ''.join(_rows_html)
         body = ('<div style="max-width:860px;margin:40px auto;background:#fff;border-radius:12px;padding:28px;'
                 'box-shadow:0 4px 24px rgba(0,0,0,.08);font-family:-apple-system,Segoe UI,Microsoft YaHei,sans-serif">'
