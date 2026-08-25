@@ -4108,9 +4108,9 @@ def inquiry_vendor_quote(token):
                 items = conn.execute("SELECT * FROM request_items WHERE req_id=?", (i['req_id'],)).fetchall()
                 if pr and items:
                     no = gen_no('CG', 'purchase_orders', 'order_no', conn)
-                    total = sum(float(x['quote_price'] or 0) for x in conn.execute("SELECT quote_price FROM inquiry_suppliers WHERE inquiry_id=?", (i['id'],)).fetchall())
-                    # 取最低报价供应商作为暂定
+                    # 取最低报价
                     cheapest = conn.execute("SELECT * FROM inquiry_suppliers WHERE inquiry_id=? AND quote_price>0 ORDER BY quote_price ASC LIMIT 1", (i['id'],)).fetchone()
+                    total = float(cheapest['quote_price'] or 0) if cheapest else 0
                     remark = '询价单:%s 商家已报价完成，最低报价¥%.0f(%s)，请领导定标' % (i['inq_no'], total, cheapest['supplier_name'] if cheapest else '待定')
                     conn.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,
                         supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
