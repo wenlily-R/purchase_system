@@ -4073,6 +4073,7 @@ def inquiry_vendor_page(token):
                 '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="如7天" id="dl%d" style="width:52px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
                 '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="如3个月" id="wr%d" style="width:56px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
                 '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="品牌" id="br%d" style="width:72px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
+                '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="品牌" id="br%d" style="width:80px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
                 '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="备注" id="rm%d" style="width:64px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
                 '</tr>' % (
                     esc_html(it['item_name']), esc_html(it['spec'] or ''),
@@ -4091,7 +4092,7 @@ def inquiry_vendor_page(token):
                 '<th style="padding:6px 8px;text-align:left">规格</th><th style="padding:6px 8px;text-align:left">数量</th>'
                 '<th style="padding:6px 8px;text-align:left">单价(元)</th><th style="padding:6px 8px;text-align:left">总价(含税含运)</th>'
                 '<th style="padding:6px 8px;text-align:left">交付日期</th><th style="padding:6px 8px;text-align:left">质保时间</th>'
-                '<th style="padding:6px 8px;text-align:left">备注</th></tr>%s</table></div>'
+                '<th style="padding:6px 8px;text-align:left">品牌</th><th style="padding:6px 8px;text-align:left">备注</th></tr>%s</table></div>'
                 '<div style="background:#f0faf0;border-radius:8px;padding:10px 14px;font-size:14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">'
                 '<span style="color:#2e7d32"><b>报价合计：¥<span id="total">0.00</span></b></span>'
                 '<span style="font-size:12px;color:#888">物品较多时，可<a href="javascript:void(0)" onclick="quickFill()" style="color:#1f6feb">💰 填一个总价自动分摊</a></span></div>'
