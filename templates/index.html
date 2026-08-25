@@ -646,9 +646,11 @@ async function api(url,opts={}){
     __dupGuard.set(key,now);
   }
   try{
+    console.log('[DEBUG] api fetch:', API+url, opts.method||'GET');
     const r=await fetch(API+url,{headers:{'Content-Type':'application/json'},...opts,credentials:'include'});
+    console.log('[DEBUG] api response status:', r.status);
     // V11.30: 只有真正的 401(会话失效)才跳登录页; 网络错误/服务端HTML错误页不跳(避免误登出)
-    if(r.status==401){showLogin();throw new Error('login')}
+    if(r.status==401){console.log('[DEBUG] 401, showLogin');showLogin();throw new Error('login')}
     const ct=r.headers.get('content-type')||'';
     if(!ct.includes('application/json')){
       if(r.status>=400){const e=new Error('服务暂时不可用('+r.status+')，请稍后刷新');e.soft=true;throw e}
@@ -672,7 +674,9 @@ function showLogin(){id('loginPage').style.display='flex';id('appMain').style.di
 function showApp(){id('loginPage').style.display='none';id('appMain').style.display='block'}
 
 async function doLogin(){
+  console.log('[DEBUG] doLogin called');
   const u=id('loginUser').value,p=id('loginPass').value,err=id('loginErr');
+  console.log('[DEBUG] username:', u, 'password length:', p.length);
   try{
     const r=await api('/login',{method:'POST',body:JSON.stringify({username:u,password:p})});
     if(r.success){ME=r.user;showApp();initApp();
