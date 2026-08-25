@@ -4096,24 +4096,37 @@ def inquiry_vendor_quote(token):
                  (_final_price, (d.get('quote_remark') or '')[:200],
                   json.dumps(details, ensure_ascii=False) if details else '',
                   (d.get('quote_delivery') or '')[:20], (d.get('quote_warranty') or '')[:20], now(), s['id']))
-    # V11.75: 三家报价完成 → 通知领导定标
+    # V11.75: 三家报价完成 → 自动创建采购订单 + 发起钉钉定标审批
     try:
         total_count = conn.execute("SELECT COUNT(*) FROM inquiry_suppliers WHERE inquiry_id=?", (s['inquiry_id'],)).fetchone()[0]
         quoted_count = conn.execute("SELECT COUNT(*) FROM inquiry_suppliers WHERE inquiry_id=? AND quote_price>0", (s['inquiry_id'],)).fetchone()[0]
         if quoted_count >= total_count and total_count > 0:
             i = conn.execute("SELECT * FROM inquiries WHERE id=?", (s['inquiry_id'],)).fetchone()
             if i and i['status'] == '询价中':
-                conn.execute("UPDATE inquiries SET status='定标审批中', updated_at=? WHERE id=?", (now(), i['id']))
-                conn.commit()
-                # 通知领导登录系统定标
-                admin_user = conn.execute("SELECT * FROM users WHERE role='分管领导' AND is_active=1 ORDER BY id LIMIT 1").fetchone()
-                if admin_user and admin_user.get('dingtalk_userid'):
-                    dt_send_todo([admin_user['dingtalk_userid']],
-                                '📋 三方询价已完成，请定标',
-                                '询价单 %s 已完成三方比价，请登录系统查看比价表并选择供应商' % i['inq_no'],
-                                biz_type='inquiry', biz_id=i['id'],
-                                push_type='alert', operator='系统')
-                log('系统', '询价定标', '%s 三家报价完成，已通知领导定标' % i['inq_no'])
+                # 自动创建采购订单草稿
+                pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (i['req_id'],)).fetchone()
+                items = conn.execute("SELECT * FROM request_items WHERE req_id=?", (i['req_id'],)).fetchall()
+                if pr and items:
+                    no = gen_no('CG', 'purchase_orders', 'order_no', conn)
+                    total = sum(float(x['quote_price'] or 0) for x in conn.execute("SELECT quote_price FROM inquiry_suppliers WHERE inquiry_id=?", (i['id'],)).fetchall())
+                    # 取最低报价供应商作为暂定
+                    cheapest = conn.execute("SELECT * FROM inquiry_suppliers WHERE inquiry_id=? AND quote_price>0 ORDER BY quote_price ASC LIMIT 1", (i['id'],)).fetchone()
+                    remark = '询价单:%s 商家已报价完成，最低报价¥%.0f(%s)，请领导定标' % (i['inq_no'], total, cheapest['supplier_name'] if cheapest else '待定')
+                    conn.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,
+                        supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (no, i['req_id'], i['title'][:50], '', '', '', 0, total, 0, 0, total,
+                         cheapest['supplier_name'] if cheapest else '待定', i['created_by'], '后勤类', i['created_by'], 1, i['deadline'] or '', '货到付款',
+                         remark, 0, json.dumps([], ensure_ascii=False), '草稿'))
+                    oid = conn.execute("SELECT id FROM purchase_orders WHERE order_no=?", (no,)).fetchone()[0]
+                    conn.execute("UPDATE inquiries SET status='定标审批中', updated_at=? WHERE id=?", (now(), i['id']))
+                    conn.commit()
+                    # 发起钉钉审批
+                    try:
+                        create_approvals('purchase_order', oid, total)
+                        start_instances('purchase_order', oid)
+                        log('系统', '询价定标审批', '%s → 订单%s 已提交钉钉审批' % (i['inq_no'], no))
+                    except Exception as e:
+                        log('系统', '询价定标审批失败', str(e))
     except Exception as e:
         log('系统', '询价定标异常', str(e))
     conn.commit(); conn.close()
