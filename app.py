@@ -4114,7 +4114,7 @@ def inquiry_vendor_quote(token):
                     remark = '询价单:%s 商家已报价完成，最低报价¥%.0f(%s)，请领导定标' % (i['inq_no'], total, cheapest['supplier_name'] if cheapest else '待定')
                     conn.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,
                         supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                        (no, i['req_id'], i['title'][:50], '', '', '', 0, total, 0, 0, total,
+                        (no, i['req_id'], i['title'][:50], '', 1, '个', 0, total, 0, 0, total,
                          cheapest['supplier_name'] if cheapest else '待定', i['created_by'], '后勤类', i['created_by'], 1, i['deadline'] or '', '货到付款',
                          remark, 0, json.dumps([], ensure_ascii=False), '草稿'))
                     oid = conn.execute("SELECT id FROM purchase_orders WHERE order_no=?", (no,)).fetchone()[0]
@@ -4124,10 +4124,11 @@ def inquiry_vendor_quote(token):
                     try:
                         create_approvals('purchase_order', oid, total)
                         start_instances('purchase_order', oid)
-                    except Exception:
-                        pass
-    except Exception:
-        pass
+                        print('[V11.75] 订单已创建+发起钉钉审批: %s' % no)
+                    except Exception as e:
+                        print('[V11.75] 发起钉钉审批失败: %s' % e)
+    except Exception as e:
+        print('[V11.75] 自动定标异常: %s' % e)
     conn.commit(); conn.close()
     return jsonify({'success': True, 'quote_price': _final_price})
 
