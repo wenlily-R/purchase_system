@@ -4269,7 +4269,7 @@ def inquiry_vendor_quote(token):
                         supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status,inquiry_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (no, i['req_id'], i['title'][:50], '', 1, '个', 0, total, 0, 0, total,
                          cheapest['supplier_name'] if cheapest else '待定', i['created_by'], '后勤类', i['created_by'], 1, i['deadline'] or '', '货到付款',
-                         remark, 0, json.dumps([], ensure_ascii=False), '草稿', i['id']))
+                         remark, 0, json.dumps([], ensure_ascii=False), '草稿', i['id'], 0))
                     oid = conn.execute("SELECT id FROM purchase_orders WHERE order_no=?", (no,)).fetchone()[0]
                     conn.execute("UPDATE inquiries SET status='定标审批中', updated_at=? WHERE id=?", (now(), i['id']))
                     conn.commit()
@@ -4411,7 +4411,7 @@ def api_inquiry_select(iid):
     # 定标审批: 领导选定后, 订单草稿 + 提交定标审批(必须领导审批通过才能下单)
     settle_type = d.get('settle_type') or '现结'
     conn.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,
-        supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (no, i['req_id'], first[0], first[1], sum(r[3] for r in rows), first[2], first[4], grand_amt, 0, 0, total,
          s['supplier_name'], pr['requester'] or '', '后勤类', session['user_name'], session['user_id'],
          pr['target_date'] or '', tm, remark, 0,
