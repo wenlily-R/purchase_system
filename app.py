@@ -4442,11 +4442,11 @@ def api_inquiry_export(iid):
         except Exception:
             sup_details.append(None)
     n_sup = len(sups)
-    # 表头: 序号/物料/数量/规格 | 每家3列(单价/总价/备注) | 
+    # 表头: 序号/物料/数量/规格 | 每家4列(单价/总价/品牌/备注) | 
     sup_head = ['序号', '物料名称', '数量', '规格型号']
     for s in sups:
-        sup_head += [f"{s['supplier_name']} 单价", f"{s['supplier_name']} 总价", f"{s['supplier_name']} 备注"]
-    col_count = 4 + n_sup * 3
+        sup_head += [f"{s['supplier_name']} 单价", f"{s['supplier_name']} 总价", f"{s['supplier_name']} 品牌", f"{s['supplier_name']} 备注"]
+    col_count = 4 + n_sup * 4
     for ci, h in enumerate(sup_head, 1):
         c = ws.cell(row, ci, h); c.font = head_font; c.fill = head_fill; c.border = border
         c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
@@ -4475,22 +4475,26 @@ def api_inquiry_export(iid):
                     unit_p = float(d_i.get('unit_price') or 0)
                     total_p = unit_p * qty
                 remark = d_i.get('remark') or ''
+            # 获取品牌
+            brand = ''
+            if det and idx - 1 < len(det):
+                brand = det[idx - 1].get('brand') or ''
             if unit_p is not None:
-                vals += [round(unit_p, 2), round(total_p, 2), remark]
+                vals += [round(unit_p, 2), round(total_p, 2), brand, remark]
                 total_per_sup[si] += total_p
             else:
-                vals += ['', '', remark]
+                vals += ['', '', brand, remark]
             row_prices.append((unit_p, total_p))
         # 最低单价标红
         unit_prices = [p[0] for p in row_prices if p[0] is not None]
         min_unit = min(unit_prices) if unit_prices else None
         for ci, v in enumerate(vals, 1):
             c = ws.cell(row, ci, v); c.border = border
-            c.alignment = Alignment(horizontal='center' if ci <= 4 or (ci - 4) % 3 != 0 else 'left', vertical='center', wrap_text=True)
+            c.alignment = Alignment(horizontal='center' if ci <= 4 or (ci - 5) % 4 != 0 else 'left', vertical='center', wrap_text=True)
             # 单价列(4+3k+1): 最低标红加粗
             if unit_prices and min_unit is not None:
-                k = (ci - 5) // 3
-                if 0 <= k < n_sup and (ci - 5) % 3 == 0:
+                k = (ci - 5) // 4
+                if 0 <= k < n_sup and (ci - 5) % 4 == 0:
                     if row_prices[k][0] is not None and abs(row_prices[k][0] - min_unit) < 0.001:
                         c.font = min_font_s
                         continue
@@ -4504,20 +4508,21 @@ def api_inquiry_export(iid):
         ws.cell(row, cc).border = border
     total_min = None
     for si, t in enumerate(total_per_sup):
-        ws.cell(row, 5 + si * 3, '').border = border
-        c = ws.cell(row, 6 + si * 3, round(t, 2))
+        ws.cell(row, 5 + si * 4, '').border = border
+        ws.cell(row, 6 + si * 4, '').border = border
+        c = ws.cell(row, 7 + si * 4, round(t, 2))
         c.border = border; c.font = label_font
         c.alignment = Alignment(horizontal='center', vertical='center')
         if t > 0 and (total_min is None or t < total_min):
             total_min = t
     for si, t in enumerate(total_per_sup):
         if t > 0 and total_min is not None and abs(t - total_min) < 0.001:
-            ws.cell(row, 6 + si * 3).font = min_font_s
+            ws.cell(row, 7 + si * 4).font = min_font_s
     # 备注格空
     for si in range(n_sup):
-        ws.cell(row, 7 + si * 3, '').border = border
-    ws.cell(row, 4 + n_sup * 3 - 1, '★=该项最低价').font = note_font
-    ws.cell(row, 4 + n_sup * 3 - 1).border = border
+        ws.cell(row, 9 + si * 4, '').border = border
+    ws.cell(row, 4 + n_sup * 4 - 1, '★=该项最低价').font = note_font
+    ws.cell(row, 4 + n_sup * 4 - 1).border = border
     ws.row_dimensions[row].height = 22
     row += 1
     if not sups:
