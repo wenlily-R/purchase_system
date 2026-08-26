@@ -4483,7 +4483,7 @@ def api_inquiry_export(iid):
         row_prices = []  # (unit_price, total)
         for si, s in enumerate(sups):
             # V11.77: 自动搜索品牌信息并附到备注
-            brand_info = search_brand_info(s['supplier_name'], (pr['category'] if pr else ''))
+            brand_info = search_brand_info(s['supplier_name'], '')
             if brand_info:
                 s_brand_remark = '%s 品牌分析: 优点-%s | 缺点-%s' % (s['supplier_name'], brand_info.get('优点',''), brand_info.get('缺点',''))
             else:
