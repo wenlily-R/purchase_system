@@ -589,8 +589,50 @@ def init_db():
 # ── AUTH API ──
 # ============================================================
 
+def ai_analyze_brand(brand_name):
+    """V11.115: 调用AI分析品牌优缺点"""
+    import json as _json
+    import urllib.request as _req
+    try:
+        # 使用Agnes AI API
+        api_url = "https://apihub.agnes-ai.com/v1/chat/completions"
+        api_key = "sk-agnes-ai-key"  # 从环境变量或配置读取
+        
+        # 构建提示词
+        prompt = f"请简要分析'{brand_name}'品牌的优缺点，各用一句话描述。格式：优点：xxx\n缺点：xxx"
+        
+        payload = _json.dumps({
+            "model": "agnes-2.0-flash",
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 200
+        }).encode('utf-8')
+        
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
+        
+        req = _req.Request(api_url, data=payload, headers=headers, method='POST')
+        with _req.urlopen(req, timeout=10) as response:
+            result = _json.loads(response.read().decode('utf-8'))
+            text = result['choices'][0]['message']['content']
+            
+            # 解析返回结果
+            优点 = ""
+            缺点 = ""
+            for line in text.split('\n'):
+                if '优点' in line:
+                    优点 = line.split('：')[-1].strip() if '：' in line else line.split(':')[-1].strip()
+                elif '缺点' in line:
+                    缺点 = line.split('：')[-1].strip() if '：' in line else line.split(':')[-1].strip()
+            
+            return {'优点': 优点, '缺点': 缺点}
+    except Exception as e:
+        print(f'[品牌分析AI调用失败] {e}')
+        return None
+
 def search_brand_info(supplier_name, category):
-    """V11.91: 简单品牌优缺点分析（本地数据，不调用AI）"""
+    """V11.91: 简单品牌优缺点分析（本地数据+AI补充）"""
     # 行业常见品牌知识
     brand_knowledge = {
         '长城': {'优点': '国产老牌，性价比高', '缺点': '精度一般'},
@@ -613,6 +655,8 @@ def search_brand_info(supplier_name, category):
         '戴尔': {'优点': '商务稳定', '缺点': '价格高'},
         '惠普': {'优点': '外设强', '缺点': 'PC线一般'},
         '金立': {'优点': '备用机', '缺点': '已退市'},
+        '得力': {'优点': '办公用品龙头，性价比高', '缺点': '高端线弱'},
+        '晨光': {'优点': '文具品牌知名度高', '缺点': '工业品线弱'},
         'A': {'优点': '知名品牌', '缺点': '需验厂'},
         'B': {'优点': '知名品牌', '缺点': '需验厂'},
         '测试': {'优点': '测试用', '缺点': '仅用于测试'},
@@ -627,6 +671,10 @@ def search_brand_info(supplier_name, category):
             return {'优点': '本地供应', '缺点': '需验厂'}
         if '仪表' in category or '阀门' in category:
             return {'优点': '专业厂家', '缺点': '交期1-2周'}
+    # 本地知识库没有，尝试AI分析
+    ai_result = ai_analyze_brand(supplier_name)
+    if ai_result and (ai_result.get('优点') or ai_result.get('缺点')):
+        return ai_result
     return {'优点': '', '缺点': ''}
 
 @app.route('/api/login', methods=['POST'])
@@ -4278,10 +4326,10 @@ def api_inquiry_submit(iid):
     total = float(cheapest['quote_price'] or 0) if cheapest else 0
     remark = '询价单:%s 商家已报价完成，最低报价¥%.0f(%s)，请领导定标' % (i['inq_no'], total, cheapest['supplier_name'] if cheapest else '待定')
     conn.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,
-        supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status,inquiry_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status,inquiry_id,settle_type) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (gen_no('CG', 'purchase_orders', 'order_no', conn), i['req_id'], i['title'][:50], '', 1, '个', 0, total, 0, 0, total,
          cheapest['supplier_name'] if cheapest else '待定', i['created_by'], '后勤类', i['created_by'], 1, i['deadline'] or '', '货到付款',
-         remark, 0, json.dumps([], ensure_ascii=False), '草稿', i['id']))
+         remark, 0, json.dumps([], ensure_ascii=False), '草稿', i['id'], '现结'))
     # 创建询价审批记录
     aid = conn.execute("SELECT id FROM inquiries WHERE id=?", (iid,)).fetchone()[0]
     conn.execute("INSERT INTO inquiry_approvals(inquiry_id, status, created_at) VALUES(?, '审批中', ?)", (iid, now()))
