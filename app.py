@@ -600,7 +600,7 @@ def search_brand_info(supplier_name, category):
         '鞍钢': {'优点': '北方钢厂，性价比高', '缺点': '运输距离远'},
         '柳工': {'优点': '国产工程机械龙头', '缺点': '二手保值率一般'},
         '徐工': {'优点': '规模大，服务网点多', '缺点': '价格中等'},
-        '三一': {'优点': ' innovation强', '缺点': '售后需预约'},
+        '三一': {'优点': '创新强', '缺点': '售后需预约'},
         '施耐德': {'优点': '国际品牌，质量稳定', '缺点': '价格高'},
         '西门子': {'优点': '德系品质，可靠性高', '缺点': '价格昂贵'},
         'ABB': {'优点': '电力领域领先', '缺点': '交期长'},
@@ -613,6 +613,9 @@ def search_brand_info(supplier_name, category):
         '戴尔': {'优点': '商务稳定', '缺点': '价格高'},
         '惠普': {'优点': '外设强', '缺点': 'PC线一般'},
         '金立': {'优点': '备用机', '缺点': '已退市'},
+        'A': {'优点': '知名品牌', '缺点': '需验厂'},
+        'B': {'优点': '知名品牌', '缺点': '需验厂'},
+        '测试': {'优点': '测试用', '缺点': '仅用于测试'},
     }
     # 匹配供应商名称
     for brand, info in brand_knowledge.items():
@@ -4586,21 +4589,21 @@ def api_inquiry_export(iid):
 
     # 动态设置列宽，确保所有供应商列宽一致
     ws.column_dimensions['A'].width = 6   # 序号
-    ws.column_dimensions['B'].width = 16  # 物料名称
+    ws.column_dimensions['B'].width = 18  # 物料名称
     ws.column_dimensions['C'].width = 10  # 数量
-    ws.column_dimensions['D'].width = 12  # 规格
-    # 每个供应商4列: 单价(8) + 总价(10) + 品牌(10) + 备注(14)
+    ws.column_dimensions['D'].width = 14  # 规格
+    # 每个供应商4列: 单价(10) + 总价(12) + 品牌(12) + 备注(16)
     col_count = 4 + len(sups) * 4
     for ci in range(5, min(col_count + 1, 26)):
         col_letter = chr(64 + ci) if ci <= 26 else 'A' + chr(64 + ci - 26)
         if ci % 4 == 1:  # 备注列
-            ws.column_dimensions[col_letter].width = 14
+            ws.column_dimensions[col_letter].width = 16
         elif ci % 4 == 0:  # 总价列
-            ws.column_dimensions[col_letter].width = 10
+            ws.column_dimensions[col_letter].width = 12
         elif ci % 4 == 3:  # 品牌列
-            ws.column_dimensions[col_letter].width = 10
+            ws.column_dimensions[col_letter].width = 12
         else:  # 单价列
-            ws.column_dimensions[col_letter].width = 8
+            ws.column_dimensions[col_letter].width = 10
 
     buf = io.BytesIO()
     wb.save(buf)
