@@ -4234,6 +4234,48 @@ def inquiry_vendor_quote(token):
     conn.commit(); conn.close()
     return jsonify({'success': True, 'quote_price': _final_price})
 
+@app.route('/api/inquiries/<int:iid>/submit', methods=['POST'])
+@login_required
+def api_inquiry_submit(iid):
+    """V11.93: 手动提交询价审批（所有供应商报价后）"""
+    conn = db()
+    i = conn.execute("SELECT * FROM inquiries WHERE id=?", (iid,)).fetchone()
+    if not i:
+        conn.close()
+        return jsonify({'error': '询价单不存在'}), 404
+    if i['status'] != '询价中':
+        conn.close()
+        return jsonify({'error': '该询价已结束'}), 400
+    # 检查是否所有供应商都报价
+    sups = conn.execute("SELECT * FROM inquiry_suppliers WHERE inquiry_id=?", (iid,)).fetchall()
+    if not sups:
+        conn.close()
+        return jsonify({'error': '无供应商报价'}), 400
+    quoted = [s for s in sups if s['quote_price'] and s['quote_price'] > 0]
+    if len(quoted) < 2:
+        conn.close()
+        return jsonify({'error': f'需至少2家报价，当前{len(quoted)}家'}), 400
+    # 创建采购订单草稿
+    pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (i['req_id'],)).fetchone()
+    items = conn.execute("SELECT * FROM request_items WHERE req_id=?", (i['req_id'],)).fetchall()
+    if not pr or not items:
+        conn.close()
+        return jsonify({'error': '来源申请或明细缺失'}), 400
+    # 取最低报价
+    cheapest = conn.execute("SELECT * FROM inquiry_suppliers WHERE inquiry_id=? AND quote_price>0 ORDER BY quote_price ASC LIMIT 1", (iid,)).fetchone()
+    total = float(cheapest['quote_price'] or 0) if cheapest else 0
+    remark = '询价单:%s 商家已报价完成，最低报价¥%.0f(%s)，请领导定标' % (i['inq_no'], total, cheapest['supplier_name'] if cheapest else '待定')
+    conn.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,
+        supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status,inquiry_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (gen_no('CG', 'purchase_orders', 'order_no', conn), i['req_id'], i['title'][:50], '', 1, '个', 0, total, 0, 0, total,
+         cheapest['supplier_name'] if cheapest else '待定', i['created_by'], '后勤类', i['created_by'], 1, i['deadline'] or '', '货到付款',
+         remark, 0, json.dumps([], ensure_ascii=False), '草稿', i['id']))
+    conn.execute("UPDATE inquiries SET status='定标审批中', updated_at=? WHERE id=?", (now(), iid))
+    conn.commit()
+    conn.close()
+    log(session['user_name'], '提交询价审批', '%s 已提交定标审批' % i['inq_no'])
+    return jsonify({'success': True, 'order_no': gen_no('CG', 'purchase_orders', 'order_no', db())})
+
 @app.route('/api/inquiries/<int:iid>/select', methods=['POST'])
 @login_required
 def api_inquiry_select(iid):

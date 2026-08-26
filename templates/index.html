@@ -1484,8 +1484,22 @@ async function showInquiry(id){
     });
     h+=`</tbody></table>`;
   }
-  const btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button><button class="btn btn-p" onclick="exportInquiry(${d.id})">📥 导出Excel</button>${d.status=='询价中'?'':''}`;
+  // V11.93: 所有供应商报价后显示"提交审批"按钮
+  const allQuoted = d.suppliers && d.suppliers.length > 0 && d.suppliers.every(s => s.quote_price && s.quote_price > 0);
+  const submitBtn = (d.status=='询价中' && allQuoted) ? `<button class="btn btn-s" onclick="submitInquiryApproval(${d.id})" style="background:#27ae60">✅ 提交审批</button>` : '';
+  const btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button><button class="btn btn-p" onclick="exportInquiry(${d.id})">📥 导出Excel</button>${submitBtn}`;
   showDetail(`询价单 ${d.inq_no}`,h,btns);
+}
+async function submitInquiryApproval(iid){
+  if(!confirm('确认提交审批？提交后将发起定标审批流程。'))return;
+  const r=await api(`/inquiries/${iid}/submit`,{method:'POST'});
+  if(r.success){
+    alert('✅ 已提交审批，等待领导定标');
+    closeMod();
+    loadInquiries();
+  }else{
+    alert(r.error||'提交失败');
+  }
 }
 async function copyInqLink(token){
   // V11.18: 优先用公网地址生成链接(商家在外面才能打开); 拿不到公网地址才退回当前页面地址
