@@ -4280,7 +4280,9 @@ def api_inquiry_submit(iid):
          cheapest['supplier_name'] if cheapest else '待定', i['created_by'], '后勤类', i['created_by'], 1, i['deadline'] or '', '货到付款',
          remark, 0, json.dumps([], ensure_ascii=False), '草稿', i['id']))
     # 创建询价审批记录
+    aid = conn.execute("SELECT id FROM inquiries WHERE id=?", (iid,)).fetchone()[0]
     conn.execute("INSERT INTO inquiry_approvals(inquiry_id, status, created_at) VALUES(?, '审批中', ?)", (iid, now()))
+    conn.execute("INSERT INTO approval_instances(biz_type, biz_id, level_no, role, approver, status) VALUES(?, ?, 1, '分管领导', 'xingguo', 'pending')", ('inquiry_approval', aid))
     conn.execute("UPDATE inquiries SET status='定标审批中', updated_at=? WHERE id=?", (now(), iid))
     conn.commit()
     conn.close()
@@ -4553,11 +4555,13 @@ def api_inquiry_export(iid):
                     line = '%s（%s）：优点-%s；缺点-%s' % (s['supplier_name'], 
                         brand_name,
                         brand_info.get('优点', ''), brand_info.get('缺点', ''))
-                    brand_analysis_lines.append(line)
-                elif brand_name:
+                else:
                     # 如果没有搜索到品牌信息，显示商家填写的品牌
-                    line = '%s（%s）：品牌已填写' % (s['supplier_name'], brand_name)
-                    brand_analysis_lines.append(line)
+                    line = '%s（%s）' % (s['supplier_name'], brand_name)
+                brand_analysis_lines.append(line)
+            else:
+                line = '%s：未填写品牌' % s['supplier_name']
+                brand_analysis_lines.append(line)
     
     decision = ('本批次采购经过多方询价、比价与供应商综合考察，最终选择本供应商为合作方。')
     selected = next((s for s in sups if s['is_selected']), None)
