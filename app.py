@@ -4563,14 +4563,21 @@ def api_inquiry_export(iid):
     ws.cell(row, 4, '审核人：').font = note_font
     ws.cell(row, 7, '日期：').font = note_font
 
-    ws.column_dimensions['A'].width = 12
-    ws.column_dimensions['B'].width = 18
-    ws.column_dimensions['C'].width = 16
-    ws.column_dimensions['D'].width = 14
-    ws.column_dimensions['E'].width = 20
-    ws.column_dimensions['F'].width = 12
-    ws.column_dimensions['G'].width = 22
-    ws.column_dimensions['H'].width = 14
+    # 动态设置列宽，确保所有供应商列宽一致
+    ws.column_dimensions['A'].width = 6   # 序号
+    ws.column_dimensions['B'].width = 16  # 物料名称
+    ws.column_dimensions['C'].width = 10  # 数量
+    ws.column_dimensions['D'].width = 12  # 规格
+    # 每个供应商3列: 单价(8) + 总价(10) + 备注(14)
+    col_count = 4 + len(sups) * 3
+    for ci in range(5, min(col_count + 1, 26)):
+        col_letter = chr(64 + ci) if ci <= 26 else 'A' + chr(64 + ci - 26)
+        if ci % 3 == 2:  # 备注列
+            ws.column_dimensions[col_letter].width = 14
+        elif ci % 3 == 0:  # 总价列
+            ws.column_dimensions[col_letter].width = 10
+        else:  # 单价列
+            ws.column_dimensions[col_letter].width = 8
 
     buf = io.BytesIO()
     wb.save(buf)
