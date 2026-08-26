@@ -4437,7 +4437,7 @@ def api_inquiry_export(iid):
         ref_price = round(ref_total / qty, 2) if qty else 0
         total_ref += ref_total
         vals = [idx, it['item_name'] or '', it['spec'] or '', it['unit'] or '个',
-                qty, ref_price, round(ref_total, 2), (it['purpose'] if 'purpose' in it.keys() else (it['remark'] if 'remark' in it.keys() else '')) or '']
+                qty, ref_price, round(ref_total, 2), (it['remark'] or '')]
         for ci, v in enumerate(vals, 1):
             c = ws.cell(row, ci, v); c.font = base_font; c.border = border
             c.alignment = Alignment(horizontal='center' if ci in (1, 4, 5) else 'left', vertical='center', wrap_text=True)
