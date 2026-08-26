@@ -4379,7 +4379,7 @@ def api_inquiry_export(iid):
         conn.close(); return jsonify({'error': '询价单不存在'}), 404
     pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (i['req_id'],)).fetchone()
     items = conn.execute("SELECT * FROM request_items WHERE req_id=? ORDER BY id", (i['req_id'],)).fetchall()
-    sups = conn.execute("SELECT * FROM inquiry_suppliers WHERE inquiry_id=? ORDER BY id", (iid,)).fetchall()
+    sups = [dict(s) for s in conn.execute("SELECT * FROM inquiry_suppliers WHERE inquiry_id=? ORDER BY id", (iid,)).fetchall()]
     conn.close()
 
     wb = Workbook(); ws = wb.active; ws.title = '询价单'
