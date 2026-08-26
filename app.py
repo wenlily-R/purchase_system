@@ -4551,12 +4551,8 @@ def api_inquiry_export(iid):
                     selected['quote_remark'] or '交货期及付款条件按合同约定'))
         # 在决策备注下方追加品牌分析
         if brand_analysis_lines:
-            brand_text = '【品牌分析】
-' + '
-'.join(brand_analysis_lines)
-            decision = decision + '
-
-' + brand_text
+            brand_text = '【品牌分析】' + chr(10) + chr(10).join(brand_analysis_lines)
+            decision = decision + chr(10) + chr(10) + brand_text
     c = ws.cell(row, 1, decision)
     c.font = base_font; c.alignment = Alignment(vertical='top', wrap_text=True)
     for r2 in range(row, row + 4):
