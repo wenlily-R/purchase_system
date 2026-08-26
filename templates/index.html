@@ -1412,12 +1412,18 @@ async function showPRequest(id){
 let IQ_SUPS=0;
 async function loadInquiries(){
   const rows=await api('/inquiries');
-  id('inquiriesTable').innerHTML=rnder(rows,['inq_no','req_no','purpose','sup_count','quoted_count','min_price','status','id'],
-    ['询价单号','申请单号','采购事由','供应商数','已报价','最低报价','状态','操作'],
-    r=>`<td><b>${esc(r.inq_no)}</b></td><td>${esc(r.req_no||('#'+r.req_id))}</td><td>${esc(r.purpose||'')}</td>
+  id('inquiriesTable').innerHTML=rnder(rows,['inq_no','req_no','purpose','sup_count','quoted_count','min_price','status','approval_status','id'],
+    ['询价单号','申请单号','采购事由','供应商数','已报价','最低报价','状态','审批状态','操作'],
+    r=>{
+      let approvalHtml = '';
+      if(r.approval_status=='审批中') approvalHtml='<span style="color:#e67e22;font-size:9px">⏳审批中</span>';
+      else if(r.approval_status=='已通过'||r.approval_status=='已批准') approvalHtml='<span style="color:#27ae60;font-size:9px">✅已通过</span>';
+      else if(r.approval_status=='已驳回') approvalHtml='<span style="color:#e74c3c;font-size:9px">❌已驳回</span>';
+      return `<td><b>${esc(r.inq_no)}</b></td><td>${esc(r.req_no||('#'+r.req_id))}</td><td>${esc(r.purpose||'')}</td>
       <td>${r.sup_count||0}家</td><td style="color:${(r.quoted_count||0)>0?'#27ae60':'#999'}">${r.quoted_count||0}/${r.sup_count||0}</td>
-      <td>${r.min_price?('¥'+(r.min_price||0).toFixed(0)):'—'}</td><td>${tag(r.status)}</td>
-      <td><button class="lnk" onclick="showInquiry(${r.id})">详情/比价</button></td>`);
+      <td>${r.min_price?('¥'+(r.min_price||0).toFixed(0)):'—'}</td><td>${tag(r.status)}</td><td>${approvalHtml}</td>
+      <td><button class="lnk" onclick="showInquiry(${r.id})">详情/比价</button></td>`;
+    });
 }
 async function showInquiryForm(){
   const el=await api('/inquiries/eligible');

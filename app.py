@@ -3952,13 +3952,14 @@ def api_update_supplier(sid):
 @app.route('/api/inquiries')
 @login_required
 def api_inquiries():
-    """询价单列表(含家数/已报价数/最低报价)"""
+    """询价单列表(含家数/已报价数/最低报价/审批状态)"""
     conn = db()
     rows = conn.execute("""
         SELECT i.*, pr.req_no, pr.purpose, pr.dept,
             (SELECT COUNT(*) FROM inquiry_suppliers s WHERE s.inquiry_id=i.id) AS sup_count,
             (SELECT COUNT(*) FROM inquiry_suppliers s WHERE s.inquiry_id=i.id AND s.quote_price>0) AS quoted_count,
-            (SELECT MIN(s.quote_price) FROM inquiry_suppliers s WHERE s.inquiry_id=i.id AND s.quote_price>0) AS min_price
+            (SELECT MIN(s.quote_price) FROM inquiry_suppliers s WHERE s.inquiry_id=i.id AND s.quote_price>0) AS min_price,
+            (SELECT status FROM inquiry_approvals WHERE inquiry_id=i.id ORDER BY id DESC LIMIT 1) AS approval_status
         FROM inquiries i LEFT JOIN purchase_requests pr ON i.req_id=pr.id
         ORDER BY i.id DESC LIMIT 100
     """).fetchall()
