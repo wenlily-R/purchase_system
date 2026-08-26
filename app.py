@@ -3237,6 +3237,7 @@ def api_all_pending():
             END as biz_no,
             CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.purpose FROM purchase_requests pr WHERE pr.id=ai.biz_id)
                  WHEN ai.biz_type='purchase_order' THEN (SELECT po.item_name FROM purchase_orders po WHERE po.id=ai.biz_id)
+                 WHEN ai.biz_type='inquiry_approval' THEN (SELECT iq.title FROM inquiries iq WHERE iq.id=ai.biz_id)
                  WHEN ai.biz_type='contract' THEN (SELECT ct.contract_name FROM contracts ct WHERE ct.id=ai.biz_id)
                  WHEN ai.biz_type='credit' THEN (SELECT cn.item_name FROM credit_notes cn WHERE cn.id=ai.biz_id)
                  WHEN ai.biz_type='receiving' THEN (SELECT rv.item_name FROM receivings rv WHERE rv.id=ai.biz_id)
