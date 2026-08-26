@@ -302,6 +302,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <button class="act" data-t="" onclick="apprTab('')">全部</button>
     <button data-t="purchase_request" onclick="apprTab('purchase_request')">📝采购申请</button>
     <button data-t="purchase_order" onclick="apprTab('purchase_order')">📋采购订单</button>
+    <button data-t="inquiry_approval" onclick="apprTab('inquiry_approval')">🔍比价单</button>
     <button data-t="contract" onclick="apprTab('contract')">📄合同审批</button>
     <button data-t="receiving" onclick="apprTab('receiving')">📦入库审批</button>
     <button data-t="requisition" onclick="apprTab('requisition')">📤出库审批</button>
@@ -957,7 +958,7 @@ async function loadOverdue(){
     const r=await api('/approvals/overdue');
     const box=id('overdueBox');
     if(!r.length){box.innerHTML='<div style="padding:6px;color:#27ae60;font-size:9px">✅ 无超期未审批单据</div>';return}
-    const BIZN={purchase_request:'采购申请',purchase_order:'采购订单',contract:'合同',payment:'付款',receiving:'入库',requisition:'出库'};
+    const BIZN={purchase_request:'采购申请',purchase_order:'采购订单',inquiry_approval:'比价单',contract:'合同',payment:'付款',receiving:'入库',requisition:'出库'};
     box.innerHTML=rnder(r,['doc_no','biz_type','role','wait_hours','biz_id'],['单号','类型','待审角色','已停留','操作'],
       x=>`<td><b>${esc(x.doc_no||('#'+x.biz_id))}</b></td><td>${BIZN[x.biz_type]||x.biz_type}</td><td>${esc(x.role||'')}</td>
       <td><span style="color:${x.wait_hours>48?'#e74c3c':'#e67e22'};font-weight:700">${x.wait_hours??'-'}h</span></td>
@@ -1685,7 +1686,7 @@ function exportXls(type){window.open('/api/export?type='+type,'_blank')}
 
 // Approvals Center (需求44: 按流程类型分类分页展示, 类型彩色标签+数量徽标+发起时间)
 let APPR_FILTER='';
-const APPR_TM={purchase_request:['📝采购申请','#2f6fed'],purchase_order:['📋订单','#e8890c'],contract:['📄合同','#0aa574'],credit:['📑挂账','#b08900'],payment:['💰付款','#d64541'],receiving:['📦入库','#7b5bdb'],requisition:['📤出库','#00a896']};
+const APPR_TM={purchase_request:['📝采购申请','#2f6fed'],purchase_order:['📋订单','#e8890c'],inquiry_approval:['🔍比价单','#8e44ad'],contract:['📄合同','#0aa574'],credit:['📑挂账','#b08900'],payment:['💰付款','#d64541'],receiving:['📦入库','#7b5bdb'],requisition:['📤出库','#00a896']};
 function apprTab(t){
   APPR_FILTER=t;
   document.querySelectorAll('#apprTabs button').forEach(b=>{b.classList.toggle('act',b.dataset.t===t)});
@@ -1728,6 +1729,7 @@ async function loadApprovals(){
 function viewBiz(t,oid){
   if(t=='purchase_request')showPRequest(oid);
   else if(t=='purchase_order')showOrder(oid);
+  else if(t=='inquiry_approval')showInquiry(oid);
   else if(t=='contract')showContract(oid);
   else if(t=='credit'||t=='payment'){
     const a=id('approvalsTable').innerHTML;
