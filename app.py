@@ -4059,7 +4059,7 @@ def api_inquiry_detail(iid):
     supplier_list = []
     for s in sups:
         sd = dict_row(s)
-        brand_info = search_brand_info(sd.get('supplier_name', ''), (pr['category'] if pr else ''))
+        brand_info = search_brand_info(sd.get('supplier_name', ''), '')
         sd['brand_analysis'] = brand_info
         supplier_list.append(sd)
     out['suppliers'] = supplier_list
