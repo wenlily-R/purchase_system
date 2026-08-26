@@ -1739,6 +1739,8 @@ function viewBiz(t,oid){
 function canApprove(x){
   // V7.0: 仅当前节点指定审批人/系统管理员可审批
   if(ME.role=='系统管理员')return true;
+  // V11.96: 支持approver_id匹配
+  if(x.approver_id && ME.id && x.approver_id == ME.id)return true;
   if(!x.approver)return false;
   return ME.name==x.approver||ME.username==x.approver;
 }
