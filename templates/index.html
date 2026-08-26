@@ -1470,20 +1470,35 @@ async function showInquiry(id){
   if(d.items&&d.items.length){
     h+=`<h4 style="font-size:10px;margin:6px 0 3px">📋 采购明细（${d.items.length}项）</h4><div style="font-size:9px">${d.items.map(i=>`<div style="padding:2px 0;border-bottom:1px solid var(--b)">${esc(i.item_name)} ${esc(i.spec||'')} x${i.quantity}${esc(i.unit||'')}（参考¥${(i.total_price||0).toFixed(0)}）</div>`).join('')}</div>`;
   }
-  h+=`<h4 style="font-size:10px;margin:8px 0 3px">🏢 供应商报价对比</h4>`;
-  if(!d.suppliers||!d.suppliers.length)h+='<div style="font-size:10px;color:#999">无供应商</div>';
+  h+=`<h4 style="font-size:11px;margin:10px 0 5px;color:#2c3e50;font-weight:bold">🏢 供应商报价对比</h4>`;
+  if(!d.suppliers||!d.suppliers.length)h+='<div style="font-size:11px;color:#999;padding:10px">无供应商</div>';
   else{
-    h+=`<table class="tb" style="font-size:9px"><thead><tr><th>供应商</th><th>联系人</th><th>报价</th><th>交付日期</th><th>质保时间</th><th>品牌</th><th>备注</th><th>报价时间</th><th>操作</th></tr></thead><tbody>`;
+    h+=`<div style="background:#f8f9fa;border-radius:8px;padding:12px;margin:8px 0">`;
+    h+=`<table class="tb" style="font-size:11px"><thead><tr><th>供应商</th><th>联系人</th><th>报价</th><th>交付日期</th><th>质保</th><th>品牌</th><th>备注</th><th>操作</th></tr></thead><tbody>`;
     d.suppliers.forEach(s=>{
-      h+=`<tr><td>${esc(s.supplier_name)}${s.is_selected?' <span class="tag tg-g">已选中</span>':''}</td><td>${esc(s.contact||'')}${s.phone?'<br>'+esc(s.phone):''}</td>
-        <td style="font-weight:700;color:${s.quote_price?'#e67e22':'#999'}">${s.quote_price?('¥'+(s.quote_price||0).toFixed(2)):'未报价'}</td>
-        <td>${s.quote_delivery?esc(s.quote_delivery):'<span style="color:#bbb">-</span>'}</td>
-        <td>${s.quote_warranty?esc(s.quote_warranty):'<span style="color:#bbb">-</span>'}</td>
-        <td>${esc(s.quote_brand||s.brand||'')}</td><td>${esc(s.quote_remark||'')}</td><td>${esc(s.quote_time||'')}</td>
-        <td><button class="lnk" onclick="copyInqLink('${s.token}')">📋复制链接</button></td>
-        <td>${(d.status=='询价中'&&s.quote_price&&!s.is_selected)?`<button class="lnk" style="color:var(--o)" onclick="selectInquirySupplier(${d.id},${s.id})">✅选中下单</button>`:''}</td></tr>`;
+      // 品牌分析
+      let brandHtml = '';
+      if(s.brand_analysis && (s.brand_analysis.优点 || s.brand_analysis.缺点)){
+        brandHtml = `<div style="font-size:9px;color:#666;margin-top:3px;padding:4px 6px;background:${s.is_selected?'#e8f5e9':'#fff3e0'};border-radius:4px">`;
+        if(s.brand_analysis.优点) brandHtml += `<div>✅ ${esc(s.brand_analysis.优点)}</div>`;
+        if(s.brand_analysis.缺点) brandHtml += `<div>⚠️ ${esc(s.brand_analysis.缺点)}</div>`;
+        brandHtml += `</div>`;
+      }
+      h+=`<tr style="${s.is_selected?'background:#e8f5e9;':''}">
+        <td><b>${esc(s.supplier_name)}</b>${s.is_selected?' <span class="tag tg-g">✓已选中</span>':''}</td>
+        <td>${esc(s.contact||'')}${s.phone?'<br><span style="font-size:9px;color:#999">'+esc(s.phone)+'</span>':''}</td>
+        <td style="font-weight:700;color:${s.quote_price?'#e67e22':'#999'};font-size:13px">${s.quote_price?('¥'+(s.quote_price||0).toFixed(2)):'<span style="color:#ccc">未报价</span>'}</td>
+        <td>${s.quote_delivery?esc(s.quote_delivery):'<span style="color:#ccc">-</span>'}</td>
+        <td>${s.quote_warranty?esc(s.quote_warranty):'<span style="color:#ccc">-</span>'}</td>
+        <td>${esc(s.quote_brand||s.brand||'-')}${brandHtml}</td>
+        <td style="max-width:120px;word-break:break-all">${esc(s.quote_remark||'')}</td>
+        <td style="white-space:nowrap">
+          <button class="lnk" onclick="copyInqLink('${s.token}')">📋链接</button>
+          ${(d.status=='询价中'&&s.quote_price&&!s.is_selected)?`<button class="lnk" style="color:#27ae60;margin-left:4px" onclick="selectInquirySupplier(${d.id},${s.id})">✅选中</button>`:''}
+        </td>
+      </tr>`;
     });
-    h+=`</tbody></table>`;
+    h+=`</tbody></table></div>`;
   }
   // V11.93: 所有供应商报价后显示"提交审批"按钮
   const allQuoted = d.suppliers && d.suppliers.length > 0 && d.suppliers.every(s => s.quote_price && s.quote_price > 0);

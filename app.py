@@ -4043,7 +4043,7 @@ def api_create_inquiry():
 @app.route('/api/inquiries/<int:iid>')
 @login_required
 def api_inquiry_detail(iid):
-    """询价单详情: 申请信息 + 物品明细 + 供应商报价对比"""
+    """询价单详情: 申请信息 + 物品明细 + 供应商报价对比 + 品牌分析"""
     conn = db()
     i = conn.execute("SELECT * FROM inquiries WHERE id=?", (iid,)).fetchone()
     if not i:
@@ -4055,7 +4055,14 @@ def api_inquiry_detail(iid):
     out = dict_row(i)
     out['request'] = dict_row(pr)
     out['items'] = [dict_row(r) for r in items]
-    out['suppliers'] = [dict_row(r) for r in sups]
+    # 添加品牌分析
+    supplier_list = []
+    for s in sups:
+        sd = dict_row(s)
+        brand_info = search_brand_info(sd.get('supplier_name', ''), (pr['category'] if pr else ''))
+        sd['brand_analysis'] = brand_info
+        supplier_list.append(sd)
+    out['suppliers'] = supplier_list
     return jsonify(out)
 
 @app.route('/inq/<token>')
