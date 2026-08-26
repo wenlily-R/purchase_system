@@ -4426,6 +4426,34 @@ def api_inquiry_export(iid):
             ws.cell(row, col).border = border
         row += 1
 
+    row += 1
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=10)
+    ws.cell(row, 1, '一、询价物料 / 服务明细').font = head_font
+    for col in range(1, 11):
+        ws.cell(row, col).fill = head_fill; ws.cell(row, col).border = border
+    row += 1
+    item_head = ['序号', '物料名称', '规格型号', '单位', '数量', '参考单价(元)', '参考金额(元)', '用途/备注']
+    for ci, h in enumerate(item_head, 1):
+        c = ws.cell(row, ci, h); c.font = head_font; c.fill = head_fill; c.border = border
+        c.alignment = Alignment(horizontal='center', vertical='center')
+    row += 1
+    total_ref = 0.0
+    for idx, it in enumerate(items, 1):
+        qty = float(it['quantity'] or 0)
+        ref_total = float(it['total_price'] or 0)
+        ref_price = round(ref_total / qty, 2) if qty else 0
+        total_ref += ref_total
+        vals = [idx, it['item_name'] or '', it['spec'] or '', it['unit'] or '个',
+                qty, ref_price, round(ref_total, 2), (it['remark'] or '')]
+        for ci, v in enumerate(vals, 1):
+            c = ws.cell(row, ci, v); c.font = base_font; c.border = border
+            c.alignment = Alignment(horizontal='center' if ci in (1, 4, 5) else 'left', vertical='center', wrap_text=True)
+        row += 1
+    ws.cell(row, 6, '参考合计').font = label_font
+    ws.cell(row, 7, round(total_ref, 2)).font = label_font
+    for col in range(1, 11):
+        ws.cell(row, col).border = border
+
     row += 2
     ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=10)
     ws.cell(row, 1, '二、供应商报价比价表（逐项对比）').font = head_font
@@ -4532,31 +4560,13 @@ def api_inquiry_export(iid):
         ws.cell(row, col).fill = head_fill; ws.cell(row, col).border = border
     row += 1
     ws.merge_cells(start_row=row, start_column=1, end_row=row + 3, end_column=10)
-    # 生成品牌分析
-    brand_analysis_lines = []
-    for s in sups:
-        if s['quote_price'] and s['quote_price'] > 0:
-            brand_info = search_brand_info(s['supplier_name'], '')
-            if brand_info and (brand_info.get('优点') or brand_info.get('缺点')):
-                line = '%s：优点-%s；缺点-%s' % (s['supplier_name'], 
-                    brand_info.get('优点', ''), brand_info.get('缺点', ''))
-                brand_analysis_lines.append(line)
-    
     decision = ('本批次采购经过多方询价、比价与供应商综合考察，最终选择本供应商为合作方。')
     selected = next((s for s in sups if s['is_selected']), None)
     if selected:
-        decision = ('经多方询价比价，推荐选择「%s」为合作方，报价¥%s，'
-                    '性价比最优。%s' % (selected['supplier_name'],
+        decision = ('本批次采购经过多方询价、比价与供应商综合考察，最终选择「%s」为合作方，'
+                    '报价¥%s，%s。' % (selected['supplier_name'],
                     format(float(selected['quote_price'] or 0), ',.2f'),
                     selected['quote_remark'] or '交货期及付款条件按合同约定'))
-        # 在决策备注下方追加品牌分析
-        if brand_analysis_lines:
-            brand_text = '【品牌分析】
-' + '
-'.join(brand_analysis_lines)
-            decision = decision + '
-
-' + brand_text
     c = ws.cell(row, 1, decision)
     c.font = base_font; c.alignment = Alignment(vertical='top', wrap_text=True)
     for r2 in range(row, row + 4):
