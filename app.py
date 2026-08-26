@@ -4492,12 +4492,13 @@ def api_inquiry_export(iid):
         for ci, v in enumerate(vals, 1):
             c = ws.cell(row, ci, v); c.border = border
             c.alignment = Alignment(horizontal='center' if ci <= 4 or (ci - 5) % 4 != 0 else 'left', vertical='center', wrap_text=True)
-            # 单价列(4+3k+1): 最低标红加粗
+            # 单价列: 最低标红加粗（更明显）
             if unit_prices and min_unit is not None:
                 k = (ci - 5) // 4
                 if 0 <= k < n_sup and (ci - 5) % 4 == 0:
                     if row_prices[k][0] is not None and abs(row_prices[k][0] - min_unit) < 0.001:
-                        c.font = min_font_s
+                        c.font = Font(name='微软雅黑', size=11, bold=True, color='C00000')
+                        c.fill = PatternFill('solid', fgColor='FFF2CC')
                         continue
             c.font = base_font
         ws.row_dimensions[row].height = 26
@@ -4574,13 +4575,15 @@ def api_inquiry_export(iid):
     ws.column_dimensions['B'].width = 16  # 物料名称
     ws.column_dimensions['C'].width = 10  # 数量
     ws.column_dimensions['D'].width = 12  # 规格
-    # 每个供应商3列: 单价(8) + 总价(10) + 备注(14)
-    col_count = 4 + len(sups) * 3
+    # 每个供应商4列: 单价(8) + 总价(10) + 品牌(10) + 备注(14)
+    col_count = 4 + len(sups) * 4
     for ci in range(5, min(col_count + 1, 26)):
         col_letter = chr(64 + ci) if ci <= 26 else 'A' + chr(64 + ci - 26)
-        if ci % 3 == 2:  # 备注列
+        if ci % 4 == 1:  # 备注列
             ws.column_dimensions[col_letter].width = 14
-        elif ci % 3 == 0:  # 总价列
+        elif ci % 4 == 0:  # 总价列
+            ws.column_dimensions[col_letter].width = 10
+        elif ci % 4 == 3:  # 品牌列
             ws.column_dimensions[col_letter].width = 10
         else:  # 单价列
             ws.column_dimensions[col_letter].width = 8
