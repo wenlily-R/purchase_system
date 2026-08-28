@@ -313,7 +313,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS dingtalk_instances (
             id INTEGER PRIMARY KEY AUTOINCREMENT, instance_code TEXT UNIQUE, biz_type TEXT, biz_id INTEGER,
             status TEXT DEFAULT 'pending', error TEXT, created_at TEXT DEFAULT (datetime('now','localtime')),
-            updated_at TEXT DEFAULT (datetime('now','localtime')));
+            updated_at TEXT DEFAULT (datetime('now','localtime')), form_values TEXT);
         CREATE TABLE IF NOT EXISTS dingtalk_push_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT, biz_type TEXT, biz_id TEXT, doc_no TEXT,
             push_type TEXT DEFAULT 'auto', target_user TEXT, target_userid TEXT,
@@ -546,6 +546,8 @@ def init_db():
         ('request_items', 'category', "ALTER TABLE request_items ADD COLUMN category TEXT DEFAULT ''"),
         ('request_items', 'brand_param', "ALTER TABLE request_items ADD COLUMN brand_param TEXT DEFAULT ''"),
         ('request_items', 'arrival_date', "ALTER TABLE request_items ADD COLUMN arrival_date TEXT DEFAULT ''"),
+        # V11.126: 钉钉实例存审批表单值(询价定标审批需要读取领导在钉钉选的供应商)
+        ('dingtalk_instances', 'form_values', "ALTER TABLE dingtalk_instances ADD COLUMN form_values TEXT"),
     ]:
         _cols = [r[1] for r in conn.execute(f"PRAGMA table_info({_tbl})").fetchall()]
         if _col not in _cols:
@@ -1238,12 +1240,90 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
         c.execute("UPDATE approval_instances SET status='rejected', approver=?, approver_id=?, comment=?, processed_at=? WHERE biz_type=? AND biz_id=? AND status='pending'",
                   (approver, approver_id, comment, now(), biz_type, biz_id))
         st = biz_parent_status(biz_type, 'reject')
-    c.execute(f"UPDATE {biz_table(biz_type)} SET status=?, updated_at=? WHERE id=?", (st, now(), biz_id))
+    # V11.126: 询价定标审批无通用 biz_table(父单据=inquiries), 单独处理; 其他走通用表
+    if biz_type == 'inquiry_approval':
+        c.execute("UPDATE inquiries SET status=?, updated_at=? WHERE id=?", (st, now(), biz_id))
+    else:
+        c.execute(f"UPDATE {biz_table(biz_type)} SET status=?, updated_at=? WHERE id=?", (st, now(), biz_id))
     # V11.67: 询价定标审批通过 → 同步询价单状态(定标审批中→已生成订单); 驳回→恢复询价中
     if biz_type == 'purchase_order':
         if result == 'ok' and st in ('已通过', '审批通过'):
             c.execute("UPDATE inquiries SET status='已生成订单', updated_at=? WHERE id IN (SELECT i.id FROM inquiries i JOIN inquiry_suppliers s ON s.inquiry_id=i.id WHERE s.id=(SELECT selected_supplier_id FROM purchase_orders WHERE id=?))", (now(), biz_id))
-    # V11.76: 询价审批通过 → 根据选定供应商创建订单并生效    elif biz_type == 'inquiry_approval':        if result == 'ok' and st in ('已通过', '审批通过'):            try:                inst = c.execute("SELECT * FROM dingtalk_instances WHERE biz_type=? AND biz_id=? ORDER BY id DESC LIMIT 1", (biz_type, biz_id)).fetchone()                if inst:                    form_vals = inst.get('form_values', '') or '{}'                    fv = json.loads(form_vals)                    selected_id = None                    for item in (fv if isinstance(fv, list) else []):                        if isinstance(item, dict) and item.get('name') == '选定供应商':                            vals = item.get('value', '[]')                            if isinstance(vals, str):                                try:                                    vals = json.loads(vals)                                except:                                    pass                            if isinstance(vals, list) and len(vals) > 0:                                selected_id = int(vals[0])                            elif isinstance(vals, str):                                selected_id = int(vals)                            break                    if selected_id:                        c.execute("UPDATE inquiry_approvals SET selected_supplier_id=?, status='已批准', updated_at=? WHERE id=?", (selected_id, now(), biz_id))                        iq = c.execute("SELECT * FROM inquiries WHERE id=?", (biz_id,)).fetchone()                        if iq:                            pr = c.execute("SELECT * FROM purchase_requests WHERE id=?", (iq['req_id'],)).fetchone()                            items = c.execute("SELECT * FROM request_items WHERE req_id=?", (iq['req_id'],)).fetchall()                            if pr and items:                                sup = c.execute("SELECT * FROM inquiry_suppliers WHERE id=?", (selected_id,)).fetchone()                                if sup:                                    no = gen_no('CG', 'purchase_orders', 'order_no', c)                                    total = float(sup['quote_price'] or 0)                                    remark = '询价单:%s 供应商:%s 报价¥%.0f' % (iq['inq_no'], sup['supplier_name'], total)                                    c.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",                                        (no, iq['req_id'], iq['title'][:50], '', 1, '个', 0, total, 0, 0, total, sup['supplier_name'], iq['created_by'], '后勤类', iq['created_by'], 1, iq['deadline'] or '', '货到付款', remark, 0, json.dumps([], ensure_ascii=False), '已通过'))                                    oid = c.execute("SELECT id FROM purchase_orders WHERE order_no=?", (no,)).fetchone()[0]                                    for idx, it in enumerate(items):                                        qty = float(it['quantity'] or 1)                                        c.execute("INSERT INTO order_items(order_id,item_name,spec,unit,quantity,price,amount,tax_rate,tax_amount,total_amount,remark) VALUES(?,?,?,?,?,?,?,?,?,?,?)",                                            (oid, it['item_name'], it['spec'] or '', it['unit'] or '个', qty, 0, total, 0, 0, total, ''))                                    c.execute("UPDATE inquiries SET status='已生成订单', selected_supplier_id=?, updated_at=? WHERE id=?", (selected_id, now(), biz_id))                                    c.execute("UPDATE inquiry_approvals SET order_id=?, status='已完成' WHERE id=?", (oid, biz_id))                                    log('系统', '询价审批生效', '%s → 订单%s 已生效' % (iq['inq_no'], no))                c.commit()            except Exception as e:                log('系统', '询价审批处理异常', str(e))
+    # V11.126: 询价定标审批(手动提交或三家自动提交) — 通过→更新审批记录+根据选定供应商(优先钉钉表单, 兜底最低价)生成订单生效; 驳回→恢复询价中
+    elif biz_type == 'inquiry_approval':
+        if result == 'ok':
+            _sel_id = None
+            try:
+                _inst = c.execute("SELECT * FROM dingtalk_instances WHERE biz_type=? AND biz_id=? ORDER BY id DESC LIMIT 1", (biz_type, biz_id)).fetchone()
+                if _inst and 'form_values' in _inst.keys() and _inst['form_values']:
+                    _fv = json.loads(_inst['form_values'])
+                    for _it in (_fv if isinstance(_fv, list) else []):
+                        if isinstance(_it, dict) and _it.get('name') == '选定供应商':
+                            _vals = _it.get('value', '[]')
+                            if isinstance(_vals, str):
+                                try:
+                                    _vals = json.loads(_vals)
+                                except Exception:
+                                    pass
+                            if isinstance(_vals, list) and len(_vals) > 0:
+                                _sel_id = int(_vals[0])
+                            elif isinstance(_vals, str) and _vals.strip().isdigit():
+                                _sel_id = int(_vals)
+                            break
+            except Exception:
+                _sel_id = None
+            if not _sel_id:
+                _r2 = c.execute("SELECT id FROM inquiry_suppliers WHERE inquiry_id=? AND quote_price>0 ORDER BY quote_price ASC LIMIT 1", (biz_id,)).fetchone()
+                _sel_id = _r2['id'] if _r2 else None
+            if _sel_id:
+                try:
+                    _sup = c.execute("SELECT * FROM inquiry_suppliers WHERE id=?", (_sel_id,)).fetchone()
+                    _iq = c.execute("SELECT * FROM inquiries WHERE id=?", (biz_id,)).fetchone()
+                    if _sup and _iq:
+                        _pr = c.execute("SELECT * FROM purchase_requests WHERE id=?", (_iq['req_id'],)).fetchone()
+                        _items = c.execute("SELECT * FROM request_items WHERE req_id=? ORDER BY id", (_iq['req_id'],)).fetchall()
+                        _total = float(_sup['quote_price'] or 0)
+                        _remark = '询价单:%s 供应商:%s 报价¥%.0f' % (_iq['inq_no'], _sup['supplier_name'], _total)
+                        # 优先完善提交时生成的草稿订单, 没有才新建(防重复订单)
+                        _draft = c.execute("SELECT id FROM purchase_orders WHERE inquiry_id=? AND status='草稿' ORDER BY id LIMIT 1", (biz_id,)).fetchone()
+                        if _draft:
+                            _oid = _draft['id']
+                            c.execute("UPDATE purchase_orders SET supplier=?, price=?, amount=?, total_amount=?, remark=?, status='已通过', updated_at=? WHERE id=?",
+                                      (_sup['supplier_name'], _total, _total, _total, _remark, now(), _oid))
+                            c.execute("DELETE FROM order_items WHERE order_id=?", (_oid,))
+                        else:
+                            _no = gen_no('CG', 'purchase_orders', 'order_no', c)
+                            c.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,
+                                supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status,inquiry_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                      (_no, _iq['req_id'], _iq['title'][:50], '', 1, '个', _total, _total, 0, 0, _total,
+                                       _sup['supplier_name'], _iq['created_by'], '后勤类', _iq['created_by'], 1, _iq['deadline'] or '', '货到付款',
+                                       _remark, 0, json.dumps([], ensure_ascii=False), '已通过', _iq['id']))
+                            _oid = c.execute("SELECT id FROM purchase_orders WHERE order_no=?", (_no,)).fetchone()[0]
+                        # 明细: 按申请明细参考金额比例分摊报价总额
+                        _base = sum(float(x['total_price'] or 0) for x in _items) if _items else 0
+                        _grand = 0.0
+                        for _idx, _it in enumerate(_items):
+                            _qty = float(_it['quantity'] or 1)
+                            if _base > 0 and _idx < len(_items) - 1:
+                                _amt = _total * (float(_it['total_price'] or 0) / _base)
+                            else:
+                                _amt = _total - _grand
+                            _amt = round(_amt, 2)
+                            _price = round(_amt / _qty, 2) if _qty else 0
+                            _grand += _amt
+                            c.execute("INSERT INTO order_items(order_id,item_name,spec,unit,quantity,price,amount,tax_rate,tax_amount,total_amount,remark) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                                      (_oid, _it['item_name'], _it['spec'] or '', _it['unit'] or '个', _qty, _price, _amt, 0, 0, _amt, ''))
+                        c.execute("UPDATE inquiries SET status='已生成订单', selected_supplier_id=?, updated_at=? WHERE id=?", (_sel_id, now(), biz_id))
+                        c.execute("UPDATE inquiry_approvals SET selected_supplier_id=?, status='已完成' WHERE inquiry_id=?", (_sel_id, biz_id))
+                        c.execute("UPDATE inquiry_suppliers SET is_selected=1 WHERE id=?", (_sel_id,))
+                        # 注意: 此处不写日志 — 事务未提交时开新连接会 database is locked, 末尾已有提交后日志
+                except Exception as e:
+                    pass
+            else:
+                c.execute("UPDATE inquiry_approvals SET status='已批准' WHERE inquiry_id=?", (biz_id,))
+        else:
+            c.execute("UPDATE inquiry_approvals SET status='已驳回' WHERE inquiry_id=?", (biz_id,))
+            c.execute("UPDATE inquiries SET status='询价中', updated_at=? WHERE id=?", (now(), biz_id))
     if result == 'ok':
         if biz_type == 'receiving' and st == '已入库':
             do_receiving_stock(c, biz_id)
@@ -2444,6 +2524,15 @@ def dt_poll_results():
                 inst = dt_query_instance(r['instance_code'])
                 if not inst:
                     continue
+                # V11.126: 保存审批表单值(询价定标审批需读取领导选的供应商) — 顺带用本次查询结果, 不额外耗API
+                try:
+                    _fv = inst.get('form_component_values') or inst.get('formComponentValues')
+                    if _fv:
+                        _c2 = db()
+                        _c2.execute("UPDATE dingtalk_instances SET form_values=?, updated_at=? WHERE id=?", (json.dumps(_fv, ensure_ascii=False), now(), r['id']))
+                        _c2.commit(); _c2.close()
+                except Exception:
+                    pass
                 st = str(inst.get('status', ''))
                 if st in ('APPROVED', 'COMPLETED'):
                     # COMPLETED(旧API) 需结合 result 判断 agree/reject
@@ -2717,6 +2806,18 @@ def api_dingtalk_callback():
                     comment = rec['remark']
                     break
         if iid and result in ('agree', 'refuse'):
+            # V11.126: 审批结束时拉取一次实例详情, 保存表单值(询价定标审批要读领导选的供应商)
+            try:
+                _inst = dt_query_instance(iid)
+                if _inst:
+                    _fv = _inst.get('form_component_values') or _inst.get('formComponentValues')
+                    if _fv:
+                        _c2 = db()
+                        _c2.execute("UPDATE dingtalk_instances SET form_values=?, updated_at=? WHERE instance_code=?",
+                                    (json.dumps(_fv, ensure_ascii=False), now(), iid))
+                        _c2.commit(); _c2.close()
+            except Exception:
+                pass
             dt_sync_result(iid, result, comment)
     return 'success'  # 钉钉事件回调统一要求纯文本success
 
@@ -3291,6 +3392,7 @@ def api_all_pending():
                  WHEN ai.biz_type='payment' THEN (SELECT pr.payment_no FROM payment_requests pr WHERE pr.id=ai.biz_id)
                  WHEN ai.biz_type='receiving' THEN (SELECT rv.receive_no FROM receivings rv WHERE rv.id=ai.biz_id)
                  WHEN ai.biz_type='requisition' THEN (SELECT rq.req_no FROM requisitions rq WHERE rq.id=ai.biz_id)
+                 WHEN ai.biz_type='inquiry_approval' THEN (SELECT iq.inq_no FROM inquiries iq WHERE iq.id=ai.biz_id)
             END as biz_no,
             CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.purpose FROM purchase_requests pr WHERE pr.id=ai.biz_id)
                  WHEN ai.biz_type='purchase_order' THEN (SELECT po.item_name FROM purchase_orders po WHERE po.id=ai.biz_id)
@@ -3663,6 +3765,22 @@ def api_orders():
         cnt = conn.execute("SELECT COUNT(*), COALESCE(SUM(quantity),0) FROM order_items WHERE order_id=?", (r['id'],)).fetchone()
         d['item_count'] = cnt[0] or 1
         d['total_qty'] = cnt[1] or r['quantity']
+        # V11.126: 订单采购进度(与申请列表V11.49同语义: 红=未联系厂家/黄=已下单在途/绿=已到货)
+        d['progress'] = 'none'
+        _ost = d.get('status')
+        if _ost in ('草稿', '待审批', '已驳回'):
+            d['progress'] = 'none'
+        elif _ost == '已入库' or conn.execute("SELECT 1 FROM receivings WHERE order_id=? AND status='已入库' LIMIT 1", (r['id'],)).fetchone():
+            d['progress'] = 'arrived'
+        else:
+            _its = conn.execute("SELECT status FROM order_items WHERE order_id=?", (r['id'],)).fetchall()
+            _sts = set((x['status'] or '未联系') for x in _its) if _its else set()
+            if _sts and _sts <= {'已到货'}:
+                d['progress'] = 'arrived'
+            elif _sts & {'已发货', '已联系'}:
+                d['progress'] = 'shipped'
+            else:
+                d['progress'] = 'contact'
         out.append(d)
     conn.close()
     return jsonify(out)
@@ -4250,11 +4368,27 @@ def inquiry_vendor_quote(token):
         _sum = sum(float(x.get('unit_price') or 0) * float(x.get('qty') or 1) for x in details)
         if _sum > 0:
             _final_price = _sum
+    # V11.126: 行明细里的 交付日期/质保时间/品牌 汇总去重后存汇总字段
+    # (详情页/比价表/订单备注直接显示; 旧版无details时保留原提交值)
+    def _uniq_vals(vals):
+        out = []
+        for v in vals:
+            t = str(v or '').strip()
+            if t and t not in out:
+                out.append(t)
+        return '、'.join(out)
+    if details:
+        _delivery = _uniq_vals(x.get('delivery') for x in details)
+        _warranty = _uniq_vals(x.get('warranty') for x in details)
+        _brand = _uniq_vals(x.get('brand') for x in details)
+    else:
+        _delivery = d.get('quote_delivery') or ''
+        _warranty = d.get('quote_warranty') or ''
+        _brand = d.get('quote_brand') or ''
     conn.execute("UPDATE inquiry_suppliers SET quote_price=?, quote_remark=?, quote_details=?, quote_delivery=?, quote_warranty=?, quote_brand=?, quote_time=? WHERE id=?",
                  (_final_price, (d.get('quote_remark') or '')[:200],
                   json.dumps(details, ensure_ascii=False) if details else '',
-                  (d.get('quote_delivery') or '')[:20], (d.get('quote_warranty') or '')[:20],
-                  (details[0].get('brand') if details and isinstance(details[0], dict) else '')[:50], now(), s['id']))
+                  _delivery[:60], _warranty[:60], _brand[:100], now(), s['id']))
     # V11.75: 三家报价完成 → 自动创建采购订单 + 发起钉钉定标审批
     try:
         total_count = conn.execute("SELECT COUNT(*) FROM inquiry_suppliers WHERE inquiry_id=?", (s['inquiry_id'],)).fetchone()[0]
@@ -4271,26 +4405,34 @@ def inquiry_vendor_quote(token):
                     cheapest = conn.execute("SELECT * FROM inquiry_suppliers WHERE inquiry_id=? AND quote_price>0 ORDER BY quote_price ASC LIMIT 1", (i['id'],)).fetchone()
                     total = float(cheapest['quote_price'] or 0) if cheapest else 0
                     remark = '询价单:%s 商家已报价完成，最低报价¥%.0f(%s)，请领导定标' % (i['inq_no'], total, cheapest['supplier_name'] if cheapest else '待定')
-                    conn.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,
-                        supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status,inquiry_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                        (no, i['req_id'], i['title'][:50], '', 1, '个', 0, total, 0, 0, total,
-                         cheapest['supplier_name'] if cheapest else '待定', i['created_by'], '后勤类', i['created_by'], 1, i['deadline'] or '', '货到付款',
-                         remark, 0, json.dumps([], ensure_ascii=False), '草稿', i['id'], 0, 0))
-                    oid = conn.execute("SELECT id FROM purchase_orders WHERE order_no=?", (no,)).fetchone()[0]
+                    # V11.126: 已存在草稿订单则复用(防驳回后重报产生重复草稿)
+                    _draft = conn.execute("SELECT id FROM purchase_orders WHERE inquiry_id=? AND status='草稿' ORDER BY id LIMIT 1", (i['id'],)).fetchone()
+                    if _draft:
+                        conn.execute("UPDATE purchase_orders SET supplier=?, total_amount=?, remark=? WHERE id=?",
+                                     (cheapest['supplier_name'] if cheapest else '待定', total, remark, _draft['id']))
+                    else:
+                        conn.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,
+                            supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status,inquiry_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            (no, i['req_id'], i['title'][:50], '', 1, '个', 0, total, 0, 0, total,
+                             cheapest['supplier_name'] if cheapest else '待定', i['created_by'], '后勤类', i['created_by'], 1, i['deadline'] or '', '货到付款',
+                             remark, 0, json.dumps([], ensure_ascii=False), '草稿', i['id']))
+                    if _draft:
+                        oid = _draft['id']
+                    else:
+                        oid = conn.execute("SELECT id FROM purchase_orders WHERE order_no=?", (no,)).fetchone()[0]
                     conn.execute("UPDATE inquiries SET status='定标审批中', updated_at=? WHERE id=?", (now(), i['id']))
                     conn.commit()
                     # V11.76: 发起钉钉询价审批(用新模板,领导在钉钉选供应商)
                     try:
                         c2 = db()
-                        c2.execute("INSERT INTO inquiry_approvals(inquiry_id, created_at) VALUES(?, ?)", (i['id'], now()))
-                        aid = c2.execute("SELECT last_insert_rowid()").fetchone()[0]
-                        # 创建approval_instances记录供dt_start_instance使用
-                        c2.execute("INSERT INTO approval_instances(biz_type, biz_id, level_no, role, approver, status) VALUES(?, ?, 1, '分管领导', 'xingguo', 'pending')", ('inquiry_approval', aid))
+                        c2.execute("INSERT INTO inquiry_approvals(inquiry_id, status, created_at) VALUES(?, '审批中', ?)", (i['id'], now()))
+                        # V11.126: biz_id 统一用询价单id(与dt_build_form/dt_biz_info/finish_approvals一致)
+                        c2.execute("INSERT INTO approval_instances(biz_type, biz_id, level_no, role, approver, status) VALUES(?, ?, 1, '分管领导', 'xingguo', 'pending')", ('inquiry_approval', i['id']))
                         c2.commit(); c2.close()
-                        # 发起钉钉审批
+                        # 发起钉钉审批(含飞书)
                         try:
-                            dt_start_instance('inquiry_approval', aid)
-                            print('[V11.76] 发起询价审批成功: %s, aid=%d' % (i['inq_no'], aid))
+                            start_instances('inquiry_approval', i['id'])
+                            print('[V11.76] 发起询价审批成功: %s' % i['inq_no'])
                         except Exception as e2:
                             print('[V11.76] 发起询价审批失败: %s' % e2)
                     except Exception as e2:
@@ -4331,20 +4473,30 @@ def api_inquiry_submit(iid):
     cheapest = conn.execute("SELECT * FROM inquiry_suppliers WHERE inquiry_id=? AND quote_price>0 ORDER BY quote_price ASC LIMIT 1", (iid,)).fetchone()
     total = float(cheapest['quote_price'] or 0) if cheapest else 0
     remark = '询价单:%s 商家已报价完成，最低报价¥%.0f(%s)，请领导定标' % (i['inq_no'], total, cheapest['supplier_name'] if cheapest else '待定')
-    conn.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,
-        supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status,inquiry_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (gen_no('CG', 'purchase_orders', 'order_no', conn), i['req_id'], i['title'][:50], '', 1, '个', 0, total, 0, 0, total,
-         cheapest['supplier_name'] if cheapest else '待定', i['created_by'], '后勤类', i['created_by'], 1, i['deadline'] or '', '货到付款',
-         remark, 0, json.dumps([], ensure_ascii=False), '草稿', i['id']))
-    # 创建询价审批记录
-    aid = conn.execute("SELECT id FROM inquiries WHERE id=?", (iid,)).fetchone()[0]
+    # V11.126: 已存在草稿订单(如驳回后重新提交)则复用更新, 不重复建单
+    _draft = conn.execute("SELECT id FROM purchase_orders WHERE inquiry_id=? AND status='草稿' ORDER BY id LIMIT 1", (iid,)).fetchone()
+    if _draft:
+        conn.execute("UPDATE purchase_orders SET supplier=?, total_amount=?, remark=? WHERE id=?",
+                     (cheapest['supplier_name'] if cheapest else '待定', total, remark, _draft['id']))
+    else:
+        conn.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,
+            supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status,inquiry_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (gen_no('CG', 'purchase_orders', 'order_no', conn), i['req_id'], i['title'][:50], '', 1, '个', 0, total, 0, 0, total,
+             cheapest['supplier_name'] if cheapest else '待定', i['created_by'], '后勤类', i['created_by'], 1, i['deadline'] or '', '货到付款',
+             remark, 0, json.dumps([], ensure_ascii=False), '草稿', i['id']))
+    # 创建询价审批记录 (biz_id 统一=询价单id)
     conn.execute("INSERT INTO inquiry_approvals(inquiry_id, status, created_at) VALUES(?, '审批中', ?)", (iid, now()))
-    conn.execute("INSERT INTO approval_instances(biz_type, biz_id, level_no, role, approver, status) VALUES(?, ?, 1, '分管领导', 'xingguo', 'pending')", ('inquiry_approval', aid))
+    conn.execute("INSERT INTO approval_instances(biz_type, biz_id, level_no, role, approver, status) VALUES(?, ?, 1, '分管领导', 'xingguo', 'pending')", ('inquiry_approval', iid))
     conn.execute("UPDATE inquiries SET status='定标审批中', updated_at=? WHERE id=?", (now(), iid))
     conn.commit()
     conn.close()
+    # V11.126: 提交后立即发起钉钉(及飞书)审批实例 — 修复"提交后钉钉没反应"
+    try:
+        start_instances('inquiry_approval', iid)
+    except Exception as e:
+        log(session['user_name'], '询价审批发起异常', str(e))
     log(session['user_name'], '提交询价审批', '%s 已提交定标审批' % i['inq_no'])
-    return jsonify({'success': True, 'order_no': gen_no('CG', 'purchase_orders', 'order_no', db())})
+    return jsonify({'success': True, 'inq_no': i['inq_no']})
 
 @app.route('/api/inquiries/<int:iid>/select', methods=['POST'])
 @login_required
@@ -4494,7 +4646,8 @@ def api_inquiry_export(iid):
     for col in range(1, 11):
         ws.cell(row, col).fill = head_fill; ws.cell(row, col).border = border
     row += 1
-    # V11.52: 逐行三家对比 — 每家3列(单价/总价/备注), 备注独立列跟商家走
+    # V11.52: 逐行三家对比 — 每家一列组(单价/总价/品牌/交付/质保/备注), 备注独立列跟商家走
+    # V11.126: 增加 交付日期/质保时间 逐项对比列(商家按行报价的交付/质保直接进Excel)
     quoted = [s for s in sups if s['quote_price'] and s['quote_price'] > 0]
     # 解析每家行明细(商家按申请明细顺序报价)
     sup_details = []
@@ -4504,11 +4657,12 @@ def api_inquiry_export(iid):
         except Exception:
             sup_details.append(None)
     n_sup = len(sups)
-    # 表头: 序号/物料/数量/规格 | 每家4列(单价/总价/品牌/备注) | 
+    # 表头: 序号/物料/数量/规格 | 每家6列(单价/总价/品牌/交付/质保/备注)
     sup_head = ['序号', '物料名称', '数量', '规格型号']
     for s in sups:
-        sup_head += [f"{s['supplier_name']} 单价", f"{s['supplier_name']} 总价", f"{s['supplier_name']} 品牌", f"{s['supplier_name']} 备注"]
-    col_count = 4 + n_sup * 4
+        sup_head += [f"{s['supplier_name']} 单价", f"{s['supplier_name']} 总价", f"{s['supplier_name']} 品牌",
+                     f"{s['supplier_name']} 交付", f"{s['supplier_name']} 质保", f"{s['supplier_name']} 备注"]
+    col_count = 4 + n_sup * 6
     for ci, h in enumerate(sup_head, 1):
         c = ws.cell(row, ci, h); c.font = head_font; c.fill = head_fill; c.border = border
         c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
@@ -4537,26 +4691,28 @@ def api_inquiry_export(iid):
                     unit_p = float(d_i.get('unit_price') or 0)
                     total_p = unit_p * qty
                 remark = d_i.get('remark') or ''
-            # 获取品牌
-            brand = ''
+            # 获取品牌/交付/质保
+            brand = ''; delivery = ''; warranty = ''
             if det and idx - 1 < len(det):
                 brand = det[idx - 1].get('brand') or ''
+                delivery = det[idx - 1].get('delivery') or ''
+                warranty = det[idx - 1].get('warranty') or ''
             if unit_p is not None:
-                vals += [round(unit_p, 2), round(total_p, 2), brand, remark]
+                vals += [round(unit_p, 2), round(total_p, 2), brand, delivery, warranty, remark]
                 total_per_sup[si] += total_p
             else:
-                vals += ['', '', brand, remark]
+                vals += ['', '', brand, delivery, warranty, remark]
             row_prices.append((unit_p, total_p))
         # 最低单价标红
         unit_prices = [p[0] for p in row_prices if p[0] is not None]
         min_unit = min(unit_prices) if unit_prices else None
         for ci, v in enumerate(vals, 1):
             c = ws.cell(row, ci, v); c.border = border
-            c.alignment = Alignment(horizontal='center' if ci <= 4 or (ci - 5) % 4 != 0 else 'left', vertical='center', wrap_text=True)
+            c.alignment = Alignment(horizontal='center' if ci <= 4 or (ci - 5) % 6 != 0 else 'left', vertical='center', wrap_text=True)
             # 单价列: 最低标红加粗（更明显）
             if unit_prices and min_unit is not None:
-                k = (ci - 5) // 4
-                if 0 <= k < n_sup and (ci - 5) % 4 == 0:
+                k = (ci - 5) // 6
+                if 0 <= k < n_sup and (ci - 5) % 6 == 0:
                     if row_prices[k][0] is not None and abs(row_prices[k][0] - min_unit) < 0.001:
                         c.font = Font(name='微软雅黑', size=11, bold=True, color='C00000')
                         c.fill = PatternFill('solid', fgColor='FFF2CC')
@@ -4571,21 +4727,20 @@ def api_inquiry_export(iid):
         ws.cell(row, cc).border = border
     total_min = None
     for si, t in enumerate(total_per_sup):
-        ws.cell(row, 5 + si * 4, '').border = border
-        ws.cell(row, 6 + si * 4, '').border = border
-        c = ws.cell(row, 7 + si * 4, round(t, 2))
+        # V11.126: 总价落位修正到 总价列(6+si*6)
+        ws.cell(row, 5 + si * 6, '').border = border
+        c = ws.cell(row, 6 + si * 6, round(t, 2))
         c.border = border; c.font = label_font
         c.alignment = Alignment(horizontal='center', vertical='center')
         if t > 0 and (total_min is None or t < total_min):
             total_min = t
+        for cc in range(7 + si * 6, 11 + si * 6):
+            ws.cell(row, cc).border = border
     for si, t in enumerate(total_per_sup):
         if t > 0 and total_min is not None and abs(t - total_min) < 0.001:
-            ws.cell(row, 7 + si * 4).font = min_font_s
-    # 备注格空
-    for si in range(n_sup):
-        ws.cell(row, 9 + si * 4, '').border = border
-    ws.cell(row, 4 + n_sup * 4 - 1, '★=该项最低价').font = note_font
-    ws.cell(row, 4 + n_sup * 4 - 1).border = border
+            ws.cell(row, 6 + si * 6).font = min_font_s
+    ws.cell(row, 4 + n_sup * 6 - 1, '★=该项最低价').font = note_font
+    ws.cell(row, 4 + n_sup * 6 - 1).border = border
     ws.row_dimensions[row].height = 22
     row += 1
     if not sups:
