@@ -666,8 +666,9 @@ def search_brand_info(supplier_name, category):
         'aa': {'优点': '测试品牌', '缺点': '待验证'},
         '测试a': {'优点': '测试用', '缺点': '仅用于测试'},
     }
-    # 匹配供应商名称
-    for brand, info in brand_knowledge.items():
+    # 匹配供应商名称（优先匹配更长的品牌名）
+    # 按品牌名长度降序排序，避免单字母'A'、'B'误匹配
+    for brand, info in sorted(brand_knowledge.items(), key=lambda x: len(x[0]), reverse=True):
         if brand in supplier_name or supplier_name in brand:
             return info
     # 按行业类别推荐
