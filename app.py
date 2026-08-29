@@ -6822,7 +6822,9 @@ def api_contract_generate():
                 (r'收到发票后\s+日内支付合同总价的\s+%', '收到发票后30日内支付合同总价的90%'),
                 (r'质保期满后若无质量纠纷，\s+日内支付剩余价款', '质保期满后若无质量纠纷，30日内支付剩余价款'),
                 (r'延迟交付货物超过\s+天', '延迟交付货物超过15天'),
+                (r'延迟交货超过\s+天', '延迟交货超过15天'),
                 (r'需提前\s+天通知对方', '需提前15天通知对方'),
+                (r'合同总额的\s+%', '合同总额的30%'),
             ]
             for pat, repx in reps:
                 if re.search(pat, t):
@@ -6851,13 +6853,17 @@ def api_contract_generate():
             t = _apply_ct(t)
             if t != para.text:
                 para.text = t
-        # 2) 表格: 先处理所有单元格段落(合计金额大写/税金/税率/收款账户等), 再填明细
+        # 2) 表格: 先处理所有单元格段落(占位符替换 + 合计金额大写/税金/税率/收款账户等), 再填明细
         for table in doc.tables:
             for _row in table.rows:
                 for _cell in _row.cells:
                     for _p in _cell.paragraphs:
                         if _p.text.strip():
-                            _nt = _apply_ct(_p.text)
+                            _nt = _p.text
+                            for _k, _v in mapping.items():
+                                if _k in _nt:
+                                    _nt = _nt.replace(_k, _v)
+                            _nt = _apply_ct(_nt)
                             if _nt != _p.text:
                                 _p.text = _nt
             rows = table.rows
