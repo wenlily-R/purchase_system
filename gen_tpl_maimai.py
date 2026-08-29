@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""生成正式买卖合同模板 tpl_maimai.docx（参照已签合同照片结构）
+"""生成正式买卖合同模板 tpl_maimai.docx（话术逐字对齐已签合同照片 HQZC-CLCG-067-2026）
 甲方固定: 河曲县正成洗选煤有限责任公司
-乙方: {乙方名称}等占位符, 生成时按订单供应商自动填入
+乙方: 占位符 {乙方名称} 等, 生成时按订单供应商自动填入
 明细: 表格自动填充(order_items 逐行)
 """
 from docx import Document
-from docx.shared import Pt, Cm, RGBColor
+from docx.shared import Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml.ns import qn
@@ -18,7 +18,7 @@ OUT = os.path.join(BASE, 'uploads', 'tpl_maimai.docx')
 
 doc = Document()
 
-# 默认字体: 仿宋/宋体, 小四
+# 默认字体: 仿宋, 小四
 style = doc.styles['Normal']
 style.font.name = '仿宋'
 style.font.size = Pt(12)
@@ -74,16 +74,12 @@ r._element.rPr.rFonts.set(qn('w:eastAsia'), '仿宋')
 doc.add_paragraph()
 
 # ============ 双方信息 ============
-para('甲方（买方）：河曲县正成洗选煤有限责任公司', bold=False, size=12)
-para('地址：山西省忻州市河曲县    联系人：采购部    电话：', size=12)
-para('乙方（卖方）：{乙方名称}', size=12)
-para('地址：{乙方地址}    联系人：{乙方联系人}    电话：{乙方电话}', size=12)
-para('开户行：{乙方开户行}    账号：{乙方账号}', size=12)
+para('甲方：河曲县正成洗选煤有限责任公司', size=12)
+para('乙方：{乙方名称}', size=12)
 doc.add_paragraph()
 
-# 前言
-para('根据《中华人民共和国民法典》及相关法律法规的规定，甲乙双方本着平等自愿、协商一致的原则，'
-     '就甲方向乙方采购标的物事宜达成如下协议，以资共同遵守。', size=12)
+# 前言（照片原文）
+para('甲乙双方秉承自愿、公平、诚实守信的原则，根据《中华人民共和国民法典》及相关法律法规的规定，经平等协商签订本合同明确双方权利义务，以资共同信守。', size=12)
 doc.add_paragraph()
 
 # ============ 一、标的、规格、数量、价款 ============
@@ -91,19 +87,16 @@ heading('一、标的、规格、数量、价款')
 table = doc.add_table(rows=3, cols=7)
 table.style = 'Table Grid'
 table.alignment = WD_TABLE_ALIGNMENT.CENTER
-headers = ['标的物', '规格型号', '计量单位', '数量', '单价（元）', '金额（元）', '备注']
+headers = ['标的物', '规格型号', '计量单位', '数量', '单价', '金额', '备注']
 for j, h in enumerate(headers):
     set_cell_text(table.rows[0].cells[j], h, bold=True)
-# 第二行: 空明细行(代码自动填)
 for j in range(7):
     set_cell_text(table.rows[1].cells[j], '')
-# 第三行: 合计行
 set_cell_text(table.rows[2].cells[0], '合计', bold=True)
 for j in range(1, 5):
     set_cell_text(table.rows[2].cells[j], '')
-set_cell_text(table.rows[2].cells[5], '合计金额：¥    元（人民币大写金额：     ）', bold=True)
+set_cell_text(table.rows[2].cells[5], '合计金额：¥    元（大写金额：人民币     ）', bold=True)
 set_cell_text(table.rows[2].cells[6], '')
-# 列宽
 widths = [Cm(3.2), Cm(2.8), Cm(1.8), Cm(1.4), Cm(2.2), Cm(2.6), Cm(2.0)]
 for row in table.rows:
     for j, w in enumerate(widths):
@@ -113,71 +106,70 @@ for row in table.rows:
         set_cell_border(cell)
 doc.add_paragraph()
 
-# 合计金额说明(段落, _apply_ct 自动填税金/不含税/大写)
-para('合计金额：¥    元（人民币大写金额：     ）。', size=12)
+# 合计金额说明（_apply_ct 自动填税金/不含税/大写）
+para('合计金额：¥    元（大写金额：人民币     ）。', size=12)
 doc.add_paragraph()
 
 # ============ 二、质量标准 ============
 heading('二、质量标准')
-para('标的物必须符合国家现行标准及行业标准、企业标准（按国标执行）。乙方提供的标的物应符合双方确认的规格、技术参数及质量要求。')
+para('标的物质量标准：国标。标的物应完全符合国家、行业及企业的现行规范标准或执行项目技术协议。')
 doc.add_paragraph()
 
 # ============ 三、包装 ============
 heading('三、包装')
-para('乙方应采用国家或行业标准包装，适应长途运输，防潮、防震、防碰撞，确保标的物完好运抵甲方指定地点。包装费用由乙方承担，包装物不回收。')
+para('乙方应采用国家或行业标准措施进行包装，使包装完全适应于远距离运输，保证货物安全。')
 doc.add_paragraph()
 
 # ============ 四、交付 ============
 heading('四、交付')
-para('1. 乙方应在合同签订后  日内交付，将标的物运送至甲方指定地点，并负责安装调试至正常运行。')
-para('2. 乙方应随货提供质量检验合格证书、出厂检验报告、使用说明书及技术资料等。')
-para('3. 合同价款包含设计、制造、运输、装卸、安装、调试及售后服务等全部费用。')
+para('1、乙方应于合同签订后  日内交付至甲方指定地点。')
+para('2、乙方应同时向甲方提供标的物的产品质量检验合格证书、出厂检验报告、产品使用说明书、技术资料及甲方要求提供的其他证明。')
+para('3、本合同价格已包含设计、制造、运输、卸货搬运、安装、调试、售后服务等所有费用，若甲方对数量进行调整，单价按本合同单价执行，并按甲方确认的实际数量进行结算。')
 doc.add_paragraph()
 
 # ============ 五、运输 ============
 heading('五、运输')
-para('1. 乙方负责将标的物运输至甲方指定地点。')
-para('2. 运输方式：汽运。')
-para('3. 交付前标的物的费用与风险由乙方承担。')
+para('1、乙方负责运输至甲方指定地点。')
+para('2、运输方式：汽运。')
+para('3、标的物交付前的一切费用及风险由乙方负责。')
 doc.add_paragraph()
 
 # ============ 六、验收 ============
 heading('六、验收')
-para('1. 标的物运抵甲方指定地点后  日内由甲方组织验收。')
-para('2. 验收合格的，甲方签署验收单；验收不合格的，乙方应在  日内更换或补足。')
+para('标的物运抵甲方指定地点后  日内，甲方应对货物的外观质量、数量、规格型号进行验收，验收合格后由甲方出具签收单。如验收不合格，乙方应在  日内更换、补发。')
 doc.add_paragraph()
 
 # ============ 七、质量保证 ============
 heading('七、质量保证')
-para('标的物质保期为  年，自验收合格之日起计算。质保期内出现质量问题，乙方负责免费更换、维修；因乙方原因造成甲方损失的，乙方应承担赔偿责任。')
+para('所有产品质保期为  年，自甲方验收合格之日起开始计算，质保期内乙方应负责免费更换。')
 doc.add_paragraph()
 
 # ============ 八、结算 ============
 heading('八、结算')
-para('1. 乙方应于  日内向甲方提供全额增值税专用发票（税率13%）。')
-para('2. 甲方自收到发票后  日内支付合同总价的  %，乙方安排发货。')
-para('3. 收款账户信息：')
-para('    收款账户名称：')
-para('    收款账号：')
-para('    收款银行：')
-para('    银行行号：')
+para('1、签订合同后  日内，乙方向甲方提供全额13%增值税专用发票。')
+para('2、甲方自收到发票后  日内支付合同总价的  %，乙方安排发货。')
+para('3、收款账户信息')
+para('收款账户名称：')
+para('收款账号：')
+para('收款银行：')
+para('银行行号：')
 doc.add_paragraph()
 
 # ============ 九、违约责任 ============
 heading('九、违约责任')
-para('1. 乙方迟延交货应承担合同总额的  %的违约金。')
-para('2. 标的物质量、规格、数量等不符合约定要求的，乙方除应按约定期限及时更换、补发外，还应承担上述迟延交货的违约责任。')
-para('3. 因乙方违约造成甲方损失的，违约金不足以弥补甲方全部损失时，乙方应承担继续赔偿责任。')
-para('4. 乙方在货物装卸、运输、安装、调试等过程中发生的一切安全事故及第三人人身或财产损失的，均由其自行负责，与甲方无关。')
-para('5. 甲方因维护自身权利支出的包括但不限于诉讼费、律师费、评估费、鉴定费、保全费等由乙方承担。')
+para('1、乙方迟延交货应承担合同额的  %的违约金。')
+para('2、标的物质量、规格、数量等不符合约定要求，乙方除应按约定期限及时更换、补发，同时应承担上述迟延交货的违约责任。')
+para('3、因乙方违约造成甲方损失的，违约金不足以弥补甲方全部损失时，乙方应承担继续赔偿的责任。')
+para('4、乙方在货物装卸、运输、安装、调试等过程中发生的一切安全事故及第三人的人身或财产损失的，均由其自行负责，与甲方无关。')
+para('5、甲方因维护自身权利支出的包括但不限于诉讼费、律师费、评估费、鉴定费、保全费等由乙方承担。')
 doc.add_paragraph()
 
 # ============ 十、合同解除 ============
 heading('十、合同解除')
-para('1. 乙方延迟交货超过  天，甲方有权单方面解除合同。')
-para('2. 乙方在质量保证期内，拒不履行"三包"义务，甲方有权单方面解除合同。')
-para('3. 乙方更换标的物后仍有瑕疵，甲方有权单方面解除合同。')
-para('4. 其他致使合同目的不能实现的情况，任意一方可单方面解除合同，但需提前  天通知对方。')
+para('1、乙方延迟交付货物超过  天，甲方有权单方面解除合同。')
+para('2、乙方在质量保证期内，拒不履行"三包"义务，甲方有权单方面解除合同。')
+para('3、乙方更换标的物后仍有瑕疵，甲方有权单方面解除合同。')
+para('4、其他致使合同目的不能实现的情况，任意一方可单方面解除合同，但需提前  天通知对方。')
 doc.add_paragraph()
 
 # ============ 十一、知识产权 ============
@@ -192,23 +184,22 @@ doc.add_paragraph()
 
 # ============ 十三、其他 ============
 heading('十三、其他')
-para('1. 本合同自双方法定代表人或委托代理人签字并加盖单位印章之日起生效，若非真实签字、签章，本合同无效。')
-para('2. 本合同未尽事宜，可以另行签订补充协议，补充协议与本合同具有同等法律效力。')
-para('3. 本合同一式肆份，甲方执叁份，乙方执壹份，各份具有同等法律效力。')
+para('1、本合同自双方法定代表人或委托代理人签字并加盖单位印章之日起生效，若非真实签字、签章，本合同无效。（若此合同为法定代表人授权的委托代理人，必须将授权书附后，方可签订合同）')
+para('2、本合同未尽事宜，可以另行签订补充协议，补充协议与本合同具有同等法律效力。')
+para('3、本合同一式肆份，甲方执叁份，乙方执壹份，各份具有同等法律效力。')
 doc.add_paragraph()
 
-# ============ 落款 ============
-# 双栏: 用表格 2 列
+# ============ 落款（照片: 甲方(签字并盖章)下方直接日期, 无"日期:"字样） ============
 sign = doc.add_table(rows=3, cols=2)
 for row in sign.rows:
     for cell in row.cells:
         cell.text = ''
 set_cell_text(sign.rows[0].cells[0], '甲方（签字并盖章）：', bold=False, center=False)
 set_cell_text(sign.rows[0].cells[1], '乙方（签字并盖章）：', bold=False, center=False)
-set_cell_text(sign.rows[1].cells[0], '（河曲县正成洗选煤有限责任公司）', center=False, size=10)
-set_cell_text(sign.rows[1].cells[1], '（{乙方名称}）', center=False, size=10)
-set_cell_text(sign.rows[2].cells[0], '日期：    年    月    日', center=False)
-set_cell_text(sign.rows[2].cells[1], '日期：    年    月    日', center=False)
+set_cell_text(sign.rows[1].cells[0], '    年    月    日', center=False)
+set_cell_text(sign.rows[1].cells[1], '    年    月    日', center=False)
+set_cell_text(sign.rows[2].cells[0], '', center=False)
+set_cell_text(sign.rows[2].cells[1], '', center=False)
 for row in sign.rows:
     for cell in row.cells:
         cell.width = Cm(8)
