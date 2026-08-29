@@ -1638,29 +1638,12 @@ async function exportInquiry(iid){
   alert('✅ 询价单Excel已导出，请查看下载文件');
 }
 async function selectInquirySupplier(iid,sid){
-  // V11.143: 结算方式明确弹窗选择(现结/月结), 不再用晦涩的confirm确定/取消
-  const amt=parseFloat(id('inqTotalAmt')?.dataset?.val||'0');
-  showDetail('💳 选择结算方式',`
-    <div style="font-size:11px;margin-bottom:10px">请选择本次采购的结算方式：</div>
-    <div style="display:flex;gap:8px">
-      <div style="flex:1;border:2px solid var(--s);border-radius:8px;padding:12px;text-align:center;cursor:pointer;background:#f0faf5" onclick="doSelectSettle(${iid},${sid},'现结')">
-        <div style="font-size:16px">⚡</div><div style="font-size:12px;font-weight:bold;color:var(--s)">现结</div>
-        <div style="font-size:9px;color:#888;margin-top:4px">一单一结<br>生成合同后立即付款</div>
-      </div>
-      <div style="flex:1;border:2px solid #e67e22;border-radius:8px;padding:12px;text-align:center;cursor:pointer;background:#fef9f0" onclick="doSelectSettle(${iid},${sid},'月结')">
-        <div style="font-size:16px">📅</div><div style="font-size:12px;font-weight:bold;color:#e67e22">月结</div>
-        <div style="font-size:9px;color:#888;margin-top:4px">月底按厂家汇总<br>统一生成月度合同</div>
-      </div>
-    </div>`,
-    `<button class="btn btn-o" onclick="closeMod()">取消</button>`);
-}
-async function doSelectSettle(iid,sid,settle){
-  if(!confirm('确定选中该供应商并生成订单？（结算方式：'+settle+'）'))return;
-  const r=await api(`/inquiries/${iid}/select`,{method:'POST',body:JSON.stringify({supplier_id:sid,settle_type:settle})});
-  closeMod();
+  // V11.144: 领导只负责选供应商(结算方式由采购员在生成合同时选择)
+  if(!confirm('确定选中该供应商？订单生效后由采购员在【生成采购合同】时选择结算方式(现结/月结)'))return;
+  const r=await api(`/inquiries/${iid}/select`,{method:'POST',body:JSON.stringify({supplier_id:sid,settle_type:'现结'})});
   if(r.success){
-    const msg = `✅ ${r.order_no}（¥${(r.total_amount||0).toFixed(0)}）已生效${settle==='月结'?'，月底生成月结合同':''}`;
-    alert(msg);loadInquiries();loadOrders();
+    const msg = `✅ ${r.order_no}（¥${(r.total_amount||0).toFixed(0)}）已生效，可去生成采购合同`;
+    alert(msg);closeMod();loadInquiries();loadOrders();
   }
   else alert(r.error||'操作失败');
 }
@@ -1737,11 +1720,27 @@ async function downloadOrder(oid){
   document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),3000);
 }
-// 需求44: 自动生成采购合同
+// 需求44: 自动生成采购合同 — V11.144: 生成前由采购员选择结算方式(现结/月结)
 async function genContract(oid){
-  if(!confirm('调用默认合同模板自动生成采购合同并进入合同审批？'))return;
-  const r=await api('/contracts/generate',{method:'POST',body:JSON.stringify({order_id:oid})});
-  if(r.success){alert(`✅ 合同 ${r.contract_no} 已生成，可在 合同管理 查看并审批`);loadOrders();loadContracts()}
+  showDetail('📄 生成采购合同',`
+    <div style="font-size:11px;margin-bottom:10px">请选择本次合同的结算方式：</div>
+    <div style="display:flex;gap:8px">
+      <div style="flex:1;border:2px solid var(--s);border-radius:8px;padding:14px;text-align:center;cursor:pointer;background:#f0faf5" onclick="doGenContract(${oid},'现结')">
+        <div style="font-size:16px">⚡</div><div style="font-size:12px;font-weight:bold;color:var(--s)">现结</div>
+        <div style="font-size:9px;color:#888;margin-top:4px">一单一结<br>生成合同后立即付款</div>
+      </div>
+      <div style="flex:1;border:2px solid #e67e22;border-radius:8px;padding:14px;text-align:center;cursor:pointer;background:#fef9f0" onclick="doGenContract(${oid},'月结')">
+        <div style="font-size:16px">📅</div><div style="font-size:12px;font-weight:bold;color:#e67e22">月结</div>
+        <div style="font-size:9px;color:#888;margin-top:4px">月底按厂家汇总<br>统一生成月度合同</div>
+      </div>
+    </div>`,
+    `<button class="btn btn-o" onclick="closeMod()">取消</button>`);
+}
+async function doGenContract(oid,settle){
+  closeMod();
+  if(!confirm('调用默认合同模板生成采购合同并进入合同审批？（结算方式：'+settle+'）'))return;
+  const r=await api('/contracts/generate',{method:'POST',body:JSON.stringify({order_id:oid,settle_type:settle})});
+  if(r.success){alert(`✅ 合同 ${r.contract_no} 已生成（${settle}），可在 合同管理 查看并审批`);loadOrders();loadContracts()}
   else alert(r.error||'生成失败');
 }
 // 作废通用

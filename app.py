@@ -6789,9 +6789,18 @@ def api_contract_generate():
     ccontact = cfg_get('company_contact', '采购部')
     cphone = cfg_get('company_phone', '')
     cno = gen_contract_no(conn)
+    # V11.144: 结算方式由采购员在生成合同时选择(现结/月结), 覆盖订单默认值
+    _settle_choice = (d.get('settle_type') or '').strip()
+    if _settle_choice in ('现结', '月结'):
+        conn.execute("UPDATE purchase_orders SET settle_type=?, updated_at=? WHERE id=?", (_settle_choice, now(), oid))
+        conn.commit()
     tm = o['trade_mode'] or '货到付款'
     # V11.7: 结算方式跟随订单交易模式 — 自定义模式(如 预付30%)直接带入, 内置两种保留详细说明
-    if tm == '货到付款':
+    if _settle_choice == '现结':
+        settle = '现结：一单一结，验收合格后立即付款'
+    elif _settle_choice == '月结':
+        settle = '月结：月底按厂家汇总对账，统一生成月度合同后付款'
+    elif tm == '货到付款':
         settle = '货到付款：到货验收入库后，月度对账、合并开票、挂账后付款'
     elif tm == '先款后货':
         settle = '先款后货：合同签订后预付货款，供应商收款后发货，到货入库后挂账核销'
@@ -6871,6 +6880,10 @@ def api_contract_generate():
                 t = t.replace('收款账号：', '收款账号：' + (sup['account'] if sup and sup['account'] else ''))
             if '收款银行：' in t:
                 t = t.replace('收款银行：', '收款银行：' + (sup['bank'] if sup and sup['bank'] else ''))
+            # V11.144: 结算方式注入 — 付款条款段(甲方自收到发票后...)前插入现结/月结说明
+            if ('甲方自收到发票后' in t) and _settle_choice in ('现结', '月结'):
+                _sline = '现结：一单一结，验收合格后立即付款；' if _settle_choice == '现结' else '月结：月底按厂家汇总对账，统一生成月度合同后付款；'
+                t = t.replace('甲方自收到发票后', _sline + '甲方自收到发票后')
             elif re.search(r'20\d\d年\s*\d+\s*月\s*\d+日', t):
                 t = re.sub(r'20\d\d年\s*\d+\s*月\s*\d+日', today_s, t)
             return t
