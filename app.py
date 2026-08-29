@@ -6082,6 +6082,44 @@ def api_public_url():
     except Exception:
         return jsonify({'url': ''})
 
+
+@app.route('/api/notify-address-change', methods=['POST'])
+def api_notify_address_change():
+    """V11.146: 隧道地址变化通知 — tunnel_guard换地址后调用, 飞书推送新地址给用户
+    (免费隧道地址会轮换, 旧链接失效; 主动推新地址, 用户不用等人工告知)"""
+    try:
+        f = os.path.join(BASE, 'data', 'public_url.txt')
+        url = ''
+        try:
+            url = open(f).read().strip()
+        except Exception:
+            pass
+        if not url:
+            return jsonify({'success': False, 'error': '无地址'})
+        # 钉钉推送为主(工作通知, 已验证可用)
+        _ok = False
+        try:
+            if dingtalk_enabled():
+                _uids = [u['dingtalk_userid'] for u in db().execute(
+                    "SELECT dingtalk_userid FROM users WHERE dingtalk_userid IS NOT NULL AND dingtalk_userid!=''").fetchall()]
+                if _uids:
+                    _ok = dt_send_todo(_uids, '🔗 系统访问地址已更新', f'免费隧道地址已变更，旧链接失效。\n新地址: {url}\n请复制到浏览器打开。',
+                                       biz_type='', biz_id=0, push_type='alert')
+        except Exception:
+            _ok = False
+        # 飞书补充推送(失败不阻塞)
+        try:
+            fs_send('ou_8dff5598fa8288769546f51c113b8288',
+                    f'🔗 **系统访问地址已更新**\n\n免费隧道地址发生了变更，旧链接已失效。\n\n请使用新地址访问：\n**{url}**\n\n（若无法打开，回复我获取最新地址）',
+                    color='blue')
+        except Exception:
+            pass
+        log('系统', '地址变更通知', f'新地址 {url} 钉钉推送{"成功" if _ok else "失败"}')
+        return jsonify({'success': True, 'pushed': _ok})
+    except Exception as e:
+        log('系统', '地址变更通知异常', str(e)[:120])
+        return jsonify({'success': False, 'error': str(e)[:100]})
+
 # ============================================================
 # V4.3 ── 飞书统一认证 (OAuth 单点登录, 网页应用点开即用)
 # ============================================================

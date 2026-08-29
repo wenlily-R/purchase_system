@@ -71,6 +71,15 @@ def main():
             with open(PUB, 'w') as f:
                 f.write(url + '\n')
             log(f'✅ {label}: {url} (公网已验证)')
+            # V11.146: 地址变更 → 通知系统推送飞书/钉钉新地址(用户不用等人工告知)
+            try:
+                req = urllib.request.Request('http://127.0.0.1:5899/api/notify-address-change',
+                                             method='POST', data=b'{}',
+                                             headers={'Content-Type': 'application/json'})
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    log(f'地址变更通知: HTTP {r.status}')
+            except Exception as e:
+                log(f'地址变更通知失败: {e}')
             # 持续健康检查: 每30秒验证一次, 连续2次失败 → 杀进程强制重连
             fail_cnt = 0
             while proc.poll() is None:

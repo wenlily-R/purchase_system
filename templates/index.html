@@ -3366,6 +3366,25 @@ async function fillSupSelects(){
 }
 
 (async function(){
+  // V11.146: 地址失效自动恢复 — 旧隧道地址失效时, 自动从后端获取最新地址并跳转
+  // (免费隧道地址会轮换, 旧链接打不开时用户不用手动找新链接)
+  async function tryCurrent(){
+    try{
+      const r=await fetch('/api/public-url',{credentials:'include'});
+      if(r.ok){
+        const j=await r.json();
+        if(j&&j.url&&j.url!==location.origin){
+          const now=new URL(j.url);
+          if(now.hostname!==location.hostname){
+            // 当前地址已失效 → 跳转最新地址(保留登录态: 后端同一会话)
+            location.href=j.url;
+            return true;
+          }
+        }
+      }
+    }catch(e){}
+    return false;
+  }
   // V11.139: /me 失败自动重试(服务重启/隧道瞬断时避免误登出) — 5次重试, 间隔2-5秒
   // 免费隧道断线通常10-30秒恢复, 重试窗口拉长, 期间不跳登录页
   let r=null;
@@ -3376,7 +3395,8 @@ async function fillSupSelects(){
   }
   if(r){ME=r;showApp();initApp()}
   else{
-    // V11.139: 最后再补一次兜底(带toast提示), 确实连不上才显示登录页
+    // V11.146: /me 全失败 → 先尝试自动跳转最新地址(可能是旧地址失效), 跳转成功则不再显示登录页
+    if(await tryCurrent())return;
     try{r=await api('/me');if(r){ME=r;showApp();initApp();return}}catch(e){}
     showLogin();
   }
