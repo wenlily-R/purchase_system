@@ -638,6 +638,18 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
 const API='/api'; let ME={};
 // V11.55: 防重复提交锁 — 提交类请求(POST/无noDup标记)1.5秒内只发一次, 杜绝"点一下没反应多点几下建了好几张单"
 const __dupGuard=new Map();
+// V11.134: 全局按钮即时反馈 — 请求发出瞬间提示"处理中", 返回后提示完成/失败
+// (解决: 隧道慢时点击后无任何反馈, 用户以为按钮不灵敏反复点)
+let __apiPending=0;
+function __apiFeed(method){
+  if(method==='GET')return;  // 查询类不打扰
+  __apiPending++;
+  toast('⏳ 处理中...');
+}
+function __apiDone(){
+  if(__apiPending>0)__apiPending--;
+  // 不主动隐藏 toast, 由调用方成功/失败提示接管
+}
 async function api(url,opts={}){
   const method=(opts.method||'GET').toUpperCase();
   if(method!=='GET'&&!opts.noDup){
@@ -647,9 +659,11 @@ async function api(url,opts={}){
     if(now-last<1500){return {dup:true,success:true,message:'操作已提交'}}  // 重复点击 → 静默按成功处理, 不重复创建
     __dupGuard.set(key,now);
   }
+  __apiFeed(method);
   try{
     console.log('[DEBUG] api fetch:', API+url, opts.method||'GET');
     const r=await fetch(API+url,{headers:{'Content-Type':'application/json'},...opts,credentials:'include'});
+    __apiDone();
     console.log('[DEBUG] api response status:', r.status);
     // V11.30: 只有真正的 401(会话失效)才跳登录页; 网络错误/服务端HTML错误页不跳(避免误登出)
     if(r.status==401){console.log('[DEBUG] 401, showLogin');showLogin();throw new Error('login')}
@@ -659,7 +673,7 @@ async function api(url,opts={}){
       showLogin();throw new Error('not-json')
     }
     return r.json()
-  }catch(e){throw e}
+  }catch(e){__apiDone();throw e}
 }
 function id(s){return document.getElementById(s)}
 // V11.55: 轻提示(toast) — 不阻塞操作, 2.5秒自动消失, 替代alert做成功提示
