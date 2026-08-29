@@ -63,17 +63,16 @@ def set_cell_text(cell, text, bold=False, size=10.5, center=True):
     r.font.name = '仿宋'
     r._element.rPr.rFonts.set(qn('w:eastAsia'), '仿宋')
 
-# ============ 标题 ============
-para('买卖合同', bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, size=18, space_after=10)
-p = doc.add_paragraph()
-p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-r = p.add_run('合同编号：{合同编号}')
-r.font.size = Pt(11)
-r.font.name = '仿宋'
-r._element.rPr.rFonts.set(qn('w:eastAsia'), '仿宋')
+# ============ 标题 + 合同编号（同一行: 标题居中, 编号右侧） ============
+head = doc.add_table(rows=1, cols=2)
+head.alignment = WD_TABLE_ALIGNMENT.CENTER
+set_cell_text(head.rows[0].cells[0], '买卖合同', bold=True, size=18, center=True)
+set_cell_text(head.rows[0].cells[1], '合同编号：{合同编号}', bold=False, size=10.5, center=False)
+head.rows[0].cells[0].width = Cm(10)
+head.rows[0].cells[1].width = Cm(7)
 doc.add_paragraph()
 
-# ============ 双方信息 ============
+# ============ 双方信息（照片格式: 甲方：公司名 / 乙方：公司名, 无买方卖方标注） ============
 para('甲方：河曲县正成洗选煤有限责任公司', size=12)
 para('乙方：{乙方名称}', size=12)
 doc.add_paragraph()
@@ -95,7 +94,7 @@ for j in range(7):
 set_cell_text(table.rows[2].cells[0], '合计', bold=True)
 for j in range(1, 5):
     set_cell_text(table.rows[2].cells[j], '')
-set_cell_text(table.rows[2].cells[5], '合计金额：¥    元（大写金额：人民币     ）', bold=True)
+set_cell_text(table.rows[2].cells[5], '', bold=True)
 set_cell_text(table.rows[2].cells[6], '')
 widths = [Cm(3.2), Cm(2.8), Cm(1.8), Cm(1.4), Cm(2.2), Cm(2.6), Cm(2.0)]
 for row in table.rows:
@@ -106,8 +105,8 @@ for row in table.rows:
         set_cell_border(cell)
 doc.add_paragraph()
 
-# 合计金额说明（_apply_ct 自动填税金/不含税/大写）
-para('合计金额：¥    元（大写金额：人民币     ）。', size=12)
+# 合计金额说明（_apply_ct 自动填税金/不含税/大写; 照片格式: 一行连续文本自动换行）
+para('合计金额：¥    元（大写金额：人民币     ）。税金（税率 13%）为：¥    元（大写金额：人民币     ）；不含税价款为：¥    元（大写金额：人民币     ）。', size=12)
 doc.add_paragraph()
 
 # ============ 二、质量标准 ============

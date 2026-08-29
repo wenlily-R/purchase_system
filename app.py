@@ -6811,7 +6811,7 @@ def api_contract_generate():
         def _apply_ct(t):
             if '合计金额：¥' in t:
                 return (f"合计金额：¥{total:,.2f}元（大写金额：人民币{rmb_upper(total)}）。"
-                        f"税金（税率 {tax_rate:.0f}%）：¥{tax:,.2f}元（大写金额：人民币{rmb_upper(tax)}）；"
+                        f"税金（税率 {tax_rate:.0f}%）为：¥{tax:,.2f}元（大写金额：人民币{rmb_upper(tax)}）；"
                         f"不含税价款为：¥{amt:,.2f}元（大写金额：人民币{rmb_upper(amt)}）。")
             reps = [
                 (r'合同签订后\s+日内交付', f'合同签订后{days or "7"}日内交付'),
@@ -6934,8 +6934,8 @@ def api_contract_generate():
                                                            lambda m: f'{m.group(1)}{total:,.2f}{m.group(2)}', cell.text)
                                         break
                             else:
-                                # V8.4: 合计行金额列同时写数字+人民币大写(一、标的表格)
-                                rows[i].cells[-2].text = f"¥{total:,.2f}元\n人民币大写：{rmb_upper(total)}"
+                                # 照片格式: 合计行金额列写纯数字(如 2800.00)
+                                rows[i].cells[-2].text = f"{total:,.2f}"
                             # 继续检查下一行是否也是"合计金额"行
                 except Exception:
                     pass
