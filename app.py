@@ -1177,7 +1177,8 @@ def biz_parent_status(biz_type, result):
 def biz_table(biz_type):
     return {'purchase_request': 'purchase_requests', 'purchase_order': 'purchase_orders',
             'contract': 'contracts', 'credit': 'credit_notes', 'payment': 'payment_requests',
-            'receiving': 'receivings', 'requisition': 'requisitions'}[biz_type]
+            'receiving': 'receivings', 'requisition': 'requisitions',
+            'inquiry_approval': 'inquiries'}[biz_type]  # V11.133: biz_id=询价单id
 
 # ============================================================
 # V11.64: 数据级权限 — 按角色过滤列表数据(前端隐藏菜单+后端过滤数据, 双保险)
@@ -1258,15 +1259,22 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
                 if _inst and 'form_values' in _inst.keys() and _inst['form_values']:
                     _fv = json.loads(_inst['form_values'])
                     for _it in (_fv if isinstance(_fv, list) else []):
-                        if isinstance(_it, dict) and _it.get('name') == '选定供应商':
+                        if isinstance(_it, dict) and (_it.get('name') == '选定供应商' or _it.get('name') == '选定供应商 '):
                             _vals = _it.get('value', '[]')
                             if isinstance(_vals, str):
                                 try:
                                     _vals = json.loads(_vals)
                                 except Exception:
                                     pass
+                            # V11.133: 钉钉单选返回的是选项文本(如"厂家1 (¥1,900)"), 需按供应商名称匹配回ID
                             if isinstance(_vals, list) and len(_vals) > 0:
-                                _sel_id = int(_vals[0])
+                                _sel_txt = str(_vals[0])
+                                _m = c.execute("SELECT id FROM inquiry_suppliers WHERE inquiry_id=? AND supplier_name=? ORDER BY id LIMIT 1",
+                                               (biz_id, _sel_txt.split(' (')[0])).fetchone()
+                                if _m:
+                                    _sel_id = _m['id']
+                                elif _sel_txt.strip().isdigit():
+                                    _sel_id = int(_sel_txt)
                             elif isinstance(_vals, str) and _vals.strip().isdigit():
                                 _sel_id = int(_vals)
                             break
@@ -1788,7 +1796,8 @@ def dt_build_form(biz_type, biz_id, info):
       - 各单据类型全部表单字段结构化展示在"备注"(审批人钉钉端无需跳回系统)
     """
     today = datetime.date.today().strftime('%Y-%m-%d')
-    if biz_type in ('purchase_request', 'contract', 'purchase_order', 'receiving', 'requisition', 'payment'):
+    # V11.133: inquiry_approval 必须加入分支判断, 否则询价审批永远走回退表单(钉钉不显示选商家)
+    if biz_type in ('purchase_request', 'contract', 'purchase_order', 'receiving', 'requisition', 'payment', 'inquiry_approval'):
         c = db()
         r = c.execute(f"SELECT * FROM {biz_table(biz_type)} WHERE id=?", (biz_id,)).fetchone()
         if r:
@@ -1863,28 +1872,36 @@ def dt_build_form(biz_type, biz_id, info):
                 c.close()
                 return form
             elif biz_type == 'inquiry_approval':
-                # V11.76: 询价审批表单=询价详情+供应商报价+选定供应商(单选)
+                # V11.76/V11.133: 询价审批表单=询价详情+供应商报价+选定供应商(单选)
+                # ⚠️ 控件名必须与钉钉模板完全一致(实测带尾随空格"选定供应商 ", 详情控件叫"三方报价详情")
                 c2 = db()
                 iq = c2.execute("SELECT * FROM inquiries WHERE id=?", (biz_id,)).fetchone()
                 if not iq:
                     c2.close(); return []
                 # 查询三家供应商报价
-                sups = c2.execute("SELECT id, supplier_name, quote_price, quote_remark FROM inquiry_suppliers WHERE inquiry_id=? ORDER BY quote_price ASC", (biz_id,)).fetchall()
+                sups = c2.execute("SELECT id, supplier_name, quote_price, quote_remark, quote_brand FROM inquiry_suppliers WHERE inquiry_id=? ORDER BY quote_price ASC", (biz_id,)).fetchall()
                 supplier_opts = []
                 supplier_details = []
                 for si in sups:
                     supplier_opts.append({'value': str(si['id']), 'text': '%s (¥%.0f)' % (si['supplier_name'], si['quote_price'] or 0)})
                     detail = '%s报价¥%.0f' % (si['supplier_name'], si['quote_price'] or 0)
+                    if si['quote_brand']:
+                        detail += ' 品牌:%s' % si['quote_brand']
                     if si['quote_remark']:
                         detail += ' 备注:%s' % si['quote_remark']
                     supplier_details.append(detail)
                 c2.close()
+                # V11.133: 单选控件选项=实际供应商文本(钉钉DDSelectField值格式['选项文本']),
+                # 默认选中最低价那家; 领导可在钉钉改选
+                _default_opt = ''
+                if supplier_opts:
+                    _default_opt = supplier_opts[0]['text']  # 按报价升序, 第一家=最低价
                 form = [
                     {'name': '询价单号', 'value': iq['inq_no'] or ''},
                     {'name': '物资名称', 'value': (iq['title'] or '')[:50]},
-                    {'name': '报价详情', 'value': '\\n'.join(supplier_details) if supplier_details else '暂无报价'},
-                    {'name': '选定供应商', 'value': '[]'},  # 领导在钉钉上选
-                    {'name': '备注', 'value': '请在上方"选定供应商"选择一家供应商后提交审批'},
+                    {'name': '三方报价详情', 'value': '\n'.join(supplier_details) if supplier_details else '暂无报价'},
+                    {'name': '选定供应商 ', 'value': '["%s"]' % _default_opt if _default_opt else '[]'},  # ⚠️ 控件名带尾随空格
+                    {'name': '备注', 'value': '请核对"选定供应商"选项(默认最低价), 如需改选请调整后提交审批'},
                 ]
                 return form
             else:  # purchase_order
@@ -4389,56 +4406,8 @@ def inquiry_vendor_quote(token):
                  (_final_price, (d.get('quote_remark') or '')[:200],
                   json.dumps(details, ensure_ascii=False) if details else '',
                   _delivery[:60], _warranty[:60], _brand[:100], now(), s['id']))
-    # V11.75: 三家报价完成 → 自动创建采购订单 + 发起钉钉定标审批
-    try:
-        total_count = conn.execute("SELECT COUNT(*) FROM inquiry_suppliers WHERE inquiry_id=?", (s['inquiry_id'],)).fetchone()[0]
-        quoted_count = conn.execute("SELECT COUNT(*) FROM inquiry_suppliers WHERE inquiry_id=? AND quote_price>0", (s['inquiry_id'],)).fetchone()[0]
-        if quoted_count >= total_count and total_count > 0:
-            i = conn.execute("SELECT * FROM inquiries WHERE id=?", (s['inquiry_id'],)).fetchone()
-            if i and i['status'] == '询价中':
-                # 自动创建采购订单草稿
-                pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (i['req_id'],)).fetchone()
-                items = conn.execute("SELECT * FROM request_items WHERE req_id=?", (i['req_id'],)).fetchall()
-                if pr and items:
-                    no = gen_no('CG', 'purchase_orders', 'order_no', conn)
-                    # 取最低报价
-                    cheapest = conn.execute("SELECT * FROM inquiry_suppliers WHERE inquiry_id=? AND quote_price>0 ORDER BY quote_price ASC LIMIT 1", (i['id'],)).fetchone()
-                    total = float(cheapest['quote_price'] or 0) if cheapest else 0
-                    remark = '询价单:%s 商家已报价完成，最低报价¥%.0f(%s)，请领导定标' % (i['inq_no'], total, cheapest['supplier_name'] if cheapest else '待定')
-                    # V11.126: 已存在草稿订单则复用(防驳回后重报产生重复草稿)
-                    _draft = conn.execute("SELECT id FROM purchase_orders WHERE inquiry_id=? AND status='草稿' ORDER BY id LIMIT 1", (i['id'],)).fetchone()
-                    if _draft:
-                        conn.execute("UPDATE purchase_orders SET supplier=?, total_amount=?, remark=? WHERE id=?",
-                                     (cheapest['supplier_name'] if cheapest else '待定', total, remark, _draft['id']))
-                    else:
-                        conn.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,
-                            supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status,inquiry_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                            (no, i['req_id'], i['title'][:50], '', 1, '个', 0, total, 0, 0, total,
-                             cheapest['supplier_name'] if cheapest else '待定', i['created_by'], '后勤类', i['created_by'], 1, i['deadline'] or '', '货到付款',
-                             remark, 0, json.dumps([], ensure_ascii=False), '草稿', i['id']))
-                    if _draft:
-                        oid = _draft['id']
-                    else:
-                        oid = conn.execute("SELECT id FROM purchase_orders WHERE order_no=?", (no,)).fetchone()[0]
-                    conn.execute("UPDATE inquiries SET status='定标审批中', updated_at=? WHERE id=?", (now(), i['id']))
-                    conn.commit()
-                    # V11.76: 发起钉钉询价审批(用新模板,领导在钉钉选供应商)
-                    try:
-                        c2 = db()
-                        c2.execute("INSERT INTO inquiry_approvals(inquiry_id, status, created_at) VALUES(?, '审批中', ?)", (i['id'], now()))
-                        # V11.126: biz_id 统一用询价单id(与dt_build_form/dt_biz_info/finish_approvals一致)
-                        c2.execute("INSERT INTO approval_instances(biz_type, biz_id, level_no, role, approver, status) VALUES(?, ?, 1, '分管领导', 'xingguo', 'pending')", ('inquiry_approval', i['id']))
-                        c2.commit(); c2.close()
-                        # 发起钉钉审批(含飞书)
-                        try:
-                            start_instances('inquiry_approval', i['id'])
-                            print('[V11.76] 发起询价审批成功: %s' % i['inq_no'])
-                        except Exception as e2:
-                            print('[V11.76] 发起询价审批失败: %s' % e2)
-                    except Exception as e2:
-                        print('[V11.76] 询价审批异常: %s' % e2)
-    except Exception as e:
-        print('[V11.75] 自动定标异常: %s' % e)
+    # V11.133: 取消"三家报价自动提交审批" — 改为采购员在系统里手动点"提交审批"
+    # (用户要求: 商家全部报价后不自动发起审批, 由人工确认后再提交定标)
     conn.commit(); conn.close()
     return jsonify({'success': True, 'quote_price': _final_price})
 
