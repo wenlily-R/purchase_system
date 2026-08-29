@@ -1776,8 +1776,13 @@ function canApprove(x){
   if(ME.role=='系统管理员')return true;
   // V11.96: 支持approver_id匹配
   if(x.approver_id && ME.id && x.approver_id == ME.id)return true;
-  if(!x.approver)return false;
-  return ME.name==x.approver||ME.username==x.approver;
+  // V11.136: 按用户名/姓名匹配审批人
+  if(x.approver){
+    if(ME.username==x.approver||ME.name==x.approver)return true;
+  }
+  // V11.136: 待审角色与当前用户角色一致 → 允许(领导按角色审批, 避免approver写ID导致按钮灰)
+  if(x.role && ME.role==x.role)return true;
+  return false;
 }
 async function urgentRemind(bt,bid){
   // V7.0: 手动加急提醒 — 向当前待审批负责人钉钉推送

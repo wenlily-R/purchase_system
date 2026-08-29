@@ -1905,17 +1905,14 @@ def dt_build_form(biz_type, biz_id, info):
                         detail += ' 备注:%s' % si['quote_remark']
                     supplier_details.append(detail)
                 c2.close()
-                # V11.135: 模板"选定供应商"选项=供应商A/B/C(固定) — 按报价从低到高映射A/B/C,
-                # 默认选中A(最低价); 领导可在钉钉改选B/C
-                # ⚠️ 必须传模板里真实存在的选项文本, 否则钉钉报820015组件格式错误
-                _opt_map = {0: '供应商A', 1: '供应商B', 2: '供应商C'}  # 索引=报价升序排名
-                _default_opt = '供应商A' if supplier_opts else ''
+                # V11.136: "选定供应商"控件传值始终报820015(模板选项文本未知且无法API探测),
+                # 去掉该字段保证审批能发起; A/B/C对应关系在"三方报价详情"里标注,
+                # 领导审批意见写选哪家(或确认模板选项文本后重新启用控件传值)
                 form = [
                     {'name': '询价单号', 'value': iq['inq_no'] or ''},
                     {'name': '物资名称', 'value': (iq['title'] or '')[:50]},
                     {'name': '三方报价详情', 'value': '\n'.join(supplier_details) if supplier_details else '暂无报价'},
-                    {'name': '选定供应商 ', 'value': '["%s"]' % _default_opt if _default_opt else '[]'},
-                    {'name': '备注', 'value': '供应商A=报价最低, 请选择后提交审批(默认已选A, 可改选B/C)'},
+                    {'name': '备注', 'value': '请在审批意见中写明选中供应商(如: 同意供应商A), 审批通过后系统按名称匹配生成订单'},
                 ]
                 # V11.135: 比价单Excel作为钉钉审批附件(领导可直接查看完整比价表)
                 try:
