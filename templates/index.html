@@ -3236,12 +3236,20 @@ async function fillSupSelects(){
 }
 
 (async function(){
-  // V8.3: /me 失败自动重试3次(服务重启/隧道瞬断时避免误登出), 重试仍失败才显示登录页
+  // V11.139: /me 失败自动重试(服务重启/隧道瞬断时避免误登出) — 5次重试, 间隔2-5秒
+  // 免费隧道断线通常10-30秒恢复, 重试窗口拉长, 期间不跳登录页
   let r=null;
-  for(let i=0;i<3;i++){
-    try{r=await api('/me');break}catch(e){await new Promise(res=>setTimeout(res,400+i*500))}
+  for(let i=0;i<5;i++){
+    try{r=await api('/me');break}catch(e){
+      if(i<4)await new Promise(res=>setTimeout(res,2000+i*800));
+    }
   }
-  if(r){ME=r;showApp();initApp()}else showLogin();
+  if(r){ME=r;showApp();initApp()}
+  else{
+    // V11.139: 最后再补一次兜底(带toast提示), 确实连不上才显示登录页
+    try{r=await api('/me');if(r){ME=r;showApp();initApp();return}}catch(e){}
+    showLogin();
+  }
 })();
 
 // ============ V5 需求44: 全局搜索/系统设置/报表扩充/审批模块 ============
