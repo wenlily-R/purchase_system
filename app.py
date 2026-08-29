@@ -1608,6 +1608,7 @@ DT_BIZ = {  # biz_type -> 审批模板名称
     'payment':          '付款审批',
     'receiving':        '入库审批',
     'requisition':      '出库审批',
+    'inquiry_approval': '采购比价单审批',  # V11.142: 补全, 否则dt_send_todo抛KeyError
 }
 DT_FORM = [('单据编号', 'text'), ('内容摘要', 'text'), ('金额(元)', 'text'), ('申请人', 'text'), ('提交时间', 'text')]
 
