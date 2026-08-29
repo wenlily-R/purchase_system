@@ -4629,6 +4629,12 @@ def api_inquiry_export(iid):
         ('物料/服务项数', str(len(items)) + ' 项', '供应商家数', str(len(sups)) + ' 家'),
     ]
     row = 3
+    # V11.131: 章节编号补全 — 信息区加"一、"标题, 与"二、比价表""三、决策备注"连续
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=10)
+    ws.cell(row, 1, '一、询价基本信息').font = head_font
+    for col in range(1, 11):
+        ws.cell(row, col).fill = head_fill; ws.cell(row, col).border = border
+    row += 1
     for left_k, left_v, right_k, right_v in info:
         ws.cell(row, 1, left_k).font = label_font
         ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=3)
@@ -4755,25 +4761,26 @@ def api_inquiry_export(iid):
         ws.cell(row, col).fill = head_fill; ws.cell(row, col).border = border
     row += 1
     ws.merge_cells(start_row=row, start_column=1, end_row=row + 3, end_column=10)
-    # 生成品牌分析
+    # 生成品牌分析（V11.131: 拆分多品牌, 每家一行优缺点, 不依赖选中状态）
     brand_analysis_lines = []
     for s in sups:
         if s['quote_price'] and s['quote_price'] > 0:
-            # 使用商家填写的品牌信息
-            brand_name = s.get('quote_brand') or s.get('brand') or ''
-            if brand_name:
-                brand_info = search_brand_info(brand_name, '')
-                if brand_info and (brand_info.get('优点') or brand_info.get('缺点')):
-                    line = '%s（%s）：优点-%s；缺点-%s' % (s['supplier_name'], 
-                        brand_name,
-                        brand_info.get('优点', ''), brand_info.get('缺点', ''))
+            # 品牌可能是多个(如"得力、晨光"), 拆分逐个分析
+            brand_raw = s.get('quote_brand') or s.get('brand') or ''
+            brands = [b.strip() for b in re.split(r'[、,，;；/]', brand_raw) if b.strip()]
+            parts = []
+            for bname in brands:
+                b_info = search_brand_info(bname, '')
+                if b_info and (b_info.get('优点') or b_info.get('缺点')):
+                    parts.append('%s(优点:%s|缺点:%s)' % (bname, b_info.get('优点', ''), b_info.get('缺点', '')))
                 else:
-                    # 如果没有搜索到品牌信息，显示商家填写的品牌
-                    line = '%s（%s）' % (s['supplier_name'], brand_name)
-                brand_analysis_lines.append(line)
+                    parts.append('%s' % bname)
+            if parts:
+                brand_analysis_lines.append('%s报价¥%s：%s' % (s['supplier_name'],
+                    format(float(s['quote_price'] or 0), ',.2f'), '；'.join(parts)))
             else:
-                line = '%s：未填写品牌' % s['supplier_name']
-                brand_analysis_lines.append(line)
+                brand_analysis_lines.append('%s报价¥%s：未填写品牌' % (s['supplier_name'],
+                    format(float(s['quote_price'] or 0), ',.2f')))
     
     decision = ('本批次采购经过多方询价、比价与供应商综合考察，最终选择本供应商为合作方。')
     selected = next((s for s in sups if s['is_selected']), None)
@@ -4782,16 +4789,21 @@ def api_inquiry_export(iid):
                     '性价比最优。%s' % (selected['supplier_name'],
                     format(float(selected['quote_price'] or 0), ',.2f'),
                     selected['quote_remark'] or '交货期及付款条件按合同约定'))
-        # 在决策备注下方追加品牌分析
-        if brand_analysis_lines:
-            brand_text = '【品牌分析】' + chr(10) + chr(10).join(brand_analysis_lines)
-            decision = decision + chr(10) + chr(10) + brand_text
+    # V11.131: 品牌对比优缺点不依赖"已选中" — 只要有报价的商家就显示在决策备注
+    if brand_analysis_lines:
+        brand_text = '【品牌对比】' + chr(10) + chr(10).join(brand_analysis_lines)
+        decision = decision + chr(10) + chr(10) + brand_text
     c = ws.cell(row, 1, decision)
     c.font = base_font; c.alignment = Alignment(vertical='top', wrap_text=True)
-    for r2 in range(row, row + 4):
+    # V11.131: 决策备注黄色高亮框(显眼), 行高按品牌分析行数自适应
+    _dec_fill = PatternFill('solid', fgColor='FFF2CC')
+    _dec_rows = max(4, 2 + len(decision.split(chr(10))))
+    ws.merge_cells(start_row=row, start_column=1, end_row=row + _dec_rows - 1, end_column=10)
+    for r2 in range(row, row + _dec_rows):
         for col in range(1, 11):
+            ws.cell(r2, col).fill = _dec_fill
             ws.cell(r2, col).border = border
-    row += 5
+    row += _dec_rows
     ws.cell(row, 1, '编制人：').font = note_font
     ws.cell(row, 4, '审核人：').font = note_font
     ws.cell(row, 7, '日期：').font = note_font
