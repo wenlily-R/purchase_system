@@ -2527,7 +2527,7 @@ def dt_sync_result(instance_id, result, comment=''):
                         _verdict = '已通过 ✅' if result == 'agree' else '未通过 ❌'
                         dt_send_todo([_usr['dingtalk_userid']], f'审批结果通知：{_doc_no}',
                                      f"您提交的{_doc_no} 经钉钉审批 **{_verdict}**",
-                                     biz_type=r['biz_type'], biz_id=r['biz_id'], push_type='auto',
+                                     biz_type=r['biz_type'], biz_id=r['biz_id'], push_type='result',  # V11.145: 用result类型绕过oa_notify_only限制
                                      operator='系统')
     except Exception:
         pass
@@ -4556,7 +4556,7 @@ def api_inquiry_select(iid):
     # 定标审批: 领导选定后, 订单草稿 + 提交定标审批(必须领导审批通过才能下单)
     settle_type = d.get('settle_type') or '现结'
     conn.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,
-        supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (no, i['req_id'], first[0], first[1], sum(r[3] for r in rows), first[2], first[4], grand_amt, 0, 0, total,
          s['supplier_name'], pr['requester'] or '', '后勤类', session['user_name'], session['user_id'],
          pr['target_date'] or '', tm, remark, 0,
@@ -4573,6 +4573,96 @@ def api_inquiry_select(iid):
     log(session['user_name'], '询价定标', '%s → 订单%s(供应商:%s ¥%.0f,已生效)' % (i['inq_no'], no, s['supplier_name'], total))
     return jsonify({'success': True, 'order_no': no, 'id': oid, 'total_amount': total, 'status': '已通过',
                     'message': '✅ 定标通过，订单已生效'})
+
+
+@app.route('/api/inquiries/<int:iid>/split-select', methods=['POST'])
+@login_required
+def api_inquiry_split_select(iid):
+    """V11.145: 分项定标 — 每个物资可指定不同供应商, 按供应商分组生成多个订单
+    请求: {items: [{item_id, supplier_id}, ...]}  item_id=request_items.id, supplier_id=inquiry_suppliers.id
+    每项取该供应商对该物资的报价; 生成N个订单(按供应商分组)"""
+    d = request.json or {}
+    picks = d.get('items') or []
+    conn = db()
+    i = conn.execute("SELECT * FROM inquiries WHERE id=?", (iid,)).fetchone()
+    if not i:
+        conn.close(); return jsonify({'error': '询价单不存在'}), 404
+    if i['status'] != '询价中':
+        conn.close(); return jsonify({'error': '该询价已结束'}), 400
+    if not picks:
+        conn.close(); return jsonify({'error': '未选择任何物资的供应商'}), 400
+    pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (i['req_id'],)).fetchone()
+    if not pr:
+        conn.close(); return jsonify({'error': '来源申请缺失'}), 400
+    sups = {r['id']: dict(r) for r in conn.execute("SELECT * FROM inquiry_suppliers WHERE inquiry_id=?", (iid,)).fetchall()}
+    items = {r['id']: dict(r) for r in conn.execute("SELECT * FROM request_items WHERE req_id=?", (i['req_id'],)).fetchall()}
+    # 校验每项选择合法
+    valid = []
+    for p in picks:
+        it = items.get(p.get('item_id'))
+        s = sups.get(p.get('supplier_id'))
+        if not it or not s:
+            conn.close(); return jsonify({'error': '选择项无效'}), 400
+        if not s.get('quote_price') or s['quote_price'] <= 0:
+            conn.close(); return jsonify({'error': '供应商%s尚未报价' % s['supplier_name']}), 400
+        valid.append((it, s))
+    if len(valid) != len(items):
+        conn.close(); return jsonify({'error': '必须为每个物资选择供应商'}), 400
+    # 按供应商分组
+    groups = {}
+    for it, s in valid:
+        groups.setdefault(s['id'], {'sup': s, 'items': []})['items'].append(it)
+    created = []
+    for sid, g in groups.items():
+        s = g['sup']
+        its = g['items']
+        no = gen_no('CG', 'purchase_orders', 'order_no', conn)
+        # 该供应商的逐项报价(quote_details)
+        qd = {}
+        try:
+            qd_list = json.loads(s.get('quote_details') or '[]')
+            for idx, q in enumerate(qd_list):
+                qd[idx] = q
+        except Exception:
+            qd = {}
+        total = 0.0
+        rows = []
+        for idx, it in enumerate(its):
+            qty = float(it['quantity'] or 1)
+            q = qd.get(idx, {})
+            price = float(q.get('unit_price') or 0) or 0
+            amt = round(price * qty, 2)
+            total += amt
+            rows.append((it['item_name'], it['spec'] or '', it['unit'] or '个', qty, price, amt,
+                         (q.get('brand') or ''), (q.get('delivery') or ''), (q.get('warranty') or ''), (q.get('remark') or '')))
+        if total <= 0:
+            total = float(s['quote_price'] or 0)
+        first = rows[0]
+        detail_parts = ['三方询价分项定标: %s' % s['supplier_name']]
+        for r in rows:
+            detail_parts.append('%s x%s ¥%.2f' % (r[0], r[3], r[5]))
+        detail_parts.append('询价单号: %s' % i['inq_no'])
+        remark = '; '.join(detail_parts)
+        conn.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,
+            supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (no, i['req_id'], first[0], first[1], sum(r[3] for r in rows), first[2], first[4], total, 0, 0, total,
+             s['supplier_name'], pr['requester'] or '', '后勤类', session['user_name'], session['user_id'],
+             pr['target_date'] or '', '货到付款', remark, 0,
+             json.dumps([], ensure_ascii=False), '已通过'))
+        oid = conn.execute("SELECT id FROM purchase_orders WHERE order_no=?", (no,)).fetchone()[0]
+        for r in rows:
+            conn.execute("""INSERT INTO order_items(order_id,item_name,spec,unit,quantity,price,amount,tax_rate,tax_amount,total_amount,remark)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                (oid, r[0], r[1], r[2], r[3], r[4], r[5], 0, 0, r[5],
+                 '品牌:%s 交付:%s 质保:%s %s' % (r[6], r[7], r[8], r[9]) if (r[6] or r[7] or r[8]) else ''))
+        conn.execute("UPDATE inquiry_suppliers SET is_selected=1 WHERE id=?", (sid,))
+        created.append({'order_no': no, 'supplier': s['supplier_name'], 'total': total})
+    conn.execute("UPDATE inquiries SET status='已生成订单', updated_at=? WHERE id=?", (now(), iid))
+    conn.commit()
+    log(session['user_name'], '分项定标', '%s → 生成%d个订单' % (i['inq_no'], len(created)))
+    conn.close()
+    return jsonify({'success': True, 'orders': created, 'count': len(created),
+                    'message': '✅ 分项定标完成，已按%d家供应商生成%d个订单' % (len(created), len(created))})
 
 def gen_inquiry_xlsx_file(iid):
     """V11.135: 生成询价比价单Excel文件存uploads, 返回文件路径(导出接口/钉钉附件共用)
@@ -4737,13 +4827,15 @@ def api_inquiry_export(iid):
         for ci, v in enumerate(vals, 1):
             c = ws.cell(row, ci, v); c.border = border
             c.alignment = Alignment(horizontal='center' if ci <= 4 or (ci - 5) % 6 != 0 else 'left', vertical='center', wrap_text=True)
-            # 单价列: 最低标红加粗（更明显）
+            # 单价列: 最低标红加粗+★（V11.145: 领导一眼看到每项最便宜的厂家）
             if unit_prices and min_unit is not None:
                 k = (ci - 5) // 6
                 if 0 <= k < n_sup and (ci - 5) % 6 == 0:
                     if row_prices[k][0] is not None and abs(row_prices[k][0] - min_unit) < 0.001:
                         c.font = Font(name='微软雅黑', size=11, bold=True, color='C00000')
                         c.fill = PatternFill('solid', fgColor='FFF2CC')
+                        if c.value:
+                            c.value = '★' + str(c.value)
                         continue
             c.font = base_font
         ws.row_dimensions[row].height = 26

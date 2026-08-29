@@ -1574,8 +1574,69 @@ async function showInquiry(id){
   // V11.93: 所有供应商报价后显示"提交审批"按钮
   const allQuoted = d.suppliers && d.suppliers.length > 0 && d.suppliers.every(s => s.quote_price && s.quote_price > 0);
   const submitBtn = (d.status=='询价中' && allQuoted) ? `<button class="btn btn-s" onclick="submitInquiryApproval(${d.id})" style="background:#27ae60">✅ 提交审批</button>` : '';
-  const btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button><button class="btn btn-p" onclick="exportInquiry(${d.id})">📥 导出Excel</button>${submitBtn}`;
+  // V11.145: 分项定标按钮(审批通过后采购员拆单用; 询价中且已报价即可用)
+  const splitBtn = (d.status=='询价中' && allQuoted && d.suppliers.length>1) ? `<button class="btn btn-p" onclick="showSplitSelect(${d.id})">🔀 分项定标</button>` : '';
+  const btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button><button class="btn btn-p" onclick="exportInquiry(${d.id})">📥 导出Excel</button>${splitBtn}${submitBtn}`;
   showDetail(`询价单 ${d.inq_no}`,h,btns);
+}
+// V11.145: 分项定标弹窗 — 每个物资逐项选供应商, 支持一键智能选最低价
+async function showSplitSelect(iid){
+  showDetail('🔀 分项定标', '<div class="loading">加载中...</div>', '<button class="btn btn-o" onclick="closeMod()">取消</button>');
+  let d;
+  try{d=await api(`/inquiries/${iid}`)}catch(e){id('dmBody').innerHTML='<div style="padding:20px;text-align:center;color:#c0392b;font-size:11px">⚠️ 加载失败，请重试</div>';return}
+  if(!d.items||!d.items.length){id('dmBody').innerHTML='<div style="padding:20px;color:#999">无物资明细</div>';return}
+  const quoted=d.suppliers.filter(s=>s.quote_price&&s.quote_price>0);
+  if(!quoted.length){id('dmBody').innerHTML='<div style="padding:20px;color:#999">暂无报价</div>';return}
+  // 解析每家逐项报价: quote_details 与 request_items 顺序对应
+  const priceMap={};  // item_index -> {supplier_id: unit_price}
+  quoted.forEach(s=>{
+    let qd=[];
+    try{qd=JSON.parse(s.quote_details||'[]')}catch(e){qd=[]}
+    qd.forEach((q,idx)=>{priceMap[idx]=priceMap[idx]||{};priceMap[idx][s.id]=(q.unit_price||0)});
+  });
+  // 智能最优: 每项选单价最低的供应商
+  const smartPick={};
+  d.items.forEach((it,idx)=>{
+    let best=null,bp=Infinity;
+    quoted.forEach(s=>{
+      const p=priceMap[idx]&&priceMap[idx][s.id];
+      if(p&&p<bp){bp=p;best=s.id}
+    });
+    if(best)smartPick[idx]=best;
+  });
+  let rows='';
+  d.items.forEach((it,idx)=>{
+    const opts=quoted.map(s=>{
+      const p=priceMap[idx]&&priceMap[idx][s.id];
+      const isBest=p&&p===Math.min(...quoted.map(x=>(priceMap[idx]&&priceMap[idx][x.id])||Infinity));
+      return `<label style="display:block;padding:2px 0;font-size:11px;cursor:pointer">
+        <input type="radio" name="sp_${it.id}" value="${s.id}" ${smartPick[idx]===s.id?'checked':''}>
+        ${esc(s.supplier_name)} — ¥${p?p.toFixed(2):'未报'} ${isBest?'<span style="color:#27ae60">★最低</span>':''}
+      </label>`;
+    }).join('');
+    rows+=`<div style="border:1px solid var(--b);border-radius:6px;padding:8px;margin-bottom:6px;background:#fafcff">
+      <div style="font-size:11px;font-weight:bold">${idx+1}. ${esc(it.item_name)} ${esc(it.spec||'')} x${it.quantity}${esc(it.unit||'个')}</div>
+      ${opts}
+    </div>`;
+  });
+  id('dmBody').innerHTML=`
+    <div style="font-size:10px;color:#666;margin-bottom:8px">为每个物资选择供应商（已按最低价默认勾选★，可手动改选）→ 系统自动按供应商拆成多个订单</div>
+    ${rows}`;
+  id('dmFooter').innerHTML=`
+    <button class="btn btn-o" onclick="closeMod()">取消</button>
+    <button class="btn btn-p" onclick="doSplitSelect(${iid})">✅ 确认分项定标</button>`;
+}
+async function doSplitSelect(iid){
+  const radios=document.querySelectorAll('#dmBody input[type=radio]:checked');
+  if(!radios.length){alert('请为每个物资选择供应商');return}
+  const items=[...radios].map(r=>({item_id:parseInt(r.name.split('_')[1]),supplier_id:parseInt(r.value)}));
+  if(!confirm(`确认分项定标？将按所选供应商生成 ${items.length} 个订单`))return;
+  const r=await api(`/inquiries/${iid}/split-select`,{method:'POST',body:JSON.stringify({items})});
+  if(r.success){
+    alert(`✅ ${r.message}\n${r.orders.map(o=>'  '+o.order_no+' → '+o.supplier+' ¥'+(o.total||0).toFixed(2)).join('\n')}`);
+    closeMod();loadInquiries();loadOrders();
+  }
+  else alert(r.error||'分项定标失败');
 }
 async function submitInquiryApproval(iid){
   if(!confirm('确认提交审批？提交后将发起定标审批流程。'))return;
