@@ -1266,15 +1266,27 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
                                     _vals = json.loads(_vals)
                                 except Exception:
                                     pass
-                            # V11.133: 钉钉单选返回的是选项文本(如"厂家1 (¥1,900)"), 需按供应商名称匹配回ID
+                            # V11.135: 钉钉单选返回选项文本("供应商A"/"供应商B"/"供应商C")
+                            # 或模板旧选项(供应商名称/ID) — 统一解析
                             if isinstance(_vals, list) and len(_vals) > 0:
-                                _sel_txt = str(_vals[0])
-                                _m = c.execute("SELECT id FROM inquiry_suppliers WHERE inquiry_id=? AND supplier_name=? ORDER BY id LIMIT 1",
-                                               (biz_id, _sel_txt.split(' (')[0])).fetchone()
-                                if _m:
-                                    _sel_id = _m['id']
-                                elif _sel_txt.strip().isdigit():
-                                    _sel_id = int(_sel_txt)
+                                _sel_txt = str(_vals[0]).strip()
+                                # ① 选项是"供应商A/B/C" → 按报价升序排名映射
+                                _rank_map = {'供应商A': 0, '供应商B': 1, '供应商C': 2}
+                                if _sel_txt in _rank_map:
+                                    _ranked = c.execute(
+                                        "SELECT id FROM inquiry_suppliers WHERE inquiry_id=? AND quote_price>0 ORDER BY quote_price ASC, id ASC",
+                                        (biz_id,)).fetchall()
+                                    _ri = _rank_map[_sel_txt]
+                                    if _ri < len(_ranked):
+                                        _sel_id = _ranked[_ri]['id']
+                                # ② 选项是供应商名称(如"厂家2 (¥1750)") → 按名称匹配
+                                else:
+                                    _m = c.execute("SELECT id FROM inquiry_suppliers WHERE inquiry_id=? AND supplier_name=? ORDER BY id LIMIT 1",
+                                                   (biz_id, _sel_txt.split(' (')[0])).fetchone()
+                                    if _m:
+                                        _sel_id = _m['id']
+                                    elif _sel_txt.strip().isdigit():
+                                        _sel_id = int(_sel_txt)
                             elif isinstance(_vals, str) and _vals.strip().isdigit():
                                 _sel_id = int(_vals)
                             break
@@ -1878,27 +1890,32 @@ def dt_build_form(biz_type, biz_id, info):
                 iq = c2.execute("SELECT * FROM inquiries WHERE id=?", (biz_id,)).fetchone()
                 if not iq:
                     c2.close(); return []
-                # 查询三家供应商报价
-                sups = c2.execute("SELECT id, supplier_name, quote_price, quote_remark, quote_brand FROM inquiry_suppliers WHERE inquiry_id=? ORDER BY quote_price ASC", (biz_id,)).fetchall()
+                # 查询三家供应商报价(升序: A=最低价)
+                sups = c2.execute("SELECT id, supplier_name, quote_price, quote_remark, quote_brand FROM inquiry_suppliers WHERE inquiry_id=? ORDER BY quote_price ASC, id ASC", (biz_id,)).fetchall()
+                _abc = ('供应商A', '供应商B', '供应商C')
                 supplier_opts = []
                 supplier_details = []
-                for si in sups:
+                for _i, si in enumerate(sups):
+                    _tag = _abc[_i] if _i < 3 else ('供应商' + chr(65 + _i))
                     supplier_opts.append({'value': str(si['id']), 'text': '%s (¥%.0f)' % (si['supplier_name'], si['quote_price'] or 0)})
-                    detail = '%s报价¥%.0f' % (si['supplier_name'], si['quote_price'] or 0)
+                    detail = '%s[%s] %s报价¥%.0f' % (_tag, si['supplier_name'], si['supplier_name'], si['quote_price'] or 0)
                     if si['quote_brand']:
                         detail += ' 品牌:%s' % si['quote_brand']
                     if si['quote_remark']:
                         detail += ' 备注:%s' % si['quote_remark']
                     supplier_details.append(detail)
                 c2.close()
-                # V11.133/V11.135: 单选控件选项是模板静态配置的, 动态供应商无法匹配(820015)
-                # → 传空数组保证发起成功; 领导在钉钉看"三方报价详情"后, 在审批意见里写选中商家名
+                # V11.135: 模板"选定供应商"选项=供应商A/B/C(固定) — 按报价从低到高映射A/B/C,
+                # 默认选中A(最低价); 领导可在钉钉改选B/C
+                # ⚠️ 必须传模板里真实存在的选项文本, 否则钉钉报820015组件格式错误
+                _opt_map = {0: '供应商A', 1: '供应商B', 2: '供应商C'}  # 索引=报价升序排名
+                _default_opt = '供应商A' if supplier_opts else ''
                 form = [
                     {'name': '询价单号', 'value': iq['inq_no'] or ''},
                     {'name': '物资名称', 'value': (iq['title'] or '')[:50]},
                     {'name': '三方报价详情', 'value': '\n'.join(supplier_details) if supplier_details else '暂无报价'},
-                    {'name': '选定供应商 ', 'value': '[]'},  # 模板选项固定, 无法动态传 → 空数组(合法)
-                    {'name': '备注', 'value': '请在审批意见中写明选中哪家供应商(如: 同意厂家2), 审批通过后系统按意见匹配供应商生成订单'},
+                    {'name': '选定供应商 ', 'value': '["%s"]' % _default_opt if _default_opt else '[]'},
+                    {'name': '备注', 'value': '供应商A=报价最低, 请选择后提交审批(默认已选A, 可改选B/C)'},
                 ]
                 # V11.135: 比价单Excel作为钉钉审批附件(领导可直接查看完整比价表)
                 try:
