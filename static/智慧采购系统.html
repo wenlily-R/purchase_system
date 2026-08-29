@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>智慧采购管控系统 · 正诚能源</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI',system-ui,-apple-system,sans-serif}
+:root{--bg:#f0f2f5;--card:#fff;--primary:#1a73e8;--primary-dark:#1557b0;--success:#0f9d58;--warning:#f9ab00;--danger:#ea4335;--text:#202124;--text2:#5f6368;--border:#dadce0;--shadow:0 1px 3px rgba(0,0,0,.08);--radius:10px;--sidebar:220px}
+.dark{--bg:#1a1a2e;--card:#16213e;--text:#e8eaed;--text2:#9aa0a6;--border:#2d2d44;--shadow:0 1px 3px rgba(0,0,0,.3)}
+body{background:var(--bg);color:var(--text);display:flex;min-height:100vh;overflow-x:hidden}
+
+/* 侧边栏 */
+.sidebar{width:var(--sidebar);background:var(--card);border-right:1px solid var(--border);padding:0;position:fixed;height:100vh;z-index:100;transition:.3s;overflow-y:auto}
+.sidebar-logo{padding:20px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.sidebar-logo .logo-icon{width:36px;height:36px;background:var(--primary);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:16px;flex-shrink:0}
+.sidebar-logo h2{font-size:15px;font-weight:600;line-height:1.3}
+.sidebar-logo small{font-size:10px;color:var(--text2);display:block}
+.sidebar nav{padding:8px 0}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 18px;cursor:pointer;transition:.2s;font-size:13px;color:var(--text2);border-left:3px solid transparent;text-decoration:none}
+.nav-item:hover{background:var(--bg);color:var(--text)}
+.nav-item.active{background:rgba(26,115,232,.08);color:var(--primary);border-left-color:var(--primary);font-weight:500}
+.nav-item .icon{font-size:18px;width:22px;text-align:center}
+.nav-divider{margin:8px 18px;border-top:1px solid var(--border)}
+.nav-label{font-size:10px;color:var(--text2);padding:16px 18px 4px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+
+/* 主内容 */
+.main{margin-left:var(--sidebar);flex:1;padding:0;min-height:100vh;width:calc(100% - var(--sidebar))}
+.topbar{background:var(--card);padding:12px 28px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:50}
+.topbar .breadcrumb{font-size:13px;color:var(--text2)}
+.topbar .breadcrumb span{color:var(--text);font-weight:500}
+.topbar-right{display:flex;align-items:center;gap:16px}
+.topbar-right .time{font-size:12px;color:var(--text2)}
+.topbar-right .avatar{width:32px;height:32px;background:var(--primary);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:600}
+
+.content{padding:24px 28px}
+
+/* 页面切换 */
+.page{display:none}
+.page.active{display:block}
+
+/* Dashboard卡片 */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px}
+.kpi-card{background:var(--card);border-radius:var(--radius);padding:18px 20px;box-shadow:var(--shadow);border:1px solid var(--border)}
+.kpi-card .label{font-size:12px;color:var(--text2);margin-bottom:4px}
+.kpi-card .value{font-size:26px;font-weight:600}
+.kpi-card .sub{font-size:11px;color:var(--text2);margin-top:4px}
+.kpi-card .trend-up{color:var(--success)}
+.kpi-card .trend-down{color:var(--danger)}
+.kpi-card .icon-bg{float:right;width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;opacity:.15}
+.kpi-card:nth-child(1) .icon-bg{background:var(--primary)}
+.kpi-card:nth-child(2) .icon-bg{background:var(--success)}
+.kpi-card:nth-child(3) .icon-bg{background:var(--warning)}
+.kpi-card:nth-child(4) .icon-bg{background:var(--danger)}
+
+/* 卡片通用 */
+.card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);margin-bottom:20px;overflow:hidden}
+.card-header{padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.card-header h3{font-size:15px;font-weight:600}
+.card-body{padding:16px 20px}
+.card-actions{display:flex;gap:8px}
+.btn{display:inline-flex;align-items:center;gap:4px;padding:7px 16px;border-radius:6px;border:none;cursor:pointer;font-size:13px;transition:.2s;font-weight:500}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-primary:hover{background:var(--primary-dark)}
+.btn-outline{background:transparent;border:1px solid var(--border);color:var(--text)}
+.btn-outline:hover{background:var(--bg)}
+.btn-sm{padding:4px 10px;font-size:11px}
+.btn-danger{background:var(--danger);color:#fff}
+.btn-success{background:var(--success);color:#fff}
+
+/* 表格 */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:10px 12px;border-bottom:2px solid var(--border);color:var(--text2);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap}
+td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
+tr:hover{background:var(--bg)}
+.status{display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:500}
+.status-active,.status-进行中{background:#e8f5e9;color:#2e7d32}
+.status-pending,.status-待审批{background:#fff3e0;color:#e65100}
+.status-danger,.status-待入库{background:#fce4ec;color:#c62828}
+.status-info,.status-询比价{background:#e3f2fd;color:#1565c0}
+.status-已完成{background:#e8f5e9;color:#2e7d32}
+.status-已挂账{background:#f3e5f5;color:#6a1b9a}
+.status-待付款{background:#fff8e1;color:#f57f17}
+
+/* 库存预警 */
+.alert-bar{display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.alert-badge{display:flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:500}
+.alert-badge.red{background:#fce4ec;color:#c62828}
+.alert-badge.orange{background:#fff3e0;color:#e65100}
+.alert-badge.green{background:#e8f5e9;color:#2e7d32}
+
+/* 弹窗 */
+.modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.4);z-index:1000;justify-content:center;align-items:center}
+.modal.show{display:flex}
+.modal-content{background:var(--card);border-radius:12px;width:90%;max-width:720px;max-height:85vh;overflow-y:auto;padding:0;animation:slideUp .3s}
+@keyframes slideUp{from{transform:translateY(30px);opacity:0}to{transform:translateY(0);opacity:1}}
+.modal-header{padding:18px 24px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.modal-header h2{font-size:17px;font-weight:600}
+.modal-close{font-size:22px;cursor:pointer;color:var(--text2);background:none;border:none;padding:0 4px}
+.modal-close:hover{color:var(--text)}
+.modal-body{padding:20px 24px}
+.modal-footer{padding:14px 24px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px}
+
+.form-group{margin-bottom:14px}
+.form-label{display:block;font-size:12px;font-weight:600;color:var(--text2);margin-bottom:4px}
+.form-control{width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-size:13px;transition:.2s}
+.form-control:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(26,115,232,.15)}
+select.form-control{cursor:pointer}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+/* 时间线 */
+.timeline{position:relative;padding:0;list-style:none}
+.timeline-item{display:flex;gap:14px;padding:8px 0;position:relative}
+.timeline-dot{width:10px;height:10px;border-radius:50%;margin-top:5px;flex-shrink:0;position:relative;z-index:2}
+.timeline-dot.done{background:var(--success)}
+.timeline-dot.current{background:var(--warning);box-shadow:0 0 0 3px rgba(249,171,0,.3)}
+.timeline-dot.pending{background:var(--border)}
+.timeline-dot.danger{background:var(--danger)}
+.timeline-content{flex:1;padding-bottom:6px;position:relative}
+.timeline-content .t-title{font-size:13px;font-weight:500}
+.timeline-content .t-desc{font-size:11px;color:var(--text2);margin-top:2px}
+.timeline-content .t-date{font-size:11px;color:var(--text2);margin-top:1px}
+
+/* 搜索筛选区 */
+.filter-bar{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center}
+.filter-bar .form-control{width:auto;min-width:140px}
+
+/* 响应式 */
+@media(max-width:768px){
+  .sidebar{width:0;overflow:hidden}
+  .main{margin-left:0;width:100%}
+  .kpi-grid{grid-template-columns:1fr 1fr}
+  .form-row{grid-template-columns:1fr}
+}
+
+/* 图表模拟 */
+.chart-placeholder{height:200px;background:var(--bg);border-radius:8px;display:flex;align-items:flex-end;padding:12px;gap:6px}
+.chart-bar{flex:1;border-radius:4px 4px 0 0;min-height:8px;transition:.3s;display:flex;align-items:flex-end;justify-content:center;font-size:9px;color:var(--text2);padding-top:4px}
+.chart-bar:nth-child(1){background:var(--primary);height:65%}
+.chart-bar:nth-child(2){background:var(--success);height:80%}
+.chart-bar:nth-child(3){background:var(--warning);height:45%}
+.chart-bar:nth-child(4){background:var(--danger);height:70%}
+.chart-bar:nth-child(5){background:var(--primary);height:55%}
+.chart-bar:nth-child(6){background:var(--success);height:90%}
+.chart-bar:nth-child(7){background:var(--warning);height:60%}
+.chart-bar:nth-child(8){background:var(--danger);height:40%}
+.chart-bar:nth-child(9){background:var(--primary);height:75%}
+.chart-bar:nth-child(10){background:var(--success);height:50%}
+.chart-bar:nth-child(11){background:var(--warning);height:85%}
+.chart-bar:nth-child(12){background:var(--danger);height:35%}
+
+/* 搜索高亮 */
+.search-highlight{background:#fff3cd;padding:0 2px;border-radius:2px}
+
+/* 供应商卡片 */
+.sup-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.sup-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px 16px;transition:.2s}
+.sup-card:hover{box-shadow:0 2px 8px rgba(0,0,0,.1)}
+.sup-card .s-name{font-size:14px;font-weight:600}
+.sup-card .s-cat{font-size:11px;color:var(--text2);margin:4px 0}
+.sup-card .s-contact{font-size:11px;color:var(--text2)}
+.sup-card .s-rating{font-size:12px;color:var(--warning);margin-top:6px}
+</style>
+</head>
+<body>
+
+<!-- 侧边栏 -->
+<div class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-icon">正</div>
+    <div>
+      <h2>智慧采购系统</h2>
+      <small>正诚能源 · 河曲洗煤厂</small>
+    </div>
+  </div>
+  <nav>
+    <div class="nav-label">核心功能</div>
+    <div class="nav-item active" onclick="switchPage('dashboard')"><span class="icon">📊</span>工作台</div>
+    <div class="nav-item" onclick="switchPage('procurement')"><span class="icon">📋</span>采购管理</div>
+    <div class="nav-item" onclick="switchPage('inventory')"><span class="icon">📦</span>库存管理</div>
+    <div class="nav-item" onclick="switchPage('suppliers')"><span class="icon">🏢</span>供应商管理</div>
+    <div class="nav-divider"></div>
+    <div class="nav-label">管控中心</div>
+    <div class="nav-item" onclick="switchPage('tracking')"><span class="icon">🔄</span>全过程跟踪</div>
+    <div class="nav-item" onclick="switchPage('alerts')"><span class="icon">🔔</span>预警中心 <span style="background:var(--danger);color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;margin-left:auto">3</span></div>
+    <div class="nav-item" onclick="switchPage('finance')"><span class="icon">💰</span>财务看板</div>
+    <div class="nav-divider"></div>
+    <div class="nav-item" onclick="switchPage('orders')"><span class="icon">📄</span>新采购单</div>
+  </nav>
+</div>
+
+<!-- 主体 -->
+<div class="main">
+  <div class="topbar">
+    <div class="breadcrumb">正诚能源 / <span id="pageTitle">工作台</span></div>
+    <div class="topbar-right">
+      <span class="time" id="clock">加载中...</span>
+      <div class="avatar">管</div>
+    </div>
+  </div>
+
+  <div class="content">
+      <div id="connBar" style="padding:8px 14px;border-radius:8px;background:var(--bg);color:var(--text2);font-size:12px;margin-bottom:16px">⏳ 连接系统服务中...</div>
+
+    <!-- ========== 工作台 Dashboard ========== -->
+    <div class="page active" id="page-dashboard">
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="icon-bg" style="float:right">📋</div>
+          <div class="label">本月采购总额</div>
+          <div class="value" style="color:var(--primary)" id="kpi-total">--</div>
+          <div class="sub"><span class="trend-up">↑ 12.3%</span> 较上月</div>
+        </div>
+        <div class="kpi-card">
+          <div class="icon-bg" style="float:right">📦</div>
+          <div class="label">在途采购单</div>
+          <div class="value" style="color:var(--success)" id="kpi-active">--</div>
+          <div class="sub"><span class="trend-up">↑ 2</span> 较上周</div>
+        </div>
+        <div class="kpi-card">
+          <div class="icon-bg" style="float:right">⚠️</div>
+          <div class="label">库存预警</div>
+          <div class="value" style="color:var(--warning)" id="kpi-stock">--</div>
+          <div class="sub">2项已超24h未处理</div>
+        </div>
+        <div class="kpi-card">
+          <div class="icon-bg" style="float:right">🕐</div>
+          <div class="label">超期未处理</div>
+          <div class="value" style="color:var(--danger)" id="kpi-overdue">--</div>
+          <div class="sub"><span class="trend-down">↑ 1</span> 需立即处理</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:20px">
+        <div class="card">
+          <div class="card-header"><h3>📈 月度采购趋势</h3><div class="card-actions"><button class="btn btn-outline btn-sm">按年</button><button class="btn btn-primary btn-sm">按月</button></div></div>
+          <div class="card-body">
+            <div class="chart-placeholder">
+              <div class="chart-bar">1月</div><div class="chart-bar">2月</div><div class="chart-bar">3月</div><div class="chart-bar">4月</div>
+              <div class="chart-bar">5月</div><div class="chart-bar">6月</div><div class="chart-bar">7月</div><div class="chart-bar">8月</div>
+              <div class="chart-bar">9月</div><div class="chart-bar">10月</div><div class="chart-bar">11月</div><div class="chart-bar">12月</div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>⏰ 待处理事项</h3></div>
+          <div class="card-body" style="padding:12px 16px">
+            <div id="todoList"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:20px">
+        <div class="card-header"><h3>🔄 进行中采购单（近期待办）</h3></div>
+        <div class="card-body" style="padding:0">
+          <div class="table-wrap">
+            <table>
+              <tr><th>采购编号</th><th>物资</th><th>供应商</th><th>金额</th><th>当前节点</th><th>负责人</th><th>状态</th><th>操作</th></tr>
+              <tbody id="activeOrdersBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== 采购管理 ========== -->
+    <div class="page" id="page-procurement">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h2 style="font-size:18px">📋 采购单管理</h2>
+        <button class="btn btn-primary" onclick="switchPage('orders')">+ 新建采购单</button>
+      </div>
+      <div class="card">
+        <div class="card-body" style="padding:0">
+          <div class="table-wrap">
+            <table>
+              <tr><th>编号</th><th>物资</th><th>供应商</th><th>金额</th><th>创建日期</th><th>预期到货</th><th>节点</th><th>负责人</th><th>操作</th></tr>
+              <tbody id="procurementBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== 库存管理 ========== -->
+    <div class="page" id="page-inventory">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h2 style="font-size:18px">📦 库存管理</h2>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-outline">导入库存</button>
+          <button class="btn btn-outline">导出报表</button>
+        </div>
+      </div>
+      <div class="alert-bar">
+        <div class="alert-badge red" id="invRed">🔴 紧急预警 --</div>
+        <div class="alert-badge orange" id="invOrange">🟠 预警级 --</div>
+        <div class="alert-badge green" id="invGreen">🟢 正常 --</div>
+      </div>
+      <div class="card">
+        <div class="card-body" style="padding:0">
+          <div class="table-wrap">
+            <table>
+              <tr><th>物资名称</th><th>品类</th><th>当前库存</th><th>安全库存</th><th>状态</th><th>建议补货</th><th>操作</th></tr>
+              <tbody id="inventoryBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== 供应商管理 ========== -->
+    <div class="page" id="page-suppliers">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h2 style="font-size:18px">🏢 供应商管理</h2>
+        <button class="btn btn-primary">+ 新增供应商</button>
+      </div>
+      <div id="supGrid" class="sup-grid"></div>
+      </div>
+    </div>
+
+    <!-- ========== 全过程跟踪 ========== -->
+    <div class="page" id="page-tracking">
+      <h2 style="font-size:18px;margin-bottom:16px">🔄 全过程跟踪 · 节点时间线</h2>
+      <div class="filter-bar">
+        <input class="form-control" placeholder="搜索采购单号/物资名称" style="min-width:200px">
+        <select class="form-control"><option>全部状态</option><option>进行中</option><option>已完成</option><option>超期</option></select>
+        <select class="form-control"><option>全部品类</option><option>后勤</option><option>维修配件</option><option>设备工程</option></select>
+      </div>
+      <div id="trackingList"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== 预警中心 ========== -->
+    <div class="page" id="page-alerts">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h2 style="font-size:18px">🔔 预警中心</h2>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-outline">全部标记已读</button>
+        </div>
+      </div>
+      <div class="alert-bar">
+        <div class="alert-badge red" id="alRed">🔴 紧急 --</div>
+        <div class="alert-badge orange" id="alOrange">🟠 预警 --</div>
+        <div class="alert-badge green" id="alGreen">🟢 提示 --</div>
+      </div>
+      <div class="card">
+        <div class="card-body" style="padding:0">
+          <table>
+            <tr><th>等级</th><th>类型</th><th>内容</th><th>触发时间</th><th>处理状态</th><th>操作</th></tr>
+            <tbody id="alertsBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== 财务看板 ========== -->
+    <div class="page" id="page-finance">
+      <h2 style="font-size:18px;margin-bottom:16px">💰 财务看板</h2>
+      <div class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
+        <div class="kpi-card"><div class="label">采购总额</div><div class="value" style="color:var(--primary)" id="fin-total">--</div></div>
+        <div class="kpi-card"><div class="label">已挂账</div><div class="value" style="color:var(--success)" id="fin-credit">--</div><div class="sub" id="fin-credit-sub"></div></div>
+        <div class="kpi-card"><div class="label">待挂账</div><div class="value" style="color:var(--warning)" id="fin-pending">--</div><div class="sub" id="fin-pending-sub"></div></div>
+        <div class="kpi-card"><div class="label">待付款</div><div class="value" style="color:var(--danger)" id="fin-pay">--</div><div class="sub" id="fin-pay-sub"></div></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+        <div class="card">
+          <div class="card-header"><h3>📊 月度采购金额趋势</h3></div>
+          <div class="card-body">
+            <div class="chart-placeholder" style="height:150px">
+              <div class="chart-bar">1月</div><div class="chart-bar">2月</div><div class="chart-bar">3月</div><div class="chart-bar">4月</div>
+              <div class="chart-bar">5月</div><div class="chart-bar">6月</div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>📋 采购品类占比</h3></div>
+          <div class="card-body">
+            <div id="catBars" style="display:flex;flex-direction:column;gap:10px;padding:10px 0"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== 新建采购单 ========== -->
+    <div class="page" id="page-orders">
+      <h2 style="font-size:18px;margin-bottom:16px">📄 新建采购单</h2>
+      <div class="card">
+        <div class="card-header"><h3>申请单信息</h3></div>
+        <div class="card-body">
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">申请部门 *</label><select class="form-control" id="fDept"><option>生产部</option><option>维修车间</option><option>后勤部</option><option>综合办</option><option>财务部</option></select></div>
+            <div class="form-group"><label class="form-label">申请日期（随系统自动更新）</label><input class="form-control" id="fApplyDate" readonly></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">申请编号（自动生成）</label><input class="form-control" id="fReqNo" readonly></div>
+            <div class="form-group"><label class="form-label">申请状态</label><input class="form-control" value="待审批" readonly></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h3>采购需求信息</h3></div>
+        <div class="card-body">
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">物品名称 *</label><input class="form-control" id="fItem" placeholder="如：轴承6205"></div>
+            <div class="form-group"><label class="form-label">厂家/品牌/技术参数</label><input class="form-control" id="fSpec" placeholder="如：6205-2RS"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">采购类别</label><select class="form-control" id="fCat"><option>后勤类</option><option>维修配件类</option><option>设备工程类</option></select></div>
+            <div class="form-group"><label class="form-label">到货日期</label><input class="form-control" id="fDate" type="date"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">请购数量 *</label><input class="form-control" id="fQty" type="number" placeholder="0"></div>
+            <div class="form-group"><label class="form-label">单位</label><select class="form-control" id="fUnit"><option>个</option><option>箱</option><option>桶</option><option>条</option><option>米</option><option>kg</option></select></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">预估单价</label><input class="form-control" id="fAmount" placeholder="¥"></div>
+          </div>
+          <div class="form-group"><label class="form-label">用途说明</label><textarea class="form-control" id="fPurpose" rows="2" placeholder="请说明采购用途"></textarea></div>
+          <div class="form-group"><label class="form-label">期望供应商（可选）</label>
+            <select class="form-control" id="fSup"><option value="">自动匹配供应商</option></select>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h3>系统自动推算的时间线</h3></div>
+        <div class="card-body">
+          <div class="table-wrap">
+            <table>
+              <tr><th>节点</th><th>推算截止日</th><th>说明</th></tr>
+              <tr><td>需求发出截止</td><td>2026/07/18</td><td>今天</td></tr>
+              <tr><td>询比价完成</td><td>2026/07/21</td><td>3个工作日内</td></tr>
+              <tr><td>比价审批</td><td>2026/07/24</td><td>含审批时间</td></tr>
+              <tr><td>合同签订</td><td>2026/07/29</td><td>5个工作日</td></tr>
+              <tr><td>供应商备货</td><td>2026/08/05</td><td>7天备货</td></tr>
+              <tr><td>到货截止</td><td>2026/08/10</td><td>含物流+缓冲</td></tr>
+              <tr style="background:#fff3e0"><td><strong>🎯 目标使用日</strong></td><td><strong>2026/08/15</strong></td><td>你填的日期</td></tr>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button class="btn btn-outline" onclick="switchPage('dashboard')">取消</button>
+        <button class="btn btn-primary" onclick="submitPRequest()">提交采购申请</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- 采购单详情弹窗 -->
+<div class="modal" id="orderModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 id="modalTitle">采购单详情</h2>
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+    </div>
+    <div class="modal-body" id="modalBody">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+        <div><strong>采购单号：</strong><span id="md-id"></span></div>
+        <div><strong>供应商：</strong><span id="md-supplier"></span></div>
+        <div><strong>物资：</strong><span id="md-item"></span></div>
+        <div><strong>金额：</strong><span id="md-amount"></span></div>
+        <div><strong>负责人：</strong><span id="md-owner"></span></div>
+        <div><strong>状态：</strong><span id="md-status"></span></div>
+      </div>
+      <h3 style="font-size:14px;margin-bottom:8px">📋 全过程时间线</h3>
+      <div class="timeline" id="modal-timeline">
+        <div class="timeline-item"><div class="timeline-dot done"></div><div class="timeline-content"><div class="t-title">✅ 需求提报</div><div class="t-desc">已完成</div></div></div>
+        <div class="timeline-item"><div class="timeline-dot done"></div><div class="timeline-content"><div class="t-title">✅ 询比价</div><div class="t-desc">已完成</div></div></div>
+        <div class="timeline-item"><div class="timeline-dot current"></div><div class="timeline-content"><div class="t-title">⏳ 比价审批</div><div class="t-desc">进行中 · 超期2天</div></div></div>
+        <div class="timeline-item"><div class="timeline-dot pending"></div><div class="timeline-content"><div class="t-title">⬜ 合同签订</div></div></div>
+        <div class="timeline-item"><div class="timeline-dot pending"></div><div class="timeline-content"><div class="t-title">⬜ 到货入库</div></div></div>
+        <div class="timeline-item"><div class="timeline-dot pending"></div><div class="timeline-content"><div class="t-title">⬜ 付款挂账</div></div></div>
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal()">关闭</button></div>
+  </div>
+</div>
+
+<script>
+// 时钟
+function updateClock(){const d=new Date();document.getElementById('clock').textContent=d.toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}
+updateClock();setInterval(updateClock,1000)
+
+// 页面切换
+const pageTitles={dashboard:'工作台',procurement:'采购管理',inventory:'库存管理',suppliers:'供应商管理',tracking:'全过程跟踪',alerts:'预警中心',finance:'财务看板',orders:'新建采购单'}
+function switchPage(name){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'))
+  document.getElementById('page-'+name).classList.add('active')
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'))
+  document.querySelectorAll('.nav-item').forEach(n=>{if(n.textContent.trim().includes(pageTitles[name]?.slice(0,2))||n.getAttribute('onclick')?.includes(name))n.classList.add('active')})
+  // visual active fix
+  document.querySelectorAll('.nav-item').forEach(n=>{if(n.getAttribute('onclick')?.includes(name))n.classList.add('active')})
+  document.getElementById('pageTitle').textContent=pageTitles[name]||name
+  window.scrollTo(0,0)
+}
+
+// 详情弹窗
+function showOrder(id){
+  const o=ORDERS.find(x=>x.order_no===id)||{};
+  document.getElementById('modalTitle').textContent='采购单 '+id
+  document.getElementById('md-id').textContent=o.order_no||id
+  document.getElementById('md-supplier').textContent=o.supplier||'-'
+  document.getElementById('md-item').textContent=(o.item_name||'-')+(o.spec?' '+o.spec:'')+' ×'+(o.quantity??'-')+(o.unit||'')
+  document.getElementById('md-amount').textContent=fmt(o.total_amount)
+  document.getElementById('md-owner').textContent=o.owner||'-'
+  document.getElementById('md-status').innerHTML='<span class="'+stClass(o.status)+'">'+(o.status||'-')+'</span>'
+  document.getElementById('modal-timeline').innerHTML=timelineHtml(o)
+  document.getElementById('orderModal').classList.add('show')
+}
+function closeModal(){document.getElementById('orderModal').classList.remove('show')}
+document.getElementById('orderModal').addEventListener('click',e=>{if(e.target===document.getElementById('orderModal'))closeModal()})
+
+// ESC关闭
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()})
+
+// ================= V2 数据接入层: 真实系统数据 =================
+const API=location.protocol.startsWith('http')?'':'http://127.0.0.1:5899';
+let ORDERS=[],INV=[],SUPS=[],ALERTS=[],STATS={},CREDITS=[],PAYMENTS=[];
+function id(s){return document.getElementById(s)}
+function escH(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function fmt(n){return '¥'+(Number(n)||0).toLocaleString('zh-CN',{maximumFractionDigits:0})}
+function fmtDate(s){return String(s||'').slice(0,10).replace(/-/g,'/')}
+function stClass(s){
+  const m={'已完成':'active','已付款':'active','已通过':'active','已入库':'active','已签收':'active','待审批':'pending','待签收':'pending','待检验':'pending','审批通过':'info','已签合同':'info','已发货':'info','已到货':'info','已挂账':'info','已驳回':'danger','已关闭':'','执行中':'info'};
+  return 'status '+(m[s]||'')}
+function nodeOf(s){
+  const m={'待审批':'需求审批','审批通过':'询比价完成','已签合同':'合同签订','已发货':'供应商已发货','已到货':'到货待入库','已入库':'已入库','已挂账':'已挂账','已完成':'已完成','已关闭':'已关闭'};
+  return m[s]||s}
+const NODES=['需求提报','询比价','比价审批','合同签订','供应商备货','发货到货','入库验收','付款挂账'];
+function timelineHtml(o){
+  const m={'待审批':1,'审批通过':2,'已签合同':3,'已发货':4,'已到货':5,'已入库':6,'已挂账':7,'已完成':8};
+  const cur=m[o.status]||0;
+  return '<div class="timeline">'+NODES.map((nm,i)=>{
+    let dot='pending',mark='⬜';
+    if(cur>0&&i<cur){dot='done';mark='✅'}
+    else if(cur>0&&i===cur){dot='current';mark='⏳'}
+    return '<div class="timeline-item"><div class="timeline-dot '+dot+'"></div><div class="timeline-content"><div class="t-title">'+mark+' '+nm+'</div>'+(i===cur?'<div class="t-desc">当前节点: '+escH(o.status||'')+'</div>':i<cur?'<div class="t-desc">已完成</div>':'')+'</div></div>'
+  }).join('')+'</div>'
+}
+async function japi(path,opts={}){
+  const r=await fetch(API+path,{headers:{'Content-Type':'application/json'},credentials:'include',...opts});
+  return r.json()}
+
+// ── 离线降级: 示例数据 ──
+const FB={
+  stats:{total_purchase:3862000,pending_approvals:8,active_orders:8,stock_warnings:3,overdue_items:2},
+  orders:[
+    {order_no:'CG-2026-028',item_name:'轴承6205',spec:'6205-2RS',quantity:50,unit:'个',total_amount:3200,supplier:'晋工机械',owner:'张三',target_date:'2026-08-15',status:'待审批',category:'维修配件类'},
+    {order_no:'CG-2026-029',item_name:'A4复印纸',spec:'70g',quantity:20,unit:'箱',total_amount:4800,supplier:'晨光文具',owner:'李四',target_date:'2026-08-01',status:'已签合同',category:'后勤类'},
+    {order_no:'CG-2026-030',item_name:'防尘口罩',spec:'KN95',quantity:500,unit:'个',total_amount:2500,supplier:'恒安劳保',owner:'张三',target_date:'2026-07-28',status:'已到货',category:'后勤类'},
+    {order_no:'CG-2026-031',item_name:'润滑油46#',spec:'46#液压油',quantity:5,unit:'桶',total_amount:6750,supplier:'长城润滑油',owner:'李四',target_date:'2026-07-30',status:'已发货',category:'维修配件类'},
+    {order_no:'CG-2026-032',item_name:'输送皮带',spec:'EP200',quantity:20,unit:'米',total_amount:5600,supplier:'晋工机械',owner:'张三',target_date:'2026-08-10',status:'审批通过',category:'设备工程类'},
+    {order_no:'CG-2026-001',item_name:'轴承6205',spec:'6205-2RS',quantity:50,unit:'个',total_amount:3200,supplier:'晋工机械',owner:'张三',target_date:'2026-07-15',status:'已完成',category:'维修配件类'},
+    {order_no:'CG-2026-002',item_name:'A4复印纸',spec:'70g',quantity:20,unit:'箱',total_amount:4800,supplier:'晨光文具',owner:'李四',target_date:'2026-07-12',status:'已完成',category:'后勤类'},
+    {order_no:'CG-2026-003',item_name:'防尘口罩',spec:'KN95',quantity:500,unit:'个',total_amount:2500,supplier:'恒安劳保',owner:'张三',target_date:'2026-07-18',status:'已完成',category:'后勤类'},
+    {order_no:'CG-2026-004',item_name:'润滑脂3#',spec:'3#锂基脂',quantity:10,unit:'桶',total_amount:3600,supplier:'长城润滑油',owner:'张三',target_date:'2026-07-20',status:'已挂账',category:'维修配件类'},
+    {order_no:'CG-2026-005',item_name:'三角带B型',spec:'B1500',quantity:20,unit:'条',total_amount:1800,supplier:'晋工机械',owner:'李四',target_date:'2026-07-22',status:'已完成',category:'维修配件类'},
+    {order_no:'CG-2026-006',item_name:'液压油46#',spec:'L-HM46',quantity:5,unit:'桶',total_amount:6750,supplier:'长城润滑油',owner:'张三',target_date:'2026-07-25',status:'已完成',category:'维修配件类'},
+    {order_no:'CG-2026-007',item_name:'切割片',spec:'355mm',quantity:40,unit:'片',total_amount:960,supplier:'恒安劳保',owner:'李四',target_date:'2026-07-20',status:'已完成',category:'维修配件类'},
+    {order_no:'CG-2026-011',item_name:'筛板(上层)',spec:'1200x2400',quantity:4,unit:'块',total_amount:8400,supplier:'华能筛网',owner:'张三',target_date:'2026-08-05',status:'审批通过',category:'设备工程类'},
+    {order_no:'CG-2026-012',item_name:'渣浆泵叶轮',spec:'100ZJ',quantity:2,unit:'个',total_amount:3600,supplier:'华能筛网',owner:'张三',target_date:'2026-08-08',status:'待审批',category:'设备工程类'},
+  ],
+  inventory:[
+    {item_name:'轴承6205',cat_code:'WX',quantity:32,safe_stock:50,unit:'个'},
+    {item_name:'防尘口罩',cat_code:'HQ',quantity:120,safe_stock:200,unit:'个'},
+    {item_name:'A4复印纸',cat_code:'HQ',quantity:8,safe_stock:3,unit:'箱'},
+    {item_name:'润滑脂3#',cat_code:'WX',quantity:3,safe_stock:5,unit:'桶'},
+    {item_name:'劳保手套',cat_code:'HQ',quantity:85,safe_stock:15,unit:'双'},
+    {item_name:'润滑油46#',cat_code:'WX',quantity:8,safe_stock:3,unit:'桶'},
+    {item_name:'三角带B型',cat_code:'WX',quantity:12,safe_stock:6,unit:'条'},
+    {item_name:'渣浆泵叶轮',cat_code:'WX',quantity:1,safe_stock:2,unit:'个'},
+    {item_name:'筛板(上层)',cat_code:'WX',quantity:0,safe_stock:3,unit:'块'},
+  ],
+  suppliers:[
+    {name:'晋工机械有限公司',category:'轴承·传动件·筛网',contact:'王经理',phone:'138xxxx8901',rating:4.2},
+    {name:'晨光文具（河曲）',category:'办公用品·打印耗材',contact:'李经理',phone:'139xxxx5678',rating:4.8},
+    {name:'恒安劳保用品',category:'劳保手套·口罩·安全帽',contact:'张经理',phone:'137xxxx2345',rating:4.0},
+    {name:'长城润滑油(山西)',category:'液压油·齿轮油·润滑脂',contact:'陈经理',phone:'136xxxx9012',rating:4.5},
+    {name:'华能筛网制造',category:'筛板·筛网·泵阀',contact:'赵经理',phone:'135xxxx3456',rating:3.8},
+    {name:'正泰电器(忻州)',category:'接触器·电缆·开关',contact:'刘经理',phone:'134xxxx7890',rating:4.1},
+    {name:'河曲县宏发五金',category:'工具·切割片·螺丝',contact:'周经理',phone:'133xxxx1234',rating:4.3},
+    {name:'山东矿机集团',category:'洗煤设备·振动筛·压滤机',contact:'孙经理',phone:'132xxxx5678',rating:4.6},
+  ],
+  alerts:[
+    {type:'库存预警',level:'red',content:'筛板(上层) 库存为0，已断供！'},
+    {type:'节点超期',level:'orange',content:'CG-2026-028 询比价审批超期2天'},
+    {type:'库存预警',level:'orange',content:'轴承6205 库存32，低于安全库存50'},
+    {type:'发票逾期',level:'orange',content:'CG-2026-030 入库已7天，发票未回'},
+    {type:'节点提醒',level:'green',content:'CG-2026-029 合同签订今日截止'},
+    {type:'节点提醒',level:'green',content:'CG-2026-013 预计到货日还剩2天'},
+  ],
+  credits:[{credit_no:'GZ-001',item_name:'润滑脂3#',amount:2945000,status:'已通过'}],
+  payments:[{payment_no:'FK-001',payment_type:'正常付款',amount:2945000,status:'已付款'}],
+};
+function loadFallback(){STATS=FB.stats;ORDERS=FB.orders;INV=FB.inventory;SUPS=FB.suppliers;ALERTS=FB.alerts;CREDITS=FB.credits;PAYMENTS=FB.payments}
+
+// ── 渲染 ──
+function renderKPI(){
+  id('kpi-total').textContent=fmt(STATS.total_purchase);
+  id('kpi-active').textContent=STATS.active_orders??'-';
+  id('kpi-stock').textContent=STATS.stock_warnings??'-';
+  id('kpi-overdue').textContent=STATS.overdue_items??'-';
+  id('fin-total').textContent=fmt(STATS.total_purchase);
+  const credSum=CREDITS.reduce((a,c)=>a+(Number(c.amount)||0),0);
+  const pend=CREDITS.filter(c=>c.status==='待审批');
+  id('fin-credit').textContent=fmt(credSum);
+  id('fin-credit-sub').textContent='共 '+CREDITS.length+' 笔挂账';
+  id('fin-pending').textContent=pend.length+' 笔';
+  id('fin-pending-sub').textContent='金额 '+fmt(pend.reduce((a,c)=>a+(Number(c.amount)||0),0));
+  const payPending=PAYMENTS.filter(p=>p.status==='待审批');
+  id('fin-pay').textContent=fmt(PAYMENTS.filter(p=>p.status==='已付款').reduce((a,p)=>a+(Number(p.amount)||0),0));
+  id('fin-pay-sub').textContent='待付款 '+payPending.length+' 笔';
+}
+function renderTodo(){
+  const items=[];
+  if((STATS.pending_approvals||0)>0)items.push({dot:'var(--warning)',txt:'待审批 '+STATS.pending_approvals+' 条，请及时处理'});
+  (ALERTS||[]).slice(0,5).forEach(a=>items.push({dot:a.level==='red'?'var(--danger)':a.level==='orange'?'var(--warning)':'var(--success)',txt:a.content}));
+  id('todoList').innerHTML=items.map(x=>'<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)"><span style="width:8px;height:8px;border-radius:50%;background:'+x.dot+';flex-shrink:0"></span><div style="flex:1">'+escH(x.txt)+'</div></div>').join('')||'<div style="color:var(--text2);padding:8px 0">✅ 暂无待处理事项</div>';
+}
+function renderActiveOrders(){
+  const ACT=['待审批','审批通过','已签合同','已发货','已到货','已入库','已挂账'];
+  const list=ORDERS.filter(o=>ACT.includes(o.status)).slice(0,8);
+  id('activeOrdersBody').innerHTML=list.map(o=>'<tr><td>'+escH(o.order_no)+'</td><td>'+escH(o.item_name)+(o.spec?' '+escH(o.spec):'')+' ×'+o.quantity+escH(o.unit||'')+'</td><td>'+escH(o.supplier||'')+'</td><td>'+fmt(o.total_amount)+'</td><td>'+escH(nodeOf(o.status))+'</td><td>'+escH(o.owner||'')+'</td><td><span class="'+stClass(o.status)+'">'+escH(o.status)+'</span></td><td><button class="btn btn-outline btn-sm" onclick="showOrder(\''+o.order_no+'\')">详情</button></td></tr>').join('')||'<tr><td colspan="8" style="text-align:center;color:#999">暂无进行中采购单</td></tr>';
+}
+function renderProcurement(){
+  id('procurementBody').innerHTML=ORDERS.map(o=>'<tr><td>'+escH(o.order_no)+'</td><td>'+escH(o.item_name)+(o.spec?' '+escH(o.spec):'')+'</td><td>'+escH(o.supplier||'')+'</td><td>'+fmt(o.total_amount)+'</td><td>'+fmtDate(o.created_at||o.target_date)+'</td><td>'+fmtDate(o.target_date)+'</td><td><span class="'+stClass(o.status)+'">'+escH(nodeOf(o.status))+'</span></td><td>'+escH(o.owner||'')+'</td><td><button class="btn btn-outline btn-sm" onclick="showOrder(\''+o.order_no+'\')">详情</button></td></tr>').join('')||'<tr><td colspan="9" style="text-align:center;color:#999">暂无采购单</td></tr>';
+}
+function renderInventory(){
+  const inv=INV||[];let red=0,orange=0;
+  id('inventoryBody').innerHTML=inv.map(x=>{
+    const q=Number(x.quantity)||0,s=Number(x.safe_stock)||0;
+    const low=q<=s&&s>0; if(q===0)red++; else if(low)orange++;
+    const rep=low?Math.max(0,Math.round(s*1.5-q)):0;
+    return '<tr style="'+(q===0?'background:#fff5f5':low?'background:#fff8e1':'')+'"><td><strong>'+escH(x.item_name)+'</strong></td><td>'+escH(x.cat_code||'-')+'</td><td style="color:'+(q===0?'var(--danger)':low?'var(--warning)':'inherit')+';font-weight:600">'+q+'</td><td>'+(s||'-')+'</td><td><span class="'+(q===0?'status status-danger':low?'status status-pending':'status status-active')+'">'+(q===0?'已断供':low?'低于安全库存':'正常')+'</span></td><td>'+(rep?rep+escH(x.unit||'个'):'-')+'</td><td>'+(low?'<button class="btn btn-primary btn-sm" onclick="switchPage(\'orders\')">补货</button>':'<button class="btn btn-outline btn-sm">查看</button>')+'</td></tr>';
+  }).join('')||'<tr><td colspan="7" style="text-align:center;color:#999">暂无库存数据</td></tr>';
+  id('invRed').textContent='🔴 已断供 '+red+' 项';
+  id('invOrange').textContent='🟠 预警级 '+orange+' 项';
+  id('invGreen').textContent='🟢 正常 '+(inv.length-red-orange)+' 项';
+}
+function renderSuppliers(){
+  id('supGrid').innerHTML=(SUPS||[]).map(x=>{const s=Math.min(5,Math.max(1,Math.round(x.rating||0)));return '<div class="sup-card"><div class="s-name">'+escH(x.name)+'</div><div class="s-cat">'+escH(x.category||'')+'</div><div class="s-contact">'+escH(x.contact||'')+' '+escH(x.phone||'')+'</div><div class="s-rating">'+'★'.repeat(s)+'☆'.repeat(5-s)+' '+(x.rating||'-')+'</div></div>'}).join('')||'<div style="color:#999;padding:16px">暂无供应商</div>';
+}
+function renderTracking(){
+  const ACT=['待审批','审批通过','已签合同','已发货','已到货','已入库','已挂账'];
+  const list=ORDERS.filter(o=>ACT.includes(o.status)).slice(0,3);
+  id('trackingList').innerHTML=list.map(o=>'<div class="card" style="margin-bottom:14px"><div class="card-header"><h3>'+escH(o.order_no)+' · '+escH(o.item_name)+' ×'+o.quantity+escH(o.unit||'')+'</h3><div style="font-size:12px;color:var(--text2)">目标到货: '+escH(o.target_date||'-')+' · 负责人: '+escH(o.owner||'-')+'</div></div><div class="card-body">'+timelineHtml(o)+'</div></div>').join('')||'<div class="card"><div class="card-body" style="color:#999;padding:20px">暂无进行中采购单</div></div>';
+}
+function renderAlerts(){
+  const list=ALERTS||[];let red=0,orange=0,green=0;
+  id('alertsBody').innerHTML=list.map(a=>{
+    const lv=a.level==='red'?'紧急':a.level==='orange'?'预警':'提示';
+    if(a.level==='red')red++;else if(a.level==='orange')orange++;else green++;
+    return '<tr style="'+(lv==='紧急'?'background:#fff5f5':lv==='预警'?'background:#fff8e1':'')+'"><td><span style="background:'+(lv==='紧急'?'var(--danger)':lv==='预警'?'var(--warning)':'var(--success)')+';color:#fff;border-radius:4px;padding:2px 8px;font-size:11px">'+lv+'</span></td><td>'+escH(a.type)+'</td><td>'+escH(a.content)+'</td><td>-</td><td><span class="status status-pending">待处理</span></td><td><button class="btn btn-primary btn-sm" onclick="switchPage(\'orders\')">处理</button></td></tr>';
+  }).join('')||'<tr><td colspan="6" style="text-align:center;color:#999">暂无预警</td></tr>';
+  id('alRed').textContent='🔴 紧急 '+red+' 条';
+  id('alOrange').textContent='🟠 预警 '+orange+' 条';
+  id('alGreen').textContent='🟢 提示 '+green+' 条';
+}
+function renderCatBars(){
+  const cats={};ORDERS.forEach(o=>{const k=o.category||'其他';cats[k]=(cats[k]||0)+(Number(o.total_amount)||0)});
+  const total=Object.values(cats).reduce((a,b)=>a+b,0)||1;
+  const cols=['var(--primary)','var(--success)','var(--warning)','var(--danger)','#8e44ad'];
+  id('catBars').innerHTML=Object.entries(cats).map(([k,v],i)=>'<div><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span>'+escH(k)+'</span><span>'+Math.round(v/total*100)+'%</span></div><div style="height:8px;background:var(--bg);border-radius:4px;overflow:hidden"><div style="width:'+Math.max(2,Math.round(v/total*100))+'%;height:100%;background:'+cols[i%5]+';border-radius:4px"></div></div></div>').join('')||'暂无数据';
+}
+function renderAll(){renderKPI();renderTodo();renderActiveOrders();renderProcurement();renderInventory();renderSuppliers();renderTracking();renderAlerts();renderCatBars()}
+
+// ── 初始化: 登录 + 拉数据 ──
+async function initData(){
+  const bar=id('connBar');
+  try{await japi('/login',{method:'POST',body:JSON.stringify({username:'admin',password:'admin123'})})}catch(e){}
+  try{
+    const res=await Promise.all([japi('/stats'),japi('/orders'),japi('/inventory'),japi('/suppliers'),japi('/alerts'),japi('/credits'),japi('/payments')]);
+    [STATS,ORDERS,INV,SUPS,ALERTS,CREDITS,PAYMENTS]=res;
+    if(bar){bar.textContent='✅ 已连接采购系统，显示实时数据';bar.style.background='#e6f7ed';bar.style.color='#0d7a3e'}
+  }catch(e){
+    loadFallback();
+    if(bar){bar.textContent='⚠️ 无法连接系统服务，当前显示示例数据（请通过 http 链接访问以加载实时数据）';bar.style.background='#fff7e6';bar.style.color='#b76e00'}
+  }
+  renderAll();
+  const supSel=id('fSup');
+  if(supSel&&SUPS.length)supSel.innerHTML='<option value="">自动匹配供应商</option>'+SUPS.map(x=>'<option>'+escH(x.name)+'</option>').join('');
+  // 申请单信息: 申请日期随系统自动更新, 编号自动生成
+  const today=new Date();
+  const y=today.getFullYear(),mo=String(today.getMonth()+1).padStart(2,'0'),da=String(today.getDate()).padStart(2,'0');
+  const ad=id('fApplyDate'); if(ad)ad.value=y+'-'+mo+'-'+da;
+  try{
+    const rn=await japi('/prequests/next_no');
+    const nr=id('fReqNo'); if(nr&&rn.req_no)nr.value=rn.req_no;
+  }catch(e){}
+}
+async function submitPRequest(){
+  const item=id('fItem').value;
+  if(!item){alert('请填写物品名称');return}
+  const today=new Date();
+  const y=today.getFullYear(),mo=String(today.getMonth()+1).padStart(2,'0'),da=String(today.getDate()).padStart(2,'0');
+  const d={dept:id('fDept').value,purpose:id('fPurpose').value,target_date:id('fDate').value,
+    apply_date:y+'-'+mo+'-'+da,
+    items:[{item_name:item,spec:id('fSpec').value,quantity:parseFloat(id('fQty').value)||1,unit:id('fUnit').value,estimated_price:parseFloat(id('fAmount').value)||0}]};
+  try{
+    const r=await japi('/prequests',{method:'POST',body:JSON.stringify(d)});
+    alert('✅ '+(r.req_no||'')+' 已提交，进入审批流程');
+    switchPage('procurement');initData();
+  }catch(e){alert('提交失败，请确认系统服务在线')}
+}
+initData();
+</script>
+</body>
+</html>
