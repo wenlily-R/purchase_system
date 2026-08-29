@@ -691,23 +691,14 @@ def api_login():
     username = (d.get('username') or '').strip()
     ip = get_client_ip()
     conn = db()
-    # 失败锁定: 15分钟内同一账号+IP失败>=5次则锁定
-    if login_fail_count(conn, username, ip) >= MAX_FAILS:
-        conn.close()
-        log('系统', '登录锁定', '账号 %s (IP %s) 触发失败锁定' % (username, ip))
-        return jsonify({'error': '登录失败次数过多，账号已临时锁定%d分钟，请稍后再试' % LOCK_MINUTES}), 429
+    # V11.138: 取消失败锁定(用户要求) — 不限制连续失败次数, 仅记录审计
     u = conn.execute("SELECT u.*,d.name as dept_name FROM users u LEFT JOIN departments d ON u.dept_id=d.id WHERE u.username=? AND u.is_active=1", (username,)).fetchone()
     if not u or not verify_password(d.get('password',''), u['password']):
         conn.execute("INSERT INTO login_attempts(username,ip,success) VALUES(?,?,0)", (username, ip))
         conn.commit()
-        fails = login_fail_count(conn, username, ip)
         conn.close()
-        left = MAX_FAILS - fails
-        msg = '用户名或密码错误'
-        if left > 0: msg += '（还有%d次机会，连续失败%d次将锁定%d分钟）' % (left, MAX_FAILS, LOCK_MINUTES)
-        else: msg += '（已锁定%d分钟）' % LOCK_MINUTES
         log('系统', '登录失败', '账号 %s (IP %s) 密码错误' % (username, ip))
-        return jsonify({'error': msg}), 401
+        return jsonify({'error': '用户名或密码错误'}), 401
     # 旧MD5密码自动升级为PBKDF2(一次登录即完成迁移)
     if is_legacy_md5(u['password']):
         conn.execute("UPDATE users SET password=? WHERE id=?", (hash_password(d.get('password','')), u['id']))
