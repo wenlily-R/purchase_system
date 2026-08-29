@@ -660,9 +660,13 @@ async function api(url,opts={}){
     __dupGuard.set(key,now);
   }
   __apiFeed(method);
+  // V11.140: 请求超时控制 — 20秒无响应抛错(免费隧道慢时不无限等待, 给用户明确反馈)
+  const ctl=new AbortController();
+  const tm=setTimeout(()=>ctl.abort(),20000);
   try{
     console.log('[DEBUG] api fetch:', API+url, opts.method||'GET');
-    const r=await fetch(API+url,{headers:{'Content-Type':'application/json'},...opts,credentials:'include'});
+    const r=await fetch(API+url,{headers:{'Content-Type':'application/json'},...opts,credentials:'include',signal:ctl.signal});
+    clearTimeout(tm);
     __apiDone();
     console.log('[DEBUG] api response status:', r.status);
     // V11.30: 只有真正的 401(会话失效)才跳登录页; 网络错误/服务端HTML错误页不跳(避免误登出)
@@ -673,7 +677,12 @@ async function api(url,opts={}){
       showLogin();throw new Error('not-json')
     }
     return r.json()
-  }catch(e){__apiDone();throw e}
+  }catch(e){
+    clearTimeout(tm);
+    __apiDone();
+    if(e.name==='AbortError'){const e2=new Error('请求超时(网络较慢)，请重试');e2.soft=true;throw e2}
+    throw e
+  }
 }
 function id(s){return document.getElementById(s)}
 // V11.55: 轻提示(toast) — 不阻塞操作, 2.5秒自动消失, 替代alert做成功提示
@@ -902,6 +911,16 @@ function sw(name){
     return;
   }
   if(fn[name])fn[name]();
+  // V11.140: 加载超时提示 — 6秒后若页面仍有"加载中", 提示网络较慢(免费隧道慢时用户知道在等, 不以为卡死)
+  clearTimeout(window.__loadTipTm);
+  window.__loadTipTm=setTimeout(()=>{
+    const pg=id('p'+name);
+    if(!pg)return;
+    const still=pg.querySelectorAll('.loading');
+    if(still.length){
+      still.forEach(el=>{if(el.textContent==='加载中...')el.textContent='⏳ 网络较慢，正在加载...'});
+    }
+  },6000);
 }
 // V11.66: 页面→允许角色(空=所有人); 系统配置类仅管理员
 function __pageRoles(name){
@@ -1397,7 +1416,11 @@ async function doResubmit(oid){
   else alert(r.error||'保存失败');
 }
 async function showPRequest(id){
-  const d=await api(`/prequests/${id}`),r=d.request,items=d.items,approvals=d.approvals;
+  // V11.140: 点击详情立即弹窗加载中, 数据到了再填充
+  showDetail('📝 采购申请 #'+id,'<div class="loading">加载中...</div>');
+  let d;
+  try{d=await api(`/prequests/${id}`)}catch(e){id('dmBody').innerHTML='<div style="padding:20px;text-align:center;color:#c0392b;font-size:11px">⚠️ 加载失败(网络较慢)，请点击重试 <button class="btn btn-p btn-sm" onclick="showPRequest('+id+')">重试</button></div>';return}
+  const r=d.request,items=d.items,approvals=d.approvals;
   let h=`<div class="c2"><div><dt>编号</dt><dd><b>${esc(r.req_no)}</b></dd><dt>部门</dt><dd>${esc(r.dept)}</dd><dt>申请人</dt><dd>${esc(r.requester)}</dd><dt>预算科目</dt><dd>${esc(r.budget_code||'-')}</dd></div>
     <div><dt>用途</dt><dd>${esc(r.purpose)}</dt><dt>目标日</dt><dd>${r.target_date||'-'}</dd><dt>状态</dt><dd>${tag(r.status)}</dd></div></div>
     <h4 style="font-size:10px;margin:6px 0 3px">📋 物资明细</h4><div style="font-size:9px">`;
@@ -1483,7 +1506,10 @@ async function createInquiry(){
   else alert(r.error||'发起失败');
 }
 async function showInquiry(id){
-  const d=await api(`/inquiries/${id}`);
+  // V11.140: 点击详情立即弹窗显示加载中(隧道慢时不干等, 用户马上看到反馈)
+  showDetail('🔍 询价单 #'+id,'<div class="loading">加载中...</div>');
+  let d;
+  try{d=await api(`/inquiries/${id}`)}catch(e){id('dmBody').innerHTML='<div style="padding:20px;text-align:center;color:#c0392b;font-size:11px">⚠️ 加载失败(网络较慢)，请点击重试 <button class="btn btn-p btn-sm" onclick="showInquiry('+id+')">重试</button></div>';return}
   const r=d.request||{};
   let h=`<div class="c2"><div><dt>询价单号</dt><dd><b>${esc(d.inq_no)}</b></dd><dt>申请单号</dt><dd>${esc(r.req_no||('#'+d.req_id))}</dd><dt>部门</dt><dd>${esc(r.dept||'')}</dd><dt>状态</dt><dd>${tag(d.status)}${d.deadline?` <span style="font-size:9px;color:${d.deadline<new Date().toISOString().slice(0,10)?'#c0392b':'#b08900'}">⏰截止${esc(d.deadline)}${d.deadline<new Date().toISOString().slice(0,10)?' 已截止':''}</span>`:''}</dd></div>
     <div><dt>采购事由</dt><dd>${esc(d.purpose||'')}</dd><dt>发起人</dt><dd>${esc(d.created_by||'')}</dd><dt>发起时间</dt><dd>${esc(d.created_at||'')}</dd></div></div>`;
@@ -1618,7 +1644,11 @@ async function loadOrders(){
     });
 }
 async function showOrder(id){
-  const d=await api(`/orders/${id}`),o=d.order;
+  // V11.140: 点击详情立即弹窗加载中, 数据到了再填充
+  showDetail('📋 订单 #'+id,'<div class="loading">加载中...</div>');
+  let d;
+  try{d=await api(`/orders/${id}`)}catch(e){id('dmBody').innerHTML='<div style="padding:20px;text-align:center;color:#c0392b;font-size:11px">⚠️ 加载失败(网络较慢)，请点击重试 <button class="btn btn-p btn-sm" onclick="showOrder('+id+')">重试</button></div>';return}
+  const o=d.order;
   let h=`<div class="c2"><div><dt>单号</dt><dd><b>${esc(o.order_no)}</b></dd><dt>物资</dt><dd>${esc(o.item_name)}</dd><dt>数量</dt><dd>${o.quantity}${esc(o.unit)}</dd><dt>金额</dt><dd>¥${(o.total_amount||0).toFixed(0)}</dd></div>
     <div><dt>供应商</dt><dd>${esc(o.supplier)}</dd><dt>负责人</dt><dd>${esc(o.owner)}</dd><dt>交易模式</dt><dd><span class="tag ${o.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(o.trade_mode||'货到付款')}</span></dd><dt>状态</dt><dd>${tag(o.status)}</dd></div></div>`;
   if(o.contract_no){const cf=(await api('/contracts')).find(x=>x.contract_no===o.contract_no);h+=`<div style="margin-top:6px;font-size:9px;color:var(--s)">已关联合同: ${esc(o.contract_no)} ${cf&&cf.file_path?`<a href="/uploads/${esc(cf.file_path)}" target="_blank" style="color:var(--b2,#3370ff)">📄下载</a>`:''}</div>`}
