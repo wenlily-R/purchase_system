@@ -650,9 +650,9 @@ function __apiDone(){
   if(__apiPending>0)__apiPending--;
   // 不主动隐藏 toast, 由调用方成功/失败提示接管
 }
-// V11.141: GET请求并发控制 — 同时最多2个在飞(免费隧道带宽窄, 6个列表同时拉会互相排队堵死)
+// V11.141: GET请求并发控制 — 同时最多3个在飞(免费隧道带宽窄, 6个列表同时拉会互相排队堵死)
 let __getQueue=[],__getFlying=0;
-const __GET_MAX=2;
+const __GET_MAX=3;
 function __getEnqueue(fn){
   return new Promise((res,rej)=>{
     __getQueue.push({fn,res,rej});
@@ -677,34 +677,34 @@ async function api(url,opts={}){
     __dupGuard.set(key,now);
   }
   __apiFeed(method);
-  // V11.140: 请求超时控制 — 20秒无响应抛错(免费隧道慢时不无限等待, 给用户明确反馈)
-  const ctl=new AbortController();
-  const tm=setTimeout(()=>ctl.abort(),20000);
+  // V11.140/V11.147: 请求超时控制 — 20秒无响应抛错; 计时从请求真正发出开始(排队等待不计时, 否则队列里等久了被误杀)
   const _do=async()=>{
     console.log('[DEBUG] api fetch:', API+url, opts.method||'GET');
-    const r=await fetch(API+url,{headers:{'Content-Type':'application/json'},...opts,credentials:'include',signal:ctl.signal});
-    clearTimeout(tm);
-    __apiDone();
-    console.log('[DEBUG] api response status:', r.status);
-    // V11.30: 只有真正的 401(会话失效)才跳登录页; 网络错误/服务端HTML错误页不跳(避免误登出)
-    if(r.status==401){console.log('[DEBUG] 401, showLogin');showLogin();throw new Error('login')}
-    const ct=r.headers.get('content-type')||'';
-    if(!ct.includes('application/json')){
-      if(r.status>=400){const e=new Error('服务暂时不可用('+r.status+')，请稍后刷新');e.soft=true;throw e}
-      showLogin();throw new Error('not-json')
+    const ctl=new AbortController();
+    const tm=setTimeout(()=>ctl.abort(),20000);
+    try{
+      const r=await fetch(API+url,{headers:{'Content-Type':'application/json'},...opts,credentials:'include',signal:ctl.signal});
+      clearTimeout(tm);
+      __apiDone();
+      console.log('[DEBUG] api response status:', r.status);
+      // V11.30: 只有真正的 401(会话失效)才跳登录页; 网络错误/服务端HTML错误页不跳(避免误登出)
+      if(r.status==401){console.log('[DEBUG] 401, showLogin');showLogin();throw new Error('login')}
+      const ct=r.headers.get('content-type')||'';
+      if(!ct.includes('application/json')){
+        if(r.status>=400){const e=new Error('服务暂时不可用('+r.status+')，请稍后刷新');e.soft=true;throw e}
+        showLogin();throw new Error('not-json')
+      }
+      return r.json()
+    }catch(e){
+      clearTimeout(tm);
+      __apiDone();
+      if(e.name==='AbortError'){const e2=new Error('请求超时(网络较慢)，请重试');e2.soft=true;throw e2}
+      throw e
     }
-    return r.json()
   };
-  try{
-    // V11.141: GET排队限流, 非GET直接发
-    if(method==='GET')return await __getEnqueue(_do);
-    return await _do();
-  }catch(e){
-    clearTimeout(tm);
-    __apiDone();
-    if(e.name==='AbortError'){const e2=new Error('请求超时(网络较慢)，请重试');e2.soft=true;throw e2}
-    throw e
-  }
+  // V11.141: GET排队限流, 非GET直接发
+  if(method==='GET')return await __getEnqueue(_do);
+  return await _do();
 }
 function id(s){return document.getElementById(s)}
 // V11.55: 轻提示(toast) — 不阻塞操作, 2.5秒自动消失, 替代alert做成功提示
