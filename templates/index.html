@@ -1638,14 +1638,29 @@ async function exportInquiry(iid){
   alert('✅ 询价单Excel已导出，请查看下载文件');
 }
 async function selectInquirySupplier(iid,sid){
-  // V11.73: 领导选中供应商后直接生效,无需再次审批
+  // V11.143: 结算方式明确弹窗选择(现结/月结), 不再用晦涩的confirm确定/取消
   const amt=parseFloat(id('inqTotalAmt')?.dataset?.val||'0');
-  const settle=confirm('请选择结算方式:\n【确定】=现结(立即生效)\n【取消】=月结(月底汇总)');
-  if(!confirm(settle?'确定选中该供应商并生成订单？':'确定选中该供应商并生成订单？'))return;
-  const r=await api(`/inquiries/${iid}/select`,{method:'POST',body:JSON.stringify({supplier_id:sid,settle_type:settle?'现结':'月结'})});
+  showDetail('💳 选择结算方式',`
+    <div style="font-size:11px;margin-bottom:10px">请选择本次采购的结算方式：</div>
+    <div style="display:flex;gap:8px">
+      <div style="flex:1;border:2px solid var(--s);border-radius:8px;padding:12px;text-align:center;cursor:pointer;background:#f0faf5" onclick="doSelectSettle(${iid},${sid},'现结')">
+        <div style="font-size:16px">⚡</div><div style="font-size:12px;font-weight:bold;color:var(--s)">现结</div>
+        <div style="font-size:9px;color:#888;margin-top:4px">一单一结<br>生成合同后立即付款</div>
+      </div>
+      <div style="flex:1;border:2px solid #e67e22;border-radius:8px;padding:12px;text-align:center;cursor:pointer;background:#fef9f0" onclick="doSelectSettle(${iid},${sid},'月结')">
+        <div style="font-size:16px">📅</div><div style="font-size:12px;font-weight:bold;color:#e67e22">月结</div>
+        <div style="font-size:9px;color:#888;margin-top:4px">月底按厂家汇总<br>统一生成月度合同</div>
+      </div>
+    </div>`,
+    `<button class="btn btn-o" onclick="closeMod()">取消</button>`);
+}
+async function doSelectSettle(iid,sid,settle){
+  if(!confirm('确定选中该供应商并生成订单？（结算方式：'+settle+'）'))return;
+  const r=await api(`/inquiries/${iid}/select`,{method:'POST',body:JSON.stringify({supplier_id:sid,settle_type:settle})});
+  closeMod();
   if(r.success){
-    const msg = `✅ ${r.order_no}（¥${(r.total_amount||0).toFixed(0)}）已生效${settle?'':'，月底生成月结合同'}`;
-    alert(msg);closeMod();loadInquiries();loadOrders();
+    const msg = `✅ ${r.order_no}（¥${(r.total_amount||0).toFixed(0)}）已生效${settle==='月结'?'，月底生成月结合同':''}`;
+    alert(msg);loadInquiries();loadOrders();
   }
   else alert(r.error||'操作失败');
 }

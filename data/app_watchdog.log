@@ -55231,3 +55231,3009 @@ stamp_leader_sign err: You must install Pillow to fetch image objects
  * Running on http://127.0.0.1:5899
  * Running on http://192.168.110.89:5899
 [33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 09:47:56] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:48:05] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:48:37] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:48:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:48:49] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:48:54] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:48:56] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:49:09] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:49:32] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:49:34] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 09:49:35] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [29/Aug/2026 09:49:36] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 09:49:37] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:49:39] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:49:39] "GET /api/public-url HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:49:39] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:49:40] "GET /api/public-url HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:49:40] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:49:41] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:49:41] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:49:42] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:49:56] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:50:12] "GET /api/settings HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:50:12] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:50:13] "GET /api/contract-templates HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:50:14] "GET /api/logs HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:50:14] "GET /api/config-users HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:50:14] "GET /api/approval-config/check HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:50:14] "GET /api/approval-flow HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:50:14] "GET /api/users HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:50:15] "GET /api/signature/info HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:50:16] "GET /api/users HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:50:16] "GET /uploads/signatures/sig_邢果_20260824160632.png HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:50:33] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:50:44] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:50:46] "GET /api/suppliers HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:50:47] "GET /api/categories HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:50:49] "GET /api/departments HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:50:50] "GET /api/prequests/next_no HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:50:51] "GET /api/budgets HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:51:16] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:51:45] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:51:45] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:51:45] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:51:46] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:51:47] "GET /api/prequests/next_no?dept=工程部 HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:51:48] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:51:49] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:51:51] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:51:54] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:52:20] "GET /api/inventory/stock-check?name=测试物品1 HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:52:20] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:52:24] "GET /api/inventory/stock-check?name=测试物品2 HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:52:52] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:52:53] "POST /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:52:54] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:52:55] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:52:56] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:53:25] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:53:47] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:53:49] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:53:54] "POST /api/approvals/purchase_request/1/approve HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:53:57] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:53:57] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:53:58] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:53:59] "GET /api/inquiries HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:53:59] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:54:02] "GET /api/inquiries/eligible HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:54:29] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:55:00] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:55:09] "POST /api/inquiries HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:55:12] "GET /api/inquiries HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 09:55:19] "GET /api/inquiries/1 HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 09:55:22] "GET /api/inquiries/1 HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:55:32] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:55:44] "GET /inq/26f5e844a13d4aef856acaee5785cd8d HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:55:45] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [29/Aug/2026 09:56:04] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:56:36] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:57:09] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:57:35] "POST /api/inquiry/vendor/26f5e844a13d4aef856acaee5785cd8d/quote HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:57:38] "GET /inq/26f5e844a13d4aef856acaee5785cd8d HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:57:40] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:57:41] "GET /inq/006bc1720b474557bd098e8ff90ee5c2 HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:58:12] "GET / HTTP/1.1" 200 -
+[V11.76] 发起询价审批成功: XJ-202608-0001
+127.0.0.1 - - [29/Aug/2026 09:58:18] "POST /api/inquiry/vendor/006bc1720b474557bd098e8ff90ee5c2/quote HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:58:20] "GET /inq/006bc1720b474557bd098e8ff90ee5c2 HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 09:58:36] "GET /api/inquiries/1 HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 09:58:40] "GET /api/inquiries/1 HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:58:44] "GET / HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 09:58:49] "GET /api/inquiries/1/export HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 09:58:51] "GET /api/inquiries/1/export HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:59:16] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 09:59:48] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:00:58] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:01:30] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:02:01] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:02:33] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:03:05] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:03:37] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 10:04:09] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 10:04:59] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:05:02] "POST /api/login HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:05:09] "GET /api/inquiries/1/export HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:05:12] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:05:44] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:06:16] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:06:48] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:07:20] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:07:51] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:08:03] "POST /api/login HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:08:08] "GET /api/inquiries/1/export HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:08:23] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 10:08:55] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 10:09:27] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 10:09:59] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 10:10:17] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:10:23] "POST /api/login HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:10:28] "GET /api/inquiries/1/export HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:10:30] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 10:10:55] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:11:02] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:11:04] "POST /api/login HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:11:10] "GET /api/inquiries/1/export HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:11:34] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:12:06] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:12:38] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 10:13:09] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 10:13:46] "GET /api/health HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 10:14:19] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 10:14:51] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 10:15:08] "GET /api/health HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 10:15:25] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:15:57] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:16:29] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:17:01] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:17:33] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:18:05] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:18:37] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:19:09] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:19:41] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:20:54] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:20:56] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 10:21:41] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:21:44] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:22:39] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:23:11] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:23:12] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:23:29] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:23:31] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:23:44] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:24:15] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:24:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:25:20] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:25:26] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:25:27] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:25:36] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:25:39] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:25:46] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:25:48] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:25:50] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:25:51] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:26:21] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [29/Aug/2026 10:26:23] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:26:39] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:26:39] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+192.168.110.89 - - [29/Aug/2026 10:26:39] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+192.168.110.89 - - [29/Aug/2026 10:26:39] "[33mGET /apple-touch-icon-precomposed.png HTTP/1.1[0m" 404 -
+192.168.110.89 - - [29/Aug/2026 10:26:39] "[33mGET /apple-touch-icon-precomposed.png HTTP/1.1[0m" 404 -
+192.168.110.89 - - [29/Aug/2026 10:26:39] "[33mGET /apple-touch-icon.png HTTP/1.1[0m" 404 -
+192.168.110.89 - - [29/Aug/2026 10:26:39] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+192.168.110.89 - - [29/Aug/2026 10:26:39] "[33mGET /apple-touch-icon.png HTTP/1.1[0m" 404 -
+192.168.110.89 - - [29/Aug/2026 10:26:39] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+192.168.110.89 - - [29/Aug/2026 10:26:40] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:26:40] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+192.168.110.89 - - [29/Aug/2026 10:26:40] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+192.168.110.89 - - [29/Aug/2026 10:26:41] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+192.168.110.89 - - [29/Aug/2026 10:26:42] "POST /api/login HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:26:42] "GET /api/public-url HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:26:42] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:26:42] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:26:46] "POST /api/login HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:26:46] "GET /api/public-url HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:26:46] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:26:46] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:26:51] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:26:52] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:26:55] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:26:55] "GET / HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+192.168.110.89 - - [29/Aug/2026 10:26:57] "GET /api/inquiries/1 HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:27:06] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:27:07] "GET /api/suppliers HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:27:07] "GET /api/categories HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:27:07] "GET /api/departments HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:27:07] "GET /api/prequests/next_no HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:27:07] "GET /api/budgets HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:27:10] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:27:10] "GET /api/prequests/next_no?dept=后勤部 HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:27:25] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:27:27] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:27:36] "GET /api/inventory/stock-check?name=测试物品1 HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:27:40] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:27:40] "GET /api/inventory/stock-check?name=测试物品2 HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:27:54] "POST /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:27:54] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:27:54] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:27:54] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:27:55] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:27:59] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:28:00] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:28:01] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:28:02] "GET /api/receivings HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:28:02] "GET /api/departments HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:28:02] "GET /api/categories HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:28:02] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:28:03] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:28:04] "GET /api/inquiries HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:28:05] "GET /api/inquiries/eligible HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:28:08] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:28:09] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:28:11] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:28:13] "POST /api/approvals/purchase_request/2/approve HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:28:14] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:28:14] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:28:14] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:28:17] "GET /api/inquiries HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:28:28] "GET /api/inquiries HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:28:29] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:28:30] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:28:31] "GET /api/prequests/1 HTTP/1.1" 200 -
+stamp_leader_sign err: You must install Pillow to fetch image objects
+192.168.110.89 - - [29/Aug/2026 10:28:35] "GET /api/prequests/1/download HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:28:43] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:28:54] "GET /api/inquiries HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:28:58] "GET /api/inquiries HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:28:59] "GET /api/inquiries/eligible HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:29:05] "GET / HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+192.168.110.89 - - [29/Aug/2026 10:29:07] "GET /api/inquiries/1 HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:29:12] "GET /api/inquiries HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:29:13] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:29:13] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:29:16] "GET /api/inquiries HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:29:17] "GET /api/inquiries/eligible HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:29:28] "GET /api/inquiries HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:29:37] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:29:39] "POST /api/inquiries HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:29:41] "GET /api/inquiries HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+192.168.110.89 - - [29/Aug/2026 10:29:45] "GET /api/inquiries HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+192.168.110.89 - - [29/Aug/2026 10:29:47] "GET /api/inquiries/2 HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+192.168.110.89 - - [29/Aug/2026 10:29:50] "GET /api/inquiries/2 HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+192.168.110.89 - - [29/Aug/2026 10:29:51] "GET /api/inquiries/2 HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:30:07] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+192.168.110.89 - - [29/Aug/2026 10:30:08] "GET /api/inquiries HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:30:08] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:30:13] "GET /inq/4e08688777a745dd9872d5a6963b6f57?serveo-skip-browser-warning=true HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:30:16] "GET /inq/124c0c3d41564f65a1116616129778c4?serveo-skip-browser-warning=true HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:30:23] "GET /api/inquiries HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:30:38] "GET /api/inquiries HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:30:40] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:30:53] "GET /api/inquiries HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:31:01] "POST /api/inquiry/vendor/124c0c3d41564f65a1116616129778c4/quote HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:31:03] "GET /inq/124c0c3d41564f65a1116616129778c4?serveo-skip-browser-warning=true HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:31:08] "GET /api/inquiries HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:31:12] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:31:23] "GET /api/inquiries HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:31:38] "GET /api/inquiries HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:31:44] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:31:47] "POST /api/inquiry/vendor/4e08688777a745dd9872d5a6963b6f57/quote HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:31:49] "GET /inq/4e08688777a745dd9872d5a6963b6f57?serveo-skip-browser-warning=true HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:31:53] "GET /api/inquiries HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+192.168.110.89 - - [29/Aug/2026 10:31:57] "GET /api/inquiries/2 HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:32:08] "POST /api/inquiries/2/submit HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:32:11] "GET /api/inquiries HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:32:12] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:32:12] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:32:13] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:32:16] "GET / HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+192.168.110.89 - - [29/Aug/2026 10:32:18] "GET /api/inquiries/2 HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:32:27] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:32:34] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:32:35] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+192.168.110.89 - - [29/Aug/2026 10:32:41] "GET /api/inquiries/2 HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:32:42] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:32:57] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+192.168.110.89 - - [29/Aug/2026 10:33:11] "GET /api/inquiries/2 HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:33:12] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+192.168.110.89 - - [29/Aug/2026 10:33:17] "GET /api/inquiries/2/export HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:33:25] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:33:29] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+192.168.110.89 - - [29/Aug/2026 10:33:44] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 10:33:57] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:33:59] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+192.168.110.89 - - [29/Aug/2026 10:34:14] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:34:28] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:34:29] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:34:44] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+192.168.110.89 - - [29/Aug/2026 10:34:59] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:35:00] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+192.168.110.89 - - [29/Aug/2026 10:35:14] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:35:16] "GET /api/health HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+192.168.110.89 - - [29/Aug/2026 10:35:29] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:35:32] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:35:35] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+192.168.110.89 - - [29/Aug/2026 10:35:44] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:35:59] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:36:04] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:36:14] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:36:29] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:36:35] "GET / HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+192.168.110.89 - - [29/Aug/2026 10:36:44] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:36:59] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:37:07] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:37:14] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:37:29] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:37:39] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:37:44] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+192.168.110.89 - - [29/Aug/2026 10:37:59] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:38:13] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:38:14] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:38:29] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:38:44] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:38:45] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+192.168.110.89 - - [29/Aug/2026 10:38:59] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+192.168.110.89 - - [29/Aug/2026 10:39:14] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:39:18] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:39:19] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+192.168.110.89 - - [29/Aug/2026 10:39:29] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:39:44] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 10:39:51] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:39:59] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:40:14] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+192.168.110.89 - - [29/Aug/2026 10:40:23] "GET /api/inquiries/2 HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+192.168.110.89 - - [29/Aug/2026 10:40:24] "GET /api/inquiries/2 HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:40:29] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:40:44] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+192.168.110.89 - - [29/Aug/2026 10:40:59] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:41:00] "GET / HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+192.168.110.89 - - [29/Aug/2026 10:41:12] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:41:13] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:41:13] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:41:14] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:41:14] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:41:17] "GET /api/suppliers HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:41:17] "GET /api/categories HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:41:17] "GET /api/departments HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:41:17] "GET /api/budgets HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:41:17] "GET /api/prequests/next_no HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:41:29] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:41:32] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:41:34] "GET /api/inventory/stock-check?name=物资1 HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:41:37] "GET /api/inventory/stock-check?name=物资2 HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:41:44] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:41:46] "POST /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:41:46] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:41:46] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:41:46] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:41:48] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:41:49] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:41:56] "POST /api/approvals/purchase_request/3/approve HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:41:58] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:41:58] "GET /api/dashboard HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:41:58] "GET /api/approvals/overdue HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:41:59] "GET /api/prequests HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:42:00] "GET /api/inquiries HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:42:01] "GET /api/inquiries HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:42:01] "GET /api/inquiries/eligible HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:42:05] "GET / HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+192.168.110.89 - - [29/Aug/2026 10:42:16] "GET /api/inquiries HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+192.168.110.89 - - [29/Aug/2026 10:42:23] "POST /api/inquiries HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:42:25] "GET /api/inquiries HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+192.168.110.89 - - [29/Aug/2026 10:42:32] "GET /api/inquiries HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+192.168.110.89 - - [29/Aug/2026 10:42:33] "GET /api/inquiries/3 HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:42:37] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:42:54] "GET /api/inquiries HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:43:09] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:43:09] "GET /api/inquiries HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+192.168.110.89 - - [29/Aug/2026 10:43:24] "GET /api/inquiries HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+192.168.110.89 - - [29/Aug/2026 10:43:39] "GET /api/inquiries HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:43:41] "GET / HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:43:49] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:43:54] "GET /api/inquiries HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:43:56] "GET /inq/124c0c3d41564f65a1116616129778c4 HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:43:58] "GET /inq/4e08688777a745dd9872d5a6963b6f57 HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:44:09] "GET /api/inquiries HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:44:12] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:44:24] "GET /api/inquiries HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+192.168.110.89 - - [29/Aug/2026 10:44:39] "GET /api/inquiries HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+192.168.110.89 - - [29/Aug/2026 10:44:43] "GET /api/inquiries/3 HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:44:45] "GET / HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+192.168.110.89 - - [29/Aug/2026 10:44:49] "GET /api/inquiries/3 HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] <urlopen error _ssl.c:1112: The handshake operation timed out>
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:45:41] "GET / HTTP/1.1" 200 -
+192.168.110.89 - - [29/Aug/2026 10:45:42] "GET /api/inquiries HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:45:57] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 10:45:59] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [29/Aug/2026 10:46:00] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 10:46:01] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:46:01] "GET / HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:46:02] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:46:02] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:46:02] "GET /api/public-url HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:46:04] "GET /api/public-url HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:46:04] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:46:04] "GET /api/approvals/overdue HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:46:06] "GET /api/approvals/overdue HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:46:23] "GET /api/inquiries HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:46:30] "GET /api/inquiries/3 HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:46:33] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:46:38] "GET /inq/cab56e24993f462dbc3f5121b340aec5 HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:46:40] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [29/Aug/2026 10:46:46] "GET /inq/398dd3a5aa264e4b8d93e86aca59c59c HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:47:05] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:47:15] "POST /api/inquiry/vendor/cab56e24993f462dbc3f5121b340aec5/quote HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:47:17] "GET /inq/cab56e24993f462dbc3f5121b340aec5 HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:47:37] "GET / HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:48:10] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:48:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:49:04] "POST /api/inquiry/vendor/398dd3a5aa264e4b8d93e86aca59c59c/quote HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:49:06] "GET /inq/398dd3a5aa264e4b8d93e86aca59c59c HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:49:20] "GET / HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:49:55] "GET / HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] <urlopen error _ssl.c:1112: The handshake operation timed out>
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:50:14] "GET /api/inquiries/3 HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:50:14] "GET /api/inquiries/3 HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:50:18] "GET /api/inquiries/3 HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:50:18] "GET /api/inquiries/3 HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:50:21] "GET /api/inquiries/3 HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:50:27] "GET / HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:50:30] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:50:33] "POST /api/inquiries/3/submit HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:50:33] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:50:36] "GET /api/inquiries HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:50:38] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:50:39] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:50:39] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:50:40] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:50:59] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:51:31] "GET / HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:52:05] "GET / HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:52:38] "GET / HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 10:53:12] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:53:49] "GET / HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:54:22] "GET / HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:54:27] "[31m[1mPOST /api/login HTTP/1.1[0m" 401 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:54:29] "POST /api/login HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:54:43] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:54:44] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:54:54] "GET / HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 10:55:22] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:55:27] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 10:55:34] "GET /api/health HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 10:55:52] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:55:53] "[31m[1mPOST /api/inquiries/3/submit HTTP/1.1[0m" 400 -
+127.0.0.1 - - [29/Aug/2026 10:56:01] "GET / HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:56:25] "POST /api/inquiries/3/submit HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:56:32] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 10:57:39] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 10:58:10] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:58:11] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:58:25] "POST /api/inquiries/3/submit HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:58:34] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 10:58:43] "GET / HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 10:59:58] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:01:08] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:01:53] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:02:25] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:02:57] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:03:35] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 11:04:07] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 11:04:21] "GET /api/health HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 11:04:39] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:04:39] "POST /api/inquiries/3/submit HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 11:05:11] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 11:05:34] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:05:43] "GET / HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 11:05:48] "POST /api/inquiries/3/submit HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 11:06:15] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:06:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:07:19] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:07:57] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:08:30] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:09:02] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:09:34] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:10:06] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:10:38] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:11:10] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:11:42] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:12:04] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:12:05] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:12:14] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:12:40] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:12:42] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:12:44] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [29/Aug/2026 11:12:45] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:12:46] "[31m[1mPOST /api/login HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:12:48] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:12:48] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:12:58] "[31m[1mPOST /api/login HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:13:16] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:13:18] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:13:18] "[33mGET /apple-touch-icon-precomposed.png HTTP/1.1[0m" 404 -
+127.0.0.1 - - [29/Aug/2026 11:13:19] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:13:20] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:13:20] "[33mGET /apple-touch-icon.png HTTP/1.1[0m" 404 -
+127.0.0.1 - - [29/Aug/2026 11:13:21] "[31m[1mPOST /api/login HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:13:21] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [29/Aug/2026 11:13:22] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:13:51] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:14:23] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:14:31] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:14:33] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:14:55] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:15:27] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:15:59] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:16:03] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:16:04] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:16:06] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:16:08] "[31m[1mPOST /api/login HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:16:09] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:16:31] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:16:40] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:16:41] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:16:44] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:17:04] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:17:21] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:17:22] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:17:24] "[31m[1mPOST /api/login HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:17:25] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:17:26] "[31m[1mPOST /api/login HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:17:28] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:17:28] "[31m[1mPOST /api/login HTTP/1.1[0m" 429 -
+127.0.0.1 - - [29/Aug/2026 11:17:39] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:17:41] "[31m[1mPOST /api/login HTTP/1.1[0m" 429 -
+127.0.0.1 - - [29/Aug/2026 11:18:11] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:18:43] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:19:16] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:19:56] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:21:19] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:21:51] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:22:23] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:22:55] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:23:27] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:23:59] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:24:31] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:25:03] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:25:34] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:26:06] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 11:26:48] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:26:52] "[31m[1mPOST /api/login HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:26:52] "[31m[1mPOST /api/login HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:26:52] "[31m[1mPOST /api/login HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:26:52] "[31m[1mPOST /api/login HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:26:52] "[31m[1mPOST /api/login HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:26:52] "[31m[1mPOST /api/login HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:26:53] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:26:54] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:27:18] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:27:50] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:28:21] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:28:53] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:29:16] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:29:17] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:29:25] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:29:32] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:29:35] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:29:35] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [29/Aug/2026 11:29:37] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:29:38] "[31m[1mPOST /api/login HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:29:39] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:29:45] "[31m[1mPOST /api/login HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:29:55] "[31m[1mPOST /api/login HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:29:57] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:30:04] "[31m[1mPOST /api/login HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 11:30:29] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:31:00] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:31:22] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:31:30] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:31:31] "GET /api/public-url HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:31:32] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:31:32] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:31:33] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:31:33] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:31:33] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:31:34] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:31:35] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:31:36] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:31:50] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:31:51] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:32:04] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:32:05] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:32:06] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:32:15] "POST /api/logout HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:32:26] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:32:28] "GET /api/public-url HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:32:28] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:32:29] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:32:35] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:32:36] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:32:36] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:32:50] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:32:51] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:33:03] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:33:04] "GET /api/inquiries HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:33:05] "GET /api/inquiries HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:33:07] "GET / HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 11:33:10] "GET /api/inquiries/3 HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:33:16] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:33:20] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:33:35] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:33:39] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:33:50] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:34:05] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:34:11] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:34:20] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:34:35] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:34:43] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:34:50] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:35:05] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:35:15] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:35:20] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:35:35] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:35:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:35:50] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:36:05] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:36:19] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:36:51] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:37:22] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:37:54] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:38:26] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:38:58] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:39:29] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:40:01] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:41:11] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:41:42] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:42:14] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:42:46] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:43:18] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:43:50] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:44:22] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:44:56] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:45:28] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:46:00] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:46:32] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:47:04] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:47:36] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:48:08] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:48:42] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:49:14] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:49:46] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:50:18] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:50:50] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:51:22] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:51:55] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:52:29] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:53:01] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:53:33] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:54:11] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:54:44] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:55:16] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:55:49] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:56:33] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:57:05] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:57:38] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:58:10] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:58:42] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:59:15] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 11:59:52] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:01:13] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:01:45] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:02:19] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:02:58] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:03:30] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:04:02] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:04:43] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:05:22] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:05:59] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:06:36] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:07:08] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:07:42] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:08:58] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:09:31] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:10:05] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:10:37] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:11:09] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:11:42] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:12:14] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:12:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:13:20] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:13:52] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:14:34] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:15:08] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:16:23] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:16:55] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:17:33] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:18:05] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:18:37] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:19:11] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:19:48] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:21:01] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:21:33] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:22:12] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:22:45] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:23:17] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:23:50] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:24:31] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:25:07] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:25:40] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:26:14] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:26:46] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:27:19] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:27:51] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:28:23] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:28:55] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:29:28] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:30:00] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:30:35] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:31:07] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:31:39] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:32:11] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:32:43] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:33:15] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:33:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:34:26] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:34:58] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:35:30] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:36:02] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:36:36] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:37:08] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:37:41] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:38:12] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:38:44] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:39:16] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:39:49] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:41:23] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:42:00] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:42:33] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:43:05] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:43:38] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:44:17] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:44:51] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:45:23] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:45:56] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:46:33] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:47:06] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:47:38] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:48:10] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:48:42] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:49:14] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:49:49] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:50:21] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:50:54] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:51:26] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:51:58] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:52:34] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:53:08] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:53:39] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:54:11] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:54:43] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:55:15] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:55:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:56:23] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:57:00] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:57:32] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:58:04] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:58:37] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:59:09] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 12:59:41] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:00:59] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:01:31] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:02:03] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:02:35] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:03:08] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:03:40] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:04:12] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:04:52] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:05:24] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:06:04] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:06:36] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:07:07] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:07:39] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:08:11] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:08:43] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:09:17] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:09:49] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:10:22] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:10:55] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:11:28] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:12:00] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:12:32] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:13:18] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:13:52] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:14:23] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:14:55] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:15:29] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:16:01] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:16:33] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:17:14] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:17:46] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:18:20] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:18:53] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:19:25] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:19:57] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:21:06] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:21:39] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:22:11] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:22:43] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:23:16] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:23:48] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:24:20] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:24:52] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:25:24] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:25:56] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:26:27] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:26:59] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:27:32] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:28:05] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:28:36] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:29:08] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:29:40] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:30:14] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:30:45] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:31:18] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:31:50] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:32:23] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:32:55] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:33:27] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:33:59] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:34:32] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:35:04] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:35:36] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:36:08] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:37:27] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:37:59] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:38:30] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:39:02] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:39:34] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:40:53] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:41:25] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:41:57] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:42:30] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:43:02] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:43:34] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:44:06] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:44:38] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:45:10] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:45:42] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:46:14] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:46:46] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:47:18] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:47:50] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:48:22] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:48:55] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:49:27] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:49:59] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:50:31] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:51:03] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:51:35] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:52:07] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:52:39] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:53:11] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:53:43] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:54:14] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:54:46] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:55:18] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:55:50] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:56:22] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:56:54] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:57:26] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:57:58] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:58:30] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:59:02] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 13:59:34] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:00:43] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:01:16] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:01:48] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:02:20] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:02:52] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:03:24] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:03:57] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:04:30] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:05:02] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:05:34] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:06:06] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:06:39] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:07:11] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:07:45] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:08:17] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:08:49] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:09:22] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:09:54] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:10:26] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:11:01] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:11:33] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:12:05] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:12:37] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:13:08] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:13:41] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:14:13] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:14:45] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:15:17] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:15:46] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:15:46] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:15:46] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:15:48] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 14:16:32] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:16:32] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:16:37] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:16:39] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:17:05] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:17:35] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:17:37] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:17:37] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 14:17:38] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [29/Aug/2026 14:17:41] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 14:17:46] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 14:17:50] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:17:52] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 14:17:53] "GET /api/public-url HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:17:53] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:17:53] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:17:54] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:17:54] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:17:58] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:18:00] "GET /api/public-url HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:18:02] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:18:03] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:18:09] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:18:41] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:18:50] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:18:52] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:18:56] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:19:00] "GET /api/suppliers HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:19:02] "GET /api/categories HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:19:03] "GET /api/departments HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:19:05] "GET /api/prequests/next_no HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:19:06] "GET /api/budgets HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:19:11] "GET /api/prequests/next_no?dept=后勤部 HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:19:13] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:19:41] "GET /api/inventory/stock-check?name=物资1 HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:19:44] "GET /api/inventory/stock-check?name=物资2 HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:19:45] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:20:06] "POST /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:20:57] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:21:29] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:22:01] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:22:33] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:23:08] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:23:51] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:24:23] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:24:55] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:25:28] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:26:00] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:26:32] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:27:10] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:27:43] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:27:48] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:27:50] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:27:52] "[31m[1mGET /api/dashboard HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 14:27:52] "[31m[1mGET /api/prequests HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 14:27:52] "[31m[1mGET /api/inquiries HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 14:27:52] "[31m[1mGET /api/orders HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 14:27:52] "[31m[1mGET /api/inventory HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 14:27:52] "[31m[1mGET /api/approvals/all-pending HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 14:27:57] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:27:57] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:27:57] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:27:57] "GET /api/inquiries HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:27:57] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:27:57] "GET /api/inventory HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:27:57] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:27:57] "GET /api/contracts HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:27:57] "GET /api/receivings HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 14:29:28] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:29:28] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:29:32] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:30:04] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:30:19] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:30:22] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:30:43] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:31:15] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:31:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:32:27] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:33:03] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:33:36] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:33:55] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [29/Aug/2026 14:33:58] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:34:02] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 14:34:05] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 14:34:09] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 14:34:14] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 14:34:14] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:34:15] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:34:16] "GET /api/public-url HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:34:16] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:34:17] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:34:17] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:34:18] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:34:19] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:34:20] "GET /api/public-url HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:34:20] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:34:21] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:34:22] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:34:24] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:34:26] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:34:29] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:34:33] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:34:50] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:35:14] "[31m[1mPOST /api/approvals/purchase_request/4/approve HTTP/1.1[0m" 400 -
+127.0.0.1 - - [29/Aug/2026 14:35:18] "POST /api/approvals/purchase_request/4/approve HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:35:21] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:35:23] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:35:27] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:35:27] "[33mGET /apple-touch-icon-precomposed.png HTTP/1.1[0m" 404 -
+127.0.0.1 - - [29/Aug/2026 14:35:28] "GET /api/public-url HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:35:28] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:35:29] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:35:30] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:35:30] "[33mGET /apple-touch-icon.png HTTP/1.1[0m" 404 -
+127.0.0.1 - - [29/Aug/2026 14:35:31] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:35:31] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [29/Aug/2026 14:35:32] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:35:33] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:35:36] "GET /api/inquiries HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:35:37] "GET /api/inquiries/eligible HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:35:57] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:36:36] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:37:10] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:37:42] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:38:16] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:38:49] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:39:23] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:40:54] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:41:26] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:42:09] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:42:42] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:43:14] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:43:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:44:24] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:44:57] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:45:29] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:46:02] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:46:42] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:46:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:46:52] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 14:48:02] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:48:02] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:48:19] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:48:57] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:49:03] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:49:08] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:49:37] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:50:10] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:50:42] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:51:15] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:51:50] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:52:13] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:52:16] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 14:52:17] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [29/Aug/2026 14:52:25] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:52:28] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:52:35] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:52:36] "GET /api/public-url HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:52:37] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:52:39] "GET /api/public-url HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:52:44] "GET /api/prequests HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:52:45] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:52:48] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:52:49] "GET /api/inquiries HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:52:52] "GET /api/inquiries/eligible HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:53:07] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:53:39] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:53:45] "POST /api/inquiries HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:53:49] "GET /api/inquiries HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 14:53:57] "GET /api/inquiries/4 HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:54:14] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:54:42] "GET /inq/fe796736c8d1458f91282fbff0e8993e HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:54:45] "GET /inq/b080262ea5b14550b0a560a3b3342d49 HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:54:45] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [29/Aug/2026 14:54:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:54:47] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [29/Aug/2026 14:55:19] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:55:47] "POST /api/inquiry/vendor/fe796736c8d1458f91282fbff0e8993e/quote HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:55:49] "GET /inq/fe796736c8d1458f91282fbff0e8993e HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:55:51] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:56:23] "POST /api/inquiry/vendor/b080262ea5b14550b0a560a3b3342d49/quote HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:56:24] "POST /api/inquiry/vendor/b080262ea5b14550b0a560a3b3342d49/quote HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:56:24] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:56:57] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:57:28] "GET / HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 14:58:00] "GET / HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 14:58:01] "GET /api/inquiries/4 HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:58:32] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:59:06] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 14:59:43] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:00:58] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:01:30] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:02:02] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:02:27] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:02:27] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:02:28] "[31m[1mGET /api/approvals/all-pending HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 15:02:30] "[31m[1mGET /api/approvals/all-pending HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 15:02:31] "[31m[1mGET /api/approvals/all-pending HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 15:02:34] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:03:06] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:03:38] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:04:10] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:04:41] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:04:43] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:04:46] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:05:15] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:05:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:06:18] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:06:51] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:07:23] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:07:55] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:08:10] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:08:18] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 15:08:18] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [29/Aug/2026 15:08:21] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:08:22] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 15:08:23] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:08:23] "GET /api/public-url HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:08:25] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:08:26] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:08:27] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:08:28] "GET /api/public-url HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:08:28] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:08:30] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:08:33] "GET /api/contracts HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:08:35] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:08:36] "GET /api/inquiries HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 15:08:44] "GET /api/inquiries/4 HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:08:59] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:09:36] "GET / HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 15:09:51] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:09:52] "GET /api/inquiries HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:09:52] "POST /api/inquiries/4/submit HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:09:53] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:09:56] "GET /api/inquiries HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:09:57] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:10:10] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:10:42] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:11:15] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:11:50] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:12:23] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 15:13:49] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:13:50] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:14:34] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:15:07] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:15:26] "POST /api/login HTTP/1.1" 200 -
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+[品牌分析AI调用失败] HTTP Error 401: Unauthorized
+127.0.0.1 - - [29/Aug/2026 15:15:38] "POST /api/inquiries/4/submit HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:15:40] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:16:17] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:16:50] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:17:23] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:17:56] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:17:58] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:18:00] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:18:29] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:18:42] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:18:44] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 15:18:45] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [29/Aug/2026 15:18:47] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:18:47] "[31m[1mGET /api/me HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 15:18:48] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:18:50] "GET /api/public-url HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:18:50] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:18:51] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:18:52] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:18:53] "GET /api/public-url HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:18:54] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:18:54] "GET /api/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:18:54] "GET /api/public-url HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:18:55] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:18:56] "GET /api/approvals/overdue HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:18:59] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:19:00] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:19:03] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:19:06] "GET /api/approvals/all-pending HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:19:07] "GET /api/inquiries HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:19:11] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:19:13] "GET /api/inquiries HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:19:14] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:19:18] "GET /api/orders/4 HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:19:34] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:19:40] "[31m[1mPOST /api/contracts/generate HTTP/1.1[0m" 400 -
+127.0.0.1 - - [29/Aug/2026 15:19:50] "GET /api/settings HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:19:53] "GET /api/contract-templates HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:19:56] "GET /api/users HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:19:59] "GET /api/logs HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:19:59] "GET /api/config-users HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:21:06] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:21:42] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:22:17] "GET / HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 15:22:51] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:22:55] "[31m[1mPOST /api/contracts/generate HTTP/1.1[0m" 401 -
+127.0.0.1 - - [29/Aug/2026 15:22:59] "POST /api/login HTTP/1.1" 200 -
+127.0.0.1 - - [29/Aug/2026 15:23:04] "POST /api/contracts/generate HTTP/1.1" 200 -
+  [预警调度] 已启动 (每60秒扫描, 飞书机器人推送)
+  [钉钉审批同步] 已启动 (每15秒轮询即时同步)
+  [自动备份] 每日03:00自动备份已启动
+
+╔══════════════════════════════════════════════════╗
+║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
+║  启动: http://127.0.0.1:5899                     ║
+║  默认账号: admin / admin123                       ║
+║  飞书回调: http://<公网地址>:5899/api/feishu/callback  ║
+╚══════════════════════════════════════════════════╝
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5899
+ * Running on http://192.168.110.89:5899
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [29/Aug/2026 15:23:47] "GET /api/health HTTP/1.1" 200 -
