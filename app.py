@@ -4604,6 +4604,14 @@ def api_inquiry_export(iid):
     conn.close()
 
     wb = Workbook(); ws = wb.active; ws.title = '询价单'
+    # V11.132: 列数提前算(4+每家6列), 标题/章节/备注框全部按全宽合并
+    n_sup = len(sups)
+    col_count = 4 + n_sup * 6
+    # V11.132: 横向A4+缩放, 否则16列挤在纵向A4上必乱
+    ws.page_setup.orientation = 'landscape'
+    ws.page_setup.paperSize = 9  # A4
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
     thin = Side(style='thin', color='B0B0B0')
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
     title_font = Font(name='微软雅黑', size=14, bold=True)
@@ -4616,7 +4624,7 @@ def api_inquiry_export(iid):
     min_font = Font(name='微软雅黑', size=10, bold=True, color='C00000')  # 最低价标红加粗
     wrap = Alignment(vertical='center', wrap_text=True)
 
-    ws.merge_cells('A1:H1')
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=col_count)
     ws['A1'] = '采 购 询 价 单'
     ws['A1'].font = title_font; ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
     ws.row_dimensions[1].height = 30
@@ -4630,9 +4638,9 @@ def api_inquiry_export(iid):
     ]
     row = 3
     # V11.131: 章节编号补全 — 信息区加"一、"标题, 与"二、比价表""三、决策备注"连续
-    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=10)
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=col_count)
     ws.cell(row, 1, '一、询价基本信息').font = head_font
-    for col in range(1, 11):
+    for col in range(1, col_count + 1):
         ws.cell(row, col).fill = head_fill; ws.cell(row, col).border = border
     row += 1
     for left_k, left_v, right_k, right_v in info:
@@ -4640,16 +4648,16 @@ def api_inquiry_export(iid):
         ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=3)
         c = ws.cell(row, 2, left_v); c.font = base_font; c.alignment = wrap
         ws.cell(row, 4, right_k).font = label_font
-        ws.merge_cells(start_row=row, start_column=5, end_row=row, end_column=10)
+        ws.merge_cells(start_row=row, start_column=5, end_row=row, end_column=col_count)
         c = ws.cell(row, 5, right_v); c.font = base_font; c.alignment = wrap
-        for col in range(1, 11):
+        for col in range(1, col_count + 1):
             ws.cell(row, col).border = border
         row += 1
 
     row += 2
-    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=10)
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=col_count)
     ws.cell(row, 1, '二、供应商报价比价表（逐项对比）').font = head_font
-    for col in range(1, 11):
+    for col in range(1, col_count + 1):
         ws.cell(row, col).fill = head_fill; ws.cell(row, col).border = border
     row += 1
     # V11.52: 逐行三家对比 — 每家一列组(单价/总价/品牌/交付/质保/备注), 备注独立列跟商家走
@@ -4668,7 +4676,7 @@ def api_inquiry_export(iid):
     for s in sups:
         sup_head += [f"{s['supplier_name']} 单价", f"{s['supplier_name']} 总价", f"{s['supplier_name']} 品牌",
                      f"{s['supplier_name']} 交付", f"{s['supplier_name']} 质保", f"{s['supplier_name']} 备注"]
-    col_count = 4 + n_sup * 6
+    # col_count 已在前面按 4+每家6列 算好
     for ci, h in enumerate(sup_head, 1):
         c = ws.cell(row, ci, h); c.font = head_font; c.fill = head_fill; c.border = border
         c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
@@ -4704,7 +4712,9 @@ def api_inquiry_export(iid):
                 delivery = det[idx - 1].get('delivery') or ''
                 warranty = det[idx - 1].get('warranty') or ''
             if unit_p is not None:
-                vals += [round(unit_p, 2), round(total_p, 2), brand, delivery, warranty, remark]
+                # V11.132: 金额千分位+两位小数, 领导看更专业
+                vals += ['{:,.2f}'.format(unit_p), '{:,.2f}'.format(total_p),
+                         brand, delivery, warranty, remark]
                 total_per_sup[si] += total_p
             else:
                 vals += ['', '', brand, delivery, warranty, remark]
@@ -4735,7 +4745,7 @@ def api_inquiry_export(iid):
     for si, t in enumerate(total_per_sup):
         # V11.126: 总价落位修正到 总价列(6+si*6)
         ws.cell(row, 5 + si * 6, '').border = border
-        c = ws.cell(row, 6 + si * 6, round(t, 2))
+        c = ws.cell(row, 6 + si * 6, '{:,.2f}'.format(round(t, 2)))
         c.border = border; c.font = label_font
         c.alignment = Alignment(horizontal='center', vertical='center')
         if t > 0 and (total_min is None or t < total_min):
@@ -4744,9 +4754,12 @@ def api_inquiry_export(iid):
             ws.cell(row, cc).border = border
     for si, t in enumerate(total_per_sup):
         if t > 0 and total_min is not None and abs(t - total_min) < 0.001:
-            ws.cell(row, 6 + si * 6).font = min_font_s
-    ws.cell(row, 4 + n_sup * 6 - 1, '★=该项最低价').font = note_font
-    ws.cell(row, 4 + n_sup * 6 - 1).border = border
+            _min_c = ws.cell(row, 6 + si * 6)
+            _min_c.font = min_font_s
+            _min_c.fill = PatternFill('solid', fgColor='FFF2CC')
+    # V11.132: ★说明移到合计行最后列, 最低总价已标红黄底, 领导一眼看到最便宜
+    ws.cell(row, col_count, '★=该项最低价').font = note_font
+    ws.cell(row, col_count).border = border
     ws.row_dimensions[row].height = 22
     row += 1
     if not sups:
@@ -4755,12 +4768,12 @@ def api_inquiry_export(iid):
         row += 1
 
     row += 1
-    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=10)
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=col_count)
     ws.cell(row, 1, '三、采购决策备注').font = head_font
-    for col in range(1, 11):
+    for col in range(1, col_count + 1):
         ws.cell(row, col).fill = head_fill; ws.cell(row, col).border = border
     row += 1
-    ws.merge_cells(start_row=row, start_column=1, end_row=row + 3, end_column=10)
+    # 备注区不预先合并, 由下方按内容行数统一合并(避免重复merge截断文本)
     # 生成品牌分析（V11.131: 拆分多品牌, 每家一行优缺点, 不依赖选中状态）
     brand_analysis_lines = []
     for s in sups:
@@ -4782,10 +4795,10 @@ def api_inquiry_export(iid):
                 brand_analysis_lines.append('%s报价¥%s：未填写品牌' % (s['supplier_name'],
                     format(float(s['quote_price'] or 0), ',.2f')))
     
-    decision = ('本批次采购经过多方询价、比价与供应商综合考察，最终选择本供应商为合作方。')
+    decision = ('本批次采购已收到多家供应商报价，正在定标审批中，待领导确认后确定合作方。')
     selected = next((s for s in sups if s['is_selected']), None)
     if selected:
-        decision = ('经多方询价比价，推荐选择「%s」为合作方，报价¥%s，'
+        decision = ('经多方询价比价，最终选择「%s」为合作方，报价¥%s，'
                     '性价比最优。%s' % (selected['supplier_name'],
                     format(float(selected['quote_price'] or 0), ',.2f'),
                     selected['quote_remark'] or '交货期及付款条件按合同约定'))
@@ -4798,9 +4811,9 @@ def api_inquiry_export(iid):
     # V11.131: 决策备注黄色高亮框(显眼), 行高按品牌分析行数自适应
     _dec_fill = PatternFill('solid', fgColor='FFF2CC')
     _dec_rows = max(4, 2 + len(decision.split(chr(10))))
-    ws.merge_cells(start_row=row, start_column=1, end_row=row + _dec_rows - 1, end_column=10)
+    ws.merge_cells(start_row=row, start_column=1, end_row=row + _dec_rows - 1, end_column=col_count)
     for r2 in range(row, row + _dec_rows):
-        for col in range(1, 11):
+        for col in range(1, col_count + 1):
             ws.cell(r2, col).fill = _dec_fill
             ws.cell(r2, col).border = border
     row += _dec_rows
