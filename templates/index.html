@@ -676,6 +676,10 @@ async function api(url,opts={}){
     if(now-last<1500){return {dup:true,success:true,message:'操作已提交'}}  // 重复点击 → 静默按成功处理, 不重复创建
     __dupGuard.set(key,now);
   }
+  // V11.150: GET列表缓存命中 → 秒回(不入队、不重复请求; 免费隧道慢时切页/刷新秒开)
+  if(method==='GET'&&!__CACHE_SKIP.some(s=>url.startsWith(s))){
+    const _c=__cacheGet(url);if(_c!==null)return _c;
+  }
   __apiFeed(method);
   // V11.140/V11.147: 请求超时控制 — 20秒无响应抛错; 计时从请求真正发出开始(排队等待不计时, 否则队列里等久了被误杀)
   const _do=async()=>{
@@ -694,7 +698,10 @@ async function api(url,opts={}){
         if(r.status>=400){const e=new Error('服务暂时不可用('+r.status+')，请稍后刷新');e.soft=true;throw e}
         showLogin();throw new Error('not-json')
       }
-      return r.json()
+      const j=await r.json();
+      // V11.150: GET成功写缓存
+      if(method==='GET'&&!__CACHE_SKIP.some(s=>url.startsWith(s)))__cacheSet(url,j);
+      return j
     }catch(e){
       clearTimeout(tm);
       __apiDone();
@@ -704,7 +711,10 @@ async function api(url,opts={}){
   };
   // V11.141: GET排队限流, 非GET直接发
   if(method==='GET')return await __getEnqueue(_do);
-  return await _do();
+  const res=await _do();
+  // V11.150: 写操作成功后清空列表缓存(保证下次列表/详情拉的是最新数据)
+  if(res&&res.success&&!res.dup)__cacheClear();
+  return res;
 }
 function id(s){return document.getElementById(s)}
 // V11.55: 轻提示(toast) — 不阻塞操作, 2.5秒自动消失, 替代alert做成功提示
@@ -716,6 +726,19 @@ function toast(msg){
   t.textContent=msg;t.style.opacity='1';
   clearTimeout(t._tm);t._tm=setTimeout(()=>{t.style.opacity='0'},2500);
 }
+// V11.150: 打开弹窗/执行操作防连点 — 600ms内同一入口重复点击直接忽略
+// (免费隧道慢时用户连点"详情/比价"会重复发请求、弹窗内容乱跳; confirm/导出连点会叠弹窗/开多个下载)
+const __openGuard=new Map();
+function __guardOpen(key){const now=Date.now();if(now-(__openGuard.get(key)||0)<600)return true;__openGuard.set(key,now);return false}
+// V11.150: 详情弹窗"最新打开者优先" — 慢请求返回时不覆盖用户后来打开的内容(旧响应直接丢弃)
+let __dmSeq=0;
+// V11.150: GET列表缓存 — 25秒内切页/刷新不重复拉取(免费隧道慢时切页秒开); 任何写操作成功后整体失效
+const __CACHE_TTL=25000;
+const __CACHE_PREFIX='v11150';
+const __CACHE_SKIP=['/me','/public-url','/approvals/pending','/notifications','/search','/logs','/users'];
+function __cacheGet(url){try{const raw=sessionStorage.getItem(__CACHE_PREFIX+url);if(!raw)return null;const c=JSON.parse(raw);if(Date.now()-c.t<__CACHE_TTL)return c.d}catch(e){}return null}
+function __cacheSet(url,d){try{sessionStorage.setItem(__CACHE_PREFIX+url,JSON.stringify({t:Date.now(),d}))}catch(e){}}
+function __cacheClear(){try{const ks=[];for(let i=0;i<sessionStorage.length;i++){const k=sessionStorage.key(i);if(k&&k.startsWith(__CACHE_PREFIX))ks.push(k)}ks.forEach(k=>sessionStorage.removeItem(k))}catch(e){}}
 function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML}
 function showLogin(){id('loginPage').style.display='flex';id('appMain').style.display='none'}
 function showApp(){id('loginPage').style.display='none';id('appMain').style.display='block'}
@@ -1441,10 +1464,13 @@ async function doResubmit(oid){
   else alert(r.error||'保存失败');
 }
 async function showPRequest(id){
+  // V11.150: 防连点(600ms内重复点击忽略) + 最新打开者优先(慢响应不覆盖新内容)
+  if(__guardOpen('pr:'+id))return;
+  const my=++__dmSeq;
   // V11.140: 点击详情立即弹窗加载中, 数据到了再填充
   showDetail('📝 采购申请 #'+id,'<div class="loading">加载中...</div>');
   let d;
-  try{d=await api(`/prequests/${id}`)}catch(e){id('dmBody').innerHTML='<div style="padding:20px;text-align:center;color:#c0392b;font-size:11px">⚠️ 加载失败(网络较慢)，请点击重试 <button class="btn btn-p btn-sm" onclick="showPRequest('+id+')">重试</button></div>';return}
+  try{d=await api(`/prequests/${id}`)}catch(e){if(my!==__dmSeq)return;id('dmBody').innerHTML='<div style="padding:20px;text-align:center;color:#c0392b;font-size:11px">⚠️ 加载失败(网络较慢)，请点击重试 <button class="btn btn-p btn-sm" onclick="showPRequest('+id+')">重试</button></div>';return}
   const r=d.request,items=d.items,approvals=d.approvals;
   let h=`<div class="c2"><div><dt>编号</dt><dd><b>${esc(r.req_no)}</b></dd><dt>部门</dt><dd>${esc(r.dept)}</dd><dt>申请人</dt><dd>${esc(r.requester)}</dd><dt>预算科目</dt><dd>${esc(r.budget_code||'-')}</dd></div>
     <div><dt>用途</dt><dd>${esc(r.purpose)}</dt><dt>目标日</dt><dd>${r.target_date||'-'}</dd><dt>状态</dt><dd>${tag(r.status)}</dd></div></div>
@@ -1455,7 +1481,7 @@ async function showPRequest(id){
     h+=`<h4 style="font-size:10px;margin:6px 0 3px">✅ 审批进度（含电子签名）</h4>`;
     approvals.forEach(a=>{
       const apv=(a.approver=='钉钉')?'钉钉OA电子审批':(a.approver||'');
-      h+=`<div style="font-size:9px;padding:3px 0;border-bottom:1px dashed var(--b)">${a.status=='approved'?'✅':a.status=='rejected'?'❌':'⏳'} ${esc(a.role)} ${a.status} ${a.processed_at||''}${a.comment?` <span style="color:#888">｜${esc(a.comment)}</span>`:''}${apv?` <span style="color:var(--s)">${esc(apv)}</span>`:''}${a.signature?` <img src="${a.signature}" alt="签名" style="height:34px;vertical-align:middle;border:1px solid #e3e9f2;border-radius:3px;background:#fff;margin-left:4px">`:''}</div>`});
+      h+=`<div style="font-size:9px;padding:3px 0;border-bottom:1px dashed var(--b)">${a.status=='approved'?'✅':a.status=='rejected'?'❌':'⏳'} ${esc(a.role)} ${a.status} ${a.processed_at||''}${a.comment?` <span style="color:#888">｜${esc(a.comment)}</span>`:''}${apv?` <span style="color:var(--s)">${esc(apv)}</span>`:''}${a.signature?` <img src="${a.signature}" alt="签名" loading="lazy" style="height:34px;vertical-align:middle;border:1px solid #e3e9f2;border-radius:3px;background:#fff;margin-left:4px">`:''}</div>`});
   }
   if(r.urgent)h='<div style="background:#fff5f5;border:1px solid #f5c6c6;color:#e74c3c;font-weight:700;font-size:10px;padding:4px 8px;border-radius:4px;margin-bottom:6px">🚨 加急审批</div>'+h;
   if(r.attachments){
@@ -1467,6 +1493,7 @@ async function showPRequest(id){
   const btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button>
     <button class="btn btn-p btn-sm" onclick="window.open('/api/prequests/${r.id}/download','_blank')">⬇️ 下载申请单</button>
     ${(ME.role=='系统管理员'||ME.name==r.requester)?`<button class="btn btn-o btn-sm" style="color:#e67e22;border-color:#e67e22" onclick="urgentRemind('purchase_request',${r.id})">⏰ 钉钉加急提醒</button>`:''}`;
+  if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
   showDetail(`申请单 ${r.req_no}`,h,btns);
 }
 
@@ -1531,10 +1558,13 @@ async function createInquiry(){
   else alert(r.error||'发起失败');
 }
 async function showInquiry(id){
+  // V11.150: 防连点 + 最新打开者优先
+  if(__guardOpen('inq:'+id))return;
+  const my=++__dmSeq;
   // V11.140: 点击详情立即弹窗显示加载中(隧道慢时不干等, 用户马上看到反馈)
   showDetail('🔍 询价单 #'+id,'<div class="loading">加载中...</div>');
   let d;
-  try{d=await api(`/inquiries/${id}`)}catch(e){id('dmBody').innerHTML='<div style="padding:20px;text-align:center;color:#c0392b;font-size:11px">⚠️ 加载失败(网络较慢)，请点击重试 <button class="btn btn-p btn-sm" onclick="showInquiry('+id+')">重试</button></div>';return}
+  try{d=await api(`/inquiries/${id}`)}catch(e){if(my!==__dmSeq)return;id('dmBody').innerHTML='<div style="padding:20px;text-align:center;color:#c0392b;font-size:11px">⚠️ 加载失败(网络较慢)，请点击重试 <button class="btn btn-p btn-sm" onclick="showInquiry('+id+')">重试</button></div>';return}
   const r=d.request||{};
   let h=`<div class="c2"><div><dt>询价单号</dt><dd><b>${esc(d.inq_no)}</b></dd><dt>申请单号</dt><dd>${esc(r.req_no||('#'+d.req_id))}</dd><dt>部门</dt><dd>${esc(r.dept||'')}</dd><dt>状态</dt><dd>${tag(d.status)}${d.deadline?` <span style="font-size:9px;color:${d.deadline<new Date().toISOString().slice(0,10)?'#c0392b':'#b08900'}">⏰截止${esc(d.deadline)}${d.deadline<new Date().toISOString().slice(0,10)?' 已截止':''}</span>`:''}</dd></div>
     <div><dt>采购事由</dt><dd>${esc(d.purpose||'')}</dd><dt>发起人</dt><dd>${esc(d.created_by||'')}</dd><dt>发起时间</dt><dd>${esc(d.created_at||'')}</dd></div></div>`;
@@ -1577,13 +1607,17 @@ async function showInquiry(id){
   // V11.145: 分项定标按钮(审批通过后采购员拆单用; 询价中且已报价即可用)
   const splitBtn = (d.status=='询价中' && allQuoted && d.suppliers.length>1) ? `<button class="btn btn-p" onclick="showSplitSelect(${d.id})">🔀 分项定标</button>` : '';
   const btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button><button class="btn btn-p" onclick="exportInquiry(${d.id})">📥 导出Excel</button>${splitBtn}${submitBtn}`;
+  if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
   showDetail(`询价单 ${d.inq_no}`,h,btns);
 }
 // V11.145: 分项定标弹窗 — 每个物资逐项选供应商, 支持一键智能选最低价
 async function showSplitSelect(iid){
+  // V11.150: 防连点 + 最新打开者优先
+  if(__guardOpen('split:'+iid))return;
+  const my=++__dmSeq;
   showDetail('🔀 分项定标', '<div class="loading">加载中...</div>', '<button class="btn btn-o" onclick="closeMod()">取消</button>');
   let d;
-  try{d=await api(`/inquiries/${iid}`)}catch(e){id('dmBody').innerHTML='<div style="padding:20px;text-align:center;color:#c0392b;font-size:11px">⚠️ 加载失败，请重试</div>';return}
+  try{d=await api(`/inquiries/${iid}`)}catch(e){if(my!==__dmSeq)return;id('dmBody').innerHTML='<div style="padding:20px;text-align:center;color:#c0392b;font-size:11px">⚠️ 加载失败，请重试</div>';return}
   if(!d.items||!d.items.length){id('dmBody').innerHTML='<div style="padding:20px;color:#999">无物资明细</div>';return}
   const quoted=d.suppliers.filter(s=>s.quote_price&&s.quote_price>0);
   if(!quoted.length){id('dmBody').innerHTML='<div style="padding:20px;color:#999">暂无报价</div>';return}
@@ -1619,6 +1653,7 @@ async function showSplitSelect(iid){
       ${opts}
     </div>`;
   });
+  if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
   id('dmBody').innerHTML=`
     <div style="font-size:10px;color:#666;margin-bottom:8px">为每个物资选择供应商（已按最低价默认勾选★，可手动改选）→ 系统自动按供应商拆成多个订单</div>
     ${rows}`;
@@ -1627,6 +1662,8 @@ async function showSplitSelect(iid){
     <button class="btn btn-p" onclick="doSplitSelect(${iid})">✅ 确认分项定标</button>`;
 }
 async function doSplitSelect(iid){
+  // V11.150: 防连点(连点会叠多个确认框/重复提交)
+  if(__guardOpen('dsp:'+iid))return;
   const radios=document.querySelectorAll('#dmBody input[type=radio]:checked');
   if(!radios.length){alert('请为每个物资选择供应商');return}
   const items=[...radios].map(r=>({item_id:parseInt(r.name.split('_')[1]),supplier_id:parseInt(r.value)}));
@@ -1639,6 +1676,8 @@ async function doSplitSelect(iid){
   else alert(r.error||'分项定标失败');
 }
 async function submitInquiryApproval(iid){
+  // V11.150: 防连点
+  if(__guardOpen('sub:'+iid))return;
   if(!confirm('确认提交审批？提交后将发起定标审批流程。'))return;
   const r=await api(`/inquiries/${iid}/submit`,{method:'POST'});
   if(r.success){
@@ -1687,6 +1726,8 @@ async function copyInqLink(token){
   }
 }
 async function exportInquiry(iid){
+  // V11.150: 防连点(连点会重复导出/开多个下载)
+  if(__guardOpen('exp:'+iid))return;
   const r=await fetch('/api/inquiries/'+iid+'/export',{credentials:'include'});
   if(!r.ok){const j=await r.json().catch(()=>({}));alert(j.error||'导出失败');return}
   const blob=await r.blob();
@@ -1699,6 +1740,8 @@ async function exportInquiry(iid){
   alert('✅ 询价单Excel已导出，请查看下载文件');
 }
 async function selectInquirySupplier(iid,sid){
+  // V11.150: 防连点(连点会叠两个确认框)
+  if(__guardOpen('sel:'+iid+':'+sid))return;
   // V11.144: 领导只负责选供应商(结算方式由采购员在生成合同时选择)
   if(!confirm('确定选中该供应商？订单生效后由采购员在【生成采购合同】时选择结算方式(现结/月结)'))return;
   const r=await api(`/inquiries/${iid}/select`,{method:'POST',body:JSON.stringify({supplier_id:sid,settle_type:'现结'})});
@@ -1728,10 +1771,13 @@ async function loadOrders(){
     });
 }
 async function showOrder(id){
+  // V11.150: 防连点 + 最新打开者优先
+  if(__guardOpen('ord:'+id))return;
+  const my=++__dmSeq;
   // V11.140: 点击详情立即弹窗加载中, 数据到了再填充
   showDetail('📋 订单 #'+id,'<div class="loading">加载中...</div>');
   let d;
-  try{d=await api(`/orders/${id}`)}catch(e){id('dmBody').innerHTML='<div style="padding:20px;text-align:center;color:#c0392b;font-size:11px">⚠️ 加载失败(网络较慢)，请点击重试 <button class="btn btn-p btn-sm" onclick="showOrder('+id+')">重试</button></div>';return}
+  try{d=await api(`/orders/${id}`)}catch(e){if(my!==__dmSeq)return;id('dmBody').innerHTML='<div style="padding:20px;text-align:center;color:#c0392b;font-size:11px">⚠️ 加载失败(网络较慢)，请点击重试 <button class="btn btn-p btn-sm" onclick="showOrder('+id+')">重试</button></div>';return}
   const o=d.order;
   let h=`<div class="c2"><div><dt>单号</dt><dd><b>${esc(o.order_no)}</b></dd><dt>物资</dt><dd>${esc(o.item_name)}</dd><dt>数量</dt><dd>${o.quantity}${esc(o.unit)}</dd><dt>金额</dt><dd>¥${(o.total_amount||0).toFixed(0)}</dd></div>
     <div><dt>供应商</dt><dd>${esc(o.supplier)}</dd><dt>负责人</dt><dd>${esc(o.owner)}</dd><dt>交易模式</dt><dd><span class="tag ${o.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(o.trade_mode||'货到付款')}</span></dd><dt>状态</dt><dd>${tag(o.status)}</dd></div></div>`;
@@ -1759,9 +1805,12 @@ async function showOrder(id){
   if(['待审批','审批通过'].includes(o.status))
     btns+=`<button class="btn btn-d btn-sm" onclick="voidDoc('/api/orders/${id}/void','订单')">作废</button>`;
   btns+=`<button class="btn btn-o btn-sm" style="color:#e67e22;border-color:#e67e22" onclick="urgentRemind('purchase_order',${id})">⏰ 钉钉加急提醒</button>`;
+  if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
   showDetail(`订单 ${o.order_no}`,h,btns);
 }
 async function updateItemStatus(iid, newStatus){
+  // V11.150: 防连点
+  if(__guardOpen('uis:'+iid+':'+newStatus))return;
   if(!confirm('确认更新物品状态为'+newStatus+'?'))return;
   const r=await api(`/order_items/${iid}/status`,{method:'POST',body:JSON.stringify({status:newStatus})});
   if(r.success){alert('✅ 状态已更新');showOrder(lastOrderId)}else alert(r.error||'更新失败');
@@ -1783,6 +1832,8 @@ async function downloadOrder(oid){
 }
 // 需求44: 自动生成采购合同 — V11.144: 生成前由采购员选择结算方式(现结/月结)
 async function genContract(oid){
+  // V11.150: 防连点(连点会叠两个结算方式弹窗)
+  if(__guardOpen('gc:'+oid))return;
   showDetail('📄 生成采购合同',`
     <div style="font-size:11px;margin-bottom:10px">请选择本次合同的结算方式：</div>
     <div style="display:flex;gap:8px">
@@ -1798,6 +1849,8 @@ async function genContract(oid){
     `<button class="btn btn-o" onclick="closeMod()">取消</button>`);
 }
 async function doGenContract(oid,settle){
+  // V11.150: 防连点(连点会叠确认框/重复生成合同)
+  if(__guardOpen('dgc:'+oid+':'+settle))return;
   closeMod();
   if(!confirm('调用默认合同模板生成采购合同并进入合同审批？（结算方式：'+settle+'）'))return;
   const r=await api('/contracts/generate',{method:'POST',body:JSON.stringify({order_id:oid,settle_type:settle})});
@@ -1806,12 +1859,16 @@ async function doGenContract(oid,settle){
 }
 // 作废通用
 async function voidDoc(url,label){
+  // V11.150: 防连点
+  if(__guardOpen('vd:'+url))return;
   if(!confirm(`确认作废该${label}？作废后不可恢复`))return;
   const r=await api(url,{method:'POST',body:'{}'});
   if(r.success){alert('✅ 已作废');closeMod();loadOrders();loadContracts();loadPayments()}
 }
 // V8.0: 全流程单据删除(物理删除+级联清理)
 async function delDoc(bizType,id,label){
+  // V11.150: 防连点
+  if(__guardOpen('del:'+bizType+':'+id))return;
   if(!confirm(`确认删除该${label}？删除后不可恢复，关联的审批记录将一并清除`))return;
   const r=await api(`/docs/${bizType}/${id}/delete`,{method:'POST',body:JSON.stringify({confirm:1})});
   if(r.success){alert('✅ '+r.message);closeMod();refreshAfterDel(bizType)}
@@ -1819,6 +1876,8 @@ async function delDoc(bizType,id,label){
 }
 // V8.0: 撤回审批(每个环节即使已审批也可撤回, 重新走流程)
 async function withdrawDoc(bizType,id,label){
+  // V11.150: 防连点
+  if(__guardOpen('wd:'+bizType+':'+id))return;
   if(!confirm(`确认撤回该${label}的审批？撤回后单据回到待审批状态，重新走完整审批流程（已审批记录作废）`))return;
   const r=await api(`/docs/${bizType}/${id}/withdraw`,{method:'POST',body:'{}'});
   if(r.success){alert('✅ '+r.message);closeMod();refreshAfterDel(bizType)}
@@ -2045,12 +2104,16 @@ async function genMonthlyContract(supplier){
 async function loadContracts(){const c=await api('/contracts');id('contractsTable').innerHTML=rnder(c,['contract_no','contract_name','supplier','amount','status','id'],['编号','名称','供应商','金额','状态','操作'],r=>`<td><b>${esc(r.contract_no)}</b></td><td>${esc(r.contract_name)}</td><td>${esc(r.supplier)}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}</td>
   <td style="white-space:nowrap"><button class="lnk" onclick="showContract(${r.id})">查看</button>${r.file_path?` <button class="lnk" style="color:var(--s)" onclick="window.open('/uploads/${esc(r.file_path)}','_blank')">📄下载</button>`:''} <button class="lnk" style="color:#b08900" onclick="editDoc('contract',${r.id},'合同')">✏️修改</button> ${(r.status=='待审批'||r.status=='已通过'||r.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('contract',${r.id},'合同')">↩️撤回</button>`:''}${(r.status=='待审批'||r.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('contract',${r.id},'合同')">🗑️删除</button>`:''}</td>`)}
 async function showContract(id){
+  // V11.150: 防连点 + 最新打开者优先
+  if(__guardOpen('ct:'+id))return;
+  const my=++__dmSeq;
   const c=(await api('/contracts')).find(x=>x.id===id);
-  if(!c){alert('未找到该合同(可能已被删除), 请刷新后重试');return}
+  if(!c){if(my!==__dmSeq)return;alert('未找到该合同(可能已被删除), 请刷新后重试');return}
   let h=`<div class="c2"><div><dt>合同号</dt><dd><b>${esc(c.contract_no)}</b></dd><dt>名称</dt><dd>${esc(c.contract_name)}</dd><dt>供应商</dt><dd>${esc(c.supplier)}</dd><dt>金额</dt><dd>¥${(c.amount||0).toFixed(2)}（大写：${c.amount_upper||''}）</dd></div>
     <div><dt>状态</dt><dd>${tag(c.status)}</dd><dt>签订日期</dt><dd>${esc(c.sign_date||'-')}</dd><dt>关联订单</dt><dd>#${c.order_id||'-'}</dd></div></div>`;
   if(c.file_path)h+=`<div style="margin-top:8px"><button class="btn btn-p btn-sm" onclick="window.open('/uploads/${esc(c.file_path)}','_blank')">📄 打开/下载合同文件</button> <button class="btn btn-w btn-sm" onclick="editContract(${id})">✏️ 编辑合同文本</button></div>`;
   h+=`<div style="margin-top:6px"><button class="btn btn-o btn-sm" style="color:#b08900;border-color:#b08900" onclick="editDoc('contract',${id},'合同')">✏️ 修改合同信息</button></div>`;
+  if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
   showDetail(`合同 ${c.contract_no}`,h);
 }
 // 合同在线编辑: 修改文本/补充条款 → 保存自动重建Word归档
@@ -2078,9 +2141,12 @@ async function saveContractEdit(oid){
 async function loadDeliveries(){const d=await api('/deliveries');id('deliveriesTable').innerHTML=rnder(d,['delivery_no','item_name','supplier','quantity','sign_status','id'],['单号','物资','供应商','数量','签收','操作'],r=>`<td><b>${esc(r.delivery_no)}</b></td><td>${esc(r.item_name)}</td><td>${esc(r.supplier)}</td><td>${r.quantity}${esc(r.unit)}</td><td>${tag(r.sign_status)}</td><td>${r.sign_status=='待签收'?`<button class="lnk" style="color:var(--s)" onclick="signDel(${r.id})">签收</button>`:''}</td>`)}
 async function signDel(id){const n=prompt('签收人:','库房');if(!n)return;await api(`/deliveries/${id}/sign`,{method:'POST',body:JSON.stringify({receiver:n})});loadDeliveries();loadOrders()}
 async function showRcvDetail(id){
+  // V11.150: 防连点 + 最新打开者优先
+  if(__guardOpen('rcv:'+id))return;
+  const my=++__dmSeq;
   // V8.1: 入库单详情 — 完整商品明细(与采购订单一致) + 验收信息 + 审批状态
   const r=(await api('/receivings')).find(x=>x.id===id);
-  if(!r){alert('入库单不存在');return}
+  if(!r){if(my!==__dmSeq)return;alert('入库单不存在');return}
   const items=r.items||[];
   let h=`<div class="c2"><div><dt>入库单号</dt><dd><b>${esc(r.receive_no)}</b></dd><dt>状态</dt><dd>${tag(r.status)}</dd><dt>仓库</dt><dd>${esc(r.warehouse||'主库房')}</dd><dt>验收人</dt><dd>${esc(r.inspector||'-')}</dd></div>
     <div><dt>订单号</dt><dd>${esc(r.order_no||'-')}</dd><dt>供应商</dt><dd>${esc(r.supplier||'-')}</dd><dt>交易模式</dt><dd>${esc(r.trade_mode||'-')}</dd><dt>创建时间</dt><dd>${esc((r.created_at||'').slice(0,16))}</dd>${r.dept?`<dt>归属部门</dt><dd><span class="tag" style="background:#eef7ee;color:#2e7d32">${esc(r.dept)}</span></dd>`:''}</div></div>`;
@@ -2100,7 +2166,7 @@ async function showRcvDetail(id){
         atts.forEach(a=>{
           const isImg=/\.(png|jpe?g|gif)$/i.test(a||'');
           h+=isImg
-            ?`<a href="/uploads/${esc(a)}" target="_blank" style="display:block;width:90px;height:90px;border:1px solid var(--b);border-radius:6px;overflow:hidden"><img src="/uploads/${esc(a)}" style="width:100%;height:100%;object-fit:cover" alt="验收照片"></a>`
+            ?`<a href="/uploads/${esc(a)}" target="_blank" style="display:block;width:90px;height:90px;border:1px solid var(--b);border-radius:6px;overflow:hidden"><img src="/uploads/${esc(a)}" loading="lazy" style="width:100%;height:100%;object-fit:cover" alt="验收照片"></a>`
             :`<a href="/uploads/${esc(a)}" target="_blank" style="display:flex;align-items:center;justify-content:center;width:90px;height:90px;border:1px solid var(--b);border-radius:6px;background:#f8f9fb;color:#555;font-size:10px">🎬 视频</a>`;
         });
         h+=`</div><div style="font-size:8px;color:#999;margin-top:3px">点击照片/视频可放大查看</div>`;
@@ -2110,6 +2176,7 @@ async function showRcvDetail(id){
   const btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button>
     ${r.status=='待入库'?`<button class="btn btn-p btn-sm" onclick="completeRcv(${r.id},${r.total_qty||r.quantity},${r.order_id||0})">📤 提交审批</button>`:''}
     <button class="btn btn-o btn-sm" style="color:#b08900;border-color:#b08900" onclick="editDoc('receiving',${r.id},'入库单')">✏️ 修改</button>`;
+  if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
   showDetail(`入库单 ${r.receive_no}`,h,btns);
 }
 async function loadReceivings(){
