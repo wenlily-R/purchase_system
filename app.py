@@ -6088,7 +6088,8 @@ def api_public_url():
 @app.route('/api/notify-address-change', methods=['POST'])
 def api_notify_address_change():
     """V11.146: 隧道地址变化通知 — tunnel_guard换地址后调用, 飞书推送新地址给用户
-    (免费隧道地址会轮换, 旧链接失效; 主动推新地址, 用户不用等人工告知)"""
+    (免费隧道地址会轮换, 旧链接失效; 主动推新地址, 用户不用等人工告知)
+    V11.147: 加30分钟冷却 — 免费隧道频繁重连, 每次地址都变, 原逻辑导致钉钉/飞书通知刷屏"""
     try:
         f = os.path.join(BASE, 'data', 'public_url.txt')
         url = ''
@@ -6098,6 +6099,15 @@ def api_notify_address_change():
             pass
         if not url:
             return jsonify({'success': False, 'error': '无地址'})
+        # 冷却控制: 30分钟内已推过 → 静默跳过(免费隧道2-3分钟断一次, 不加冷却会刷屏)
+        now = time.time()
+        try:
+            last_ts = float(cfg_get('last_addr_notify_ts', '0') or 0)
+        except Exception:
+            last_ts = 0
+        if now - last_ts < 1800:
+            return jsonify({'success': True, 'pushed': False, 'cooldown': True, 'url': url})
+        cfg_set('last_addr_notify_ts', str(int(now)))
         # 钉钉推送为主(工作通知, 已验证可用)
         _ok = False
         try:
