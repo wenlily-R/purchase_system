@@ -1891,18 +1891,24 @@ def dt_build_form(biz_type, biz_id, info):
                         detail += ' 备注:%s' % si['quote_remark']
                     supplier_details.append(detail)
                 c2.close()
-                # V11.133: 单选控件选项=实际供应商文本(钉钉DDSelectField值格式['选项文本']),
-                # 默认选中最低价那家; 领导可在钉钉改选
-                _default_opt = ''
-                if supplier_opts:
-                    _default_opt = supplier_opts[0]['text']  # 按报价升序, 第一家=最低价
+                # V11.133/V11.135: 单选控件选项是模板静态配置的, 动态供应商无法匹配(820015)
+                # → 传空数组保证发起成功; 领导在钉钉看"三方报价详情"后, 在审批意见里写选中商家名
                 form = [
                     {'name': '询价单号', 'value': iq['inq_no'] or ''},
                     {'name': '物资名称', 'value': (iq['title'] or '')[:50]},
                     {'name': '三方报价详情', 'value': '\n'.join(supplier_details) if supplier_details else '暂无报价'},
-                    {'name': '选定供应商 ', 'value': '["%s"]' % _default_opt if _default_opt else '[]'},  # ⚠️ 控件名带尾随空格
-                    {'name': '备注', 'value': '请核对"选定供应商"选项(默认最低价), 如需改选请调整后提交审批'},
+                    {'name': '选定供应商 ', 'value': '[]'},  # 模板选项固定, 无法动态传 → 空数组(合法)
+                    {'name': '备注', 'value': '请在审批意见中写明选中哪家供应商(如: 同意厂家2), 审批通过后系统按意见匹配供应商生成订单'},
                 ]
+                # V11.135: 比价单Excel作为钉钉审批附件(领导可直接查看完整比价表)
+                try:
+                    _xlsx = gen_inquiry_xlsx_file(biz_id)
+                    if _xlsx:
+                        form.append({'name': '附件', 'value': json.dumps(
+                            [{'path': os.path.join(BASE, 'uploads', _xlsx), 'name': _xlsx, 'cat': '比价单'}],
+                            ensure_ascii=False)})
+                except Exception as _e:
+                    log('系统', '比价单附件生成失败', f'inquiry#{biz_id}: {str(_e)[:100]}')
                 return form
             else:  # purchase_order
                 cat = dt_cat_option(r['category'] or r['item_name'] or '')
@@ -4555,6 +4561,31 @@ def api_inquiry_select(iid):
     log(session['user_name'], '询价定标', '%s → 订单%s(供应商:%s ¥%.0f,已生效)' % (i['inq_no'], no, s['supplier_name'], total))
     return jsonify({'success': True, 'order_no': no, 'id': oid, 'total_amount': total, 'status': '已通过',
                     'message': '✅ 定标通过，订单已生效'})
+
+def gen_inquiry_xlsx_file(iid):
+    """V11.135: 生成询价比价单Excel文件存uploads, 返回文件路径(导出接口/钉钉附件共用)
+    复用 api_inquiry_export 的生成逻辑; 失败返回 None"""
+    try:
+        import io as _io
+        # 在请求上下文中调导出逻辑(需登录态, 附件场景由发起审批的登录用户触发)
+        with app.test_request_context():
+            if 'user_name' not in session:
+                session['user_name'] = '系统'
+                session['user_role'] = '系统管理员'
+                session['user_id'] = 1
+            resp = api_inquiry_export(iid)
+            data = resp.get_data()
+        if not data:
+            return None
+        fn = '询价单_%s.xlsx' % iid
+        path = os.path.join(BASE, 'uploads', fn)
+        with open(path, 'wb') as f:
+            f.write(data)
+        return fn
+    except Exception as e:
+        log('系统', '询价比价单生成失败', f'inquiry#{iid}: {str(e)[:120]}')
+        return None
+
 
 @app.route('/api/inquiries/<int:iid>/export')
 @login_required
