@@ -6087,9 +6087,9 @@ def api_public_url():
 
 @app.route('/api/notify-address-change', methods=['POST'])
 def api_notify_address_change():
-    """V11.146: 隧道地址变化通知 — tunnel_guard换地址后调用, 飞书推送新地址给用户
-    (免费隧道地址会轮换, 旧链接失效; 主动推新地址, 用户不用等人工告知)
-    V11.147: 加30分钟冷却 — 免费隧道频繁重连, 每次地址都变, 原逻辑导致钉钉/飞书通知刷屏"""
+    """V11.146: 隧道地址变化通知 — tunnel_guard换地址后调用, 推送新地址给用户
+    V11.147: 加30分钟冷却
+    V11.148: 用户要求彻底停发地址变更通知 — 接口保留(守护进程仍调用), 但不再推送钉钉/飞书"""
     try:
         f = os.path.join(BASE, 'data', 'public_url.txt')
         url = ''
@@ -6099,35 +6099,10 @@ def api_notify_address_change():
             pass
         if not url:
             return jsonify({'success': False, 'error': '无地址'})
-        # 冷却控制: 30分钟内已推过 → 静默跳过(免费隧道2-3分钟断一次, 不加冷却会刷屏)
-        now = time.time()
-        try:
-            last_ts = float(cfg_get('last_addr_notify_ts', '0') or 0)
-        except Exception:
-            last_ts = 0
-        if now - last_ts < 1800:
-            return jsonify({'success': True, 'pushed': False, 'cooldown': True, 'url': url})
-        cfg_set('last_addr_notify_ts', str(int(now)))
-        # 钉钉推送为主(工作通知, 已验证可用)
-        _ok = False
-        try:
-            if dingtalk_enabled():
-                _uids = [u['dingtalk_userid'] for u in db().execute(
-                    "SELECT dingtalk_userid FROM users WHERE dingtalk_userid IS NOT NULL AND dingtalk_userid!=''").fetchall()]
-                if _uids:
-                    _ok = dt_send_todo(_uids, '🔗 系统访问地址已更新', f'免费隧道地址已变更，旧链接失效。\n新地址: {url}\n请复制到浏览器打开。',
-                                       biz_type='', biz_id=0, push_type='alert')
-        except Exception:
-            _ok = False
-        # 飞书补充推送(失败不阻塞)
-        try:
-            fs_send('ou_8dff5598fa8288769546f51c113b8288',
-                    f'🔗 **系统访问地址已更新**\n\n免费隧道地址发生了变更，旧链接已失效。\n\n请使用新地址访问：\n**{url}**\n\n（若无法打开，回复我获取最新地址）',
-                    color='blue')
-        except Exception:
-            pass
-        log('系统', '地址变更通知', f'新地址 {url} 钉钉推送{"成功" if _ok else "失败"}')
-        return jsonify({'success': True, 'pushed': _ok})
+        # 用户 2026-08-30 明确要求: 不再推送地址变更通知(免费隧道频繁重连, 刷屏打扰)
+        # 只记日志, 不打扰用户
+        log('系统', '地址变更', f'隧道地址已更新(通知已停发): {url}')
+        return jsonify({'success': True, 'pushed': False, 'notify_disabled': True, 'url': url})
     except Exception as e:
         log('系统', '地址变更通知异常', str(e)[:120])
         return jsonify({'success': False, 'error': str(e)[:100]})
