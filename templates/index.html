@@ -1197,10 +1197,15 @@ async function loadPRequests(){
   const fType=id('reqTypeFilter')?.value||'';
   const filtered=fType?r.filter(x=>(x.req_type||'物资采购')===fType):r;
   // V11.48: 按申请日期分组展示(像"采购清单8月"按日期分sheet一样)
+  // V11.154c: 日期标准化(2026-8-31 → 2026-08-31), 同一天不同格式不再分两个区块
   const groups={};
   filtered.forEach(x=>{
-    const d=(x.apply_date||x.created_at||'').slice(0,10);
-    const key=d?d.slice(5).replace('-','.')+'' : '未填日期';  // 2026-08-21 → 08.21
+    let d=(x.apply_date||x.created_at||'').slice(0,10).trim();
+    if(d){
+      const p=d.split('-').map(s=>s.padStart(2,'0'));
+      if(p.length===3&&p[0].length===4){d=p.join('-')}
+    }
+    const key=d?d.slice(5).replace('-','.')+'':'未填日期';  // 2026-08-21 → 08.21
     (groups[key]=groups[key]||[]).push(x);
   });
   const keys=Object.keys(groups).sort((a,b)=>b.localeCompare(a));
