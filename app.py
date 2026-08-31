@@ -4722,11 +4722,14 @@ def api_inquiry_split_select(iid):
     for it, s in valid:
         groups.setdefault(s['id'], {'sup': s, 'items': []})['items'].append(it)
     created = []
+    # V11.158: 全量物资顺序映射(quote_details按全量顺序存, 取价不能按组内序号)
+    all_items_list = conn.execute("SELECT * FROM request_items WHERE req_id=? ORDER BY id", (i['req_id'],)).fetchall()
+    item_pos = {it['id']: pos for pos, it in enumerate(all_items_list)}
     for sid, g in groups.items():
         s = g['sup']
         its = g['items']
         no = gen_no('CG', 'purchase_orders', 'order_no', conn)
-        # 该供应商的逐项报价(quote_details)
+        # 该供应商的逐项报价(quote_details, 按全量物资顺序)
         qd = {}
         try:
             qd_list = json.loads(s.get('quote_details') or '[]')
@@ -4736,9 +4739,11 @@ def api_inquiry_split_select(iid):
             qd = {}
         total = 0.0
         rows = []
-        for idx, it in enumerate(its):
+        for it in its:
             qty = float(it['quantity'] or 1)
-            q = qd.get(idx, {})
+            # V11.158: 用物资在全量列表中的位置取对应报价(修复错位导致金额错误)
+            pos = item_pos.get(it['id'], 0)
+            q = qd.get(pos, {})
             price = float(q.get('unit_price') or 0) or 0
             amt = round(price * qty, 2)
             total += amt
