@@ -1395,8 +1395,14 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
                     except Exception:
                         pass
                     _rno = gen_no('RK', 'receivings', 'receive_no', c)
-                    c.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,dept) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                              (_rno, None, _po['id'], _name, '', _qty, '个', 0, '待入库', now(), '合同生效后自动进入入库板块(整批%d项)' % (len(_oi) if _oi else 1), _dept))
+                    # V11.152: 多物资订单自动生成入库时, 明细完整存items_json(入库验收列表/详情可显示全部物资名)
+                    _items_json = json.dumps(
+                        [{'item_name': x['item_name'], 'spec': x['spec'] or '', 'quantity': x['quantity'],
+                          'unit': x['unit'] or '个', 'price': x['price'] or 0} for x in _oi],
+                        ensure_ascii=False) if _oi else ''
+                    _name = (_oi[0]['item_name'] + ' 等%d项' % len(_oi)) if len(_oi) > 1 else (_oi[0]['item_name'] if _oi else _po['item_name'])
+                    c.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,dept,items_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                              (_rno, None, _po['id'], _name, '', _qty, '个', 0, '待入库', now(), '合同生效后自动进入入库板块(整批%d项)' % (len(_oi) if _oi else 1), _dept, _items_json))
     c.execute("UPDATE feishu_instances SET status='synced', updated_at=? WHERE biz_type=? AND biz_id=? AND status='pending'", (now(), biz_type, biz_id))
     c.execute("UPDATE dingtalk_instances SET status='synced', updated_at=? WHERE biz_type=? AND biz_id=? AND status='pending'", (now(), biz_type, biz_id))
     c.commit(); c.close()
@@ -3915,8 +3921,13 @@ def api_create_order():
         except Exception:
             pass
         rno = gen_no('RK', 'receivings', 'receive_no', conn)
-        conn.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,dept) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-            (rno, None, oid, first[0], first[1], total_qty, first[2], 0, '待入库', now(), '货到付款: 下单后自动进入入库板块(整批%d项)' % len(rows), _dept))
+        # V11.152: 多物资订单自动生成入库时, 明细完整存items_json(入库验收显示全部物资名)
+        _items_json = json.dumps(
+            [{'item_name': r[0], 'spec': r[1] or '', 'quantity': r[3], 'unit': r[2] or '个', 'price': r[4] or 0} for r in rows],
+            ensure_ascii=False)
+        _name = (first[0] + ' 等%d项' % len(rows)) if len(rows) > 1 else first[0]
+        conn.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,dept,items_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (rno, None, oid, _name, '', total_qty, first[2], 0, '待入库', now(), '货到付款: 下单后自动进入入库板块(整批%d项)' % len(rows), _dept, _items_json))
     conn.commit()
     create_approvals('purchase_order', oid, grand_total)   # 一张订单一次审批
     start_instances('purchase_order', oid)
@@ -5164,6 +5175,11 @@ def api_receivings():
                 items = []
         if not items:
             items = [{'item_name': r['item_name'], 'spec': r['spec'], 'quantity': r['quantity'], 'unit': r['unit']}]
+        # V11.152: 有明细时列表物资名显示完整(首项+共N项)
+        if len(items) > 1:
+            d['item_name'] = items[0]['item_name'] + ' 等%d项' % len(items)
+        elif items:
+            d['item_name'] = items[0]['item_name']
         d['items'] = items
         out.append(d)
     conn.close()
@@ -6403,8 +6419,13 @@ def api_orders_from_requests():
     rno = None
     if tm == '货到付款':
         rno = gen_no('RK', 'receivings', 'receive_no', conn)
-        conn.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-            (rno, None, oid, first[0], first[1], total_qty, first[2], 0, '待入库', now(), '货到付款: 下单后自动进入入库板块(整批%d项)' % len(rows)))
+        # V11.152: 多物资订单自动生成入库时, 明细完整存items_json
+        _items_json = json.dumps(
+            [{'item_name': it[0], 'spec': it[1] or '', 'quantity': it[3], 'unit': it[2] or '个', 'price': it[4] or 0} for it in rows],
+            ensure_ascii=False)
+        _name = (first[0] + ' 等%d项' % len(rows)) if len(rows) > 1 else first[0]
+        conn.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,items_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            (rno, None, oid, _name, '', total_qty, first[2], 0, '待入库', now(), '货到付款: 下单后自动进入入库板块(整批%d项)' % len(rows), _items_json))
     for rid in used_reqs:
         conn.execute("UPDATE purchase_requests SET status='已下单', updated_at=? WHERE id=?", (now(), rid))
     conn.commit()
