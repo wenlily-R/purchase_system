@@ -4496,6 +4496,11 @@ def api_inquiry_submit(iid):
     if i['status'] != '询价中':
         conn.close()
         return jsonify({'error': '该询价已结束'}), 400
+    # V11.155f: 防重复提交 — 已有审批中记录(定标审批中)则拒绝
+    _pend = conn.execute("SELECT 1 FROM inquiry_approvals WHERE inquiry_id=? AND status='审批中' LIMIT 1", (iid,)).fetchone()
+    if _pend:
+        conn.close()
+        return jsonify({'error': '该询价已提交定标审批，请勿重复提交'}), 400
     # 检查是否所有供应商都报价
     sups = conn.execute("SELECT * FROM inquiry_suppliers WHERE inquiry_id=?", (iid,)).fetchall()
     if not sups:
