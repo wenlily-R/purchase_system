@@ -753,7 +753,7 @@ let __dmSeq=0;
 // V11.150: GET列表缓存 — 25秒内切页/刷新不重复拉取(免费隧道慢时切页秒开); 任何写操作成功后整体失效
 const __CACHE_TTL=25000;
 const __CACHE_PREFIX='v11150';
-const __CACHE_SKIP=['/me','/public-url','/approvals/pending','/notifications','/search','/logs','/users'];
+const __CACHE_SKIP=['/me','/public-url','/approvals/pending','/notifications','/search','/logs','/users','/receivings','/inquiries','/orders'];  // V11.158: 入库验收/询价/订单高频操作必须实时, 不加缓存
 function __cacheGet(url){try{const raw=sessionStorage.getItem(__CACHE_PREFIX+url);if(!raw)return null;const c=JSON.parse(raw);if(Date.now()-c.t<__CACHE_TTL)return c.d}catch(e){}return null}
 function __cacheSet(url,d){try{sessionStorage.setItem(__CACHE_PREFIX+url,JSON.stringify({t:Date.now(),d}))}catch(e){}}
 function __cacheClear(){try{const ks=[];for(let i=0;i<sessionStorage.length;i++){const k=sessionStorage.key(i);if(k&&k.startsWith(__CACHE_PREFIX))ks.push(k)}ks.forEach(k=>sessionStorage.removeItem(k))}catch(e){}}
@@ -2221,10 +2221,11 @@ async function showRcvDetail(id){
   showDetail(`入库单 ${r.receive_no}`,h,btns);
 }
 async function loadReceivings(){
+  // V11.158: 强制noCache — 入库验收高频操作页, 每次拉最新(提交审批/确认到货/作废后立即反映)
   // V11.29: 部门/类别筛选
   const fDept=id('rcvFDept')?.value||'', fCat=id('rcvFCat')?.value||'';
   const qs=new URLSearchParams();if(fDept)qs.set('dept',fDept);if(fCat)qs.set('cat',fCat);
-  const r=await api('/receivings'+(qs.toString()?'?'+qs:''));
+  const r=await api('/receivings'+(qs.toString()?'?'+qs:''),{noCache:true});
   // 填充筛选下拉(部门/类别选项)
   try{
     if(id('rcvFDept')){
