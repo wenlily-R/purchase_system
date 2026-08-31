@@ -1688,7 +1688,9 @@ async function doSplitSelect(iid){
   const radios=document.querySelectorAll('#dmBody input[type=radio]:checked');
   if(!radios.length){alert('请为每个物资选择供应商');return}
   const items=[...radios].map(r=>({item_id:parseInt(r.name.split('_')[1]),supplier_id:parseInt(r.value)}));
-  if(!confirm(`确认分项定标？将按所选供应商生成 ${items.length} 个订单`))return;
+  // V11.155g: 提示按实际供应商数(不是物资项数) — 按所选供应商分组生成订单, 如9项物资选2家→2个订单
+  const supCount=new Set(items.map(i=>i.supplier_id)).size;
+  if(!confirm(`确认分项定标？将按所选供应商生成 ${supCount} 个订单`))return;
   const r=await api(`/inquiries/${iid}/split-select`,{method:'POST',body:JSON.stringify({items})});
   if(r.success){
     alert(`✅ ${r.message}\n${r.orders.map(o=>'  '+o.order_no+' → '+o.supplier+' ¥'+(o.total||0).toFixed(2)).join('\n')}`);
