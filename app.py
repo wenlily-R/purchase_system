@@ -772,6 +772,39 @@ def api_reset_password(uid):
     log(session.get('user_name',''), '重置密码', '管理员重置用户 %s 的密码' % u['name'])
     return jsonify({'success': True, 'message': '密码已重置'})
 
+@app.route('/api/users/<int:uid>', methods=['PUT'])
+@admin_required
+def api_user_update(uid):
+    """V11.157: 修改用户信息 — 角色/部门/姓名/电话/状态/职务 可改"""
+    d = request.json or {}
+    conn = db()
+    u = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+    if not u:
+        conn.close(); return jsonify({'error': '用户不存在'}), 404
+    name = (d.get('name') or u['name'] or '').strip()
+    if not name:
+        conn.close(); return jsonify({'error': '姓名不能为空'}), 400
+    role = d.get('role') or u['role'] or '员工'
+    dept_id = d.get('dept_id')
+    # dept_id 可为空(未分配), 传''/null/undefined 都视为未分配
+    if dept_id in ('', None):
+        dept_id = None
+    else:
+        try: dept_id = int(dept_id)
+        except Exception: dept_id = u['dept_id']
+    phone = (d.get('phone') or u['phone'] or '')
+    title = (d.get('title') or u['title'] or '')
+    is_active = d.get('is_active')
+    if is_active is not None:
+        is_active = 1 if (is_active is True or str(is_active) in ('1', 'true')) else 0
+    else:
+        is_active = u['is_active']
+    conn.execute("UPDATE users SET name=?, role=?, dept_id=?, phone=?, title=?, is_active=? WHERE id=?",
+                 (name, role, dept_id, phone, title, is_active, uid))
+    conn.commit(); conn.close()
+    log(session.get('user_name',''), '修改用户', '更新用户 %s (%s, 部门%d, 状态%d)' % (u['username'], role, dept_id or 0, is_active))
+    return jsonify({'success': True, 'message': '用户信息已更新'})
+
 @app.route('/api/change-password', methods=['POST'])
 @login_required
 def api_change_password():

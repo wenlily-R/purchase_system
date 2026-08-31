@@ -3764,7 +3764,8 @@ async function loadSecUsers(){
         <td>${esc(u.username)}</td><td>${esc(u.name)}</td><td>${esc(u.role)}</td><td>${esc(u.dept_name||'')}</td>
         <td>${u.dingtalk_userid?`<span style="color:var(--s)">✅ ${esc(u.dingtalk_userid)}</span>`:'<span style="color:#999">未绑定</span>'}</td>
         <td>${u.is_active?'✅':'❌'}</td>
-        <td style="white-space:nowrap">${ME.can_config?`<button class="btn btn-w btn-sm" onclick="resetPwd(${u.id},'${esc(u.name)}')">重置密码</button>
+        <td style="white-space:nowrap">${ME.can_config?`<button class="btn btn-p btn-sm" onclick="editUser(${u.id},${JSON.stringify({username:u.username,name:u.name,role:u.role,dept_id:u.dept_id||'',phone:u.phone||'',title:u.title||'',is_active:u.is_active})})">✏️编辑</button>
+        <button class="btn btn-w btn-sm" onclick="resetPwd(${u.id},'${esc(u.name)}')">重置密码</button>
         <button class="btn btn-o btn-sm" onclick="bindDing(${u.id},'${esc(u.name)}')">绑钉钉</button>
         ${u.dingtalk_userid?`<button class="btn btn-o btn-sm" style="color:var(--d)" onclick="unbindDing(${u.id},'${esc(u.name)}')">解绑</button>`:''}`:''}</td>
       </tr>`).join('')}</tbody></table>
@@ -3782,7 +3783,8 @@ function showUserModal(){
         <td>${esc(u.username)}</td><td>${esc(u.name)}</td><td>${esc(u.role)}</td><td>${esc(u.dept_name||'')}</td>
         <td>${u.dingtalk_userid?`<span style="color:var(--s)">✅ ${esc(u.dingtalk_userid)}</span>`:'<span style="color:#999">未绑定</span>'}</td>
         <td>${u.is_active?'✅':'❌'}</td>
-        <td style="white-space:nowrap">${ME.can_config?`<button class="btn btn-w btn-sm" onclick="resetPwd(${u.id},'${esc(u.name)}')">重置密码</button>
+        <td style="white-space:nowrap">${ME.can_config?`<button class="btn btn-p btn-sm" onclick="editUser(${u.id},${JSON.stringify({username:u.username,name:u.name,role:u.role,dept_id:u.dept_id||'',phone:u.phone||'',title:u.title||'',is_active:u.is_active})})">✏️编辑</button>
+        <button class="btn btn-w btn-sm" onclick="resetPwd(${u.id},'${esc(u.name)}')">重置密码</button>
         <button class="btn btn-o btn-sm" onclick="bindDing(${u.id},'${esc(u.name)}')">绑钉钉</button>
         ${u.dingtalk_userid?`<button class="btn btn-o btn-sm" style="color:var(--d)" onclick="unbindDing(${u.id},'${esc(u.name)}')">解绑</button>`:''}`:''}</td>
       </tr>`).join('')}</tbody></table>
@@ -3795,6 +3797,37 @@ async function resetPwd(uid,name){
   if(pw.length<6){alert('密码至少6位');return}
   const r=await api(`/users/${uid}/reset-password`,{method:'POST',body:JSON.stringify({new_password:pw})});
   alert(r.success?r.message:(r.error||'失败'));
+}
+// V11.157: 编辑用户 — 修改 角色/部门/姓名/电话/职务/状态
+function editUser(uid,u){
+  api('/departments').then(deps=>{
+    id('dmTitle').textContent='✏️ 编辑用户 - '+u.username;
+    id('dmBody').innerHTML=`
+      <div class="fg"><label class="fl2">姓名</label><input class="fc" id="euName" value="${esc(u.name||'')}"></div>
+      <div class="fg"><label class="fl2">角色</label><select class="fc" id="euRole">
+        ${['员工','采购员','库管员','部门负责人','财务','分管领导','总经理','系统管理员'].map(r=>`<option ${u.role===r?'selected':''}>${r}</option>`).join('')}
+      </select></div>
+      <div class="fg"><label class="fl2">部门</label><select class="fc" id="euDept"><option value="">未分配</option>${deps.map(d=>`<option value="${d.id}" ${String(u.dept_id||'')===String(d.id)?'selected':''}>${esc(d.name)}</option>`).join('')}</select></div>
+      <div class="fg"><label class="fl2">电话</label><input class="fc" id="euPhone" value="${esc(u.phone||'')}"></div>
+      <div class="fg"><label class="fl2">职务</label><input class="fc" id="euTitle" value="${esc(u.title||'')}"></div>
+      <div class="fg"><label class="fl2">状态</label><select class="fc" id="euActive"><option value="1" ${u.is_active?'selected':''}>✅ 启用</option><option value="0" ${!u.is_active?'selected':''}>❌ 停用</option></select></div>`;
+    id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="saveUser(${uid})">💾 保存</button>';
+    id('detailModal').classList.add('show');
+  }).catch(()=>alert('加载部门失败'));
+}
+async function saveUser(uid){
+  const d={
+    name:id('euName').value.trim(),
+    role:id('euRole').value,
+    dept_id:id('euDept').value,
+    phone:id('euPhone').value.trim(),
+    title:id('euTitle').value.trim(),
+    is_active:id('euActive').value==='1'
+  };
+  if(!d.name){alert('姓名不能为空');return}
+  const r=await api(`/users/${uid}`,{method:'PUT',body:JSON.stringify(d)});
+  if(r.success){alert('✅ 用户信息已更新');closeMod();showUserModal()}
+  else alert(r.error||'保存失败');
 }
 function addUserForm(){
   api('/departments').then(deps=>{
