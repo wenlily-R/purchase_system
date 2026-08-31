@@ -3800,11 +3800,13 @@ async function resetPwd(uid,name){
   alert(r.success?r.message:(r.error||'失败'));
 }
 // V11.157: 编辑用户 — 修改 账号/姓名/角色/部门/电话/职务/钉钉绑定/状态
+let __editUserOrig=null;  // V11.157e: 编辑时的原始数据快照(保存时对比, 零网络等待)
 async function editUser(uid){
   // V11.157c: 绕过GET缓存拉最新用户+部门数据
   const [us,deps]=await Promise.all([api('/users',{noCache:true}),api('/departments',{noCache:true})]);
   const u=us.find(x=>x.id===uid);
   if(!u){alert('用户不存在');return}
+  __editUserOrig=u;  // 存原始快照
   id('dmTitle').textContent='✏️ 编辑用户 - '+u.username;
   id('dmBody').innerHTML=`
     <div class="fg"><label class="fl2">账号</label><input class="fc" id="euUname" value="${esc(u.username||'')}"></div>
@@ -3821,7 +3823,7 @@ async function editUser(uid){
   id('detailModal').classList.add('show');
 }
 async function saveUser(uid){
-  // V11.157d: 只提交用户实际修改的字段(未改的不传, 防止误清空钉钉绑定等数据)
+  // V11.157e: 用打开弹窗时的原始快照对比(零网络等待), 只提交修改字段, 保存用fetch直连
   const d={
     username:id('euUname')?.value.trim()||'',
     name:id('euName')?.value.trim()||'',
@@ -3834,18 +3836,16 @@ async function saveUser(uid){
   };
   if(!d.username){alert('账号不能为空');return}
   if(!d.name){alert('姓名不能为空');return}
-  // 拉取原始数据, 只提交变化字段(钉钉绑定字段未改则不传 → 后端保留原值)
-  let orig=null;
-  try{const us=await api('/users',{noCache:true});orig=us.find(x=>x.id===uid)||null}catch(e){}
+  const orig=__editUserOrig||{};
   const patch={};
-  if(!orig||orig.username!==d.username)patch.username=d.username;
-  if(!orig||orig.name!==d.name)patch.name=d.name;
-  if(!orig||orig.role!==d.role)patch.role=d.role;
-  if(!orig||String(orig.dept_id||'')!==String(d.dept_id))patch.dept_id=d.dept_id;
-  if(!orig||(orig.dingtalk_userid||'')!==d.dingtalk_userid)patch.dingtalk_userid=d.dingtalk_userid;
-  if(!orig||(orig.phone||'')!==d.phone)patch.phone=d.phone;
-  if(!orig||(orig.title||'')!==d.title)patch.title=d.title;
-  if(!orig||(orig.is_active?1:0)!==(d.is_active?1:0))patch.is_active=d.is_active;
+  if((orig.username||'')!==d.username)patch.username=d.username;
+  if((orig.name||'')!==d.name)patch.name=d.name;
+  if((orig.role||'')!==d.role)patch.role=d.role;
+  if(String(orig.dept_id||'')!==String(d.dept_id))patch.dept_id=d.dept_id;
+  if((orig.dingtalk_userid||'')!==d.dingtalk_userid)patch.dingtalk_userid=d.dingtalk_userid;
+  if((orig.phone||'')!==d.phone)patch.phone=d.phone;
+  if((orig.title||'')!==d.title)patch.title=d.title;
+  if((orig.is_active?1:0)!==(d.is_active?1:0))patch.is_active=d.is_active;
   if(!Object.keys(patch).length){toast('ℹ️ 没有需要保存的修改');return}
   try{
     const resp=await fetch(API+`/users/${uid}`,{
