@@ -2215,9 +2215,9 @@ async function loadReceivings(){
                 : x.status=='待入库'?`<button class="lnk" style="color:var(--s);font-weight:600" onclick="completeRcv(${x.id},${x.total_qty||x.quantity},${x.order_id||0})">📤 提交审批</button>`
                 : x.status=='入库中'?`<button class="lnk" style="color:var(--s);font-weight:600" onclick="completeRcv(${x.id},${x.total_qty||x.quantity},${x.order_id||0})">📤 提交审批</button>`
                 : x.status=='待审批'?'<span style="color:#b08900;font-size:8px">审批中</span>':'';
-      // V11.54: 暂估/正式标签(暂估=货到发票未到)
-      const estTag = x.is_est?'<span class="tag" style="background:#fff3e0;color:#e65100">暂估</span>'
-                   : x.invoice_no?'<span class="tag" style="background:#e8f5e9;color:#2e7d32">已红冲</span>'
+      // V11.54/V11.153: 暂估/红冲/正式标签(有发票号=已红冲优先; 无发票号且is_est=暂估; 都无=正式)
+      const estTag = x.invoice_no?'<span class="tag" style="background:#e8f5e9;color:#2e7d32">已红冲</span>'
+                   : x.is_est?'<span class="tag" style="background:#fff3e0;color:#e65100">暂估</span>'
                    : '';
       // V11.152: 恢复旧版完整展示(加粗单号/部门绿标签/物资名+N项标签/加急/数量带单位) + 保留到货提醒/暂估红冲
       const deptTag = x.dept?`<span class="tag" style="background:#eef7ee;color:#2e7d32">${esc(x.dept)}</span>`:'<span style="color:#bbb">—</span>';

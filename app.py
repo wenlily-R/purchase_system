@@ -6535,6 +6535,14 @@ def api_est_view():
             'invoice_no': row['invoice_no'] or '', 'date': str(row['received_at'] or '')[:10],
             'remark': row['remark'] or '', 'id': row['id'],
         }
+        # V11.153: 红冲组补 发票金额/差价 (invoice_amount新列; 旧数据兼容)
+        try:
+            d['invoice_amount'] = float(row['invoice_amount'] or 0) if 'invoice_amount' in row.keys() else 0
+        except Exception:
+            d['invoice_amount'] = 0
+        if has_inv and not d['invoice_amount']:
+            d['invoice_amount'] = float(row['est_amount'] or 0)
+        d['diff'] = round(d['invoice_amount'] - float(row['est_amount'] or 0), 2) if has_inv else 0
         if is_est and not has_inv: est.append(d)     # 暂估未红冲(发票没回)
         elif is_est and has_inv: hc.append(d)         # 已红冲
         else: br.append(d)                            # 正式入库
@@ -6545,14 +6553,12 @@ def api_est_view():
         checks.append({'level': 'warn', 'msg': f'⚠️ {len(est)} 张暂估入库单发票未回(采购需核对红冲)', 'count': len(est)})
     else:
         checks.append({'level': 'ok', 'msg': '✅ 暂估入库单均已红冲, 无发票未回', 'count': 0})
-    # ② 红冲了但不在白入(异常: 红冲了却没转正式)
-    hc_nos = set(x['receive_no'] for x in hc)
-    br_nos = set(x['receive_no'] for x in br)
-    abnormal = hc_nos - br_nos
-    if abnormal:
-        checks.append({'level': 'danger', 'msg': f'🚨 {len(abnormal)} 张已红冲但未计入白入(异常, 需检查): {", ".join(list(abnormal)[:3])}', 'count': len(abnormal)})
+    # ② V11.153: 红冲单(is_est=1且有发票)即已转正式, 不再要求进白入组; 检查"有发票号但is_est=0"的异常(正式单带发票=数据不一致)
+    _weird = [x['receive_no'] for x in br if x['invoice_no']]
+    if _weird:
+        checks.append({'level': 'danger', 'msg': f'🚨 {len(_weird)} 张正式入库单带发票号(数据异常, 需检查): {", ".join(_weird[:3])}', 'count': len(_weird)})
     else:
-        checks.append({'level': 'ok', 'msg': '✅ 红冲与白入一致, 无异常', 'count': 0})
+        checks.append({'level': 'ok', 'msg': '✅ 红冲单均已转正式, 无数据异常', 'count': 0})
     # ③ 汇总
     checks.append({'level': 'info', 'msg': f'📊 暂估 {len(est)} 张 / 红冲 {len(hc)} 张 / 白入 {len(br)} 张', 'count': len(est) + len(hc) + len(br)})
     return jsonify({'est': est, 'hc': hc, 'br': br, 'checks': checks})
@@ -6574,8 +6580,8 @@ def _gen_est_export(kind):
     hfill = PatternFill('solid', fgColor='2F5597')
     bf = Font(name='微软雅黑', size=10)
     titles = {'est': '暂估入库明细表', 'hc': '红字冲销明细表', 'br': '白入(正式入库)明细表'}
-    heads = ['入库单号', '物资名称', '规格', '数量', '单位', '暂估金额(元)', '发票号', '入库日期', '备注']
-    ws.merge_cells('A1:I1')
+    heads = ['入库单号', '物资名称', '规格', '数量', '单位', '暂估金额(元)', '发票金额(元)', '差价(元)', '发票号', '发票类型', '入库日期', '备注']
+    ws.merge_cells('A1:L1')
     ws['A1'] = titles[kind]; ws['A1'].font = tf
     ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
     ws.row_dimensions[1].height = 30
@@ -6591,18 +6597,27 @@ def _gen_est_export(kind):
         if kind == 'est' and (not is_est or has_inv): continue
         if kind == 'hc' and not (is_est and has_inv): continue
         if kind == 'br' and is_est: continue
+        # V11.153: 红冲表体现 暂估价 vs 发票价 差价(invoice_amount新列; 兼容旧数据用est_amount)
+        _est = float(row['est_amount'] or 0)
+        _inv = float(row.get('invoice_amount') or 0) if row.keys() and 'invoice_amount' in row.keys() else 0
+        if _inv == 0 and has_inv: _inv = _est  # 旧数据兼容
+        _diff = round(_inv - _est, 2)
         vals = [row['receive_no'], row['item_name'], row['spec'] or '', row['quantity'],
-                row['unit'] or '个', row['est_amount'] or 0, row['invoice_no'] or '',
-                str(row['received_at'] or '')[:10], row['remark'] or '']
+                row['unit'] or '个', _est,
+                (_inv if has_inv else 0), (_diff if has_inv else 0),
+                row['invoice_no'] or '', row.get('invoice_type') or '', str(row['received_at'] or '')[:10], row['remark'] or '']
         for ci, v in enumerate(vals, 1):
             c = ws.cell(r, ci, v); c.border = border; c.font = bf
-            c.alignment = Alignment(horizontal='center' if ci in (1, 3, 4, 5, 6, 7, 8) else 'left', vertical='center', wrap_text=True)
+            c.alignment = Alignment(horizontal='center' if ci in (1, 3, 4, 5, 6, 7, 8, 9, 10, 11) else 'left', vertical='center', wrap_text=True)
+        # 差价不为0时红色标注(差异提醒)
+        if has_inv and _diff != 0:
+            ws.cell(r, 8).font = Font(name='微软雅黑', size=10, bold=True, color='E74C3C')
         ws.row_dimensions[r].height = 22
         r += 1; cnt += 1
     if cnt == 0:
-        ws.merge_cells(f'A{r}:I{r}')
+        ws.merge_cells(f'A{r}:L{r}')
         ws.cell(r, 1, '（本月暂无数据）').font = bf
-    widths = [16, 20, 14, 10, 6, 14, 14, 12, 26]
+    widths = [16, 20, 14, 10, 6, 14, 14, 12, 18, 16, 12, 20]
     for j, w in enumerate(widths, 1):
         ws.column_dimensions[chr(64 + j)].width = w
     ws.page_setup.orientation = 'landscape'
@@ -6641,13 +6656,17 @@ def api_receiving_invoice_match(rid):
         conn.close(); return jsonify({'error': '该入库单不是暂估单,无需红冲'}), 400
     if rn['invoice_no']:
         conn.close(); return jsonify({'error': f'该暂估单已红冲(发票{rn["invoice_no"]})'}), 400
-    # 红冲: 暂估→正式, 记发票号+类型
+    # 红冲: 暂估→已红冲(V11.153: 保留is_est=1表示"暂估已红冲", 月底红冲表判定 is_est=1 AND invoice_no; 正式入库才是is_est=0)
+    # V11.153: 发票金额单独存invoice_amount, 暂估价est_amount保留, 差价=invoice_amount-est_amount可体现
     try: conn.execute("ALTER TABLE receivings ADD COLUMN invoice_type TEXT DEFAULT ''")
     except Exception: pass
-    conn.execute("UPDATE receivings SET is_est=0, invoice_no=?, est_amount=?, invoice_type=? WHERE id=?",
-                 (invoice_no, amount if amount > 0 else rn['est_amount'], invoice_type, rid))
+    try: conn.execute("ALTER TABLE receivings ADD COLUMN invoice_amount REAL DEFAULT 0")
+    except Exception: pass
+    _inv_amt = amount if amount > 0 else rn['est_amount']
+    conn.execute("UPDATE receivings SET is_est=1, invoice_no=?, est_amount=?, invoice_type=?, invoice_amount=? WHERE id=?",
+                 (invoice_no, rn['est_amount'] or 0, invoice_type, _inv_amt, rid))
     conn.commit(); conn.close()
-    log(session['user_name'], '发票核对红冲', f'{rn["receive_no"]} 发票{invoice_no} 已红冲转正式')
+    log(session['user_name'], '发票核对红冲', f'{rn["receive_no"]} 发票{invoice_no} 暂估{rn["est_amount"]}→发票{_inv_amt} 差价{_inv_amt-(rn["est_amount"] or 0):.2f}')
     return jsonify({'success': True, 'receive_no': rn['receive_no']})
 
 @app.route('/api/invoices')
