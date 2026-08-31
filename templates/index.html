@@ -1800,7 +1800,7 @@ async function showOrder(id){
   let btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button>
     <button class="btn btn-p btn-sm" onclick="downloadOrder(${id})">⬇️ 下载采购订单</button>
     <button class="btn btn-w btn-sm" onclick="printDoc('订单 ${esc(o.order_no)}','${esc(o.order_no)} | ${esc(o.item_name)} | ${esc(o.supplier)} | ¥${(o.total_amount||0).toFixed(0)} | ${esc(o.status)}')">🖨 打印</button>`;
-  if(['待审批','审批通过','已签合同','已通过'].includes(o.status)&&!o.contract_no)
+  if(['待审批','审批通过','已签合同','已通过'].includes(o.status)&&!o.has_contract)
     btns+=`<button class="btn btn-p btn-sm" onclick="genContract(${id})">📄 生成采购合同</button>`;
   if(['待审批','审批通过'].includes(o.status))
     btns+=`<button class="btn btn-d btn-sm" onclick="voidDoc('/api/orders/${id}/void','订单')">作废</button>`;

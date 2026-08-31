@@ -3831,8 +3831,14 @@ def api_order(oid):
     approvals = conn.execute("SELECT * FROM approval_instances WHERE biz_type='purchase_order' AND biz_id=? ORDER BY level_no", (oid,)).fetchall()
     pcs = conn.execute("SELECT * FROM price_comparisons WHERE order_id=?", (oid,)).fetchall()
     items = conn.execute("SELECT * FROM order_items WHERE order_id=? ORDER BY id", (oid,)).fetchall()
+    # V11.151: 补 has_contract — 订单是否已有有效合同(前端据此隐藏"生成采购合同"按钮, 防重复生成)
+    _has_ct = conn.execute(
+        "SELECT 1 FROM contracts WHERE order_id=? AND status NOT IN ('已作废','已撤回','撤回') LIMIT 1",
+        (oid,)).fetchone() is not None
     conn.close()
-    return jsonify({'order':dict_row(o),'items':[dict_row(i) for i in items],'approvals':[dict_row(a) for a in approvals],'comparisons':[dict_row(p) for p in pcs]})
+    _od = dict_row(o)
+    _od['has_contract'] = _has_ct
+    return jsonify({'order':_od,'items':[dict_row(i) for i in items],'approvals':[dict_row(a) for a in approvals],'comparisons':[dict_row(p) for p in pcs]})
 
 @app.route('/api/order_items/<int:iid>/status', methods=['POST'])
 @login_required
@@ -6893,6 +6899,13 @@ def api_contract_generate():
     o = conn.execute("SELECT * FROM purchase_orders WHERE id=?", (oid,)).fetchone()
     if not o:
         conn.close(); return jsonify({'error': '订单不存在'}), 400
+    # V11.151: 防重复生成合同 — 订单已有有效合同(非作废/非已撤回)时禁止再次生成
+    _exist = conn.execute(
+        "SELECT id,contract_no,status FROM contracts WHERE order_id=? AND status NOT IN ('已作废','已撤回','撤回') ORDER BY id LIMIT 1",
+        (oid,)).fetchone()
+    if _exist:
+        conn.close()
+        return jsonify({'error': '该订单已生成合同 %s（状态:%s），如需重新生成请先撤回或作废原合同' % (_exist['contract_no'], _exist['status'])}), 400
     sup = conn.execute("SELECT * FROM suppliers WHERE name=?", (o['supplier'],)).fetchone() if o['supplier'] else None
     tpl = None
     if d.get('template_id'):
