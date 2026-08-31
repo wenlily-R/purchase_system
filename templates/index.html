@@ -13,13 +13,16 @@
   --v9-r:10px; --v9-r2:14px; --v9-sh:0 2px 10px rgba(12,58,107,.08);
 }
 body{background:var(--v9-bg);color:var(--v9-t)}
-.header{background:linear-gradient(90deg,#0c3a6b,#14508c);border-bottom:none;color:#fff;height:52px;box-shadow:0 2px 12px rgba(8,42,80,.25)}
-.header .logo{color:#fff;font-size:15px}
-.header .logo .tag{background:#f5821f;color:#fff;font-weight:600}
-.topnav a{color:#cfe0f4;font-size:11px;padding:4px 10px;border-radius:6px}
+.header{background:linear-gradient(90deg,#082a50,#0c3a6b 55%,#14508c);border-bottom:1px solid rgba(255,255,255,.08);color:#fff;height:54px;box-shadow:0 2px 16px rgba(8,42,80,.35)}
+.header .logo{color:#fff;font-size:15px;display:flex;align-items:center;gap:8px}
+.header .logo .logo-ic{width:30px;height:30px;background:linear-gradient(135deg,#f5821f,#e06e0a);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 2px 8px rgba(245,130,31,.4)}
+.header .logo .logo-tx{font-size:16px;font-weight:800;letter-spacing:.5px}
+.header .logo .tag{background:#f5821f;color:#fff;font-weight:600;padding:2px 7px;border-radius:4px;font-size:9px}
+.header .logo::after{content:'';width:1px;height:20px;background:rgba(255,255,255,.15);margin:0 2px}
+.topnav a{color:#cfe0f4;font-size:11px;padding:5px 12px;border-radius:6px}
 .topnav a:hover{background:rgba(255,255,255,.14);color:#fff}
-.topnav a.act{background:#f5821f;color:#fff;font-weight:600}
-.topright .uname{color:#e8f1fb}
+.topnav a.act{background:#f5821f;color:#fff;font-weight:600;box-shadow:0 2px 8px rgba(245,130,31,.35)}
+.topright .uname{color:#e8f1fb;background:rgba(255,255,255,.1);padding:3px 10px;border-radius:12px}
 .topright .logout{color:#ffc9a3}
 #globalSearch{width:240px;padding:6px 12px;border:1px solid rgba(255,255,255,.25);border-radius:20px;background:rgba(255,255,255,.12);color:#fff;font-size:11px;transition:all .2s}
 #globalSearch::placeholder{color:#a9c3e0}
@@ -29,26 +32,29 @@ body{background:var(--v9-bg);color:var(--v9-t)}
 .side::-webkit-scrollbar-track{background:#f0f3f8}
 .side::-webkit-scrollbar-thumb{background:#b8c9de;border-radius:4px;border:1px solid #f0f3f8}
 .side::-webkit-scrollbar-thumb:hover{background:#14508c}
-.side .sl{color:#666;font-size:9px;padding:10px 12px 4px;letter-spacing:.5px;font-weight:700}
-.side .si{color:#000;font-size:11px;padding:7px 12px;border-left:3px solid transparent;border-radius:0 6px 6px 0;margin:1px 4px;transition:all .15s;font-weight:700}
-.side .si:hover{background:#eef2f7;color:#000}
-.side .si.act{background:linear-gradient(90deg,#14508c,#1a6bb0);color:#fff;border-left-color:#f5821f;font-weight:700;box-shadow:0 2px 8px rgba(20,80,140,.25)}
-.side .si .badge{background:#e74c3c;color:#fff}
-.main{margin-left:172px;padding:14px 18px;transition:margin-left .2s}
-body.side-collapsed .side{width:0;overflow:hidden;border:none}
-.side .si-grp{display:flex;align-items:center;gap:4px;padding:6px 12px;cursor:pointer;font-size:10px;color:#000;font-weight:700;letter-spacing:.4px}
-.side .si-grp:hover{color:#14508c}
-.side .si-sub{padding-left:22px}
+.side .sl{color:#8a97a8;font-size:9px;padding:12px 14px 4px;letter-spacing:1px;font-weight:800;text-transform:uppercase}
+.side .si{color:#33475c;font-size:11px;padding:8px 14px;border-left:3px solid transparent;border-radius:0 8px 8px 0;margin:1px 6px;transition:all .15s;font-weight:600}
+.side .si:hover{background:#eef2f7;color:#0c3a6b}
+.side .si.act{background:linear-gradient(90deg,#14508c,#1a6bb0);color:#fff;border-left-color:#f5821f;font-weight:700;box-shadow:0 3px 10px rgba(20,80,140,.3)}
+.side .si .badge{background:#e74c3c;color:#fff;font-size:9px;padding:1px 5px;border-radius:8px;margin-left:4px}
+.side .si-grp{display:flex;align-items:center;gap:5px;padding:7px 14px;cursor:pointer;font-size:10px;color:#33475c;font-weight:700;letter-spacing:.4px;border-radius:6px;margin:1px 6px}
+.side .si-grp:hover{color:#14508c;background:#f0f4fa}
+.side .si-grp .arr{color:#a0b0c4;font-size:8px;transition:transform .2s}
+.side .si-grp.open .arr{transform:rotate(90deg)}
+.side .si-sub{padding-left:26px}
+.side .si-sub .si{margin-left:0}
 body.side-collapsed .main{margin-left:0}
-h2{font-size:17px;font-weight:700;margin-bottom:10px;letter-spacing:.3px}
+h2{font-size:17px;font-weight:700;margin-bottom:12px;letter-spacing:.3px;padding-left:10px;border-left:4px solid #f5821f;line-height:1.4}
 .card{background:var(--v9-c);border:1px solid var(--v9-b);border-radius:var(--v9-r2);margin-bottom:12px;box-shadow:var(--v9-sh);overflow:hidden;transition:box-shadow .2s}
 .card:hover{box-shadow:0 4px 16px rgba(12,58,107,.13)}
-.ch{padding:10px 14px;border-bottom:1px solid var(--v9-b);background:#f8fafd}
-.ch h3{font-size:13px;font-weight:700;color:var(--v9-pd)}
+.ch{padding:12px 16px;border-bottom:1px solid var(--v9-b);background:linear-gradient(180deg,#fbfcfe,#f5f8fc)}
+.ch h3{font-size:13px;font-weight:700;color:var(--v9-pd);display:flex;align-items:center;gap:6px}
+.ch h3::before{content:'';width:3px;height:14px;background:linear-gradient(180deg,#f5821f,#e06e0a);border-radius:2px}
 .cb{padding:10px 14px}
-table{font-size:11px}
-th{font-size:10px;color:var(--v9-t2);background:#f4f7fb;padding:7px 8px}
-td{padding:6px 8px}
+table{font-size:11px;border-collapse:separate;border-spacing:0}
+th{font-size:10px;color:var(--v9-t2);background:linear-gradient(180deg,#f6f9fd,#eef3f9);padding:8px 10px;font-weight:700;border-bottom:1px solid var(--v9-b);letter-spacing:.3px}
+td{padding:7px 10px;border-bottom:1px solid #f0f3f7}
+tr:last-child td{border-bottom:none}
 tr:nth-child(even) td{background:#f8fafd}
 tr:hover td{background:#eef5fd}
 .btn{border-radius:6px;font-size:11px;padding:5px 10px;transition:all .15s;font-weight:500}
@@ -60,10 +66,18 @@ tr:hover td{background:#eef5fd}
 .btn-sm{padding:3px 8px;font-size:10px}
 .lnk{font-size:11px}
 .kpi{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:4px}
-.kc{border-radius:var(--v9-r);padding:12px 14px;border-left:4px solid var(--v9-p);transition:all .18s}
+.kc{border-radius:var(--v9-r);padding:12px 14px;border-left:4px solid var(--v9-p);transition:all .18s;background:linear-gradient(135deg,#fff, #f8fafd)}
 .kc:hover{transform:translateY(-2px);box-shadow:var(--v9-sh)}
 .kc .kl{font-size:10px;color:var(--v9-t2);letter-spacing:.3px}
 .kc .kv{font-size:22px;font-weight:800;margin:3px 0;color:var(--v9-pd)}
+.kc.kc-o{border-left-color:#f5821f}
+.kc.kc-o .kv{color:#d1660a}
+.kc.kc-g{border-left-color:#0f9d58}
+.kc.kc-g .kv{color:#0f9d58}
+.kc.kc-r{border-left-color:#ea4335}
+.kc.kc-r .kv{color:#d33426}
+.kc.kc-b{border-left-color:#1a73e8}
+.kc.kc-b .kv{color:#1a73e8}
 .fc,.fl input,.fl select{padding:6px 9px;border-radius:6px;font-size:11px;border:1px solid var(--v9-b)}
 .fc:focus,.fl input:focus,.fl select:focus{border-color:var(--v9-p);box-shadow:0 0 0 3px rgba(20,80,140,.12)}
 .mod .mc{border-radius:var(--v9-r2);box-shadow:0 12px 48px rgba(8,42,80,.3)}
@@ -237,7 +251,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
 </div>
 <div id="appMain" style="display:none">
 <div class="header">
-  <div class="logo">⚡ 正成能源采购系统 <span class="tag">V9.0</span></div>  <div class="topnav" id="topnav"></div>
+  <div class="logo"><span class="logo-ic">⚡</span><span class="logo-tx">正成能源采购系统</span><span class="tag">V9.0</span></div>  <div class="topnav" id="topnav"></div>
   <div style="position:relative;margin-left:auto;margin-right:8px">
     <input id="globalSearch" placeholder="🔍 搜索菜单/单据/档案..." style="width:220px;padding:4px 8px;border:1px solid var(--b);border-radius:4px;font-size:10px" oninput="globalSearch(this.value)" onfocus="window.id('gsBox').style.display='block'" onblur="setTimeout(()=>window.id('gsBox').style.display='none',300)">
     <div id="gsBox" style="display:none;position:absolute;top:26px;right:0;width:340px;background:var(--c);border:1px solid var(--b);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:999;max-height:380px;overflow-y:auto;font-size:10px"></div>
@@ -826,7 +840,7 @@ function buildNav(){
   ];
   let html=groups.map((g,gi)=>{
     const items=g[1].map(i=>`<div class="si si-sub" onclick="sw('${i[0]}')">${i[1]}${i[2]}</div>`).join('');
-    return `<div class="si-grp" onclick="toggleGrp(this,${gi})">${g[0]}<span style="margin-left:auto;font-size:8px">▾</span></div><div class="grp-body" id="grp${gi}">${items}</div>`;
+    return `<div class="si-grp" onclick="toggleGrp(this,${gi})">${g[0]}<span class="arr" style="margin-left:auto">▶</span></div><div class="grp-body" id="grp${gi}">${items}</div>`;
   }).join('');
   if(ME.can_config){html+=`<div class="sl">系统配置</div><div class="si si-sub" onclick="sw('feishu')">✈️飞书</div><div class="si si-sub" onclick="sw('dingtalk')">💬钉钉</div><div class="si si-sub" onclick="sw('system')">⚙️系统设置</div>`}
   id('sideMenu').innerHTML=html;
@@ -863,7 +877,7 @@ function toggleGrp(el,gi){
   if(!body)return;
   const open=body.style.display!=='none';
   body.style.display=open?'none':'block';
-  el.querySelector('span').textContent=open?'▸':'▾';
+  el.classList.toggle('open',!open);
 }
 function toggleSide(){
   document.body.classList.toggle('side-collapsed');
@@ -1071,15 +1085,15 @@ async function loadDashboard(){
     const showP=k.can_price;
     id('dashKpi').innerHTML=`
       <div class="kc v9-kpi-hero" onclick="sw('payments')" style="cursor:pointer" title="点击查看付款"><div class="kl">本月采购总额</div><div class="kv">${showP?('¥'+(k.month_purchase||0).toFixed(0)):'***'}</div><small>点击下钻付款报表</small></div>
-      <div class="kc" onclick="sw('receivings')" style="cursor:pointer;border-left-color:#f39c12" title="点击查看入库"><div class="kl">待入库订单</div><div class="kv cw">${k.pending_in}</div></div>
-      <div class="kc" onclick="sw('approvals')" style="cursor:pointer;border-left-color:#14508c" title="点击查看审批"><div class="kl">待审批单据</div><div class="kv cw">${k.pending_appr}</div></div>
-      <div class="kc" onclick="sw('approvals')" style="cursor:pointer;border-left-color:#e74c3c;background:#fff6f6" title="点击查看加急"><div class="kl">🚨 加急审批</div><div class="kv cd">${k.urgent_cnt}</div></div>
-      <div class="kc" onclick="sw('payments')" style="cursor:pointer;border-left-color:#e74c3c" title="点击查看付款"><div class="kl">超期应付金额</div><div class="kv cd">${showP?('¥'+(k.overdue_pay||0).toFixed(0)):'***'}</div></div>
-      <div class="kc" onclick="sw('inventory')" style="cursor:pointer;border-left-color:#f39c12" title="点击查看库存"><div class="kl">缺货物料</div><div class="kv cw">${k.stock_low}</div></div>
-      <div class="kc" onclick="sw('payments')" style="cursor:pointer;border-left-color:#14508c" title="点击查看付款"><div class="kl">待付款总额</div><div class="kv cw">${showP?('¥'+(k.pending_pay||0).toFixed(0)):'***'}</div></div>
-      <div class="kc" onclick="sw('orders')" style="cursor:pointer;border-left-color:#0f9d58" title="点击查看订单"><div class="kl">订单完成率</div><div class="kv cs">${k.order_complete_rate||0}%</div></div>
-      <div class="kc" onclick="sw('inventory')" style="cursor:pointer;border-left-color:#14508c" title="点击查看库存"><div class="kl">库存总量</div><div class="kv cw">${k.stock_total||0}</div></div>
-      <div class="kc" onclick="sw('inventory')" style="cursor:pointer;border-left-color:#e74c3c" title="点击查看库存"><div class="kl">超储物资</div><div class="kv cd">${k.stock_over||0}</div></div>`;
+      <div class="kc kc-o" onclick="sw('receivings')" style="cursor:pointer" title="点击查看入库"><div class="kl">待入库订单</div><div class="kv">${k.pending_in}</div></div>
+      <div class="kc kc-b" onclick="sw('approvals')" style="cursor:pointer" title="点击查看审批"><div class="kl">待审批单据</div><div class="kv">${k.pending_appr}</div></div>
+      <div class="kc kc-r" onclick="sw('approvals')" style="cursor:pointer;background:#fff6f6" title="点击查看加急"><div class="kl">🚨 加急审批</div><div class="kv">${k.urgent_cnt}</div></div>
+      <div class="kc kc-r" onclick="sw('payments')" style="cursor:pointer" title="点击查看付款"><div class="kl">超期应付金额</div><div class="kv">${showP?('¥'+(k.overdue_pay||0).toFixed(0)):'***'}</div></div>
+      <div class="kc kc-o" onclick="sw('inventory')" style="cursor:pointer" title="点击查看库存"><div class="kl">缺货物料</div><div class="kv">${k.stock_low}</div></div>
+      <div class="kc kc-b" onclick="sw('payments')" style="cursor:pointer" title="点击查看付款"><div class="kl">待付款总额</div><div class="kv">${showP?('¥'+(k.pending_pay||0).toFixed(0)):'***'}</div></div>
+      <div class="kc kc-g" onclick="sw('orders')" style="cursor:pointer" title="点击查看订单"><div class="kl">订单完成率</div><div class="kv">${k.order_complete_rate||0}%</div></div>
+      <div class="kc kc-b" onclick="sw('inventory')" style="cursor:pointer" title="点击查看库存"><div class="kl">库存总量</div><div class="kv">${k.stock_total||0}</div></div>
+      <div class="kc kc-r" onclick="sw('inventory')" style="cursor:pointer" title="点击查看库存"><div class="kl">超储物资</div><div class="kv">${k.stock_over||0}</div></div>`;
     // ② 审批消息专区
     window._dashAppr=d;
     // V11.5: 顶部导航审批中心待办徽标
