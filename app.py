@@ -792,13 +792,15 @@ def api_user_update(uid):
     if not name:
         conn.close(); return jsonify({'error': '姓名不能为空'}), 400
     role = d.get('role') or u['role'] or '员工'
-    dept_id = d.get('dept_id')
-    # dept_id 可为空(未分配), 传''/null/undefined 都视为未分配
-    if dept_id in ('', None):
-        dept_id = None
+    # V11.157d: dept_id 只在显式传入时更新(未传=保留原值; 传空串=未分配)
+    if 'dept_id' in d:
+        if d.get('dept_id') in ('', None):
+            dept_id = None
+        else:
+            try: dept_id = int(d['dept_id'])
+            except Exception: dept_id = u['dept_id']
     else:
-        try: dept_id = int(dept_id)
-        except Exception: dept_id = u['dept_id']
+        dept_id = u['dept_id']
     phone = (d.get('phone') or u['phone'] or '')
     title = (d.get('title') or u['title'] or '')
     # 钉钉绑定: 传空字符串=解绑, 不传=保留原值

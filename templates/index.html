@@ -694,7 +694,8 @@ async function api(url,opts={}){
     __dupGuard.set(key,now);
   }
   // V11.150: GET列表缓存命中 → 秒回(不入队、不重复请求; 免费隧道慢时切页/刷新秒开)
-  if(method==='GET'&&!__CACHE_SKIP.some(s=>url.startsWith(s))){
+  // V11.157d: opts.noCache=true 跳过缓存强制拉最新
+  if(method==='GET'&&!opts.noCache&&!__CACHE_SKIP.some(s=>url.startsWith(s))){
     const _c=__cacheGet(url);if(_c!==null)return _c;
   }
   __apiFeed(method);
@@ -3800,7 +3801,8 @@ async function resetPwd(uid,name){
 }
 // V11.157: 编辑用户 — 修改 账号/姓名/角色/部门/电话/职务/钉钉绑定/状态
 async function editUser(uid){
-  const [us,deps]=await Promise.all([api('/users'),api('/departments')]);
+  // V11.157c: 绕过GET缓存拉最新用户+部门数据
+  const [us,deps]=await Promise.all([api('/users',{noCache:true}),api('/departments',{noCache:true})]);
   const u=us.find(x=>x.id===uid);
   if(!u){alert('用户不存在');return}
   id('dmTitle').textContent='✏️ 编辑用户 - '+u.username;
@@ -3819,21 +3821,49 @@ async function editUser(uid){
   id('detailModal').classList.add('show');
 }
 async function saveUser(uid){
+  // V11.157d: 只提交用户实际修改的字段(未改的不传, 防止误清空钉钉绑定等数据)
   const d={
-    username:id('euUname').value.trim(),
-    name:id('euName').value.trim(),
-    role:id('euRole').value,
-    dept_id:id('euDept').value,
-    dingtalk_userid:id('euDing').value.trim(),
-    phone:id('euPhone').value.trim(),
-    title:id('euTitle').value.trim(),
-    is_active:id('euActive').value==='1'
+    username:id('euUname')?.value.trim()||'',
+    name:id('euName')?.value.trim()||'',
+    role:id('euRole')?.value||'员工',
+    dept_id:id('euDept')?.value||'',
+    dingtalk_userid:id('euDing')?.value.trim()||'',
+    phone:id('euPhone')?.value.trim()||'',
+    title:id('euTitle')?.value.trim()||'',
+    is_active:(id('euActive')?.value||'1')==='1'
   };
   if(!d.username){alert('账号不能为空');return}
   if(!d.name){alert('姓名不能为空');return}
-  const r=await api(`/users/${uid}`,{method:'PUT',body:JSON.stringify(d)});
-  if(r.success){alert('✅ 用户信息已更新');closeMod();showUserModal()}
-  else alert(r.error||'保存失败');
+  // 拉取原始数据, 只提交变化字段(钉钉绑定字段未改则不传 → 后端保留原值)
+  let orig=null;
+  try{const us=await api('/users',{noCache:true});orig=us.find(x=>x.id===uid)||null}catch(e){}
+  const patch={};
+  if(!orig||orig.username!==d.username)patch.username=d.username;
+  if(!orig||orig.name!==d.name)patch.name=d.name;
+  if(!orig||orig.role!==d.role)patch.role=d.role;
+  if(!orig||String(orig.dept_id||'')!==String(d.dept_id))patch.dept_id=d.dept_id;
+  if(!orig||(orig.dingtalk_userid||'')!==d.dingtalk_userid)patch.dingtalk_userid=d.dingtalk_userid;
+  if(!orig||(orig.phone||'')!==d.phone)patch.phone=d.phone;
+  if(!orig||(orig.title||'')!==d.title)patch.title=d.title;
+  if(!orig||(orig.is_active?1:0)!==(d.is_active?1:0))patch.is_active=d.is_active;
+  if(!Object.keys(patch).length){toast('ℹ️ 没有需要保存的修改');return}
+  try{
+    const resp=await fetch(API+`/users/${uid}`,{
+      method:'PUT',headers:{'Content-Type':'application/json'},
+      credentials:'include',body:JSON.stringify(patch)
+    });
+    const r=await resp.json().catch(()=>({error:'响应解析失败('+resp.status+')'}));
+    if(resp.ok&&r.success){
+      toast('✅ 用户信息已更新');
+      __cacheClear();
+      closeMod();
+      showUserModal();
+    }else{
+      alert(r.error||('保存失败('+resp.status+')'));
+    }
+  }catch(e){
+    alert('保存失败:'+(e.message||e));
+  }
 }
 function addUserForm(){
   api('/departments').then(deps=>{
