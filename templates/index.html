@@ -2267,6 +2267,18 @@ async function showRcvForm(){
     <div style="font-size:9px;color:#666;margin-bottom:4px">入库三步：①选部门 ②选物资和数量 ③提交审批（类别自动带出）</div>
     <div style="margin-bottom:8px"><label style="font-size:10px;color:#555;display:block;margin-bottom:3px">🏷️ 归属部门 *（这批货是给哪个部门的）</label>
     <select id="rcvDept" style="width:100%;padding:6px;border:1px solid var(--b);border-radius:4px;font-size:11px"><option value="">— 请选择部门 —</option>${_deptOpts}</select></div>
+    <div style="margin-bottom:8px"><label style="font-size:10px;color:#555;display:block;margin-bottom:3px">📄 入库类型 *</label>
+    <div style="display:flex;gap:8px">
+      <div style="flex:1;border:2px solid #e65100;border-radius:6px;padding:8px;text-align:center;cursor:pointer;background:#fff3e0" id="rcvTypeEst" onclick="rcvPickType('est')">
+        <div style="font-size:11px;font-weight:bold;color:#e65100">🟠 暂估入库</div>
+        <div style="font-size:8px;color:#888;margin-top:2px">货到发票未到（先入账，发票到了红冲转正式）</div>
+      </div>
+      <div style="flex:1;border:2px solid var(--b);border-radius:6px;padding:8px;text-align:center;cursor:pointer;background:#fff" id="rcvTypeFormal" onclick="rcvPickType('formal')">
+        <div style="font-size:11px;font-weight:bold;color:#2e7d32">🟢 正式入库</div>
+        <div style="font-size:8px;color:#888;margin-top:2px">发票和货都齐了（直接正式入库，无需红冲）</div>
+      </div>
+    </div>
+    <input type="hidden" id="rcvType" value="est"></div>
     <div id="rcvItemList"></div>
     <button class="btn btn-o btn-sm" style="margin-top:4px" onclick="addRcvItem()">+ 添加商品</button>
     <div style="margin-top:8px;border:1px dashed var(--b);border-radius:6px;padding:8px">
@@ -2277,6 +2289,18 @@ async function showRcvForm(){
   id('detailModal').classList.add('show');
   id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="createRcv()">提交入库审批</button>';
   addRcvItem();
+}
+// V11.152d: 入库类型选择(暂估/正式) — 货到票未到=暂估, 票货齐=正式
+function rcvPickType(t){
+  const est=id('rcvTypeEst'), formal=id('rcvTypeFormal');
+  id('rcvType').value=t;
+  if(t=='est'){
+    est.style.borderColor='#e65100';est.style.background='#fff3e0';
+    formal.style.borderColor='var(--b)';formal.style.background='#fff';
+  }else{
+    est.style.borderColor='var(--b)';est.style.background='#fff';
+    formal.style.borderColor='#2e7d32';formal.style.background='#e8f5e9';
+  }
 }
 window._rcvIdx=[];
 function addRcvItem(){
@@ -2332,8 +2356,11 @@ async function createRcv(){
   // V11.29: 部门必选
   const dept=(id('rcvDept')?.value||'').trim();
   if(!dept){alert('请选择归属部门（这批货是给哪个部门的）');return}
-  const r=await api('/receivings',{method:'POST',body:JSON.stringify({items,attachments:window._rcvAtts||[],dept})});
-  if(r.success){alert(`✅ ${r.receive_no} 已提交入库审批，审批通过后自动增加库存`);closeMod();loadReceivings();loadDashboard()}
+  // V11.152d: 入库类型(暂估/正式) — 默认暂估
+  const rcvType=(id('rcvType')?.value||'est');
+  const isEst=rcvType!='formal';
+  const r=await api('/receivings',{method:'POST',body:JSON.stringify({items,attachments:window._rcvAtts||[],dept,is_est:isEst?1:0})});
+  if(r.success){alert(`✅ ${r.receive_no} 已提交入库审批（${isEst?'🟠暂估':'🟢正式'}），审批通过后自动增加库存`);closeMod();loadReceivings();loadDashboard()}
   else alert(r.error||'提交失败');
 }
 async function voidRcv(id){
