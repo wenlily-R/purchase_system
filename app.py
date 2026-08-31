@@ -1933,14 +1933,15 @@ def dt_build_form(biz_type, biz_id, info):
                 # V11.137/V11.150: 模板"选定供应商"控件选项=厂家A/厂家B/厂家C(截图确认)
                 # V11.150: 厂家A/B/C按添加顺序映射(与Excel比价单从左到右一致, A=最左C=最右), 领导选A即Excel第一家, 不混淆
                 # 之前按报价排序导致领导分不清对应Excel哪家(报价顺序≠添加顺序)
+                # V11.155: 默认值=按各物资最低价择优采购(领导不指定厂家时直接同意即可, 醒目); 如需指定厂家再改选A/B/C
                 _abc = ('厂家A', '厂家B', '厂家C')
-                _default_opt = '厂家A' if supplier_opts else ''
+                _default_opt = '按各物资最低价择优采购'
                 form = [
                     {'name': '询价单号', 'value': iq['inq_no'] or ''},
                     {'name': '物资名称', 'value': (iq['title'] or '')[:50]},
                     {'name': '三方报价详情', 'value': '\n'.join(supplier_details) if supplier_details else '暂无报价'},
                     {'name': '选定供应商 ', 'value': _default_opt if _default_opt else ''},  # ⚠️ 纯文本非数组
-                    {'name': '备注', 'value': '厂家A=Excel比价单最左一家, 厂家B=中间, 厂家C=最右; 默认选A, 如需改选请调整"选定供应商"后提交'},
+                    {'name': '备注', 'value': '默认=按各物资最低价择优采购(每项选报价最低的厂家, 采购员分项定标生成订单); 如需指定厂家, 请改选: 厂家A=Excel最左/厂家B=中间/厂家C=最右'},
                 ]
                 # V11.135: 比价单Excel作为钉钉审批附件(领导可直接查看完整比价表)
                 try:
