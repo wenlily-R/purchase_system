@@ -4770,6 +4770,19 @@ def api_inquiry_split_select(iid):
                 (oid, r[0], r[1], r[2], r[3], r[4], r[5], 0, 0, r[5],
                  '品牌:%s 交付:%s 质保:%s %s' % (r[6], r[7], r[8], r[9]) if (r[6] or r[7] or r[8]) else ''))
         conn.execute("UPDATE inquiry_suppliers SET is_selected=1 WHERE id=?", (sid,))
+        # V11.158c: 分项定标生成的订单(货到付款)自动生成待入库单 → 入库验收模块同步显示
+        try:
+            _rno = gen_no('RK', 'receivings', 'receive_no', conn)
+            _rqty = sum(r[3] for r in rows)
+            _rjson = json.dumps(
+                [{'item_name': r[0], 'spec': r[1] or '', 'quantity': r[3], 'unit': r[2] or '个', 'price': r[4] or 0} for r in rows],
+                ensure_ascii=False)
+            _rname = (rows[0][0] + ' 等%d项' % len(rows)) if len(rows) > 1 else rows[0][0]
+            conn.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,dept,items_json,is_est) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,1)",
+                (_rno, None, oid, _rname, '', _rqty, rows[0][2] or '个', 0, '待入库', now(),
+                 '分项定标: 订单%s自动进入入库板块(整批%d项)' % (no, len(rows)), pr['dept'] or '', _rjson))
+        except Exception as _re:
+            log('系统', '分项定标生成入库单失败', f'order{oid}: {str(_re)[:80]}')
         created.append({'order_no': no, 'supplier': s['supplier_name'], 'total': total})
     conn.execute("UPDATE inquiries SET status='已生成订单', updated_at=? WHERE id=?", (now(), iid))
     conn.commit()
