@@ -484,7 +484,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
         <button class="btn btn-o btn-sm" onclick="showUserModal()">👥 用户管理</button>
       </div>
       <div id="secUsers" style="margin-top:10px"></div>
-      <div style="font-size:9px;color:#888;margin-top:6px">安全说明：密码采用 PBKDF2-SHA256 加盐加密存储（原MD5登录时自动升级）；连续登录失败5次锁定15分钟；所有写操作同源校验（CSRF防护）；数据库每日自动备份（保留最近14份）。</div>
+      <div style="font-size:9px;color:#888;margin-top:6px">安全说明：密码采用 PBKDF2-SHA256 加盐加密存储（原MD5登录时自动升级）；登录失败仅提示错误、不锁定账号；所有写操作同源校验（CSRF防护）；数据库每日自动备份（保留最近14份）。</div>
     </div></div>
   <div class="card"><div class="ch"><h3>🔎 审批人配置检查（V5.0）</h3><button class="btn btn-o btn-sm" onclick="loadApprConfigCheck()">刷新检查</button></div>
     <div class="cb" style="font-size:9px;line-height:1.6">
