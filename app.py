@@ -1304,6 +1304,14 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
                 except Exception:
                     pass
                 c.execute("UPDATE inquiries SET approve_note='领导已同意按各物资最低价择优采购, 请分项定标' WHERE id=?", (biz_id,))
+                # 清理提交审批时生成的草稿订单(不指定厂家, 改由分项定标生成, 防残留)
+                try:
+                    _drafts = c.execute("SELECT id FROM purchase_orders WHERE inquiry_id=? AND status='草稿'", (biz_id,)).fetchall()
+                    for _dd in _drafts:
+                        c.execute("DELETE FROM order_items WHERE order_id=?", (_dd['id'],))
+                        c.execute("DELETE FROM purchase_orders WHERE id=?", (_dd['id'],))
+                except Exception:
+                    pass
             elif _sel_id:
                 try:
                     _sup = c.execute("SELECT * FROM inquiry_suppliers WHERE id=?", (_sel_id,)).fetchone()
