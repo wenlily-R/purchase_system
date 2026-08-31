@@ -1269,11 +1269,11 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
                                     _sel_txt = _s
                             elif isinstance(_vals, list) and _vals:
                                 _sel_txt = str(_vals[0]).strip()
-                            # ① 选项是"厂家A/B/C" → 按报价升序排名映射
+                            # ① 选项是"厂家A/B/C" → 按添加顺序id升序排名映射(与Excel比价单从左到右一致, 厂家A=最左)
                             _rank_map = {'厂家A': 0, '厂家B': 1, '厂家C': 2}
                             if _sel_txt in _rank_map:
                                 _ranked = c.execute(
-                                    "SELECT id FROM inquiry_suppliers WHERE inquiry_id=? AND quote_price>0 ORDER BY quote_price ASC, id ASC",
+                                    "SELECT id FROM inquiry_suppliers WHERE inquiry_id=? ORDER BY id ASC",
                                     (biz_id,)).fetchall()
                                 _ri = _rank_map[_sel_txt]
                                 if _ri < len(_ranked):
@@ -1888,8 +1888,8 @@ def dt_build_form(biz_type, biz_id, info):
                 iq = c2.execute("SELECT * FROM inquiries WHERE id=?", (biz_id,)).fetchone()
                 if not iq:
                     c2.close(); return []
-                # 查询三家供应商报价(升序: 厂家A=最低价)
-                sups = c2.execute("SELECT id, supplier_name, quote_price, quote_remark, quote_brand FROM inquiry_suppliers WHERE inquiry_id=? ORDER BY quote_price ASC, id ASC", (biz_id,)).fetchall()
+                # 查询供应商(按添加顺序id升序=Excel比价单从左到右顺序, 厂家A=最左/厂家C=最右, 与Excel一一对应不混淆)
+                sups = c2.execute("SELECT id, supplier_name, quote_price, quote_remark, quote_brand FROM inquiry_suppliers WHERE inquiry_id=? ORDER BY id ASC", (biz_id,)).fetchall()
                 _abc = ('厂家A', '厂家B', '厂家C')
                 supplier_opts = []
                 supplier_details = []
@@ -1903,8 +1903,9 @@ def dt_build_form(biz_type, biz_id, info):
                         detail += ' 备注:%s' % si['quote_remark']
                     supplier_details.append(detail)
                 c2.close()
-                # V11.137: 模板"选定供应商"控件选项=厂家A/厂家B/厂家C(截图确认)
-                # 按报价从低到高映射: 厂家A=最低价; DDSelectField传纯文本(实测数组报820015)
+                # V11.137/V11.150: 模板"选定供应商"控件选项=厂家A/厂家B/厂家C(截图确认)
+                # V11.150: 厂家A/B/C按添加顺序映射(与Excel比价单从左到右一致, A=最左C=最右), 领导选A即Excel第一家, 不混淆
+                # 之前按报价排序导致领导分不清对应Excel哪家(报价顺序≠添加顺序)
                 _abc = ('厂家A', '厂家B', '厂家C')
                 _default_opt = '厂家A' if supplier_opts else ''
                 form = [
@@ -1912,7 +1913,7 @@ def dt_build_form(biz_type, biz_id, info):
                     {'name': '物资名称', 'value': (iq['title'] or '')[:50]},
                     {'name': '三方报价详情', 'value': '\n'.join(supplier_details) if supplier_details else '暂无报价'},
                     {'name': '选定供应商 ', 'value': _default_opt if _default_opt else ''},  # ⚠️ 纯文本非数组
-                    {'name': '备注', 'value': '厂家A=报价最低(默认选中), 如需改选请调整"选定供应商"后提交'},
+                    {'name': '备注', 'value': '厂家A=Excel比价单最左一家, 厂家B=中间, 厂家C=最右; 默认选A, 如需改选请调整"选定供应商"后提交'},
                 ]
                 # V11.135: 比价单Excel作为钉钉审批附件(领导可直接查看完整比价表)
                 try:
