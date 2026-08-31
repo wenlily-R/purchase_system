@@ -3785,13 +3785,16 @@ def api_resubmit_prequest(rid):
     conn.execute("UPDATE purchase_requests SET purpose=?, dept=?, budget_code=?, target_date=?, remark=?, total_estimated=?, status='待审批', rejected_reason='', updated_at=? WHERE id=?",
                  (d.get('purpose', pr['purpose']), d.get('dept', pr['dept']), d.get('budget_code', pr['budget_code']),
                   d.get('target_date', pr['target_date']), d.get('remark', pr['remark']), total, now(), rid))
-    conn.execute("DELETE FROM request_items WHERE req_id=?", (rid,))
-    for it in items:
-        tp = float(it.get('quantity',1)) * float(it.get('estimated_price',0))
-        conn.execute("INSERT INTO request_items(req_id,item_name,spec,unit,quantity,estimated_price,total_price,remark,category,brand_param,arrival_date) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                     (rid, it.get('item_name',''), it.get('spec',''), it.get('unit','个'), float(it.get('quantity',1)),
-                      float(it.get('estimated_price',0)), tp, it.get('remark',''),
-                      it.get('category',''), it.get('brand_param',''), it.get('arrival_date','')))
+    if items:
+        # V11.154: 传了明细才重建(编辑时); 不传则保留现有明细(草稿提交审批场景)
+        conn.execute("DELETE FROM request_items WHERE req_id=?", (rid,))
+        for it in items:
+            tp = float(it.get('quantity',1)) * float(it.get('estimated_price',0))
+            conn.execute("INSERT INTO request_items(req_id,item_name,spec,unit,quantity,estimated_price,total_price,remark,category,brand_param,arrival_date,attach) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                         (rid, it.get('item_name',''), it.get('spec',''), it.get('unit','个'), float(it.get('quantity',1)),
+                          float(it.get('estimated_price',0)), tp, it.get('remark',''),
+                          it.get('category',''), it.get('brand_param',''), it.get('arrival_date',''),
+                          it.get('attach','') or ''))
     conn.execute("DELETE FROM approval_instances WHERE biz_type='purchase_request' AND biz_id=?", (rid,))
     conn.execute("DELETE FROM dingtalk_instances WHERE biz_type='purchase_request' AND biz_id=?", (rid,))
     conn.commit()

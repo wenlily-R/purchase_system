@@ -1222,11 +1222,21 @@ async function loadPRequests(){
         <td style="white-space:nowrap"><button class="lnk" onclick="showPRequest(${x.id})">详情</button>
         <button class="lnk" style="color:var(--s)" onclick="window.open('/api/prequests/${x.id}/download','_blank')">⬇️下载</button>
         <button class="lnk" style="color:#b08900" onclick="editDoc('purchase_request',${x.id},'采购申请')">✏️修改</button>
-        ${(x.status=='待审批'||x.status=='已通过'||x.status=='已驳回'||x.status=='草稿')?` <button class="lnk" style="color:var(--o)" onclick="withdrawDoc('purchase_request',${x.id},'采购申请')">↩️撤回</button>`:''}
+        ${x.status=='草稿'?` <button class="lnk" style="color:var(--s);font-weight:600" onclick="submitPRequestDraft(${x.id})">📤 提交审批</button>`:''}
+        ${(x.status=='待审批'||x.status=='已通过'||x.status=='已驳回')?` <button class="lnk" style="color:var(--o)" onclick="withdrawDoc('purchase_request',${x.id},'采购申请')">↩️撤回</button>`:''}
         ${x.status!='已作废'?` <button class="lnk" style="color:var(--d)" onclick="delDoc('purchase_request',${x.id},'采购申请')">🗑️删除</button>`:''}</td>`;
       });
   });
   id('prequestsTable').innerHTML=html;
+}
+// V11.154: 草稿提交审批 — 采购员检查后手动提交, 创建审批实例进入审批流
+async function submitPRequestDraft(id){
+  if(!confirm('确认提交审批？提交后进入审批流程，由领导审批。'))return;
+  try{
+    const r=await api(`/prequests/${id}/resubmit`,{method:'POST',body:JSON.stringify({})});
+    if(r.success){alert(`✅ 已提交审批，进入审批流程`);loadPRequests();loadDashboard()}
+    else alert(r.error||'提交失败');
+  }catch(e){alert('提交失败:'+e.message)}
 }
 // 需求3: 采购申请驳回后可修改重提
 // V8.0: 通用单据编辑(全字段, 保存实时生效) — 支持 申请/订单/合同/入库/出库/库存
