@@ -775,12 +775,19 @@ def api_reset_password(uid):
 @app.route('/api/users/<int:uid>', methods=['PUT'])
 @admin_required
 def api_user_update(uid):
-    """V11.157: 修改用户信息 — 角色/部门/姓名/电话/状态/职务 可改"""
+    """V11.157: 修改用户信息 — 账号/姓名/角色/部门/电话/职务/钉钉绑定/状态 可改"""
     d = request.json or {}
     conn = db()
     u = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
     if not u:
         conn.close(); return jsonify({'error': '用户不存在'}), 404
+    username = (d.get('username') or u['username'] or '').strip()
+    if not username:
+        conn.close(); return jsonify({'error': '账号不能为空'}), 400
+    # 账号唯一性检查(排除自己)
+    _dup = conn.execute("SELECT id FROM users WHERE username=? AND id<>?", (username, uid)).fetchone()
+    if _dup:
+        conn.close(); return jsonify({'error': '该账号已被其他用户使用'}), 400
     name = (d.get('name') or u['name'] or '').strip()
     if not name:
         conn.close(); return jsonify({'error': '姓名不能为空'}), 400
@@ -794,15 +801,20 @@ def api_user_update(uid):
         except Exception: dept_id = u['dept_id']
     phone = (d.get('phone') or u['phone'] or '')
     title = (d.get('title') or u['title'] or '')
+    # 钉钉绑定: 传空字符串=解绑, 不传=保留原值
+    if 'dingtalk_userid' in d:
+        dingtalk_userid = (d.get('dingtalk_userid') or '').strip()
+    else:
+        dingtalk_userid = u['dingtalk_userid'] or ''
     is_active = d.get('is_active')
     if is_active is not None:
         is_active = 1 if (is_active is True or str(is_active) in ('1', 'true')) else 0
     else:
         is_active = u['is_active']
-    conn.execute("UPDATE users SET name=?, role=?, dept_id=?, phone=?, title=?, is_active=? WHERE id=?",
-                 (name, role, dept_id, phone, title, is_active, uid))
+    conn.execute("UPDATE users SET username=?, name=?, role=?, dept_id=?, phone=?, title=?, dingtalk_userid=?, is_active=? WHERE id=?",
+                 (username, name, role, dept_id, phone, title, dingtalk_userid, is_active, uid))
     conn.commit(); conn.close()
-    log(session.get('user_name',''), '修改用户', '更新用户 %s (%s, 部门%d, 状态%d)' % (u['username'], role, dept_id or 0, is_active))
+    log(session.get('user_name',''), '修改用户', '更新用户 %s (%s, 部门%d, 钉钉%s, 状态%d)' % (username, role, dept_id or 0, dingtalk_userid or '无', is_active))
     return jsonify({'success': True, 'message': '用户信息已更新'})
 
 @app.route('/api/change-password', methods=['POST'])
