@@ -3912,24 +3912,27 @@ def api_create_order():
     rno = None
     if tm == '货到付款':
         # 整批商品一张入库单, 待【确认验收入库】批量转入正式库存
-        # V11.31: 自动带出部门(申请单链)
-        _dept = ''
-        try:
-            if d.get('req_id'):
-                _pr = conn.execute("SELECT dept FROM purchase_requests WHERE id=?", (d.get('req_id'),)).fetchone()
-                if _pr and _pr['dept']:
-                    _dept = _pr['dept']
-        except Exception:
-            pass
-        rno = gen_no('RK', 'receivings', 'receive_no', conn)
-        # V11.152: 多物资订单自动生成入库时, 明细完整存items_json(入库验收显示全部物资名)
-        _items_json = json.dumps(
-            [{'item_name': r[0], 'spec': r[1] or '', 'quantity': r[3], 'unit': r[2] or '个', 'price': r[4] or 0} for r in rows],
-            ensure_ascii=False)
-        _name = (first[0] + ' 等%d项' % len(rows)) if len(rows) > 1 else first[0]
-        # V11.152b: 自动生成的入库单默认暂估(is_est=1, 货到发票未到先暂估入账, 发票核对红冲转正式)
-        conn.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,dept,items_json,is_est) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,1)",
-            (rno, None, oid, _name, '', total_qty, first[2], 0, '待入库', now(), '货到付款: 下单后自动进入入库板块(整批%d项)' % len(rows), _dept, _items_json))
+        # V11.152e: 防重复 — 该订单已有任意未入库状态的入库单(待入库/待检验/入库中/待审批)则不再生成
+        _dup = conn.execute("SELECT id FROM receivings WHERE order_id=? AND status NOT IN ('已入库','已作废') LIMIT 1", (oid,)).fetchone()
+        if not _dup:
+            # V11.31: 自动带出部门(申请单链)
+            _dept = ''
+            try:
+                if d.get('req_id'):
+                    _pr = conn.execute("SELECT dept FROM purchase_requests WHERE id=?", (d.get('req_id'),)).fetchone()
+                    if _pr and _pr['dept']:
+                        _dept = _pr['dept']
+            except Exception:
+                pass
+            rno = gen_no('RK', 'receivings', 'receive_no', conn)
+            # V11.152: 多物资订单自动生成入库时, 明细完整存items_json(入库验收显示全部物资名)
+            _items_json = json.dumps(
+                [{'item_name': r[0], 'spec': r[1] or '', 'quantity': r[3], 'unit': r[2] or '个', 'price': r[4] or 0} for r in rows],
+                ensure_ascii=False)
+            _name = (first[0] + ' 等%d项' % len(rows)) if len(rows) > 1 else first[0]
+            # V11.152b: 自动生成的入库单默认暂估(is_est=1, 货到发票未到先暂估入账, 发票核对红冲转正式)
+            conn.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,dept,items_json,is_est) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,1)",
+                (rno, None, oid, _name, '', total_qty, first[2], 0, '待入库', now(), '货到付款: 下单后自动进入入库板块(整批%d项)' % len(rows), _dept, _items_json))
     conn.commit()
     create_approvals('purchase_order', oid, grand_total)   # 一张订单一次审批
     start_instances('purchase_order', oid)
@@ -5117,7 +5120,8 @@ def api_sign_delivery(did):
     if not dn: return jsonify({'error':'not found'}),404
     conn.execute("UPDATE deliveries SET sign_status='已签收', receiver=?, sign_time=? WHERE id=?", (d.get('receiver','库房'),now(),did))
     # 任务4: 若该订单已自动生成入库单(货到付款下单即生成), 则复用, 不重复插入
-    exist = conn.execute("SELECT id FROM receivings WHERE order_id=? AND status='待检验'", (dn['order_id'],)).fetchone()
+    # V11.152e: 统一防重 — 该订单已有任意未入库状态的入库单则复用(不限于待检验)
+    exist = conn.execute("SELECT id FROM receivings WHERE order_id=? AND status NOT IN ('已入库','已作废') LIMIT 1", (dn['order_id'],)).fetchone()
     if exist:
         conn.execute("UPDATE receivings SET delivery_id=?, quantity=?, updated_at=datetime('now','localtime') WHERE id=?", (did, dn['quantity'], exist['id']))
         rno = conn.execute("SELECT receive_no FROM receivings WHERE id=?", (exist['id'],)).fetchone()[0]
@@ -6420,14 +6424,17 @@ def api_orders_from_requests():
             (oid, it[0], it[1], it[2], qty, price, amt, 13, tax, amt+tax, ''))
     rno = None
     if tm == '货到付款':
-        rno = gen_no('RK', 'receivings', 'receive_no', conn)
-        # V11.152: 多物资订单自动生成入库时, 明细完整存items_json
-        _items_json = json.dumps(
-            [{'item_name': it[0], 'spec': it[1] or '', 'quantity': it[3], 'unit': it[2] or '个', 'price': it[4] or 0} for it in rows],
-            ensure_ascii=False)
-        _name = (first[0] + ' 等%d项' % len(rows)) if len(rows) > 1 else first[0]
-        # V11.152b: 自动生成的入库单默认暂估(is_est=1, 货到发票未到先暂估入账, 发票核对红冲转正式)
-        conn.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,items_json,is_est) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1)",
+        # V11.152e: 防重复 — 该订单已有任意未入库状态的入库单则不再生成
+        _dup = conn.execute("SELECT id FROM receivings WHERE order_id=? AND status NOT IN ('已入库','已作废') LIMIT 1", (oid,)).fetchone()
+        if not _dup:
+            rno = gen_no('RK', 'receivings', 'receive_no', conn)
+            # V11.152: 多物资订单自动生成入库时, 明细完整存items_json
+            _items_json = json.dumps(
+                [{'item_name': it[0], 'spec': it[1] or '', 'quantity': it[3], 'unit': it[2] or '个', 'price': it[4] or 0} for it in rows],
+                ensure_ascii=False)
+            _name = (first[0] + ' 等%d项' % len(rows)) if len(rows) > 1 else first[0]
+            # V11.152b: 自动生成的入库单默认暂估(is_est=1, 货到发票未到先暂估入账, 发票核对红冲转正式)
+            conn.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,items_json,is_est) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1)",
             (rno, None, oid, _name, '', total_qty, first[2], 0, '待入库', now(), '货到付款: 下单后自动进入入库板块(整批%d项)' % len(rows), _items_json))
     for rid in used_reqs:
         conn.execute("UPDATE purchase_requests SET status='已下单', updated_at=? WHERE id=?", (now(), rid))
