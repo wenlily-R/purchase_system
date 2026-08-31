@@ -223,6 +223,50 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
 #globalSearch{width:240px;padding:6px 12px;border:1px solid rgba(255,255,255,.25)!important;border-radius:20px;background:rgba(255,255,255,.12)!important;color:#fff!important;font-size:11px}
 #globalSearch::placeholder{color:#a9c3e0}
 
+/* ===== V11.159 工作台 B端企业风卡片化改造(首页) ===== */
+.dash-top{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:14px;padding:18px 22px;background:linear-gradient(120deg,#0e3a68,#14508c 55%,#1a6bb0);border-radius:12px;box-shadow:0 3px 14px rgba(12,58,107,.22);color:#fff}
+.dash-greet{flex:1;min-width:210px}
+.dash-greet-t{font-size:17px;font-weight:800;letter-spacing:.3px}
+.dash-greet-s{font-size:10px;color:#c9dcf3;margin-top:3px}
+.dash-quick{display:flex;gap:10px;flex-wrap:wrap}
+.dq-btn{display:flex;align-items:center;gap:8px;padding:10px 16px;border:none;border-radius:10px;font-size:12px;font-weight:700;color:#fff;cursor:pointer;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);transition:all .15s}
+.dq-btn:hover{background:rgba(255,255,255,.28);transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.18)}
+.dq-btn:active{transform:scale(.96)}
+.dq-btn .dq-ic{font-size:16px}
+.dq-btn.dq-solid{background:linear-gradient(135deg,#f5821f,#e06e0a);border-color:transparent;box-shadow:0 3px 10px rgba(245,130,31,.35)}
+.dq-btn.dq-solid:hover{filter:brightness(1.08)}
+.dash-card{border-radius:10px;box-shadow:0 1px 5px rgba(15,45,85,.08);margin-bottom:14px;border:1px solid #e8edf4}
+.dash-card>.ch{background:#f7f9fc;border-radius:10px 10px 0 0;padding:9px 14px}
+.dash-card>.ch h3{font-size:13px;margin:0;color:#123a63}
+.ch-sub{font-size:9px;color:#8aa0b8;font-weight:400;margin-left:8px}
+.dash-alert-sum{display:flex;gap:6px;flex-wrap:wrap;padding:8px 14px 0}
+.das-chip{font-size:9px;padding:2px 9px;border-radius:10px;background:#eef2f8;color:#41597a}
+.das-chip b{color:#123a63}
+.das-chip.das-red{background:#fdecea;color:#b33}
+.das-chip.das-orange{background:#fef3e2;color:#a05c00}
+.das-chip.das-green{background:#e8f6ee;color:#1e7a44}
+.notif-empty{display:flex;align-items:center;gap:10px;padding:14px 16px;color:#8aa0b8;font-size:11px}
+.notif-empty .ic{font-size:22px}
+.notif-bell{position:relative;display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.14);cursor:pointer;font-size:15px;margin:0 6px 0 2px;transition:background .15s;vertical-align:middle}
+.notif-bell:hover{background:rgba(255,255,255,.3)}
+.notif-badge{position:absolute;top:-3px;right:-4px;min-width:16px;height:16px;border-radius:9px;background:#e74c3c;color:#fff;font-size:9px;font-weight:700;line-height:16px;text-align:center;padding:0 4px;border:1.5px solid #0c3a6b;box-sizing:border-box}
+.notif-item{padding:8px 12px;border-bottom:1px solid #f0f2f6;cursor:pointer}
+.notif-item:hover{background:#f7f9fc}
+.notif-item .nt{font-size:11px;font-weight:600;color:#1c3d5f}
+.notif-item .nc{font-size:9px;color:#77889c;margin-top:2px;line-height:1.5}
+.notif-item .nm{font-size:8px;color:#b0bcc9;margin-top:2px}
+@media(max-width:700px){.dash-quick{width:100%}.dq-btn{flex:1 1 45%;justify-content:center}}
+/* V11.159: 窄屏/钉钉内嵌自适应 — 修正V9覆盖层 !important 压过媒体查询的问题 */
+@media(max-width:700px){
+  .layout{display:block}
+  .main{margin-left:0!important;min-width:0;width:100%;box-sizing:border-box;padding:8px}
+  .header{height:54px!important;padding:0 8px}
+  .header .logo{font-size:16px!important}
+  .header .logo .logo-tx,.header .logo .tag{display:none}
+  #globalSearch{width:140px!important;padding:4px 10px!important;font-size:10px!important}
+  .topright .uname{font-size:11px;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+}
+
 </style>
 </head>
 <body>
@@ -257,6 +301,10 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <div id="gsBox" style="display:none;position:absolute;top:26px;right:0;width:340px;background:var(--c);border:1px solid var(--b);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:999;max-height:380px;overflow-y:auto;font-size:10px"></div>
   </div>
   <div class="topright">
+    <div style="position:relative;display:inline-block;margin-right:2px">
+      <span class="notif-bell" id="notifBell" onclick="toggleNotif(event)" title="消息通知">🔔<span class="notif-badge" id="notifBadge" style="display:none">0</span></span>
+      <div id="notifBox" style="display:none;position:absolute;right:-8px;top:36px;width:330px;max-height:400px;overflow-y:auto;background:#fff;border:1px solid #dde5ee;border-radius:10px;box-shadow:0 8px 28px rgba(8,42,80,.2);z-index:9999;font-size:11px;color:#333"></div>
+    </div>
     <span class="uname" id="userName"></span>
     <span class="logout" onclick="showPwdModal()" title="修改登录密码">🔑改密</span>
     <span class="logout" onclick="doLogout()">退出</span>
@@ -267,11 +315,22 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
 <div class="side" id="sideMenu"></div>
 <main class="main" id="mainContent">
 <div class="page act" id="pdashboard">
-  <h2>📊 工作台</h2>
-  <!-- 1号卡片: 快捷功能导航 -->
-  <div class="card"><div class="ch"><h3>⚡ 快捷功能导航</h3><span style="font-size:10px;color:var(--v9-t2)">高频功能已高亮突出 · 分组归类</span></div><div class="cb" id="quickNav"><div class="loading">加载中...</div></div></div>
-  <!-- 2号卡片: 审批待办专区(核心) -->
-  <div class="card"><div class="ch"><h3>✅ 审批待办专区</h3><button class="btn btn-o btn-sm" onclick="sw('approvals')">去审批中心 →</button></div>
+  <!-- ① 顶部: 欢迎条 + 4个高频快捷操作(V11.159) -->
+  <div class="dash-top">
+    <div class="dash-greet">
+      <div class="dash-greet-t">👋 欢迎，<span id="dashUserName">—</span></div>
+      <div class="dash-greet-s">正成能源智慧采购管理平台 · 采购 · 库房 · 财务一体化</div>
+    </div>
+    <div class="dash-quick">
+      <button class="dq-btn dq-solid" onclick="showForm('prequest')" title="发起采购申请"><span class="dq-ic">📝</span>采购申请</button>
+      <button class="dq-btn" onclick="sw('inquiries')" title="发起三方询价"><span class="dq-ic">🔍</span>三方询价</button>
+      <button class="dq-btn" onclick="showForm('order')" title="新建采购订单"><span class="dq-ic">📋</span>新建采购订单</button>
+      <button class="dq-btn" onclick="showRcvForm()" title="新建入库申请"><span class="dq-ic">📦</span>入库申请</button>
+    </div>
+  </div>
+  <!-- ② 第一卡片: 我的待办(最高优先级) -->
+  <div class="card dash-card">
+    <div class="ch"><h3>✅ 我的待办</h3><span class="ch-sub" id="dashTodoStats"></span><button class="btn btn-o btn-sm" style="margin-left:auto" onclick="sw('approvals')">去审批中心 →</button></div>
     <div class="cb">
       <div class="tabs" id="apprZoneTabs">
         <button class="act" data-z="todo" onclick="apprZone('todo')">📥 全部待办<span class="zbadge" id="azTodoN">0</span></button>
@@ -282,34 +341,21 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
       </div>
       <div id="apprZoneBody" style="margin-top:8px"><div class="loading">加载中...</div></div>
     </div></div>
-  <!-- 3号卡片: 预警消息中心 -->
-  <div class="card"><div class="ch"><h3>🚨 预警消息中心</h3><span style="font-size:10px;color:var(--v9-t2)">🔴高危=逾期未付款/超期未收货 · 🟡关注=即将缺货/合同快到期</span><button class="btn btn-o btn-sm" style="margin-left:auto" onclick="showAlertLog()">📜 历史预警</button></div>
-    <div class="cb" id="alertCenter"><div class="loading">加载中...</div></div>
+  <!-- ③ 第二卡片: 业务预警 -->
+  <div class="card dash-card">
+    <div class="ch"><h3>🚨 业务预警</h3><span class="ch-sub">库存 · 审批超时 · 交期 · 合同到期</span><button class="btn btn-o btn-sm" style="margin-left:auto" onclick="showAlertLog()">📜 完整预警 →</button></div>
+    <div class="dash-alert-sum" id="dashAlertSum"></div>
+    <div class="cb" id="alertCenter" style="padding-top:6px"><div class="loading">加载中...</div></div>
     <div class="cb" style="border-top:1px dashed var(--v9-b);padding-top:8px" id="overdueBox"><div class="loading">加载中...</div></div></div>
-  <!-- 4号卡片: 数据分析看板 -->
-  <div class="card"><div class="ch"><h3>📈 数据分析看板</h3>
-    <select id="dashPeriod" onchange="loadDashboard()" style="font-size:11px;padding:4px 8px;border:1px solid var(--v9-b);border-radius:6px"><option value="month">本月</option><option value="quarter">本季度</option><option value="year">本年</option></select></div>
-    <div class="cb">
-      <div class="kpi" id="dashKpi"><div class="loading">加载中...</div></div>
-      <div class="c2" style="margin-top:10px">
-        <div class="card"><div class="ch"><h3>📊 采购金额趋势（近6月）</h3></div><div class="cb"><div class="chart-placeholder" id="dashTrend" style="height:130px"><div class="loading">加载中...</div></div></div></div>
-        <div class="card"><div class="ch"><h3>🍩 品类采购占比</h3></div><div class="cb" id="dashCat"><div class="loading">加载中...</div></div></div>
-      </div>
-      <div class="fr" style="margin-top:10px">
-        <div class="card" style="flex:1"><div class="ch"><h3>📦 订单准时到货率</h3></div><div class="cb" id="dashOntime" style="text-align:center"><div class="loading">加载中...</div></div></div>
-        <div class="card" style="flex:1"><div class="ch"><h3>⏱ 审批平均耗时</h3></div><div class="cb" id="dashApprTime" style="text-align:center"><div class="loading">加载中...</div></div></div>
-      </div>
-    </div></div>
-  <!-- 5号卡片: 常用单据快速发起 -->
-  <div class="card"><div class="ch"><h3>📝 常用单据快速发起</h3><span style="font-size:10px;color:var(--v9-t2)">一键直达，免多层菜单</span></div>
-    <div class="cb" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px" id="quickLaunch">
-      <div class="v9-quick" onclick="showForm('prequest')"><span class="ic">📝</span>采购申请单</div>
-      <div class="v9-quick" onclick="showForm('order')"><span class="ic">📋</span>采购订单</div>
-      <div class="v9-quick" onclick="showRcvForm()"><span class="ic">📦</span>入库单</div>
-      <div class="v9-quick" onclick="showForm('payment')"><span class="ic">💰</span>付款申请</div>
-      <div class="v9-quick" onclick="sw('contracts')"><span class="ic">📄</span>合同管理</div>
-      <div class="v9-quick" onclick="sw('inventory')"><span class="ic">📦</span>库存查询</div>
-    </div></div>
+  <!-- ④ 第三卡片: 简易数据统计(按角色权限, 点击数字跳原列表页) -->
+  <div class="card dash-card">
+    <div class="ch"><h3>📊 数据统计</h3>
+      <select id="dashPeriod" onchange="loadDashboard()" style="font-size:11px;padding:4px 8px;border:1px solid var(--v9-b);border-radius:6px"><option value="month">本月</option><option value="quarter">本季度</option><option value="year">本年</option></select></div>
+    <div class="cb"><div class="kpi" id="dashKpi"><div class="loading">加载中...</div></div></div></div>
+  <!-- ⑤ 底部: 系统公告 -->
+  <div class="card dash-card">
+    <div class="ch"><h3>📢 系统公告</h3></div>
+    <div class="cb" id="dashNotice"><div class="loading">加载中...</div></div></div>
 </div>
 <div class="page" id="pprequests"><h2>📝 采购申请</h2><div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="showForm('prequest')">+ 新建申请</button><button class="btn btn-w btn-sm" onclick="showAddCart()">🛒 加购下单(汇总已通过申请)</button><select id="reqTypeFilter" onchange="loadPRequests()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="">全部类型</option><option>物资采购</option><option>设备维修</option></select></div><div class="card"><div class="cb" id="prequestsTable"><div class="loading">加载中...</div></div></div></div>
 <div class="page" id="pinquiries"><h2>🔍 三方询价</h2><div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="showInquiryForm()">+ 发起三方询价</button><button class="btn btn-w btn-sm" onclick="loadInquiries()">🔄 刷新</button></div><div class="card"><div class="cb" id="inquiriesTable"><div class="loading">加载中...</div></div></div></div>
@@ -502,6 +548,23 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
       </div>
       <div id="secUsers" style="margin-top:10px"></div>
       <div style="font-size:9px;color:#888;margin-top:6px">安全说明：密码采用 PBKDF2-SHA256 加盐加密存储（原MD5登录时自动升级）；登录失败仅提示错误、不锁定账号；所有写操作同源校验（CSRF防护）；数据库每日自动备份（保留最近14份）。</div>
+    </div></div>
+  <div class="card"><div class="ch"><h3>🔧 平台对接与技术信息（V11.159 自首页迁入）</h3></div>
+    <div class="cb" style="font-size:10px;line-height:1.8">
+      <div class="fr" style="flex-wrap:wrap;gap:8px">
+        <div class="fg"><label class="fl2">系统版本</label><input class="fc" id="techVersion" readonly style="background:#f6f7f9"></div>
+        <div class="fg"><label class="fl2">数据库状态</label><input class="fc" id="techDb" readonly style="background:#f6f7f9"></div>
+        <div class="fg"><label class="fl2">最近自动备份</label><input class="fc" id="techBackup" readonly style="background:#f6f7f9"></div>
+      </div>
+      <div class="fr" style="flex-wrap:wrap;gap:8px">
+        <div class="fg" style="flex:2;min-width:260px"><label class="fl2">公网访问地址</label><input class="fc" id="techPubUrl" readonly style="background:#f6f7f9"></div>
+        <div class="fg" style="flex:1;min-width:150px"><label class="fl2">技术说明</label><input class="fc" value="Flask + SQLite 单机部署" readonly style="background:#f6f7f9"></div>
+      </div>
+      <div style="margin-top:6px;font-size:9px;color:#888;line-height:1.9">
+        💬 钉钉对接：审批发起 / 结果回传 / 工作通知 / 附件挂载（配置见 <a href="javascript:sw('dingtalk')" style="color:var(--p)">钉钉对接页</a>）<br>
+        ✈️ 飞书对接：审批同步 / 预警推送 / 周报（配置见 <a href="javascript:sw('feishu')" style="color:var(--p)">飞书对接页</a>）<br>
+        🔗 公网访问：当前地址为免费隧道（不定期轮换），打不开时回到本页查看最新地址；同一网络可用内网地址 http://&lt;本机IP&gt;:5899
+      </div>
     </div></div>
   <div class="card"><div class="ch"><h3>🔎 审批人配置检查（V5.0）</h3><button class="btn btn-o btn-sm" onclick="loadApprConfigCheck()">刷新检查</button></div>
     <div class="cb" style="font-size:9px;line-height:1.6">
@@ -744,6 +807,31 @@ function toast(msg){
   t.textContent=msg;t.style.opacity='1';
   clearTimeout(t._tm);t._tm=setTimeout(()=>{t.style.opacity='0'},2500);
 }
+// V11.159: 顶部消息通知(铃铛+未读角标+下拉列表) — 复用 /api/notifications
+async function loadNotif(){
+  try{
+    const r=await api('/notifications',{noCache:true});
+    const list=r||[];
+    const bd=id('notifBadge');
+    if(bd){bd.textContent=list.length>99?'99+':list.length;bd.style.display=list.length?'block':'none'}
+    const box=id('notifBox');
+    if(box){
+      box.innerHTML=list.length
+        ? `<div style="padding:8px 12px;border-bottom:1px solid #eef1f5;display:flex;justify-content:space-between;align-items:center"><b style="font-size:11px">🔔 消息通知</b><button class="btn btn-o btn-sm" onclick="readAllNotif()">全部已读</button></div>`
+          + list.map(n=>`<div class="notif-item" ${n.biz_type&&n.biz_id?`onclick="jumpAlert('${n.biz_type}',${n.biz_id})"`:''} title="${n.biz_type&&n.biz_id?'点击跳转对应单据':''}"><div class="nt">${esc(n.title||'')}</div><div class="nc">${esc(n.content||'')}</div><div class="nm">${esc((n.created_at||'').slice(5,16))}</div></div>`).join('')
+        : `<div style="padding:22px;text-align:center;color:#9aa8b8">🔕 暂无未读消息</div>`;
+    }
+  }catch(e){}
+}
+function toggleNotif(ev){
+  if(ev)ev.stopPropagation();
+  const box=id('notifBox');if(!box)return;
+  box.style.display=box.style.display==='block'?'none':'block';
+}
+async function readAllNotif(){
+  try{await api('/notifications/read',{method:'POST',body:'{}'})}catch(e){}
+  loadNotif();
+}
 // V11.150: 打开弹窗/执行操作防连点 — 600ms内同一入口重复点击直接忽略
 // (免费隧道慢时用户连点"详情/比价"会重复发请求、弹窗内容乱跳; confirm/导出连点会叠弹窗/开多个下载)
 const __openGuard=new Map();
@@ -771,7 +859,7 @@ async function doLogin(){
   console.log('[DEBUG] username:', u, 'password length:', p.length);
   try{
     const r=await api('/login',{method:'POST',body:JSON.stringify({username:u,password:p})});
-    if(r.success){ME=r.user;showApp();initApp();
+    if(r.success){ME=r.user;showApp();initApp();loadNotif();
       // V11.23: 记住本浏览器登录的账号(下次自动填入, 各人浏览器各记各的, 不互相干扰)
       try{localStorage.setItem('zxny_login_user',u)}catch(e){}
     }
@@ -1027,6 +1115,11 @@ function __pageAllowed(name){
 
 function closeMod(){id('detailModal').classList.remove('show')}
 id('detailModal')?.addEventListener('click',e=>{if(e.target===id('detailModal'))closeMod()});
+// V11.159: 点击页面其他区域关闭消息通知下拉
+document.addEventListener('click',e=>{
+  const nb=id('notifBox');
+  if(nb&&nb.style.display==='block'&&!(e.target.closest&&(e.target.closest('#notifBell')||e.target.closest('#notifBox'))))nb.style.display='none';
+});
 // V11.141: 页面数据自动刷新 — 60秒一次(隧道慢时降低请求频率), 弹窗打开/页面隐藏时跳过
 let _curPage='dashboard';
 const _sw_orig=sw;
@@ -1068,21 +1161,11 @@ async function loadDashboard(){
   try{
     const d=await api('/dashboard');
     const k=d.kpi||{};
-    // ① 快捷功能导航(V9: 图标+文字, 分组, 高频高亮) — V11.65b: 按角色过滤(与侧边菜单同规则)
-    const __canSee = window._canSeeNav || (()=>true);
-    const navGroups=[
-      ['采购业务',[['📝','采购申请','prequests'],['📋','采购订单','orders'],['🏢','供应商','suppliers'],['📄','合同管理','contracts']]],
-      ['仓储管理',[['📦','入库验收','receivings'],['📤','出库单','requisitions'],['📦','库存查询','inventory'],['📋','盘点单','counts']]],
-      ['财务付款',[['📊','月度对账','settlements'],['💰','付款申请','payments'],['💸','费用登记','expenses'],['🧾','合并开票','invoices'],['🔍','往来台账','ledger']]],
-      ['审批中心',[['✅','审批中心','approvals'],['🚨','加急审批','approvals']]],
-      ['系统设置',[['⚙️','系统设置','system'],['📄','模板管理','system'],['🔐','权限设置','system'],['✈️','飞书对接','feishu'],['💬','钉钉集成','dingtalk']]],
-    ].map(g=>[g[0], g[1].filter(b=>__pageAllowed(b[2])||b[2]==='system')]).filter(g=>g[1].length);
-    const heroBtn=(ic,txt,page)=>`<button class="v9-nav-btn hero" onclick="sw('${page}')"><span class="ic">${ic}</span>${txt}</button>`;
-    const warnBtn=(ic,txt,page)=>`<button class="v9-nav-btn warn" onclick="sw('${page}')"><span class="ic">${ic}</span>${txt}</button>`;
-    id('quickNav').innerHTML=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px">
-      ${heroBtn('➕','发起采购申请','prequests')}${warnBtn('🚨','查看加急审批','approvals')}</div>
-      ${navGroups.map(g=>`<div class="v9-group-title">${g[0]}</div><div style="display:flex;gap:6px;flex-wrap:wrap">${g[1].map(b=>`<button class="v9-nav-btn" onclick="sw('${b[2]}')"><span class="ic">${b[0]}</span>${b[1]}</button>`).join('')}</div>`).join('')}`;
-    // ④ 数据看板-指标卡(V9: 大屏数字卡+首卡深蓝渐变; 财务脱敏)
+    // ① 欢迎语
+    if(id('dashUserName'))id('dashUserName').textContent=ME.name||ME.username||'';
+    // ② 我的待办 — 统计摘要(数据与跳转逻辑与优化前完全一致)
+    if(id('dashTodoStats'))id('dashTodoStats').textContent=`待办 ${(d.my_pending||[]).length} · 加急 ${(d.my_urgent||[]).length} · 已办结 ${(d.i_done||[]).length} · 被驳回 ${(d.rejected||[]).length}`;
+    // ③ 数据统计-指标卡(V9: 大屏数字卡+首卡深蓝渐变; 财务脱敏; 点击跳原列表页)
     const showP=k.can_price;
     id('dashKpi').innerHTML=`
       <div class="kc v9-kpi-hero" onclick="sw('payments')" style="cursor:pointer" title="点击查看付款"><div class="kl">本月采购总额</div><div class="kv">${showP?('¥'+(k.month_purchase||0).toFixed(0)):'***'}</div><small>点击下钻付款报表</small></div>
@@ -1095,15 +1178,23 @@ async function loadDashboard(){
       <div class="kc kc-g" onclick="sw('orders')" style="cursor:pointer" title="点击查看订单"><div class="kl">订单完成率</div><div class="kv">${k.order_complete_rate||0}%</div></div>
       <div class="kc kc-b" onclick="sw('inventory')" style="cursor:pointer" title="点击查看库存"><div class="kl">库存总量</div><div class="kv">${k.stock_total||0}</div></div>
       <div class="kc kc-r" onclick="sw('inventory')" style="cursor:pointer" title="点击查看库存"><div class="kl">超储物资</div><div class="kv">${k.stock_over||0}</div></div>`;
-    // ② 审批消息专区
+    // ④ 审批消息专区(待办tab数据, 跳转逻辑不变)
     window._dashAppr=d;
     // V11.5: 顶部导航审批中心待办徽标
     if(window._setNavBadge)window._setNavBadge((d.my_pending||[]).length);
     apprZone('todo');
-    // ③ 预警消息中心(V9: 按类型分组 + 红黄绿分级)
+    // ⑤ 业务预警(V9: 按类型分组 + 红黄绿分级; 数据源与优化前一致)
     const al=d.alerts||[];
     const ALERT_GROUPS=[['库存预警',['库存','缺货','超储']],['询价跟进',['询价超时']],['订单交货预警',['订单','交货','到货']],['合同到期预警',['合同']],['付款逾期预警',['付款','应付']],['审批超时预警',['审批']]];
     const groupOf=a=>ALERT_GROUPS.find(g=>g[1].some(k=>(a.alert_type||'').includes(k)))?.[0]||'其他预警';
+    // 预警摘要chips(库存预警/审批超时/订单交期/合同到期)
+    const sumBox=id('dashAlertSum');
+    if(sumBox){
+      const cnt=g=>al.filter(a=>(a.alert_type||'').includes(g)).length;
+      const ic=[[['库存预警','库存'],['审批超时','审批'],['订单交期','订单'],['合同到期','合同'],['付款逾期','付款']]];
+      sumBox.innerHTML=ic[0].map(([label,k])=>`<span class="das-chip ${cnt(k)>0?'das-orange':''}">${label} <b>${cnt(k)}</b></span>`).join('')
+        +(al.length?`<span class="das-chip das-red" style="margin-left:auto">共 ${al.length} 条</span>`:'<span class="das-chip das-green" style="margin-left:auto">✅ 暂无预警</span>');
+    }
     if(!al.length){id('alertCenter').innerHTML='<div style="color:#27ae60;font-size:11px;padding:8px">✅ 暂无预警，一切正常</div>'}
     else{
       const grouped={};
@@ -1112,19 +1203,13 @@ async function loadDashboard(){
         <div class="v9-group-title" style="margin-top:4px">${g} <span style="color:#aaa;font-weight:400">(${list.length})</span></div>
         ${list.map(a=>alertRow(a)).join('')}`).join('');
     }
-    // ③.5 超期未审批(V7.0)
+    // 超期未审批(V7.0)
     loadOverdue();
-    // ④ 看板-趋势
-    const tr=d.trend||[];
-    const mx=Math.max(...tr.map(t=>t.amount),1);
-    id('dashTrend').innerHTML='<div style="display:flex;align-items:flex-end;gap:6px;height:105px;padding:4px">'+tr.map(t=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%"><div style="width:70%;background:var(--p);border-radius:3px 3px 0 0;height:${Math.max(3,Math.round(t.amount/mx*100))}%" title="¥${t.amount}"></div><span style="font-size:8px;color:#888;margin-top:2px">${String(t.month).slice(5)}月</span></div>`).join('')+'</div>';
-    // ④ 看板-品类占比
-    const ct=d.cat_ratio||[];
-    const cTotal=ct.reduce((a,b)=>a+(b.amt||0),0)||1;
-    const cols=['var(--p)','var(--s)','var(--w)','var(--d)','#8e44ad'];
-    id('dashCat').innerHTML=ct.map((c,i)=>`<div style="margin-bottom:4px"><div style="display:flex;justify-content:space-between;font-size:9px"><span>${esc(c.category)}</span><span>${showP?('¥'+(c.amt||0).toFixed(0)):'***'} ${Math.round((c.amt||0)/cTotal*100)}%</span></div><div style="height:7px;background:var(--bg);border-radius:4px;overflow:hidden"><div style="width:${Math.max(2,Math.round((c.amt||0)/cTotal*100))}%;height:100%;background:${cols[i%5]}"></div></div></div>`).join('')||'暂无数据';
-    id('dashOntime').innerHTML=d.ontime_rate!=null?`<div style="font-size:22px;font-weight:700;color:${d.ontime_rate>=90?'var(--s)':'var(--w)'}">${d.ontime_rate}%</div><div style="font-size:8px;color:#999">已入库订单准时率</div>`:'暂无数据';
-    id('dashApprTime').innerHTML=d.approve_avg_hours!=null?`<div style="font-size:22px;font-weight:700;color:var(--p)">${d.approve_avg_hours}h</div><div style="font-size:8px;color:#999">审批平均耗时</div>`:'暂无数据';
+    // ⑥ 系统公告(如无公告数据 → 占位卡片)
+    const dn=id('dashNotice');
+    if(dn)dn.innerHTML=`<div class="notif-empty"><span class="ic">📢</span><span>暂无系统公告 — 系统运行正常，重要通知将在此发布</span></div>`;
+    // ⑦ 消息通知角标
+    loadNotif();
   }catch(e){}
 }
 function alertRow(a){
@@ -2301,22 +2386,23 @@ async function showRcvForm(){
   // V5.0: 新建手动入库单(商品/数量/含税单价) → 提交走审批
   // V11.26: 支持验收照片/视频上传(责任留证)
   // V11.29: 入库必选部门(按部门分类, 采购/库房按部门查询)
+  // V11.152d: 入库类型(暂估/正式)选择卡片
+  // V11.159: 立即弹窗(不等部门接口, 避免慢网络下表单迟迟不显示), 部门下拉异步补全
   window._rcvAtts=[];
   id('dmTitle').textContent='➕ 新建入库单';
-  if(!window._depts||!window._depts.length){try{window._depts=await api('/departments').catch(()=>[])}catch(e){window._depts=[]}}
   const _deptOpts=window._depts&&window._depts.length?window._depts.map(d=>`<option>${esc(d.name)}</option>`).join(''):'<option>财务部</option><option>生产部</option><option>采购与供应链部</option><option>质量管理部</option><option>综合管理部</option><option>维修车间</option>';
   id('dmBody').innerHTML=`
     <div style="font-size:9px;color:#666;margin-bottom:4px">入库三步：①选部门 ②选物资和数量 ③提交审批（类别自动带出）</div>
     <div style="margin-bottom:8px"><label style="font-size:10px;color:#555;display:block;margin-bottom:3px">🏷️ 归属部门 *（这批货是给哪个部门的）</label>
     <select id="rcvDept" style="width:100%;padding:6px;border:1px solid var(--b);border-radius:4px;font-size:11px"><option value="">— 请选择部门 —</option>${_deptOpts}</select></div>
-    <div style="margin-bottom:8px"><label style="font-size:10px;color:#555;display:block;margin-bottom:3px">📄 入库类型 *</label>
-    <div style="display:flex;gap:8px">
-      <div style="flex:1;border:2px solid #e65100;border-radius:6px;padding:8px;text-align:center;cursor:pointer;background:#fff3e0" id="rcvTypeEst" onclick="rcvPickType('est')">
-        <div style="font-size:11px;font-weight:bold;color:#e65100">🟠 暂估入库</div>
+    <div style="margin-bottom:8px"><label style="font-size:10px;color:#555;display:block;margin-bottom:3px">📄 入库类型 *（货到发票未到选暂估，发票和货都齐了选正式）</label>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <div style="flex:1;min-width:150px;border:2px solid #e65100;border-radius:6px;padding:8px;text-align:center;cursor:pointer;background:#fff3e0;transition:all .15s" id="rcvTypeEst" onclick="rcvPickType('est')" title="货到发票未到，先入账，发票到了红冲转正式">
+        <div style="font-size:11px;font-weight:bold;color:#e65100">🟠 暂估入库 <span id="rcvEstChk">✓</span></div>
         <div style="font-size:8px;color:#888;margin-top:2px">货到发票未到（先入账，发票到了红冲转正式）</div>
       </div>
-      <div style="flex:1;border:2px solid var(--b);border-radius:6px;padding:8px;text-align:center;cursor:pointer;background:#fff" id="rcvTypeFormal" onclick="rcvPickType('formal')">
-        <div style="font-size:11px;font-weight:bold;color:#2e7d32">🟢 正式入库</div>
+      <div style="flex:1;min-width:150px;border:2px solid var(--b);border-radius:6px;padding:8px;text-align:center;cursor:pointer;background:#fff;transition:all .15s" id="rcvTypeFormal" onclick="rcvPickType('formal')" title="发票和货都齐了，直接正式入库">
+        <div style="font-size:11px;font-weight:bold;color:#2e7d32">🟢 正式入库 <span id="rcvFormalChk" style="display:none">✓</span></div>
         <div style="font-size:8px;color:#888;margin-top:2px">发票和货都齐了（直接正式入库，无需红冲）</div>
       </div>
     </div>
@@ -2331,6 +2417,21 @@ async function showRcvForm(){
   id('detailModal').classList.add('show');
   id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="createRcv()">提交入库审批</button>';
   addRcvItem();
+  // 部门下拉异步补全(不影响表单即时显示)
+  if(!window._depts||!window._depts.length){
+    try{
+      const deps=await api('/departments');
+      if(deps&&deps.length){
+        window._depts=deps;
+        const sel=id('rcvDept');
+        if(sel){
+          const cur=sel.value;
+          sel.innerHTML='<option value="">— 请选择部门 —</option>'+deps.map(d=>`<option>${esc(d.name)}</option>`).join('');
+          if(cur)sel.value=cur;
+        }
+      }
+    }catch(e){}
+  }
 }
 // V11.152d: 入库类型选择(暂估/正式) — 货到票未到=暂估, 票货齐=正式
 function rcvPickType(t){
@@ -2339,9 +2440,13 @@ function rcvPickType(t){
   if(t=='est'){
     est.style.borderColor='#e65100';est.style.background='#fff3e0';
     formal.style.borderColor='var(--b)';formal.style.background='#fff';
+    if(id('rcvEstChk'))id('rcvEstChk').style.display='inline';
+    if(id('rcvFormalChk'))id('rcvFormalChk').style.display='none';
   }else{
     est.style.borderColor='var(--b)';est.style.background='#fff';
     formal.style.borderColor='#2e7d32';formal.style.background='#e8f5e9';
+    if(id('rcvEstChk'))id('rcvEstChk').style.display='none';
+    if(id('rcvFormalChk'))id('rcvFormalChk').style.display='inline';
   }
 }
 window._rcvIdx=[];
@@ -3583,6 +3688,11 @@ async function loadSystem(){
     if(id('secDb'))id('secDb').value=(s.db_status=='ok')?'✅ 正常':'⚠️ 异常';
     if(id('secBackup'))id('secBackup').value=s.last_backup?('✅ '+s.last_backup):'尚未备份';
     if(id('writeLockChk'))id('writeLockChk').checked=(s.write_lock!='0');
+    // V11.159: 平台对接与技术信息卡片
+    if(id('techVersion'))id('techVersion').value=s.version||'';
+    if(id('techDb'))id('techDb').value=(s.db_status=='ok')?'✅ 正常':'⚠️ 异常';
+    if(id('techBackup'))id('techBackup').value=s.last_backup?('✅ '+s.last_backup):'尚未备份';
+    if(id('techPubUrl')){try{const pu=await api('/public-url',{noCache:true});id('techPubUrl').value=(pu&&pu.url)?pu.url:'(未获取到公网地址, 检查隧道)'}catch(e){id('techPubUrl').value='(未获取到公网地址)'}}
   }catch(e){}
   loadTpls();loadSysLogs();loadSecUsers();loadConfigUsers();loadApprConfigCheck();loadApprovalFlowEdit();
   // V11.27: 预录签名板初始化+状态加载
@@ -3820,7 +3930,7 @@ async function editUser(uid){
     <div class="fg"><label class="fl2">电话</label><input class="fc" id="euPhone" value="${esc(u.phone||'')}"></div>
     <div class="fg"><label class="fl2">职务</label><input class="fc" id="euTitle" value="${esc(u.title||'')}"></div>
     <div class="fg"><label class="fl2">状态</label><select class="fc" id="euActive"><option value="1" ${u.is_active?'selected':''}>✅ 启用</option><option value="0" ${!u.is_active?'selected':''}>❌ 停用</option></select></div>`;
-  id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="saveUser(${uid})">💾 保存</button>';
+  id('dmFooter').innerHTML=`<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="saveUser(${uid})">💾 保存</button>`;
   id('detailModal').classList.add('show');
 }
 async function saveUser(uid){
