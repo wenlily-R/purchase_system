@@ -1620,10 +1620,12 @@ async function showInquiry(id){
   const allQuoted = d.suppliers && d.suppliers.length > 0 && d.suppliers.every(s => s.quote_price && s.quote_price > 0);
   const submitBtn = (d.status=='询价中' && allQuoted) ? `<button class="btn btn-s" onclick="submitInquiryApproval(${d.id})" style="background:#27ae60">✅ 提交审批</button>` : '';
   // V11.145: 分项定标按钮(审批通过后采购员拆单用; 询价中且已报价即可用)
-  const splitBtn = (d.status=='询价中' && allQuoted && d.suppliers.length>1) ? `<button class="btn btn-p" onclick="showSplitSelect(${d.id})">🔀 分项定标</button>` : '';
+  // V11.155: 待定标(领导同意按最低价)时显示醒目提示+分项定标按钮
+  const splitBtn = ((d.status=='询价中'||d.status=='待定标') && allQuoted && d.suppliers.length>1) ? `<button class="btn btn-p" onclick="showSplitSelect(${d.id})">🔀 分项定标</button>` : '';
+  const lowestNote = d.status=='待定标' ? `<div style="margin:8px 0;padding:8px 10px;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:6px;font-size:11px;color:#2e7d32">✅ 领导已同意按各物资最低价择优采购 — 请点击【🔀 分项定标】，系统已按每项最低价默认勾选，确认后生成采购订单</div>` : '';
   const btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button><button class="btn btn-p" onclick="exportInquiry(${d.id})">📥 导出Excel</button>${splitBtn}${submitBtn}`;
   if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
-  showDetail(`询价单 ${d.inq_no}`,h,btns);
+  showDetail(`询价单 ${d.inq_no}`,lowestNote+h,btns);
 }
 // V11.145: 分项定标弹窗 — 每个物资逐项选供应商, 支持一键智能选最低价
 async function showSplitSelect(iid){

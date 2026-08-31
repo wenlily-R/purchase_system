@@ -1271,7 +1271,10 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
                                 _sel_txt = str(_vals[0]).strip()
                             # ① 选项是"厂家A/B/C" → 按添加顺序id升序排名映射(与Excel比价单从左到右一致, 厂家A=最左)
                             _rank_map = {'厂家A': 0, '厂家B': 1, '厂家C': 2}
-                            if _sel_txt in _rank_map:
+                            # V11.155: 领导选"按各物资最低价择优采购" → 不指定厂家, 审批通过后采购员分项定标(每项默认最低价)
+                            if '最低价择优' in _sel_txt:
+                                _sel_id = 'ALL_LOWEST'
+                            elif _sel_txt in _rank_map:
                                 _ranked = c.execute(
                                     "SELECT id FROM inquiry_suppliers WHERE inquiry_id=? ORDER BY id ASC",
                                     (biz_id,)).fetchall()
@@ -1292,7 +1295,16 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
             if not _sel_id:
                 _r2 = c.execute("SELECT id FROM inquiry_suppliers WHERE inquiry_id=? AND quote_price>0 ORDER BY quote_price ASC LIMIT 1", (biz_id,)).fetchone()
                 _sel_id = _r2['id'] if _r2 else None
-            if _sel_id:
+            # V11.155: 领导选"按各物资最低价择优采购" → 不自动生成订单, 状态=待定标, 采购员分项定标(每项默认最低价)
+            if _sel_id == 'ALL_LOWEST':
+                c.execute("UPDATE inquiries SET status='待定标', updated_at=? WHERE id=?", (now(), biz_id))
+                c.execute("UPDATE inquiry_approvals SET selected_supplier_id=NULL, status='已完成' WHERE inquiry_id=?", (biz_id,))
+                try:
+                    c.execute("ALTER TABLE inquiries ADD COLUMN approve_note TEXT DEFAULT ''")
+                except Exception:
+                    pass
+                c.execute("UPDATE inquiries SET approve_note='领导已同意按各物资最低价择优采购, 请分项定标' WHERE id=?", (biz_id,))
+            elif _sel_id:
                 try:
                     _sup = c.execute("SELECT * FROM inquiry_suppliers WHERE id=?", (_sel_id,)).fetchone()
                     _iq = c.execute("SELECT * FROM inquiries WHERE id=?", (biz_id,)).fetchone()
@@ -4619,10 +4631,12 @@ def api_inquiry_split_select(iid):
     i = conn.execute("SELECT * FROM inquiries WHERE id=?", (iid,)).fetchone()
     if not i:
         conn.close(); return jsonify({'error': '询价单不存在'}), 404
-    if i['status'] != '询价中':
-        conn.close(); return jsonify({'error': '该询价已结束'}), 400
     if not picks:
         conn.close(); return jsonify({'error': '未选择任何物资的供应商'}), 400
+    # V11.155: 分项定标仅在 询价中(采购员直接定标) 或 待定标(领导同意按最低价) 时允许
+    # 已生成订单/定标审批中 禁止再分项(防重复生成订单)
+    if i['status'] not in ('询价中', '待定标'):
+        conn.close(); return jsonify({'error': '当前状态不可分项定标（仅询价中/待定标可操作）'}), 400
     pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (i['req_id'],)).fetchone()
     if not pr:
         conn.close(); return jsonify({'error': '来源申请缺失'}), 400
