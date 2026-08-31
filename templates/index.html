@@ -2219,7 +2219,13 @@ async function loadReceivings(){
       const estTag = x.is_est?'<span class="tag" style="background:#fff3e0;color:#e65100">暂估</span>'
                    : x.invoice_no?'<span class="tag" style="background:#e8f5e9;color:#2e7d32">已红冲</span>'
                    : '';
-      return `<td><span class="tag ${x.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(x.trade_mode||'货到付款')}</span></td><td>${stTag}</td>
+      // V11.152: 恢复旧版完整展示(加粗单号/部门绿标签/物资名+N项标签/加急/数量带单位) + 保留到货提醒/暂估红冲
+      const deptTag = x.dept?`<span class="tag" style="background:#eef7ee;color:#2e7d32">${esc(x.dept)}</span>`:'<span style="color:#bbb">—</span>';
+      const cntTag = x.item_count?` <span class="tag" style="background:#e8f0fe;color:#1a6bff">${x.item_count}项</span>`:'';
+      const urgTag = x.urgent?' <span style="color:#e74c3c;font-weight:700">加急</span>':'';
+      const qtyTxt = `${x.total_qty||x.quantity}${esc(x.unit||'')}`;
+      return `<td><b>${esc(x.receive_no)}</b></td><td>${deptTag}</td><td>${esc(x.item_name)}${cntTag}${urgTag}</td><td>${qtyTxt}</td>
+    <td><span class="tag ${x.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(x.trade_mode||'货到付款')}</span></td><td>${stTag}${estTag}</td>
     <td>${ops}${ops2}
       <button class="lnk" style="color:#b08900" onclick="editDoc('receiving',${x.id},'入库单')">✏️修改</button> <button class="lnk" onclick="window.open('/api/receivings/${x.id}/download','_blank')">⬇️ 下载</button> ${x.status=='已入库'?`<button class="lnk" style="color:var(--d)" onclick="voidRcv(${x.id})">作废</button>`:''} ${(x.status=='待审批'||x.status=='已通过'||x.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('receiving',${x.id},'入库单')">↩️撤回</button>`:''}${(x.status=='待审批'||x.status=='待入库'||x.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('receiving',${x.id},'入库单')">🗑️删除</button>`:''}</td>`;
     })}
