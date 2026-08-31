@@ -3678,12 +3678,14 @@ def api_create_prequest():
     for _try in range(5):
         no = gen_req_no(d.get('dept', ''), conn)
         try:
-            conn.execute("""INSERT INTO purchase_requests(req_no,dept,requester,requester_id,budget_code,purpose,target_date,total_estimated,remark,attachments,urgent,apply_date,req_type)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            # V11.154: draft=true → 存草稿不提交审批(采购员检查后再手动提交)
+            _status = '草稿' if d.get('draft') else '待审批'
+            conn.execute("""INSERT INTO purchase_requests(req_no,dept,requester,requester_id,budget_code,purpose,target_date,total_estimated,remark,attachments,urgent,apply_date,req_type,status)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (no, d.get('dept',''), session['user_name'], session['user_id'], d.get('budget_code',''),
                  d.get('purpose',''), d.get('target_date'), total, d.get('remark',''),
                  json.dumps(d.get('attachments') or [], ensure_ascii=False), 1 if d.get('urgent') else 0, apply_date,
-                 d.get('req_type') or '物资采购'))
+                 d.get('req_type') or '物资采购', _status))
             break
         except sqlite3.IntegrityError:
             continue
@@ -3698,10 +3700,12 @@ def api_create_prequest():
                       it.get('category',''), it.get('brand_param',''), it.get('arrival_date',''),
                       it.get('attach','') or ''))
     conn.commit()
-    create_approvals('purchase_request', prid, total)
-    start_instances('purchase_request', prid)   # 飞书/钉钉同步发起审批(未配置则跳过)
+    # V11.154: 草稿不创建审批实例(采购员检查后手动提交)
+    if not d.get('draft'):
+        create_approvals('purchase_request', prid, total)
+        start_instances('purchase_request', prid)   # 飞书/钉钉同步发起审批(未配置则跳过)
     conn.close()
-    log(session['user_name'], '创建采购申请', f'{no} 共{len(items)}项 ¥{total:.0f}')
+    log(session['user_name'], '创建采购申请', f'{no} 共{len(items)}项 ¥{total:.0f}{" (草稿)" if d.get("draft") else ""}')
     return jsonify({'success':True, 'req_no':no, 'id':prid})
 
 @app.route('/api/inventory/<int:iid>/replenish', methods=['POST'])
