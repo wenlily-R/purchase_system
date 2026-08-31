@@ -100,16 +100,17 @@ tr:hover td{background:#eef5fd}
 #sideToggle{position:fixed;left:172px;top:56px;z-index:60;width:20px;height:20px;border-radius:0 6px 6px 0;background:#f5821f;color:#fff;font-size:10px;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.2);transition:left .2s}
 body.side-collapsed #sideToggle{left:0}
 body{background:var(--bg);color:var(--t);font-size:13px}
-.login-page{display:flex;height:100vh;align-items:center;justify-content:center;background:linear-gradient(135deg,#1a6bff,#0f9d58)}
-.login-card{background:var(--c);border-radius:12px;padding:32px 36px;width:380px;box-shadow:0 8px 32px rgba(0,0,0,.15)}
-.login-card h1{font-size:18px;margin-bottom:4px;color:var(--t)}
-.login-card .sub{color:#999;font-size:11px;margin-bottom:20px}
-.login-card .fg{margin-bottom:14px}
-.login-card label{display:block;font-size:11px;color:var(--t2);margin-bottom:3px}
-.login-card input{width:100%;padding:8px 10px;border:1px solid var(--b);border-radius:6px;font-size:13px}
-.login-card input:focus{outline:none;border-color:var(--p)}
-.login-card .btn{width:100%;padding:9px;background:var(--p);color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer}
-.login-card .btn:hover{opacity:.9}
+.login-page{display:flex;height:100vh;align-items:center;justify-content:center;background:linear-gradient(135deg,#082a50 0%,#0c3a6b 45%,#14508c 100%)}
+.login-page::before{content:'';position:fixed;top:0;left:0;right:0;bottom:0;background:radial-gradient(ellipse at 20% -10%,rgba(245,130,31,.18),transparent 50%),radial-gradient(ellipse at 85% 110%,rgba(26,107,255,.12),transparent 55%);pointer-events:none}
+.login-card{background:rgba(255,255,255,.98);border-radius:14px;padding:36px 38px;width:400px;box-shadow:0 20px 60px rgba(8,42,80,.35),0 2px 8px rgba(0,0,0,.15);border:1px solid rgba(255,255,255,.4);backdrop-filter:blur(8px)}
+.login-card h1{font-size:20px;margin-bottom:4px;color:var(--t)}
+.login-card .sub{color:#8a97a8;font-size:11px;margin-bottom:24px;letter-spacing:.3px}
+.login-card .fg{margin-bottom:16px}
+.login-card label{display:block;font-size:11px;color:var(--t2);margin-bottom:4px;font-weight:600}
+.login-card input{width:100%;padding:10px 12px;border:1px solid #d5dde8;border-radius:8px;font-size:13px;background:#f8fafc;transition:all .2s}
+.login-card input:focus{outline:none;border-color:var(--p);background:#fff;box-shadow:0 0 0 3px rgba(26,107,255,.12)}
+.login-card .btn{width:100%;padding:11px;background:linear-gradient(135deg,#14508c,#0c3a6b);color:#fff;border:none;border-radius:8px;font-size:15px;cursor:pointer;letter-spacing:2px;font-weight:600;box-shadow:0 4px 12px rgba(12,58,107,.3);transition:all .2s}
+.login-card .btn:hover{opacity:.92;box-shadow:0 6px 16px rgba(12,58,107,.4);transform:translateY(-1px)}
 .login-card .err{color:var(--d);font-size:11px;margin-top:8px;display:none}
 .header{position:fixed;top:0;left:0;right:0;height:48px;background:var(--c);border-bottom:1px solid var(--b);display:flex;align-items:center;padding:0 12px;z-index:100}
 .logo{font-weight:700;font-size:14px;color:var(--p);display:flex;align-items:center;gap:4px}
@@ -212,29 +213,31 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
 </head>
 <body>
 <div id="loginPage" class="login-page">
-  <div style="position:fixed;top:18px;left:22px;display:flex;align-items:center;gap:8px;color:#fff;z-index:10">
-    <span style="font-size:26px">⚡</span>
+  <div style="position:fixed;top:18px;left:22px;display:flex;align-items:center;gap:10px;color:#fff;z-index:10">
+    <span style="width:34px;height:34px;background:linear-gradient(135deg,#f5821f,#e06e0a);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 4px 12px rgba(245,130,31,.4)">⚡</span>
     <span style="font-size:19px;font-weight:800;letter-spacing:1px;text-shadow:0 2px 8px rgba(0,0,0,.25)">正成能源采购系统</span>
   </div>
   <div class="login-card">
-    <h1>⚡ 正成能源采购系统</h1>
-    <div class="sub">智慧采购管理系统 v5.1 专业加固版 · 请登录</div>
-    <div class="fg"><label>用户名</label><input id="loginUser" placeholder="输入账号" autocomplete="username"></div>
-    <div class="fg"><label>密码</label><input id="loginPass" type="password" placeholder="输入密码" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <span style="width:38px;height:38px;background:linear-gradient(135deg,#14508c,#0c3a6b);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:20px;color:#fff">⚡</span>
+      <div>
+        <h1 style="margin-bottom:0">正成能源采购系统</h1>
+        <div class="sub" style="margin-bottom:0">智慧采购管理平台 · 请登录</div>
+      </div>
+    </div>
+    <div style="height:1px;background:linear-gradient(90deg,transparent,#e0e4e8,transparent);margin:18px 0 22px"></div>
+    <div class="fg"><label>用户名</label><input id="loginUser" placeholder="请输入账号" autocomplete="username"></div>
+    <div class="fg"><label>密码</label><input id="loginPass" type="password" placeholder="请输入密码" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
     <button class="btn" id="loginBtn" onclick="doLogin()" style="padding:12px;font-size:16px;border-radius:8px">登 录</button>
-<button class="btn btn-o" onclick="testDebug()" style="margin-top:8px;padding:8px;font-size:12px">🐛测试调试</button>
-    <button class="btn btn-o" style="margin-top:8px" onclick="dingtalkLogin()">💬 钉钉免登</button>
+    <button class="btn btn-o" style="margin-top:10px;width:100%;padding:10px;border-radius:8px;font-size:13px" onclick="dingtalkLogin()">💬 钉钉免登</button>
     <div class="err" id="loginErr"></div>
     <div style="margin-top:6px;font-size:9px;color:#aaa;text-align:center" id="loginRememberTip"></div>
-    <div style="margin-top:12px;font-size:9px;color:#999;text-align:center">
-      测试账号: admin/admin123 · 李总/123456 · 王财务/123456 · 刘员工/123456
-    </div>
+    <div style="margin-top:22px;font-size:9px;color:#c0c8d4;text-align:center;letter-spacing:.5px">正成能源科技 · 智慧采购管理平台</div>
   </div>
 </div>
 <div id="appMain" style="display:none">
 <div class="header">
-  <div class="logo">⚡ 正成能源采购系统 <span class="tag">V9.0</span></div>
-  <div class="topnav" id="topnav"></div>
+  <div class="logo">⚡ 正成能源采购系统 <span class="tag">V9.0</span></div>  <div class="topnav" id="topnav"></div>
   <div style="position:relative;margin-left:auto;margin-right:8px">
     <input id="globalSearch" placeholder="🔍 搜索菜单/单据/档案..." style="width:220px;padding:4px 8px;border:1px solid var(--b);border-radius:4px;font-size:10px" oninput="globalSearch(this.value)" onfocus="window.id('gsBox').style.display='block'" onblur="setTimeout(()=>window.id('gsBox').style.display='none',300)">
     <div id="gsBox" style="display:none;position:absolute;top:26px;right:0;width:340px;background:var(--c);border:1px solid var(--b);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:999;max-height:380px;overflow-y:auto;font-size:10px"></div>
