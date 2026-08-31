@@ -1934,12 +1934,14 @@ def dt_build_form(biz_type, biz_id, info):
                 # V11.150: 厂家A/B/C按添加顺序映射(与Excel比价单从左到右一致, A=最左C=最右), 领导选A即Excel第一家, 不混淆
                 # 之前按报价排序导致领导分不清对应Excel哪家(报价顺序≠添加顺序)
                 # V11.155: 默认值=按各物资最低价择优采购(领导不指定厂家时直接同意即可, 醒目); 如需指定厂家再改选A/B/C
+                # V11.155d: 三方报价详情顶部加醒目提示(领导知道选定供应商可点选, 避免直接点同意错意)
                 _abc = ('厂家A', '厂家B', '厂家C')
                 _default_opt = '按各物资最低价择优采购'
+                _pick_hint = '【请选择采购方式】下方"选定供应商"为可点选下拉框，默认=按各物资最低价择优采购（推荐）；如需指定厂家请点开下拉改选（厂家A=报价表最左/厂家B=中间/厂家C=最右）'
                 form = [
                     {'name': '询价单号', 'value': iq['inq_no'] or ''},
                     {'name': '物资名称', 'value': (iq['title'] or '')[:50]},
-                    {'name': '三方报价详情', 'value': '\n'.join(supplier_details) if supplier_details else '暂无报价'},
+                    {'name': '三方报价详情', 'value': '⚠️' + _pick_hint + '\n\n' + ('\n'.join(supplier_details) if supplier_details else '暂无报价')},
                     {'name': '选定供应商 ', 'value': _default_opt if _default_opt else ''},  # ⚠️ 纯文本非数组
                     {'name': '备注', 'value': '默认=按各物资最低价择优采购(每项选报价最低的厂家, 采购员分项定标生成订单); 如需指定厂家, 请改选: 厂家A=Excel最左/厂家B=中间/厂家C=最右'},
                 ]
