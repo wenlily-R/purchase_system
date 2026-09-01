@@ -5777,7 +5777,10 @@ def api_requisitions():
 @app.route('/api/requisitions', methods=['POST'])
 @login_required
 def api_create_requisition():
-    """V5.0: 新建出库单(批量商品) — 提交走审批, 审批通过自动扣减库存(展示为负值)"""
+    """V5.0: 新建出库单(批量商品) — 提交走审批, 审批通过自动扣减库存(展示为负值)
+    V11.159: 出库单创建限 库管员/部门负责人/领导/管理员(职能分权: 采购员只采购不管理出库)"""
+    if session.get('user_role') not in ('库管员', '部门负责人', '分管领导', '总经理', '系统管理员'):
+        return jsonify({'error': '无权限：出库管理仅限库管员/领导使用'}), 403
     d = request.json; conn = db()
     items = d.get('items') or []
     if not items and d.get('item_name'):
@@ -6325,6 +6328,9 @@ def api_reports():
 @app.route('/api/counts')
 @login_required
 def api_counts():
+    """V11.159: 库存盘点仅 库管员/领导/管理员 可见(采购员不参与盘点)"""
+    if session.get('user_role') not in ('库管员', '分管领导', '总经理', '系统管理员'):
+        return jsonify([])
     c = db()
     rows = c.execute("SELECT * FROM inventory_counts ORDER BY id DESC LIMIT 20").fetchall()
     c.close()
@@ -6333,6 +6339,9 @@ def api_counts():
 @app.route('/api/counts', methods=['POST'])
 @login_required
 def api_create_count():
+    """V11.159: 创建盘点仅 库管员/领导/管理员"""
+    if session.get('user_role') not in ('库管员', '分管领导', '总经理', '系统管理员'):
+        return jsonify({'error': '无权限：库存盘点仅限库管员/领导使用'}), 403
     d = request.json
     c = db()
     no = gen_no('PD', 'inventory_counts', 'count_no')
@@ -6358,7 +6367,10 @@ def api_count(cid):
 @app.route('/api/counts/<int:cid>/finish', methods=['POST'])
 @login_required
 def api_finish_count(cid):
-    """完成盘点: 差异项自动生成报溢/报损单(待审批), 审批通过后才调库存(V11.34 账实相符闭环)"""
+    """完成盘点: 差异项自动生成报溢/报损单(待审批), 审批通过后才调库存(V11.34 账实相符闭环)
+    V11.159: 限 库管员/领导/管理员"""
+    if session.get('user_role') not in ('库管员', '分管领导', '总经理', '系统管理员'):
+        return jsonify({'error': '无权限：库存盘点仅限库管员/领导使用'}), 403
     d = request.json
     c = db()
     diffs = 0
@@ -6390,7 +6402,9 @@ def api_finish_count(cid):
 @app.route('/api/adjustments')
 @login_required
 def api_adjustments():
-    """报溢/报损单列表"""
+    """报溢/报损单列表 — V11.159: 仅 库管员/领导/管理员 可见"""
+    if session.get('user_role') not in ('库管员', '分管领导', '总经理', '系统管理员'):
+        return jsonify([])
     c = db()
     rows = c.execute("SELECT * FROM inventory_adjustments ORDER BY id DESC LIMIT 100").fetchall()
     c.close()
@@ -6399,7 +6413,9 @@ def api_adjustments():
 @app.route('/api/adjustments', methods=['POST'])
 @login_required
 def api_create_adjustment():
-    """手动报溢/报损单(未盘点也可用: 到货多/物资损坏)"""
+    """手动报溢/报损单(未盘点也可用: 到货多/物资损坏) — V11.159: 仅 库管员/领导/管理员"""
+    if session.get('user_role') not in ('库管员', '分管领导', '总经理', '系统管理员'):
+        return jsonify({'error': '无权限：库存调整仅限库管员/领导使用'}), 403
     d = request.json
     inv_id = d.get('inventory_id')
     adj_type = d.get('adj_type', '')
@@ -6439,7 +6455,10 @@ def api_inventory_trace(iid):
 @app.route('/api/adjustments/<int:aid>/approve', methods=['POST'])
 @login_required
 def api_adjust_approve(aid):
-    """审批报溢/报损单: 通过→调库存; 驳回→不改库存"""
+    """审批报溢/报损单: 通过→调库存; 驳回→不改库存
+    V11.159: 审批限 领导/管理员(库管员提交, 领导审批, 职能分离)"""
+    if session.get('user_role') not in ('分管领导', '总经理', '系统管理员'):
+        return jsonify({'error': '无权限：审批仅限领导/管理员'}), 403
     d = request.json or {}
     action = d.get('action', 'approved')
     c = db()
@@ -7820,7 +7839,10 @@ def api_receiving_void(rid):
 @app.route('/api/requisitions/<int:rid>/void', methods=['POST'])
 @login_required
 def api_requisition_void(rid):
-    """V5.0: 出库单作废 — 已出库(已扣库存)作废则回滚库存+写流水; 未出库直接作废"""
+    """V5.0: 出库单作废 — 已出库(已扣库存)作废则回滚库存+写流水; 未出库直接作废
+    V11.159: 限 库管员/部门负责人/领导/管理员"""
+    if session.get('user_role') not in ('库管员', '部门负责人', '分管领导', '总经理', '系统管理员'):
+        return jsonify({'error': '无权限：出库管理仅限库管员/领导使用'}), 403
     c = db()
     rq = c.execute("SELECT * FROM requisitions WHERE id=?", (rid,)).fetchone()
     if not rq:
