@@ -3880,6 +3880,26 @@ def api_resubmit_prequest(rid):
 @app.route('/api/orders')
 @login_required
 def api_orders():
+    # V11.159: 订单列表 — 员工仅看自己发起的(采购/库管/财务/领导/管理员全看)
+    if session.get('user_role') == '员工':
+        conn = db()
+        rows = conn.execute("SELECT * FROM purchase_orders WHERE requester_id=? ORDER BY id DESC LIMIT 100", (session.get('user_id', 0),)).fetchall()
+        out = []
+        for r in rows:
+            d = dict_row(r)
+            cnt = conn.execute("SELECT COUNT(*), COALESCE(SUM(quantity),0) FROM order_items WHERE order_id=?", (r['id'],)).fetchone()
+            d['item_count'] = cnt[0] or 1
+            d['total_qty'] = cnt[1] or r['quantity']
+            d['progress'] = 'none'
+            _ost = d.get('status')
+            if _ost in ('草稿', '待审批', '已驳回'):
+                d['progress'] = 'none'
+            else:
+                _rc = conn.execute("SELECT 1 FROM receivings WHERE order_id=? AND status IN ('已入库','待检验','待入库','已挂账','已核销') LIMIT 1", (r['id'],)).fetchone()
+                d['progress'] = 'done' if _rc else 'warn'
+            out.append(d)
+        conn.close()
+        return jsonify(out)
     conn = db(); rows = conn.execute("SELECT * FROM purchase_orders ORDER BY id DESC LIMIT 100").fetchall()
     out = []
     for r in rows:
@@ -4223,6 +4243,9 @@ def api_items():
 @app.route('/api/suppliers')
 @login_required
 def api_suppliers():
+    # V11.159: 供应商档案(含联系方式) — 员工不显示(采购/库管/财务/领导/管理员可见)
+    if session.get('user_role') == '员工':
+        return jsonify([])
     conn = db(); rows = conn.execute("SELECT * FROM suppliers").fetchall(); conn.close()
     return jsonify([dict_row(r) for r in rows])
 
@@ -5089,6 +5112,10 @@ def api_budgets():
 @app.route('/api/contracts')
 @login_required
 def api_contracts():
+    # V11.159: 合同列表 — 员工仅看自己相关的(通过订单的发起人关联)
+    if session.get('user_role') == '员工':
+        conn = db(); rows = conn.execute("SELECT c.*,po.order_no FROM contracts c LEFT JOIN purchase_orders po ON c.order_id=po.id WHERE po.requester_id=? ORDER BY c.id DESC LIMIT 50", (session.get('user_id', 0),)).fetchall(); conn.close()
+        return jsonify([dict_row(r) for r in rows])
     conn = db(); rows = conn.execute("SELECT c.*,po.order_no FROM contracts c LEFT JOIN purchase_orders po ON c.order_id=po.id ORDER BY c.id DESC LIMIT 50").fetchall(); conn.close()
     out = []
     for r in rows:
@@ -6570,6 +6597,9 @@ def api_orders_from_requests():
 @app.route('/api/settlements')
 @login_required
 def api_settlements():
+    """V11.159: 月度对账仅 财务/领导/管理员 可见"""
+    if session.get('user_role') not in ('财务', '分管领导', '总经理', '系统管理员'):
+        return jsonify([])
     c = db()
     rows = c.execute("SELECT * FROM settlements ORDER BY id DESC LIMIT 50").fetchall()
     c.close()
@@ -6578,7 +6608,10 @@ def api_settlements():
 @app.route('/api/settlements', methods=['POST'])
 @login_required
 def api_create_settlement():
-    """需求5-月度对账: 按合同/供应商批量生成对账单(取已入库订单金额)"""
+    """需求5-月度对账: 按合同/供应商批量生成对账单(取已入库订单金额)
+    V11.159: 创建对账仅 财务/领导/管理员"""
+    if session.get('user_role') not in ('财务', '分管领导', '总经理', '系统管理员'):
+        return jsonify({'error': '无权限：月度对账仅限财务/领导'}), 403
     d = request.json
     period = d.get('period', '')       # 如 2026-07
     supplier = d.get('supplier', '')
@@ -6793,7 +6826,9 @@ def api_receiving_invoice_match(rid):
 @app.route('/api/invoices')
 @login_required
 def api_invoices():
-    """获取发票列表"""
+    """获取发票列表 — V11.159: 仅 财务/领导/管理员 可见"""
+    if session.get('user_role') not in ('财务', '分管领导', '总经理', '系统管理员'):
+        return jsonify([])
     conn = db()
     rows = conn.execute("SELECT * FROM invoices ORDER BY id DESC LIMIT 100").fetchall()
     out = []
@@ -6806,7 +6841,10 @@ def api_invoices():
 @app.route('/api/invoices/merge', methods=['POST'])
 @login_required
 def api_merge_invoice():
-    """需求5-合并结算开票: 多笔合同/订单合并生成一张发票"""
+    """需求5-合并结算开票: 多笔合同/订单合并生成一张发票
+    V11.159: 合并开票仅 财务/领导/管理员"""
+    if session.get('user_role') not in ('财务', '分管领导', '总经理', '系统管理员'):
+        return jsonify({'error': '无权限：合并开票仅限财务/领导'}), 403
     d = request.json
     order_ids = d.get('order_ids') or []
     if not order_ids:
@@ -6834,7 +6872,10 @@ def api_merge_invoice():
 @app.route('/api/ledger')
 @login_required
 def api_ledger():
-    """需求4-往来台账: 按供应商/合同/时间段筛选全流程单据"""
+    """需求4-往来台账: 按供应商/合同/时间段筛选全流程单据
+    V11.159: 往来台账仅 财务/领导/管理员 可见"""
+    if session.get('user_role') not in ('财务', '分管领导', '总经理', '系统管理员'):
+        return jsonify([])
     supplier = request.args.get('supplier', '')
     contract = request.args.get('contract', '')
     start = request.args.get('start', '')
@@ -7776,7 +7817,9 @@ def api_void_credit(cid):
 @app.route('/api/payment_requests')
 @login_required
 def api_payment_requests():
-    """获取付款申请列表"""
+    """获取付款申请列表 — V11.159: 仅 财务/领导/管理员 可见(采购员/员工/库管员不看钱)"""
+    if session.get('user_role') not in ('财务', '分管领导', '总经理', '系统管理员'):
+        return jsonify([])
     conn = db()
     rows = conn.execute("SELECT * FROM payment_requests ORDER BY id DESC LIMIT 100").fetchall()
     out = []
@@ -7788,7 +7831,9 @@ def api_payment_requests():
 @app.route('/api/payments')
 @login_required
 def api_payments():
-    """获取付款列表"""
+    """获取付款列表 — V11.159: 仅 财务/领导/管理员 可见"""
+    if session.get('user_role') not in ('财务', '分管领导', '总经理', '系统管理员'):
+        return jsonify([])
     conn = db()
     rows = conn.execute("SELECT * FROM payment_requests ORDER BY id DESC LIMIT 100").fetchall()
     out = []
@@ -7801,6 +7846,9 @@ def api_payments():
 @app.route('/api/payments/<int:pid>/void', methods=['POST'])
 @login_required
 def api_void_payment(pid):
+    """作废付款 — V11.159: 仅 财务/领导/管理员(付款是财务职能)"""
+    if session.get('user_role') not in ('财务', '分管领导', '总经理', '系统管理员'):
+        return jsonify({'error': '无权限：付款管理仅限财务/领导'}), 403
     c = db(); c.execute("UPDATE payment_requests SET status='已作废' WHERE id=?", (pid,)); c.commit(); c.close()
     log(session['user_name'], '作废付款', f'#{pid}')
     return jsonify({'success': True})
