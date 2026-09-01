@@ -1703,9 +1703,9 @@ async function showInquiry(id){
       try{
         const qd=JSON.parse(s.quote_details||'[]');
         if(qd&&qd.length){
-          detailHtml=`<div style="font-size:9px;color:#555;margin-top:4px;border-top:1px dashed #e0e6ee;padding-top:4px;line-height:1.6">`;
-          qd.forEach((q,qi)=>{if(q&&q.unit_price>0){detailHtml+=`&nbsp;${esc(q.item_name||('物料'+(qi+1)))}：含税单价¥${(q.unit_price||0).toFixed(2)} × ${q.qty||1} = <b>¥${((q.unit_price||0)*(q.qty||1)).toFixed(2)}</b>${q.remark?(' <span style="color:#999">('+esc(q.remark)+')</span>'):''}<br>`}});
-          detailHtml+=`</div>`;
+          let detailRows='';
+          qd.forEach((q,qi)=>{if(q&&q.unit_price>0){detailRows+=`<tr><td style="padding:2px 4px;border:1px solid #e8edf3;text-align:left">${esc(q.item_name||('物料'+(qi+1)))}${q.remark?(' <span style="color:#999">('+esc(q.remark)+')</span>'):''}</td><td style="padding:2px 4px;border:1px solid #e8edf3;text-align:right;white-space:nowrap">¥${(q.unit_price||0).toFixed(2)}</td><td style="padding:2px 4px;border:1px solid #e8edf3;text-align:center;white-space:nowrap">${q.qty||1}</td><td style="padding:2px 4px;border:1px solid #e8edf3;text-align:right;white-space:nowrap"><b>¥${((q.unit_price||0)*(q.qty||1)).toFixed(2)}</b></td></tr>`}});
+          detailHtml=`<table style="width:100%;border-collapse:collapse;font-size:9px;color:#444;margin-top:4px"><tr style="background:#f0f2f5;color:#666;font-weight:bold"><th style="padding:2px 4px;border:1px solid #e8edf3;text-align:left">物料</th><th style="padding:2px 4px;border:1px solid #e8edf3;text-align:right">单价</th><th style="padding:2px 4px;border:1px solid #e8edf3;text-align:center">数量</th><th style="padding:2px 4px;border:1px solid #e8edf3;text-align:right">总价（含税含运）</th></tr>${detailRows}</table>`;
         }
       }catch(e){}
       // 品牌分析
