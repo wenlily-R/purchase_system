@@ -1696,7 +1696,7 @@ async function showInquiry(id){
   if(!d.suppliers||!d.suppliers.length)h+='<div style="font-size:11px;color:#999;padding:10px">无供应商</div>';
   else{
     h+=`<div style="background:#f8f9fa;border-radius:8px;padding:12px;margin:8px 0">`;
-    h+=`<table class="tb" style="font-size:11px"><thead><tr><th>供应商</th><th>联系人</th><th>含运总价</th><th>交付日期</th><th>质保</th><th>品牌</th><th>厂家备注</th><th>操作</th></tr></thead><tbody>`;
+    h+=`<table class="tb" style="font-size:11px"><thead><tr><th>供应商</th><th>联系人</th><th>总价（含税含运）</th><th>交付日期</th><th>质保</th><th>品牌</th><th>厂家备注</th><th>操作</th></tr></thead><tbody>`;
     d.suppliers.forEach(s=>{
       // V11.162: 明细行的含税单价/含税总价(从quote_details取)
       let detailHtml='';
@@ -1705,7 +1705,7 @@ async function showInquiry(id){
         if(qd&&qd.length){
           let detailRows='';
           qd.forEach((q,qi)=>{if(q&&q.unit_price>0){detailRows+=`<tr><td style="padding:2px 4px;border:1px solid #e8edf3;text-align:left">${esc(q.item_name||('物料'+(qi+1)))}${q.remark?(' <span style="color:#999">('+esc(q.remark)+')</span>'):''}</td><td style="padding:2px 4px;border:1px solid #e8edf3;text-align:right;white-space:nowrap">¥${(q.unit_price||0).toFixed(2)}</td><td style="padding:2px 4px;border:1px solid #e8edf3;text-align:center;white-space:nowrap">${q.qty||1}</td><td style="padding:2px 4px;border:1px solid #e8edf3;text-align:right;white-space:nowrap"><b>¥${((q.unit_price||0)*(q.qty||1)).toFixed(2)}</b></td></tr>`}});
-          detailHtml=`<table style="width:100%;border-collapse:collapse;font-size:9px;color:#444;margin-top:4px"><tr style="background:#f0f2f5;color:#666;font-weight:bold"><th style="padding:2px 4px;border:1px solid #e8edf3;text-align:left">物料</th><th style="padding:2px 4px;border:1px solid #e8edf3;text-align:right">单价</th><th style="padding:2px 4px;border:1px solid #e8edf3;text-align:center">数量</th><th style="padding:2px 4px;border:1px solid #e8edf3;text-align:right">含税总价</th></tr>${detailRows}</table>`;
+          detailHtml=`<table style="width:100%;border-collapse:collapse;font-size:9px;color:#444;margin-top:4px"><tr style="background:#f0f2f5;color:#666;font-weight:bold"><th style="padding:2px 4px;border:1px solid #e8edf3;text-align:left">物料</th><th style="padding:2px 4px;border:1px solid #e8edf3;text-align:right">单价</th><th style="padding:2px 4px;border:1px solid #e8edf3;text-align:center">数量</th><th style="padding:2px 4px;border:1px solid #e8edf3;text-align:right">总价（含税含运）</th></tr>${detailRows}</table>`;
         }
       }catch(e){}
       // 品牌分析

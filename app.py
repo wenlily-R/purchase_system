@@ -1985,7 +1985,7 @@ def dt_build_form(biz_type, biz_id, info):
                 for _i, si in enumerate(sups):
                     _tag = _abc[_i] if _i < 3 else ('厂家' + chr(65 + _i))
                     supplier_opts.append({'value': str(si['id']), 'text': '%s (¥%.0f)' % (si['supplier_name'], si['quote_price'] or 0)})
-                    detail = '%s[%s] 含运总价¥%.0f' % (_tag, si['supplier_name'], si['quote_price'] or 0)
+                    detail = '%s[%s] 总价（含税含运）¥%.0f' % (_tag, si['supplier_name'], si['quote_price'] or 0)
                     if si['quote_brand']:
                         detail += ' 品牌:%s' % si['quote_brand']
                     if si['quote_remark']:
@@ -4500,15 +4500,15 @@ def inquiry_vendor_page(token):
                 '<div style="overflow-x:auto"><table style="width:100%%;border-collapse:collapse;font-size:13px;margin-bottom:10px;min-width:700px">'
                 '<tr style="background:#f5f8ff"><th style="padding:6px 8px;text-align:left">物资名称</th>'
                 '<th style="padding:6px 8px;text-align:left">规格</th><th style="padding:6px 8px;text-align:left">数量</th>'
-                '<th style="padding:6px 8px;text-align:left">含税单价(元)<span style="color:#e74c3c">*</span></th><th style="padding:6px 8px;text-align:left">含税总价</th>'
+                '<th style="padding:6px 8px;text-align:left">含税单价(元)<span style="color:#e74c3c">*</span></th><th style="padding:6px 8px;text-align:left">总价（含税含运）</th>'
                 '<th style="padding:6px 8px;text-align:left">交付日期</th><th style="padding:6px 8px;text-align:left">质保时间</th>'
                 '<th style="padding:6px 8px;text-align:left">品牌</th><th style="padding:6px 8px;text-align:left">厂家备注</th></tr>%s</table></div>'
                 '<div style="background:#f0faf0;border-radius:8px;padding:10px 14px;font-size:14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">'
-                '<span style="color:#2e7d32"><b>含税总价合计：¥<span id="total">0.00</span></b></span>'
+                '<span style="color:#2e7d32"><b>总价（含税含运）合计：¥<span id="total">0.00</span></b></span>'
                 '<span style="font-size:12px;color:#888">物品较多时，可<a href="javascript:void(0)" onclick="quickFill()" style="color:#1f6feb">💰 填一个总价自动分摊</a></span></div>'
                 '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">'
                 '<div style="flex:1;min-width:220px;background:#fff8f0;border:1px solid #f5d9b8;border-radius:8px;padding:10px 14px">'
-                '<label style="font-size:12px;color:#a05a12;display:block;margin-bottom:4px"><b>🚚 含运总价（整单含运费，必填）</b></label>'
+                '<label style="font-size:12px;color:#a05a12;display:block;margin-bottom:4px"><b>🚚 总价（含税含运）——整单含运费，必填</b></label>'
                 '<input id="shipTotal" type="number" min="0" step="0.01" placeholder="含运费的总金额，如 6950" '
                 'style="width:100%%;padding:7px 8px;border:1px solid #d0d7e2;border-radius:6px;font-size:14px;box-sizing:border-box"></div>'
                 '<div style="flex:1;min-width:220px;background:#f8f9fb;border:1px solid #e2e7ee;border-radius:8px;padding:10px 14px">'
@@ -4530,7 +4530,7 @@ def inquiry_vendor_page(token):
                 'brand:(document.getElementById("br"+i)||{}).value||"",remark:(document.getElementById("rm"+i)||{}).value||""})});'
                 'if(emptyIdx.length){alert("请填写所有物料的含税单价（第"+emptyIdx.join("、")+"行未填）");return}'
                 'const shipTotal=parseFloat((document.getElementById("shipTotal")||{}).value)||0;'
-                'if(shipTotal<=0){alert("请填写含运总价（整单含运费的总金额）");return}'
+                'if(shipTotal<=0){alert("请填写总价（含税含运）——整单含运费的总金额");return}'
                 'const total=parseFloat((document.getElementById("total")||{}).textContent)||0;'
                 'const supRemark=(document.getElementById("supRemark")||{}).value||"";'
                 'const btn=document.querySelector("button[onclick*=sub]");if(btn){btn.disabled=true;btn.style.opacity=.6;btn.textContent="提交中..."}'
@@ -4971,7 +4971,7 @@ def api_inquiry_export(iid):
     # 表头: 序号/物料/数量/规格 | 每家6列(含税单价/含税总价/品牌/交付/质保/厂家备注)
     sup_head = ['序号', '物料名称', '数量', '规格型号']
     for s in sups:
-        sup_head += [f"{s['supplier_name']} 含税单价", f"{s['supplier_name']} 含税总价", f"{s['supplier_name']} 品牌",
+        sup_head += [f"{s['supplier_name']} 含税单价", f"{s['supplier_name']} 总价（含税含运）", f"{s['supplier_name']} 品牌",
                      f"{s['supplier_name']} 交付", f"{s['supplier_name']} 质保", f"{s['supplier_name']} 厂家备注"]
     # col_count 已在前面按 4+每家6列 算好
     for ci, h in enumerate(sup_head, 1):
@@ -5109,11 +5109,11 @@ def api_inquiry_export(iid):
     _ship_lines = []
     for s in sups:
         if s['quote_price'] and s['quote_price'] > 0:
-            _ship_lines.append('%s：含运总价 ¥%s%s' % (s['supplier_name'],
+            _ship_lines.append('%s：总价（含税含运） ¥%s%s' % (s['supplier_name'],
                 format(float(s['quote_price']), ',.2f'),
                 ('（' + (s['quote_remark'] or '') + '）') if (s['quote_remark'] or '').strip() else ''))
     if _ship_lines:
-        decision = decision + chr(10) + chr(10) + '【含运总价】' + chr(10) + chr(10).join(_ship_lines)
+        decision = decision + chr(10) + chr(10) + '【总价（含税含运）】' + chr(10) + chr(10).join(_ship_lines)
     c = ws.cell(row, 1, decision)
     c.font = base_font; c.alignment = Alignment(vertical='top', wrap_text=True)
     # V11.131: 决策备注黄色高亮框(显眼), 行高按品牌分析行数自适应
