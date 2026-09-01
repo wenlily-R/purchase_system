@@ -234,7 +234,6 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
 <div id="appMain" style="display:none">
 <div class="header">
   <div class="logo">⚡ 正成能源采购系统 <span class="tag">V9.0</span></div>
-  <div class="topnav" id="topnav"></div>
   <div style="position:relative;margin-left:auto;margin-right:8px">
     <input id="globalSearch" placeholder="🔍 搜索菜单/单据/档案..." style="width:220px;padding:4px 8px;border:1px solid var(--b);border-radius:4px;font-size:10px" oninput="globalSearch(this.value)" onfocus="window.id('gsBox').style.display='block'" onblur="setTimeout(()=>window.id('gsBox').style.display='none',300)">
     <div id="gsBox" style="display:none;position:absolute;top:26px;right:0;width:340px;background:var(--c);border:1px solid var(--b);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:999;max-height:380px;overflow-y:auto;font-size:10px"></div>
@@ -251,9 +250,46 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
 <main class="main" id="mainContent">
 <div class="page act" id="pdashboard">
   <h2>📊 工作台</h2>
-  <!-- 1号卡片: 快捷功能导航 -->
-  <div class="card"><div class="ch"><h3>⚡ 快捷功能导航</h3><span style="font-size:10px;color:var(--v9-t2)">高频功能已高亮突出 · 分组归类</span></div><div class="cb" id="quickNav"><div class="loading">加载中...</div></div></div>
-  <!-- 2号卡片: 审批待办专区(核心) -->
+  <!-- 业务区：4 个业务卡片（采购/库房/财务/报表），与下方"我的待办"卡片并列 -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px">
+    <div class="card">
+      <div class="ch"><h3>📝 采购管理</h3></div>
+      <div class="cb" style="display:flex;flex-direction:column;gap:6px">
+        <button class="v9-nav-btn" style="justify-content:flex-start" onclick="sw('prequests')"><span class="ic">📝</span>采购申请</button>
+        <button class="v9-nav-btn" style="justify-content:flex-start" onclick="sw('inquiries')"><span class="ic">🔍</span>三方询价</button>
+        <button class="v9-nav-btn" style="justify-content:flex-start" onclick="sw('orders')"><span class="ic">📋</span>采购订单</button>
+        <button class="v9-nav-btn" style="justify-content:flex-start" onclick="sw('contracts')"><span class="ic">📄</span>合同管理</button>
+        <button class="v9-nav-btn" style="justify-content:flex-start" onclick="sw('suppliers')"><span class="ic">🏢</span>供应商</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="ch"><h3>📦 仓储库存</h3></div>
+      <div class="cb" style="display:flex;flex-direction:column;gap:6px">
+        <button class="v9-nav-btn" style="justify-content:flex-start" onclick="sw('receivings')"><span class="ic">📦</span>入库验收</button>
+        <button class="v9-nav-btn" style="justify-content:flex-start" onclick="sw('requisitions')"><span class="ic">📤</span>出库管理</button>
+        <button class="v9-nav-btn" style="justify-content:flex-start" onclick="sw('inventory')"><span class="ic">📦</span>库存查询</button>
+        <button class="v9-nav-btn" style="justify-content:flex-start" onclick="sw('counts')"><span class="ic">📋</span>库存盘点</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="ch"><h3>💰 财务往来</h3></div>
+      <div class="cb" style="display:flex;flex-direction:column;gap:6px">
+        <button class="v9-nav-btn" style="justify-content:flex-start" onclick="sw('payments')"><span class="ic">💰</span>付款申请</button>
+        <button class="v9-nav-btn" style="justify-content:flex-start" onclick="sw('expenses')"><span class="ic">💸</span>费用登记</button>
+        <button class="v9-nav-btn" style="justify-content:flex-start" onclick="sw('settlements')"><span class="ic">📊</span>月度对账</button>
+        <button class="v9-nav-btn" style="justify-content:flex-start" onclick="sw('invoices')"><span class="ic">🧾</span>合并开票</button>
+        <button class="v9-nav-btn" style="justify-content:flex-start" onclick="sw('ledger')"><span class="ic">🔍</span>往来台账</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="ch"><h3>📈 报表中心</h3></div>
+      <div class="cb" style="display:flex;flex-direction:column;gap:6px">
+        <button class="v9-nav-btn" style="justify-content:flex-start" onclick="sw('reports')"><span class="ic">📊</span>报表中心</button>
+        <div style="font-size:10px;color:#999;padding:4px 8px">经营数据 · 采购分析 · 审批效率等报表总览</div>
+      </div>
+    </div>
+  </div>
+  <!-- 我的待办卡片: 审批待办专区(核心) -->
   <div class="card"><div class="ch"><h3>✅ 审批待办专区</h3><button class="btn btn-o btn-sm" onclick="sw('approvals')">去审批中心 →</button></div>
     <div class="cb">
       <div class="tabs" id="apprZoneTabs">
@@ -759,33 +795,6 @@ function buildNav(){
   }).join('');
   if(ME.can_config){html+=`<div class="sl">系统配置</div><div class="si si-sub" onclick="sw('feishu')">✈️飞书</div><div class="si si-sub" onclick="sw('dingtalk')">💬钉钉</div><div class="si si-sub" onclick="sw('system')">⚙️系统设置</div>`}
   id('sideMenu').innerHTML=html;
-  // V11.66: 顶部导航 = 六大业务大类全部显示(界面统一, 权限由页面拦截)
-  const navCats=[
-    {label:'📊 工作台',page:'dashboard'},
-    {label:'✅ 审批',page:'approvals',badge:true},
-    {label:'📝 采购',page:'prequests'},
-    {label:'📦 库房',page:'receivings'},
-    {label:'💰 财务',page:'payments'},
-    {label:'📈 报表',page:'reports'},
-  ];
-  let navHtml='';
-  navCats.forEach(c=>{
-    navHtml+=`<a onclick="sw('${c.page}')"${c.page=='approvals'?' class="appr-hl" title="待我审批"':''}>${c.label}${c.badge?`<span class="ab" id="navApprBadge"></span>`:''}</a>`;
-  });
-  id('topnav').innerHTML=navHtml;
-  // 待办徽标: 由 loadDashboard 用 my_pending 更新
-  window._setNavBadge=function(n){
-    const b=id('navApprBadge');
-    if(!b)return;
-    const a=document.querySelector('.topnav a.appr-hl');
-    if(n>0){
-      b.style.display='inline-block';b.textContent=n>99?'99+':n;
-      if(a)a.classList.add('pulse');   // V11.57b: 有待办才脉冲跳动
-    }else{
-      b.style.display='none';
-      if(a)a.classList.remove('pulse');
-    }
-  };
 }
 function toggleGrp(el,gi){
   const body=id('grp'+gi);
@@ -969,21 +978,7 @@ async function loadDashboard(){
   try{
     const d=await api('/dashboard');
     const k=d.kpi||{};
-    // ① 快捷功能导航(V9: 图标+文字, 分组, 高频高亮) — V11.65b: 按角色过滤(与侧边菜单同规则)
-    const __canSee = window._canSeeNav || (()=>true);
-    const navGroups=[
-      ['采购业务',[['📝','采购申请','prequests'],['📋','采购订单','orders'],['🏢','供应商','suppliers'],['📄','合同管理','contracts']]],
-      ['仓储管理',[['📦','入库验收','receivings'],['📤','出库单','requisitions'],['📦','库存查询','inventory'],['📋','盘点单','counts']]],
-      ['财务付款',[['📊','月度对账','settlements'],['💰','付款申请','payments'],['💸','费用登记','expenses'],['🧾','合并开票','invoices'],['🔍','往来台账','ledger']]],
-      ['审批中心',[['✅','审批中心','approvals'],['🚨','加急审批','approvals']]],
-      ['系统设置',[['⚙️','系统设置','system'],['📄','模板管理','system'],['🔐','权限设置','system'],['✈️','飞书对接','feishu'],['💬','钉钉集成','dingtalk']]],
-    ].map(g=>[g[0], g[1].filter(b=>__pageAllowed(b[2])||b[2]==='system')]).filter(g=>g[1].length);
-    const heroBtn=(ic,txt,page)=>`<button class="v9-nav-btn hero" onclick="sw('${page}')"><span class="ic">${ic}</span>${txt}</button>`;
-    const warnBtn=(ic,txt,page)=>`<button class="v9-nav-btn warn" onclick="sw('${page}')"><span class="ic">${ic}</span>${txt}</button>`;
-    id('quickNav').innerHTML=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px">
-      ${heroBtn('➕','发起采购申请','prequests')}${warnBtn('🚨','查看加急审批','approvals')}</div>
-      ${navGroups.map(g=>`<div class="v9-group-title">${g[0]}</div><div style="display:flex;gap:6px;flex-wrap:wrap">${g[1].map(b=>`<button class="v9-nav-btn" onclick="sw('${b[2]}')"><span class="ic">${b[0]}</span>${b[1]}</button>`).join('')}</div>`).join('')}`;
-    // ④ 数据看板-指标卡(V9: 大屏数字卡+首卡深蓝渐变; 财务脱敏)
+    // 数据看板-指标卡(V9: 大屏数字卡+首卡深蓝渐变; 财务脱敏)
     const showP=k.can_price;
     id('dashKpi').innerHTML=`
       <div class="kc v9-kpi-hero" onclick="sw('payments')" style="cursor:pointer" title="点击查看付款"><div class="kl">本月采购总额</div><div class="kv">${showP?('¥'+(k.month_purchase||0).toFixed(0)):'***'}</div><small>点击下钻付款报表</small></div>
