@@ -7418,7 +7418,13 @@ def api_contract_generate():
                         if k in cell.text:
                             cell.text = cell.text.replace(k, v)
         fname = f"contract_{cno}.docx"
-        doc.save(os.path.join(BASE, 'uploads', fname))
+        _fpath = os.path.join(BASE, 'uploads', fname)
+        # V11.164: 防编号复用覆盖历史文件 — 目标文件已存在且无合同记录引用(孤儿残留, 如清理过contracts表)时先删除再生成
+        if os.path.exists(_fpath):
+            _ref = conn.execute("SELECT COUNT(*) FROM contracts WHERE file_path=?", (fname,)).fetchone()[0]
+            if _ref == 0:
+                os.remove(_fpath)
+        doc.save(_fpath)
         # 合同全文(供在线编辑)
         full_text = '\n'.join(p.text for p in doc.paragraphs if p.text.strip())
         for t in doc.tables:
