@@ -4432,115 +4432,140 @@ def api_inquiry_detail(iid):
 
 @app.route('/inq/<token>')
 def inquiry_vendor_page(token):
-    """商家免登录报价页(无需登录, 链接发供应商)"""
-    def _today_str():
-        import datetime as _d
-        return _d.date.today().strftime('%Y-%m-%d')
+    """商家免登录报价页(无需登录, 链接发供应商)
+    V11.164: 链接无效/询价结束/作废/截止 全部友好中文提示页, 绝不500/裸报错; 空值容错; 已报价可回显修改"""
+    import datetime as _d
+    _today_str = _d.date.today().strftime('%Y-%m-%d')
+
+    def _msg_page(_icon, _title, _sub):
+        return ('<div style="max-width:520px;margin:80px auto;background:#fff;border-radius:12px;padding:36px;'
+                'box-shadow:0 4px 24px rgba(0,0,0,.08);font-family:-apple-system,Segoe UI,Microsoft YaHei,sans-serif;text-align:center">'
+                '<div style="font-size:44px;margin-bottom:10px">%s</div>'
+                '<h2 style="margin:0 0 8px;color:#333;font-size:18px">%s</h2>'
+                '<p style="color:#888;font-size:13px;margin:0;line-height:1.6">%s</p></div>') % (
+                    _icon, esc_html(_title), esc_html(_sub))
+
     conn = db()
     s = conn.execute("SELECT * FROM inquiry_suppliers WHERE token=?", (token,)).fetchone()
     if not s:
         conn.close()
-        return '<h3 style="font-family:sans-serif;text-align:center;margin-top:80px;color:#999">❓ 报价链接无效或已失效</h3>'
+        return _msg_page('🔗', '报价链接无效或已失效', '该链接可能不完整或已过期，请联系采购方获取最新报价链接。')
     i = conn.execute("SELECT * FROM inquiries WHERE id=?", (s['inquiry_id'],)).fetchone()
-    pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (i['req_id'],)).fetchone() if i else None
-    items = conn.execute("SELECT * FROM request_items WHERE req_id=?", (i['req_id'],)).fetchall() if i else []
+    if not i:
+        conn.close()
+        return _msg_page('📭', '询价单不存在', '该询价单已被删除，请联系采购方。')
+    _st = i['status'] or '询价中'
+    if _st != '询价中':
+        _st_txt = {'已生成订单': '该询价已完成定标', '定标审批中': '该询价正在定标审批中', '待定标': '该询价等待定标'}.get(_st, '该询价已结束')
+        conn.close()
+        return _msg_page('⏳', _st_txt, '本批次询价已结束，无法继续报价。感谢参与，欢迎下次合作。')
+    _deadline = (i['deadline'] or '').strip()
+    if _deadline and _today_str > _deadline:
+        conn.close()
+        return _msg_page('⏰', '报价已截止', '该询价已于 %s 截止，无法继续报价。如有疑问请联系采购方。' % _deadline)
+    pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (i['req_id'],)).fetchone()
+    items = conn.execute("SELECT * FROM request_items WHERE req_id=?", (i['req_id'],)).fetchall()
     conn.close()
-    item_rows = ''.join(
-        '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>' % (
-            esc_html(it['item_name']), esc_html(it['spec'] or ''),
-            str(it['quantity']) + esc_html(it['unit'] or '个'), '¥%.0f' % (it['total_price'] or 0))
-        for it in items)
-    if s['quote_price'] and s['quote_price'] > 0:
-        body = ('<div style="max-width:520px;margin:60px auto;background:#fff;border-radius:12px;padding:32px;'
-                'box-shadow:0 4px 24px rgba(0,0,0,.08);font-family:-apple-system,Segoe UI,Microsoft YaHei,sans-serif">'
-                '<h2 style="margin:0 0 4px;color:#1f6feb">✅ 报价已提交</h2>'
-                '<p style="color:#666;margin:0 0 20px">感谢 %s 参与本次询价，报价 ¥%.0f 已收到，等待采购方比价结果。</p>'
-                '<a href="%s" style="color:#1f6feb;font-size:13px">← 返回查看/修改报价</a></div>') % (
-                    esc_html(s['supplier_name']), s['quote_price'], request.url.replace('http://', 'https://') if request.url.startswith('http://') else request.url)
-    else:
-        # V11.24: 截止时间状态
-        _deadline = (i['deadline'] or '') if i else ''
-        _dl_txt = ''
-        _dl_hint = ''
-        if _deadline:
-            _dl_txt = '<div style="background:%s;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px;border:1px solid %s"><b>⏰ 报价截止：%s</b>%s</div>' % (
-                '#fff3cd' if _deadline >= _today_str() else '#f8d7da',
-                '#ffeeba' if _deadline >= _today_str() else '#f5c6cb',
-                esc_html(_deadline),
-                '' if _deadline >= _today_str() else '<br><span style="color:#c0392b">⚠️ 该询价已截止，无法继续报价</span>')
-        else:
-            _dl_hint = ''
-        # V11.43: 行明细报价 — 每行 单价+总价(自动算)+交付日期+质保时间+备注, 自由填写
-        _rows_html = []
-        for idx, it in enumerate(items):
-            _rows_html.append(
-                '<tr>'
-                '<td style="padding:6px 8px;text-align:left;border-bottom:1px solid #eef">%s</td>'
-                '<td style="padding:6px 8px;text-align:left;border-bottom:1px solid #eef;color:#888;font-size:12px">%s</td>'
-                '<td style="padding:6px 8px;text-align:left;border-bottom:1px solid #eef;white-space:nowrap">%s%s</td>'
-                '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input type="number" min="0" step="0.01" placeholder="单价" '
-                'oninput="calc()" data-q="%s" id="up%d" style="width:64px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;text-align:right"></td>'
-                '<td style="padding:6px 8px;border-bottom:1px solid #eef;text-align:right;font-weight:600;color:#2e7d32;white-space:nowrap">¥<span id="ut%d">0.00</span></td>'
-                '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="如7天" id="dl%d" style="width:52px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
-                '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="如3个月" id="wr%d" style="width:56px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
-                '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="品牌" id="br%d" style="width:80px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
-                '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="备注" id="rm%d" style="width:64px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
-                '</tr>' % (
-                    esc_html(it['item_name']), esc_html(it['spec'] or ''),
-                    str(it['quantity']) + esc_html(it['unit'] or '个'),
-                    '<span style="color:#bbb;font-size:11px">(参考¥%.0f)</span>' % ((it['total_price'] or 0) / it['quantity'] if it['quantity'] else 0),
-                    str(it['quantity']), idx, idx, idx, idx, idx, idx))
-        _item_rows = ''.join(_rows_html)
-        body = ('<div style="max-width:860px;margin:40px auto;background:#fff;border-radius:12px;padding:28px;'
-                'box-shadow:0 4px 24px rgba(0,0,0,.08);font-family:-apple-system,Segoe UI,Microsoft YaHei,sans-serif">'
-                '<h2 style="margin:0 0 4px;color:#1f6feb">📋 采购询价单</h2>'
-                '<p style="color:#888;font-size:13px;margin:0 0 14px">尊敬的 %s，请逐项填写单价，总价自动计算；交付日期/质保时间按实际填写</p>%s'
-                '<div style="background:#f5f8ff;border-radius:8px;padding:12px 16px;font-size:13px;margin-bottom:14px">'
-                '<b>%s</b><br><span style="color:#888">询价编号：%s</span></div>'
-                '<div style="overflow-x:auto"><table style="width:100%%;border-collapse:collapse;font-size:13px;margin-bottom:10px;min-width:700px">'
-                '<tr style="background:#f5f8ff"><th style="padding:6px 8px;text-align:left">物资名称</th>'
-                '<th style="padding:6px 8px;text-align:left">规格</th><th style="padding:6px 8px;text-align:left">数量</th>'
-                '<th style="padding:6px 8px;text-align:left">含税单价(元)<span style="color:#e74c3c">*</span></th><th style="padding:6px 8px;text-align:left">总价（含税含运）</th>'
-                '<th style="padding:6px 8px;text-align:left">交付日期</th><th style="padding:6px 8px;text-align:left">质保时间</th>'
-                '<th style="padding:6px 8px;text-align:left">品牌</th><th style="padding:6px 8px;text-align:left">厂家备注</th></tr>%s</table></div>'
-                '<div style="background:#f0faf0;border-radius:8px;padding:10px 14px;font-size:14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">'
-                '<span style="color:#2e7d32"><b>总价（含税含运）合计：¥<span id="total">0.00</span></b></span>'
-                '<span style="font-size:12px;color:#888">物品较多时，可<a href="javascript:void(0)" onclick="quickFill()" style="color:#1f6feb">💰 填一个总价自动分摊</a></span></div>'
-                '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">'
-                '<div style="flex:1;min-width:220px;background:#fff8f0;border:1px solid #f5d9b8;border-radius:8px;padding:10px 14px">'
-                '<label style="font-size:12px;color:#a05a12;display:block;margin-bottom:4px"><b>🚚 总价（含税含运）——整单含运费，必填</b></label>'
-                '<input id="shipTotal" type="number" min="0" step="0.01" placeholder="含运费的总金额，如 6950" '
-                'style="width:100%%;padding:7px 8px;border:1px solid #d0d7e2;border-radius:6px;font-size:14px;box-sizing:border-box"></div>'
-                '<div style="flex:1;min-width:220px;background:#f8f9fb;border:1px solid #e2e7ee;border-radius:8px;padding:10px 14px">'
-                '<label style="font-size:12px;color:#555;display:block;margin-bottom:4px"><b>📝 厂家备注（整单说明，选填）</b></label>'
-                '<input id="supRemark" placeholder="如：含税含运、交货条件等" '
-                'style="width:100%%;padding:7px 8px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;box-sizing:border-box"></div></div>'
-                '<button onclick="sub()" style="width:100%%;padding:12px;background:#1f6feb;color:#fff;border:none;border-radius:8px;font-size:15px;cursor:pointer">提交报价</button>'
-                '<div id="msg" style="margin-top:10px;font-size:13px;color:#27ae60;text-align:center"></div>'
-                '<script>'
-                'window.calc=function(){let t=0;document.querySelectorAll("[id^=up]").forEach((e,i)=>{const q=parseFloat(e.getAttribute("data-q"))||1;const p=parseFloat(e.value)||0;'
-                'const st=p*q;t+=st;const u=document.getElementById("ut"+i);if(u)u.textContent=st.toFixed(2)});'
-                'const _t=document.getElementById("total");if(_t)_t.textContent=t.toFixed(2)};'
-                'window.quickFill=function(){const v=prompt("请输入报价总金额(元):");if(!v||isNaN(v))return;const n=document.querySelectorAll("[id^=up]").length;'
-                'const per=parseFloat(v)/n;document.querySelectorAll("[id^=up]").forEach(e=>{e.value=per.toFixed(2)});calc();'
-                'alert("已按平均分摊到每行，可再逐行微调")};'
-                'window.sub=async function(){const rows=document.querySelectorAll("[id^=up]");const details=[];let ok=true;let emptyIdx=[];'
-                'rows.forEach((e,i)=>{const p=parseFloat(e.value)||0;if(p<=0)emptyIdx.push(i+1);details.push({unit_price:p,qty:parseFloat(e.getAttribute("data-q"))||1,'
-                'delivery:(document.getElementById("dl"+i)||{}).value||"",warranty:(document.getElementById("wr"+i)||{}).value||"",'
-                'brand:(document.getElementById("br"+i)||{}).value||"",remark:(document.getElementById("rm"+i)||{}).value||""})});'
-                'if(emptyIdx.length){alert("请填写所有物料的含税单价（第"+emptyIdx.join("、")+"行未填）");return}'
-                'const shipTotal=parseFloat((document.getElementById("shipTotal")||{}).value)||0;'
-                'if(shipTotal<=0){alert("请填写总价（含税含运）——整单含运费的总金额");return}'
-                'const total=parseFloat((document.getElementById("total")||{}).textContent)||0;'
-                'const supRemark=(document.getElementById("supRemark")||{}).value||"";'
-                'const btn=document.querySelector("button[onclick*=sub]");if(btn){btn.disabled=true;btn.style.opacity=.6;btn.textContent="提交中..."}'
-                'try{const r=await fetch("%s",{method:"POST",headers:{"Content-Type":"application/json"},'
-                'body:JSON.stringify({quote_price:shipTotal,details,quote_delivery:"",quote_warranty:"",quote_remark:supRemark})});'
-                'const j=await r.json();if(j.success){document.getElementById("msg").textContent="✅ 报价提交成功";setTimeout(()=>location.reload(),800)}'
-                'else{alert(j.error||"提交失败");if(btn){btn.disabled=false;btn.style.opacity=1;btn.textContent="提交报价"}}}'
-                'catch(err){alert("网络异常，请重试");if(btn){btn.disabled=false;btn.style.opacity=1;btn.textContent="提交报价"}}}</script></div>') % (
-                    esc_html(s['supplier_name']), _dl_txt, esc_html(pr['purpose'] if pr else ''), esc_html(i['inq_no']),
-                    _item_rows, '/api/inquiry/vendor/%s/quote' % token)
+    if not items:
+        return _msg_page('📦', '询价单暂无物资明细', '该询价单尚未录入物资明细，请联系采购方确认。')
+    # 已报价数据(回显/修改用)
+    _prev = {}
+    try:
+        _qd = json.loads(s['quote_details']) if s['quote_details'] else []
+        if isinstance(_qd, list):
+            for _x in _qd:
+                if isinstance(_x, dict):
+                    _prev[len(_prev)] = _x
+    except Exception:
+        pass
+    _already = bool(s['quote_price'] and s['quote_price'] > 0)
+    # ---------- 明细行表单(含税单价/总价/交付/质保/品牌/备注, 已报价则回显) ----------
+    _rows_html = []
+    for idx, it in enumerate(items):
+        _pv = _prev.get(idx, {}) or {}
+        _v_price = esc_html(_pv.get('unit_price') or '')
+        _qty = it['quantity'] or 0
+        _ref = ('<span style="color:#bbb;font-size:11px">(参考¥%.0f)</span>' % ((it['total_price'] or 0) / _qty if _qty else 0))
+        _rows_html.append(
+            '<tr>'
+            '<td style="padding:6px 8px;text-align:left;border-bottom:1px solid #eef">%s</td>'
+            '<td style="padding:6px 8px;text-align:left;border-bottom:1px solid #eef;color:#888;font-size:12px">%s</td>'
+            '<td style="padding:6px 8px;text-align:left;border-bottom:1px solid #eef;white-space:nowrap">%s%s</td>'
+            '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input type="number" min="0" step="0.01" placeholder="单价" '
+            'oninput="calc()" data-q="%s" id="up%d" value="%s" style="width:64px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;text-align:right"></td>'
+            '<td style="padding:6px 8px;border-bottom:1px solid #eef;text-align:right;font-weight:600;color:#2e7d32;white-space:nowrap">¥<span id="ut%d">0.00</span></td>'
+            '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="如7天" id="dl%d" value="%s" style="width:52px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
+            '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="如3个月" id="wr%d" value="%s" style="width:56px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
+            '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="品牌" id="br%d" value="%s" style="width:80px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
+            '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="备注" id="rm%d" value="%s" style="width:64px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
+            '</tr>' % (
+                esc_html(it['item_name']), esc_html(it['spec'] or ''),
+                str(_qty) + esc_html(it['unit'] or '个'), _ref,
+                str(_qty), idx, _v_price,
+                idx, idx, esc_html(_pv.get('delivery') or ''),
+                idx, esc_html(_pv.get('warranty') or ''),
+                idx, esc_html(_pv.get('brand') or ''),
+                idx, esc_html(_pv.get('remark') or '')))
+    _item_rows = ''.join(_rows_html)
+    # ---------- 头部提示 ----------
+    _dl_txt = ''
+    if _deadline:
+        _dl_txt = '<div style="background:#fff3cd;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px;border:1px solid #ffeeba"><b>⏰ 报价截止：%s</b></div>' % esc_html(_deadline)
+    _head_note = ('<p style="color:#2e7d32;font-size:13px;margin:0 0 10px">✅ 贵司已报价 ¥%s，可修改后重新提交（将覆盖原报价）</p>' % ('%.0f' % float(s['quote_price']))) if _already else ''
+    _ship_val = esc_html(s['quote_price']) if _already else ''
+    _remark_val = esc_html(s['quote_remark'] or '')
+    body = ('<div style="max-width:860px;margin:40px auto;background:#fff;border-radius:12px;padding:28px;'
+            'box-shadow:0 4px 24px rgba(0,0,0,.08);font-family:-apple-system,Segoe UI,Microsoft YaHei,sans-serif">'
+            '<h2 style="margin:0 0 4px;color:#1f6feb">📋 采购询价单</h2>'
+            '<p style="color:#888;font-size:13px;margin:0 0 10px">尊敬的 %s，请逐项填写含税单价，总价自动计算；交付日期/质保时间按实际填写</p>%s%s'
+            '<div style="background:#f5f8ff;border-radius:8px;padding:12px 16px;font-size:13px;margin-bottom:14px">'
+            '<b>%s</b><br><span style="color:#888">询价编号：%s</span></div>'
+            '<div style="overflow-x:auto"><table style="width:100%%;border-collapse:collapse;font-size:13px;margin-bottom:10px;min-width:700px">'
+            '<tr style="background:#f5f8ff"><th style="padding:6px 8px;text-align:left">物资名称</th>'
+            '<th style="padding:6px 8px;text-align:left">规格</th><th style="padding:6px 8px;text-align:left">数量</th>'
+            '<th style="padding:6px 8px;text-align:left">含税单价(元)<span style="color:#e74c3c">*</span></th><th style="padding:6px 8px;text-align:left">总价（含税含运）</th>'
+            '<th style="padding:6px 8px;text-align:left">交付日期</th><th style="padding:6px 8px;text-align:left">质保时间</th>'
+            '<th style="padding:6px 8px;text-align:left">品牌</th><th style="padding:6px 8px;text-align:left">厂家备注</th></tr>%s</table></div>'
+            '<div style="background:#f0faf0;border-radius:8px;padding:10px 14px;font-size:14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">'
+            '<span style="color:#2e7d32"><b>总价（含税含运）合计：¥<span id="total">0.00</span></b></span>'
+            '<span style="font-size:12px;color:#888">物品较多时，可<a href="javascript:void(0)" onclick="quickFill()" style="color:#1f6feb">💰 填一个总价自动分摊</a></span></div>'
+            '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">'
+            '<div style="flex:1;min-width:220px;background:#fff8f0;border:1px solid #f5d9b8;border-radius:8px;padding:10px 14px">'
+            '<label style="font-size:12px;color:#a05a12;display:block;margin-bottom:4px"><b>🚚 总价（含税含运）——整单含运费，必填</b></label>'
+            '<input id="shipTotal" type="number" min="0" step="0.01" placeholder="含运费的总金额，如 6950" value="%s" '
+            'style="width:100%%;padding:7px 8px;border:1px solid #d0d7e2;border-radius:6px;font-size:14px;box-sizing:border-box"></div>'
+            '<div style="flex:1;min-width:220px;background:#f8f9fb;border:1px solid #e2e7ee;border-radius:8px;padding:10px 14px">'
+            '<label style="font-size:12px;color:#555;display:block;margin-bottom:4px"><b>📝 厂家备注（整单说明，选填）</b></label>'
+            '<input id="supRemark" placeholder="如：含税含运、交货条件等" value="%s" '
+            'style="width:100%%;padding:7px 8px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;box-sizing:border-box"></div></div>'
+            '<button onclick="sub()" style="width:100%%;padding:12px;background:#1f6feb;color:#fff;border:none;border-radius:8px;font-size:15px;cursor:pointer">提交报价</button>'
+            '<div id="msg" style="margin-top:10px;font-size:13px;color:#27ae60;text-align:center"></div>'
+            '<script>'
+            'window.calc=function(){let t=0;document.querySelectorAll("[id^=up]").forEach((e,i)=>{const q=parseFloat(e.getAttribute("data-q"))||1;const p=parseFloat(e.value)||0;'
+            'const st=p*q;t+=st;const u=document.getElementById("ut"+i);if(u)u.textContent=st.toFixed(2)});'
+            'const _t=document.getElementById("total");if(_t)_t.textContent=t.toFixed(2)};'
+            'window.quickFill=function(){const v=prompt("请输入报价总金额(元):");if(!v||isNaN(v))return;const n=document.querySelectorAll("[id^=up]").length;'
+            'const per=parseFloat(v)/n;document.querySelectorAll("[id^=up]").forEach(e=>{e.value=per.toFixed(2)});calc();'
+            'alert("已按平均分摊到每行，可再逐行微调")};'
+            'window.sub=async function(){const rows=document.querySelectorAll("[id^=up]");const details=[];let emptyIdx=[];'
+            'rows.forEach((e,i)=>{const p=parseFloat(e.value)||0;if(p<=0)emptyIdx.push(i+1);details.push({unit_price:p,qty:parseFloat(e.getAttribute("data-q"))||1,'
+            'delivery:(document.getElementById("dl"+i)||{}).value||"",warranty:(document.getElementById("wr"+i)||{}).value||"",'
+            'brand:(document.getElementById("br"+i)||{}).value||"",remark:(document.getElementById("rm"+i)||{}).value||""})});'
+            'if(emptyIdx.length){alert("请填写所有物料的含税单价（第"+emptyIdx.join("、")+"行未填）");return}'
+            'const shipTotal=parseFloat((document.getElementById("shipTotal")||{}).value)||0;'
+            'if(shipTotal<=0){alert("请填写总价（含税含运）——整单含运费的总金额");return}'
+            'const supRemark=(document.getElementById("supRemark")||{}).value||"";'
+            'const btn=document.querySelector("button[onclick*=sub]");if(btn){btn.disabled=true;btn.style.opacity=.6;btn.textContent="提交中..."}'
+            'try{const r=await fetch("%s",{method:"POST",headers:{"Content-Type":"application/json"},'
+            'body:JSON.stringify({quote_price:shipTotal,details,quote_delivery:"",quote_warranty:"",quote_remark:supRemark})});'
+            'const j=await r.json();if(j.success){document.getElementById("msg").textContent="✅ 报价提交成功";setTimeout(()=>location.reload(),800)}'
+            'else{alert(j.error||"提交失败");if(btn){btn.disabled=false;btn.style.opacity=1;btn.textContent="提交报价"}}}'
+            'catch(err){alert("网络异常，请重试");if(btn){btn.disabled=false;btn.style.opacity=1;btn.textContent="提交报价"}}};'
+            'window.addEventListener("load",function(){try{window.calc()}catch(e){}});'
+            '</script></div>') % (
+                esc_html(s['supplier_name']), _head_note, _dl_txt,
+                esc_html(pr['purpose'] if pr else ''), esc_html(i['inq_no']),
+                _item_rows, _ship_val, _remark_val, '/api/inquiry/vendor/%s/quote' % token)
     return body
 
 @app.route('/api/inquiry/vendor/<token>/quote', methods=['POST'])
