@@ -1696,8 +1696,18 @@ async function showInquiry(id){
   if(!d.suppliers||!d.suppliers.length)h+='<div style="font-size:11px;color:#999;padding:10px">无供应商</div>';
   else{
     h+=`<div style="background:#f8f9fa;border-radius:8px;padding:12px;margin:8px 0">`;
-    h+=`<table class="tb" style="font-size:11px"><thead><tr><th>供应商</th><th>联系人</th><th>报价</th><th>交付日期</th><th>质保</th><th>品牌</th><th>备注</th><th>操作</th></tr></thead><tbody>`;
+    h+=`<table class="tb" style="font-size:11px"><thead><tr><th>供应商</th><th>联系人</th><th>含运总价</th><th>交付日期</th><th>质保</th><th>品牌</th><th>厂家备注</th><th>操作</th></tr></thead><tbody>`;
     d.suppliers.forEach(s=>{
+      // V11.162: 明细行的含税单价/含税总价(从quote_details取)
+      let detailHtml='';
+      try{
+        const qd=JSON.parse(s.quote_details||'[]');
+        if(qd&&qd.length){
+          detailHtml=`<div style="font-size:9px;color:#555;margin-top:4px;border-top:1px dashed #e0e6ee;padding-top:4px;line-height:1.6">`;
+          qd.forEach((q,qi)=>{if(q&&q.unit_price>0){detailHtml+=`&nbsp;${esc(q.item_name||('物料'+(qi+1)))}：含税单价¥${(q.unit_price||0).toFixed(2)} × ${q.qty||1} = <b>¥${((q.unit_price||0)*(q.qty||1)).toFixed(2)}</b>${q.remark?(' <span style="color:#999">('+esc(q.remark)+')</span>'):''}<br>`}});
+          detailHtml+=`</div>`;
+        }
+      }catch(e){}
       // 品牌分析
       let brandHtml = '';
       if(s.brand_analysis && (s.brand_analysis.优点 || s.brand_analysis.缺点)){
@@ -1709,7 +1719,7 @@ async function showInquiry(id){
       h+=`<tr style="${s.is_selected?'background:#e8f5e9;':''}">
         <td><b>${esc(s.supplier_name)}</b>${s.is_selected?' <span class="tag tg-g">✓已选中</span>':''}</td>
         <td>${esc(s.contact||'')}${s.phone?'<br><span style="font-size:9px;color:#999">'+esc(s.phone)+'</span>':''}</td>
-        <td style="font-weight:700;color:${s.quote_price?'#e67e22':'#999'};font-size:13px">${s.quote_price?('¥'+(s.quote_price||0).toFixed(2)):'<span style="color:#ccc">未报价</span>'}</td>
+        <td style="font-weight:700;color:${s.quote_price?'#e67e22':'#999'};font-size:13px">${s.quote_price?('¥'+(s.quote_price||0).toFixed(2)):'<span style="color:#ccc">未报价</span>'}${detailHtml}</td>
         <td>${s.quote_delivery?esc(s.quote_delivery):'<span style="color:#ccc">-</span>'}</td>
         <td>${s.quote_warranty?esc(s.quote_warranty):'<span style="color:#ccc">-</span>'}</td>
         <td>${esc(s.quote_brand||s.brand||'-')}${brandHtml}</td>

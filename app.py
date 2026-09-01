@@ -1985,11 +1985,25 @@ def dt_build_form(biz_type, biz_id, info):
                 for _i, si in enumerate(sups):
                     _tag = _abc[_i] if _i < 3 else ('厂家' + chr(65 + _i))
                     supplier_opts.append({'value': str(si['id']), 'text': '%s (¥%.0f)' % (si['supplier_name'], si['quote_price'] or 0)})
-                    detail = '%s[%s] %s报价¥%.0f' % (_tag, si['supplier_name'], si['supplier_name'], si['quote_price'] or 0)
+                    detail = '%s[%s] 含运总价¥%.0f' % (_tag, si['supplier_name'], si['quote_price'] or 0)
                     if si['quote_brand']:
                         detail += ' 品牌:%s' % si['quote_brand']
                     if si['quote_remark']:
-                        detail += ' 备注:%s' % si['quote_remark']
+                        detail += ' 厂家备注:%s' % si['quote_remark']
+                    # V11.162: 含税单价/含税总价 明细同步进钉钉审批
+                    try:
+                        _qd = json.loads(si['quote_details'] or '[]')
+                        if _qd:
+                            _qd_txt = []
+                            for _q in _qd:
+                                if _q and float(_q.get('unit_price') or 0) > 0:
+                                    _qp = float(_q['unit_price'])
+                                    _qq = float(_q.get('qty') or 1)
+                                    _qd_txt.append('%s含税¥%.2f×%s=¥%.2f' % (_q.get('item_name') or '物料', _qp, _qq, _qp * _qq))
+                            if _qd_txt:
+                                detail += ' | 明细:' + '；'.join(_qd_txt)
+                    except Exception:
+                        pass
                     supplier_details.append(detail)
                 c2.close()
                 # V11.137/V11.150: 模板"选定供应商"控件选项=厂家A/厂家B/厂家C(截图确认)
@@ -4486,12 +4500,21 @@ def inquiry_vendor_page(token):
                 '<div style="overflow-x:auto"><table style="width:100%%;border-collapse:collapse;font-size:13px;margin-bottom:10px;min-width:700px">'
                 '<tr style="background:#f5f8ff"><th style="padding:6px 8px;text-align:left">物资名称</th>'
                 '<th style="padding:6px 8px;text-align:left">规格</th><th style="padding:6px 8px;text-align:left">数量</th>'
-                '<th style="padding:6px 8px;text-align:left">单价(元)</th><th style="padding:6px 8px;text-align:left">总价(含税含运)</th>'
+                '<th style="padding:6px 8px;text-align:left">含税单价(元)<span style="color:#e74c3c">*</span></th><th style="padding:6px 8px;text-align:left">含税总价</th>'
                 '<th style="padding:6px 8px;text-align:left">交付日期</th><th style="padding:6px 8px;text-align:left">质保时间</th>'
-                '<th style="padding:6px 8px;text-align:left">品牌</th><th style="padding:6px 8px;text-align:left">备注</th></tr>%s</table></div>'
+                '<th style="padding:6px 8px;text-align:left">品牌</th><th style="padding:6px 8px;text-align:left">厂家备注</th></tr>%s</table></div>'
                 '<div style="background:#f0faf0;border-radius:8px;padding:10px 14px;font-size:14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">'
-                '<span style="color:#2e7d32"><b>报价合计：¥<span id="total">0.00</span></b></span>'
+                '<span style="color:#2e7d32"><b>含税总价合计：¥<span id="total">0.00</span></b></span>'
                 '<span style="font-size:12px;color:#888">物品较多时，可<a href="javascript:void(0)" onclick="quickFill()" style="color:#1f6feb">💰 填一个总价自动分摊</a></span></div>'
+                '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">'
+                '<div style="flex:1;min-width:220px;background:#fff8f0;border:1px solid #f5d9b8;border-radius:8px;padding:10px 14px">'
+                '<label style="font-size:12px;color:#a05a12;display:block;margin-bottom:4px"><b>🚚 含运总价（整单含运费，必填）</b></label>'
+                '<input id="shipTotal" type="number" min="0" step="0.01" placeholder="含运费的总金额，如 6950" '
+                'style="width:100%%;padding:7px 8px;border:1px solid #d0d7e2;border-radius:6px;font-size:14px;box-sizing:border-box"></div>'
+                '<div style="flex:1;min-width:220px;background:#f8f9fb;border:1px solid #e2e7ee;border-radius:8px;padding:10px 14px">'
+                '<label style="font-size:12px;color:#555;display:block;margin-bottom:4px"><b>📝 厂家备注（整单说明，选填）</b></label>'
+                '<input id="supRemark" placeholder="如：含税含运、交货条件等" '
+                'style="width:100%%;padding:7px 8px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;box-sizing:border-box"></div></div>'
                 '<button onclick="sub()" style="width:100%%;padding:12px;background:#1f6feb;color:#fff;border:none;border-radius:8px;font-size:15px;cursor:pointer">提交报价</button>'
                 '<div id="msg" style="margin-top:10px;font-size:13px;color:#27ae60;text-align:center"></div>'
                 '<script>'
@@ -4501,15 +4524,18 @@ def inquiry_vendor_page(token):
                 'window.quickFill=function(){const v=prompt("请输入报价总金额(元):");if(!v||isNaN(v))return;const n=document.querySelectorAll("[id^=up]").length;'
                 'const per=parseFloat(v)/n;document.querySelectorAll("[id^=up]").forEach(e=>{e.value=per.toFixed(2)});calc();'
                 'alert("已按平均分摊到每行，可再逐行微调")};'
-                'window.sub=async function(){const rows=document.querySelectorAll("[id^=up]");const details=[];let ok=false;'
-                'rows.forEach((e,i)=>{const p=parseFloat(e.value)||0;if(p>0)ok=true;details.push({unit_price:p,qty:parseFloat(e.getAttribute("data-q"))||1,'
+                'window.sub=async function(){const rows=document.querySelectorAll("[id^=up]");const details=[];let ok=true;let emptyIdx=[];'
+                'rows.forEach((e,i)=>{const p=parseFloat(e.value)||0;if(p<=0)emptyIdx.push(i+1);details.push({unit_price:p,qty:parseFloat(e.getAttribute("data-q"))||1,'
                 'delivery:(document.getElementById("dl"+i)||{}).value||"",warranty:(document.getElementById("wr"+i)||{}).value||"",'
                 'brand:(document.getElementById("br"+i)||{}).value||"",remark:(document.getElementById("rm"+i)||{}).value||""})});'
-                'if(!ok){alert("请至少填写一项单价");return}'
+                'if(emptyIdx.length){alert("请填写所有物料的含税单价（第"+emptyIdx.join("、")+"行未填）");return}'
+                'const shipTotal=parseFloat((document.getElementById("shipTotal")||{}).value)||0;'
+                'if(shipTotal<=0){alert("请填写含运总价（整单含运费的总金额）");return}'
                 'const total=parseFloat((document.getElementById("total")||{}).textContent)||0;'
+                'const supRemark=(document.getElementById("supRemark")||{}).value||"";'
                 'const btn=document.querySelector("button[onclick*=sub]");if(btn){btn.disabled=true;btn.style.opacity=.6;btn.textContent="提交中..."}'
                 'try{const r=await fetch("%s",{method:"POST",headers:{"Content-Type":"application/json"},'
-                'body:JSON.stringify({quote_price:total,details,quote_delivery:"",quote_warranty:""})});'
+                'body:JSON.stringify({quote_price:shipTotal,details,quote_delivery:"",quote_warranty:"",quote_remark:supRemark})});'
                 'const j=await r.json();if(j.success){document.getElementById("msg").textContent="✅ 报价提交成功";setTimeout(()=>location.reload(),800)}'
                 'else{alert(j.error||"提交失败");if(btn){btn.disabled=false;btn.style.opacity=1;btn.textContent="提交报价"}}}'
                 'catch(err){alert("网络异常，请重试");if(btn){btn.disabled=false;btn.style.opacity=1;btn.textContent="提交报价"}}}</script></div>') % (
@@ -4540,10 +4566,12 @@ def inquiry_vendor_quote(token):
         if _today > str(i['deadline']):
             conn.close(); return jsonify({'error': '该询价已于 %s 截止，无法继续报价' % i['deadline']}), 400
     # V11.41: 行明细报价(每行单价+备注), 合计=Σ单价×数量; 兼容旧版总价提交
+    # V11.162: 含运总价=商家填的 quote_price(整单含运费), 明细合计只作参考不再覆盖
     _final_price = price
     if details:
         _sum = sum(float(x.get('unit_price') or 0) * float(x.get('qty') or 1) for x in details)
-        if _sum > 0:
+        # 旧版前端(无shipTotal)明细合计>0且总价为0时, 用明细合计兜底
+        if _final_price <= 0 and _sum > 0:
             _final_price = _sum
     # V11.126: 行明细里的 交付日期/质保时间/品牌 汇总去重后存汇总字段
     # (详情页/比价表/订单备注直接显示; 旧版无details时保留原提交值)
@@ -4940,11 +4968,11 @@ def api_inquiry_export(iid):
         except Exception:
             sup_details.append(None)
     n_sup = len(sups)
-    # 表头: 序号/物料/数量/规格 | 每家6列(单价/总价/品牌/交付/质保/备注)
+    # 表头: 序号/物料/数量/规格 | 每家6列(含税单价/含税总价/品牌/交付/质保/厂家备注)
     sup_head = ['序号', '物料名称', '数量', '规格型号']
     for s in sups:
-        sup_head += [f"{s['supplier_name']} 单价", f"{s['supplier_name']} 总价", f"{s['supplier_name']} 品牌",
-                     f"{s['supplier_name']} 交付", f"{s['supplier_name']} 质保", f"{s['supplier_name']} 备注"]
+        sup_head += [f"{s['supplier_name']} 含税单价", f"{s['supplier_name']} 含税总价", f"{s['supplier_name']} 品牌",
+                     f"{s['supplier_name']} 交付", f"{s['supplier_name']} 质保", f"{s['supplier_name']} 厂家备注"]
     # col_count 已在前面按 4+每家6列 算好
     for ci, h in enumerate(sup_head, 1):
         c = ws.cell(row, ci, h); c.font = head_font; c.fill = head_fill; c.border = border
@@ -5077,6 +5105,15 @@ def api_inquiry_export(iid):
     if brand_analysis_lines:
         brand_text = '【品牌对比】' + chr(10) + chr(10).join(brand_analysis_lines)
         decision = decision + chr(10) + chr(10) + brand_text
+    # V11.162: 每家含运总价 + 厂家备注(整单) 汇总显示
+    _ship_lines = []
+    for s in sups:
+        if s['quote_price'] and s['quote_price'] > 0:
+            _ship_lines.append('%s：含运总价 ¥%s%s' % (s['supplier_name'],
+                format(float(s['quote_price']), ',.2f'),
+                ('（' + (s['quote_remark'] or '') + '）') if (s['quote_remark'] or '').strip() else ''))
+    if _ship_lines:
+        decision = decision + chr(10) + chr(10) + '【含运总价】' + chr(10) + chr(10).join(_ship_lines)
     c = ws.cell(row, 1, decision)
     c.font = base_font; c.alignment = Alignment(vertical='top', wrap_text=True)
     # V11.131: 决策备注黄色高亮框(显眼), 行高按品牌分析行数自适应
