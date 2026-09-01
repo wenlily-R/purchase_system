@@ -92,11 +92,16 @@ check('C20 公网下载字节一致', len(remote) == len(local), f'{len(remote)}
 check('C21 公网下载md5一致', hashlib.md5(remote).hexdigest() == hashlib.md5(local).hexdigest())
 check('C22 公网下载后仍可解析', zipfile.is_zipfile(__import__('io').BytesIO(remote)))
 
-# ---------- 5. 清理链 ----------
+# ---------- 5. 清理链(顺序: 先删审批/实例, 再删合同/订单, 防孤儿审批实例) ----------
+cid_list = [r['id'] for r in q("SELECT id FROM contracts WHERE order_id=?", (oid,))]
+for _cid in cid_list:
+    ex("DELETE FROM approval_instances WHERE biz_type='contract' AND biz_id=?", (_cid,))
+    ex("DELETE FROM dingtalk_instances WHERE biz_type='contract' AND biz_id=?", (_cid,))
+    ex("DELETE FROM feishu_instances WHERE biz_type='contract' AND biz_id=?", (_cid,))
+ex("DELETE FROM approval_instances WHERE biz_type='purchase_order' AND biz_id=?", (oid,))
+ex("DELETE FROM dingtalk_instances WHERE biz_type='purchase_order' AND biz_id=?", (oid,))
+ex("DELETE FROM feishu_instances WHERE biz_type='purchase_order' AND biz_id=?", (oid,))
 ex("DELETE FROM contracts WHERE order_id=?", (oid,))
-ex("DELETE FROM approval_instances WHERE (biz_type='contract' AND biz_id IN (SELECT id FROM contracts WHERE order_id=?)) OR (biz_type='purchase_order' AND biz_id=?)", (oid, oid))
-ex("DELETE FROM dingtalk_instances WHERE biz_id=? AND biz_type IN ('contract','purchase_order')", (oid,))
-ex("DELETE FROM feishu_instances WHERE biz_id=? AND biz_type IN ('contract','purchase_order')", (oid,))
 ex("DELETE FROM order_items WHERE order_id=?", (oid,))
 ex("DELETE FROM purchase_orders WHERE id=?", (oid,))
 if fname and os.path.exists(fpath):

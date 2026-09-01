@@ -118,14 +118,17 @@ m2 = re.search(r": x\.is_est\?'<span[^>]*>暂估</span>'", html)
 check('前端标签优先级存在(invoice_no>is_est>正式)', bool(m1) and bool(m2), '')
 
 # ---------- 清理链 ----------
+all_rids = [r['id'] for r in q("SELECT id FROM receivings WHERE receive_no IN (?,?,?)", (rn1, rn2, rn3))] + [r['id'] for r in q("SELECT id FROM receivings WHERE order_id=(SELECT id FROM purchase_orders WHERE order_no=?)", (orderno,))]
 if rid3:
     ex("DELETE FROM receivings WHERE receive_no IN (?,?,?)", (rn1, rn2, rn3))
 ex("DELETE FROM receivings WHERE order_id=(SELECT id FROM purchase_orders WHERE order_no=?)", (orderno,))
 ex("DELETE FROM order_items WHERE order_id=(SELECT id FROM purchase_orders WHERE order_no=?)", (orderno,))
 ex("DELETE FROM purchase_orders WHERE order_no=?", (orderno,))
-ex("DELETE FROM approval_instances WHERE (biz_type='receiving' AND biz_id IN (?,?,?)) OR (biz_type='purchase_order' AND biz_id=(SELECT id FROM purchase_orders WHERE order_no=?))", (rid1, rid3, rid3, orderno))
-ex("DELETE FROM dingtalk_instances WHERE (biz_type='receiving' AND biz_id IN (?,?,?)) OR (biz_type='purchase_order' AND biz_id=(SELECT id FROM purchase_orders WHERE order_no=?))", (rid1, rid3, rid3, orderno))
-ex("DELETE FROM feishu_instances WHERE (biz_type='receiving' AND biz_id IN (?,?,?)) OR (biz_type='purchase_order' AND biz_id=(SELECT id FROM purchase_orders WHERE order_no=?))", (rid1, rid3, rid3, orderno))
+for _rid in all_rids:
+    ex("DELETE FROM approval_instances WHERE biz_type='receiving' AND biz_id=?", (_rid,))
+    ex("DELETE FROM dingtalk_instances WHERE biz_type='receiving' AND biz_id=?", (_rid,))
+    ex("DELETE FROM feishu_instances WHERE biz_type='receiving' AND biz_id=?", (_rid,))
+ex("DELETE FROM approval_instances WHERE biz_type='purchase_order' AND biz_id IN (SELECT id FROM purchase_orders WHERE order_no=?)", (orderno,))
 ex("DELETE FROM logs WHERE detail LIKE '%【测试】%' OR (action IN ('新建入库单','发票核对红冲','新建订单') AND detail LIKE '%测试%')")
 for t in ('receivings', 'order_items', 'purchase_orders', 'approval_instances', 'dingtalk_instances', 'feishu_instances'):
     ex(f"UPDATE sqlite_sequence SET seq=COALESCE((SELECT MAX(id) FROM {t}),0) WHERE name='{t}'")
@@ -133,8 +136,10 @@ for t in ('receivings', 'order_items', 'purchase_orders', 'approval_instances', 
 left_rows = q("SELECT COUNT(*) c FROM receivings WHERE item_name LIKE '%【测试】%'")
 left = left_rows[0]['c'] if left_rows else 0
 left2 = q("SELECT COUNT(*) c FROM purchase_orders WHERE supplier LIKE '%【测试】%'")[0]['c']
+left3 = q("SELECT COUNT(*) c FROM approval_instances WHERE biz_type='receiving' AND biz_id NOT IN (SELECT id FROM receivings)")[0]['c']
 check('清理后测试入库单零残留', left == 0, left)
 check('清理后测试订单零残留', left2 == 0, left2)
+check('清理后无孤儿入库审批实例', left3 == 0, left3)
 
 print('\n==== 汇总 ====')
 fails = [p for p in passed if not p[1]]
