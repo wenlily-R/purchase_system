@@ -224,11 +224,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
 #globalSearch::placeholder{color:#a9c3e0}
 
 /* ===== V11.159/V11.160 工作台 B端企业风卡片化改造(首页) ===== */
-.dash-top{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:14px;padding:16px 22px;background:linear-gradient(120deg,#0e3a68,#14508c 55%,#1a6bb0);border-radius:12px;box-shadow:0 3px 14px rgba(12,58,107,.22);color:#fff}
-.dash-greet{flex:1;min-width:210px}
-.dash-greet-t{font-size:17px;font-weight:800;letter-spacing:.3px}
-.dash-greet-s{font-size:10px;color:#c9dcf3;margin-top:3px}
-/* V11.160: 4个业务功能小卡片(与我的待办并列, 卡片风格) */
+/* V11.160: 4个业务功能小卡片(与我的待办并列, 卡片风格; 无顶部横幅) */
 .dash-quick-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:14px}
 .dq-card{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--v9-c);border:1px solid var(--v9-b);border-radius:12px;box-shadow:var(--v9-sh);cursor:pointer;transition:all .15s;text-align:left}
 .dq-card:hover{transform:translateY(-2px);box-shadow:0 5px 16px rgba(12,58,107,.16);border-color:#b9cfe8}
@@ -320,14 +316,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
 <div class="side" id="sideMenu"></div>
 <main class="main" id="mainContent">
 <div class="page act" id="pdashboard">
-  <!-- ① 顶部: 仅系统名称 + 登录人信息(V11.160: 去掉标语/快捷按钮横幅) -->
-  <div class="dash-top">
-    <div class="dash-greet">
-      <div class="dash-greet-t">👋 欢迎，<span id="dashUserName">—</span></div>
-      <div class="dash-greet-s" id="dashUserRole">正成能源智慧采购管理平台</div>
-    </div>
-  </div>
-  <!-- ② 业务快捷区: 4个功能小卡片(与我的待办并列, 卡片风格) -->
+  <!-- ① 业务快捷区: 4个功能小卡片(V11.160: 与我的待办并列, 卡片风格; 无顶部横幅) -->
   <div class="dash-quick-cards" id="dashQuickCards"></div>
   <!-- ③ 第一卡片: 我的待办(最高优先级) -->
   <div class="card dash-card">
@@ -1162,10 +1151,7 @@ async function loadDashboard(){
   try{
     const d=await api('/dashboard');
     const k=d.kpi||{};
-    // ① 欢迎语 + 登录人信息(V11.160: 顶部仅系统名称+登录人)
-    if(id('dashUserName'))id('dashUserName').textContent=ME.name||ME.username||'';
-    if(id('dashUserRole'))id('dashUserRole').textContent=`${ME.role||''} · ${ME.dept_name||''}`.replace(' · ','')||'正成能源智慧采购管理平台';
-    // ② 业务快捷区: 4个功能小卡片(V11.160: 卡片风格, 与我的待办并列; 无权限页面自动隐藏)
+    // ① 业务快捷区: 4个功能小卡片(V11.160: 卡片风格, 与我的待办并列; 无权限页面自动隐藏)
     if(id('dashQuickCards')){
       const qcards=[
         {ic:'📝',tx:'采购申请',ds:'发起物资/维修采购需求',fn:"showForm('prequest')",pg:'prequests'},
