@@ -591,14 +591,26 @@ def init_db():
 # ── AUTH API ──
 # ============================================================
 
+# V11.161: 品牌AI分析缓存(同品牌24小时只调一次AI, 避免询价详情/列表反复卡10秒)
+_BRAND_AI_CACHE = {}
+_BRAND_AI_CACHE_TTL = 86400  # 24小时
+
 def ai_analyze_brand(brand_name):
-    """V11.115: 调用AI分析品牌优缺点"""
+    """V11.115: 调用AI分析品牌优缺点 — V11.161: 加24h内存缓存+超时降至3s(修复详情加载卡死)"""
+    _key = (brand_name or '').strip()
+    if not _key:
+        return None
+    _now = time.time()
+    if _key in _BRAND_AI_CACHE:
+        _cached_at, _cached_val = _BRAND_AI_CACHE[_key]
+        if _now - _cached_at < _BRAND_AI_CACHE_TTL:
+            return _cached_val
     import json as _json
     import urllib.request as _req
     try:
         # 使用Agnes AI API
         api_url = "https://apihub.agnes-ai.com/v1/chat/completions"
-        api_key = "sk-agnes-ai-key"  # 从环境变量或配置读取
+        api_key = "«redacted:sk-…»"  # 从环境变量或配置读取
         
         # 构建提示词
         prompt = f"请简要分析'{brand_name}'品牌的优缺点，各用一句话描述。格式：优点：xxx\n缺点：xxx"
@@ -615,22 +627,25 @@ def ai_analyze_brand(brand_name):
         }
         
         req = _req.Request(api_url, data=payload, headers=headers, method='POST')
-        with _req.urlopen(req, timeout=10) as response:
+        with _req.urlopen(req, timeout=3) as response:
             result = _json.loads(response.read().decode('utf-8'))
-            text = result['choices'][0]['message']['content']
-            
-            # 解析返回结果
-            优点 = ""
-            缺点 = ""
-            for line in text.split('\n'):
-                if '优点' in line:
-                    优点 = line.split('：')[-1].strip() if '：' in line else line.split(':')[-1].strip()
-                elif '缺点' in line:
-                    缺点 = line.split('：')[-1].strip() if '：' in line else line.split(':')[-1].strip()
-            
-            return {'优点': 优点, '缺点': 缺点}
+        text = result['choices'][0]['message']['content']
+        
+        # 解析返回结果
+        优点 = ""
+        缺点 = ""
+        for line in text.split('\n'):
+            if '优点' in line:
+                优点 = line.split('：')[-1].strip() if '：' in line else line.split(':')[-1].strip()
+            elif '缺点' in line:
+                缺点 = line.split('：')[-1].strip() if '：' in line else line.split(':')[-1].strip()
+        
+        _out = {'优点': 优点, '缺点': 缺点}
+        _BRAND_AI_CACHE[_key] = (_now, _out)
+        return _out
     except Exception as e:
         print(f'[品牌分析AI调用失败] {e}')
+        _BRAND_AI_CACHE[_key] = (_now, {'优点': '', '缺点': ''})  # 失败也缓存, 避免反复调
         return None
 
 def search_brand_info(supplier_name, category):
@@ -3469,9 +3484,9 @@ def api_approvals_pending():
                  WHEN ai.biz_type='receiving' THEN (SELECT rv.quantity FROM receivings rv WHERE rv.id=ai.biz_id)
                  WHEN ai.biz_type='requisition' THEN (SELECT rq.quantity FROM requisitions rq WHERE rq.id=ai.biz_id) END as biz_amount
         FROM approval_instances ai WHERE ai.status='pending'
-        AND (ai.role=? OR ai.role='部门负责人' AND ? IN ('部门负责人','系统管理员'))
+        AND (ai.role=? OR ai.role='部门负责人' AND ? IN ('部门负责人','系统管理员') OR ai.approver_id=?)
         ORDER BY ai.id DESC LIMIT 50
-    """, (role, role)).fetchall()
+    """, (role, role, session.get('user_id', 0))).fetchall()
     conn.close()
     return jsonify([dict_row(r) for r in rows])
 
@@ -4160,9 +4175,9 @@ def api_dashboard():
         return "(CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.urgent FROM purchase_requests pr WHERE pr.id=ai.biz_id) WHEN ai.biz_type='purchase_order' THEN (SELECT po.urgent FROM purchase_orders po WHERE po.id=ai.biz_id) WHEN ai.biz_type='contract' THEN (SELECT ct.urgent FROM contracts ct WHERE ct.id=ai.biz_id) WHEN ai.biz_type='payment' THEN (SELECT pp.urgent FROM payment_requests pp WHERE pp.id=ai.biz_id) ELSE 0 END)"
     my_pending = c.execute("""SELECT ai.*, %s as biz_no, %s as biz_name, %s as urgent
         FROM approval_instances ai WHERE ai.status='pending'
-        AND (ai.role=? OR (ai.role='部门负责人' AND ? IN ('部门负责人','系统管理员')))
+        AND (ai.role=? OR (ai.role='部门负责人' AND ? IN ('部门负责人','系统管理员')) OR ai.approver_id=?)
         ORDER BY %s DESC, ai.id DESC LIMIT 30""" % (biz_no_expr(), biz_name_expr(), urgent_expr(), urgent_expr()),
-        (role, role)).fetchall()
+        (role, role, session.get('user_id', 0))).fetchall()
     my_urgent = [dict_row(x) for x in my_pending if x['urgent']]
     i_started = c.execute("""SELECT * FROM (
             SELECT '申请' bt, req_no no, purpose name, status, created_at FROM purchase_requests WHERE requester_id=?
