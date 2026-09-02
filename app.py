@@ -1606,6 +1606,19 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
     c.commit(); c.close()
     log(approver, f'{biz_type}审批{"通过" if result=="ok" else "驳回"}', f'{biz_type}#{biz_id} → {st}')
 
+    # V11.178: 驳回后钉钉通知提交人(含单据号/驳回人/理由) — 事务已提交, 线程异步发避免阻塞/锁冲突
+    if result != 'ok':
+        _src = _src_of(approver, approver_id)
+        try:
+            def _notify_sub(_bt, _bid, _ap, _cm, _sc):
+                try:
+                    notify_submitter_rejected(_bt, _bid, _ap, _cm, source=_sc)
+                except Exception:
+                    pass
+            threading.Thread(target=_notify_sub, args=(biz_type, biz_id, approver, comment, _src), daemon=True).start()
+        except Exception:
+            pass
+
     # V11.70: 审批办结通知发起人(站内信+钉钉工作通知)
     if result == 'ok' and st in ('已通过', '审批通过', '已入库', '已出库', '已签合同'):
         try:
@@ -2769,39 +2782,40 @@ def dt_sync_result(instance_id, result, comment='', approver='', approver_id=0, 
         log('钉钉', '审批意见回写', f"{r['biz_type']}#{r['biz_id']} 驳回人:{_approver} 理由:{str(comment)[:100]}")
     finish_approvals(r['biz_type'], r['biz_id'], 'ok' if result == 'agree' else 'reject', _approver, _approver_id, comment or f'钉钉审批{result}')
     # V11.28: 审批结果即时通知申请人(钉钉工作通知, 一次审批一次调用, 消耗可忽略)
-    try:
-        if dingtalk_enabled():
-            _b = biz_table(r['biz_type'])
-            _c = db()
-            try:
-                _row = _c.execute(f"SELECT * FROM {_b} WHERE id=?", (r['biz_id'],)).fetchone()
-            except Exception:
-                _row = None
-            _c.close()
-            if _row is not None:
-                _doc_no = ''
-                for _k in ('req_no', 'order_no', 'contract_no', 'receive_no', 'payment_no'):
-                    if _k in _row.keys() and _row[_k]:
-                        _doc_no = str(_row[_k]); break
-                _requester = None
-                for _k in ('requester', 'created_by', 'apply_by'):
-                    if _k in _row.keys() and _row[_k]:
-                        _requester = str(_row[_k]); break
-                if _requester:
-                    _u = db()
-                    try:
-                        _usr = _u.execute("SELECT * FROM users WHERE name=? LIMIT 1", (_requester,)).fetchone()
-                    except Exception:
-                        _usr = None
-                    _u.close()
-                    if _usr and _usr['dingtalk_userid']:
-                        _verdict = '已通过 ✅' if result == 'agree' else '未通过 ❌'
-                        dt_send_todo([_usr['dingtalk_userid']], f'审批结果通知：{_doc_no}',
-                                     f"您提交的{_doc_no} 经钉钉审批 **{_verdict}**",
-                                     biz_type=r['biz_type'], biz_id=r['biz_id'], push_type='result',  # V11.145: 用result类型绕过oa_notify_only限制
-                                     operator='系统')
-    except Exception:
-        pass
+    # V11.178: 仅"通过"在此通知(驳回由 finish_approvals 统一通知, 含理由, 避免重复)
+    if result == 'agree':
+        try:
+            if dingtalk_enabled():
+                _b = biz_table(r['biz_type'])
+                _c = db()
+                try:
+                    _row = _c.execute(f"SELECT * FROM {_b} WHERE id=?", (r['biz_id'],)).fetchone()
+                except Exception:
+                    _row = None
+                _c.close()
+                if _row is not None:
+                    _doc_no = ''
+                    for _k in ('req_no', 'order_no', 'contract_no', 'receive_no', 'payment_no'):
+                        if _k in _row.keys() and _row[_k]:
+                            _doc_no = str(_row[_k]); break
+                    _requester = None
+                    for _k in ('requester', 'created_by', 'apply_by'):
+                        if _k in _row.keys() and _row[_k]:
+                            _requester = str(_row[_k]); break
+                    if _requester:
+                        _u = db()
+                        try:
+                            _usr = _u.execute("SELECT * FROM users WHERE name=? LIMIT 1", (_requester,)).fetchone()
+                        except Exception:
+                            _usr = None
+                        _u.close()
+                        if _usr and _usr['dingtalk_userid']:
+                            dt_send_todo([_usr['dingtalk_userid']], f'审批结果通知：{_doc_no}',
+                                         f"您提交的{_doc_no} 经钉钉审批 **已通过 ✅**",
+                                         biz_type=r['biz_type'], biz_id=r['biz_id'], push_type='result',  # V11.145: 用result类型绕过oa_notify_only限制
+                                         operator='系统')
+        except Exception:
+            pass
 
 
 # ---- 审批结果轮询兜底(不依赖事件回调; corpId 缺失时也能同步结果) ----
@@ -3793,6 +3807,57 @@ def api_reject_logs(biz_type, biz_id):
     """V11.175: 驳回历史(人/时间/理由/来源), 各模块详情弹窗展示用"""
     return jsonify(get_reject_logs(biz_type, biz_id))
 
+def notify_submitter_rejected(biz_type, biz_id, approver, comment, source='system'):
+    """V11.178: 单据被驳回后 → 钉钉工作通知提交人(含单据号/驳回人/理由/处理建议)
+    系统驳回 & 钉钉驳回 两个路径统一调用; 找不到提交人/钉钉未启用时静默跳过"""
+    try:
+        if not dingtalk_enabled():
+            return
+        _b = biz_table(biz_type)
+        _c = db()
+        try:
+            _row = _c.execute(f"SELECT * FROM {_b} WHERE id=?", (biz_id,)).fetchone()
+        except Exception:
+            _row = None
+        _c.close()
+        if _row is None:
+            return
+        # 单据号
+        _doc_no = ''
+        for _k in ('req_no', 'order_no', 'contract_no', 'receive_no', 'payment_no'):
+            if _k in _row.keys() and _row[_k]:
+                _doc_no = str(_row[_k]); break
+        if not _doc_no:
+            _doc_no = f'{biz_type}#{biz_id}'
+        # 提交人(各表字段不同: 申请requester/订单owner/入库inspector/出库requester/合同-)
+        _submitter = None
+        for _k in ('requester', 'owner', 'inspector', 'created_by', 'apply_by'):
+            if _k in _row.keys() and _row[_k]:
+                _submitter = str(_row[_k]); break
+        if not _submitter:
+            return
+        _u = db()
+        try:
+            _usr = _u.execute("SELECT * FROM users WHERE name=? AND is_active=1 LIMIT 1", (_submitter,)).fetchone()
+            if _usr is None:
+                _usr = _u.execute("SELECT * FROM users WHERE username=? AND is_active=1 LIMIT 1", (_submitter,)).fetchone()
+        except Exception:
+            _usr = None
+        _u.close()
+        if not _usr or not _usr['dingtalk_userid']:
+            return
+        _approver = approver or '审批人'
+        _reason = (comment or '').strip() or '（未填写理由）'
+        _src_txt = '【系统审批】' if source == 'system' else '【钉钉审批】'
+        title = f'❌ 您的{_doc_no} 被驳回'
+        text = f"您提交的 **{_doc_no}** 经{_src_txt}被驳回，请查看原因并及时修改后重新提交。\n\n驳回人：{_approver}\n驳回理由：{_reason}"
+        dt_send_todo([_usr['dingtalk_userid']], title, text,
+                     f"单据: {_doc_no}", biz_type, biz_id, push_type='result', operator='系统')
+        log('系统', '驳回通知提交人', f"{biz_type}#{biz_id} → {_usr['name']} 理由:{_reason[:60]}")
+    except Exception:
+        pass
+
+
 @app.route('/api/approvals/<biz_type>/<int:biz_id>/approve', methods=['POST'])
 @login_required
 def api_approve_action(biz_type, biz_id):
@@ -3813,6 +3878,7 @@ def api_approve_action(biz_type, biz_id):
     conn.close()
     if d.get('action') == 'rejected':
         # 驳回: 全部待审节点驳回 + 父单据置为已驳回 (同步飞书实例)
+        # 注: 提交人通知由 finish_approvals 内统一触发(避免重复)
         finish_approvals(biz_type, biz_id, 'reject', session['user_name'], session['user_id'], d.get('comment',''))
         dt_sync_now(biz_type, biz_id)  # 立即同步钉钉: 终止挂起的审批实例
         return jsonify({'success':True})
