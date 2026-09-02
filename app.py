@@ -1417,20 +1417,40 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
                                        _sup['supplier_name'], _iq['created_by'], '后勤类', _iq['created_by'], 1, _iq['deadline'] or '', '货到付款',
                                        _remark, 0, json.dumps([], ensure_ascii=False), '已通过', _iq['id']))
                             _oid = c.execute("SELECT id FROM purchase_orders WHERE order_no=?", (_no,)).fetchone()[0]
-                        # 明细: 按申请明细参考金额比例分摊报价总额
-                        _base = sum(float(x['total_price'] or 0) for x in _items) if _items else 0
+                        # V11.170: 明细价格优先用商家报价(quote_details按全量物资顺序存unit_price),
+                        # 不再按申请参考金额分摊(参考金额常为0, 导致首项吃全额/后项变0, 合同丢明细)
+                        _qd = {}
+                        try:
+                            _qd_list = json.loads(_sup['quote_details'] or '[]')
+                            for _qi, _q in enumerate(_qd_list):
+                                _qd[_qi] = _q
+                        except Exception:
+                            _qd = {}
                         _grand = 0.0
                         for _idx, _it in enumerate(_items):
                             _qty = float(_it['quantity'] or 1)
-                            if _base > 0 and _idx < len(_items) - 1:
-                                _amt = _total * (float(_it['total_price'] or 0) / _base)
-                            else:
-                                _amt = _total - _grand
-                            _amt = round(_amt, 2)
-                            _price = round(_amt / _qty, 2) if _qty else 0
+                            _q = _qd.get(_idx, {})
+                            _price = float(_q.get('unit_price') or 0) or 0
+                            _amt = round(_price * _qty, 2)
                             _grand += _amt
                             c.execute("INSERT INTO order_items(order_id,item_name,spec,unit,quantity,price,amount,tax_rate,tax_amount,total_amount,remark) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                                       (_oid, _it['item_name'], _it['spec'] or '', _it['unit'] or '个', _qty, _price, _amt, 0, 0, _amt, ''))
+                        # 兜底: 商家未填单价(旧数据) → 回退按申请参考金额比例分摊报价总额
+                        if _grand <= 0:
+                            c.execute("DELETE FROM order_items WHERE order_id=?", (_oid,))
+                            _base = sum(float(x['total_price'] or 0) for x in _items) if _items else 0
+                            _grand2 = 0.0
+                            for _idx, _it in enumerate(_items):
+                                _qty = float(_it['quantity'] or 1)
+                                if _base > 0 and _idx < len(_items) - 1:
+                                    _amt = _total * (float(_it['total_price'] or 0) / _base)
+                                else:
+                                    _amt = _total - _grand2
+                                _amt = round(_amt, 2)
+                                _price = round(_amt / _qty, 2) if _qty else 0
+                                _grand2 += _amt
+                                c.execute("INSERT INTO order_items(order_id,item_name,spec,unit,quantity,price,amount,tax_rate,tax_amount,total_amount,remark) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                                          (_oid, _it['item_name'], _it['spec'] or '', _it['unit'] or '个', _qty, _price, _amt, 0, 0, _amt, ''))
                         c.execute("UPDATE inquiries SET status='已生成订单', selected_supplier_id=?, updated_at=? WHERE id=?", (_sel_id, now(), biz_id))
                         c.execute("UPDATE inquiry_approvals SET selected_supplier_id=?, status='已完成' WHERE inquiry_id=?", (_sel_id, biz_id))
                         c.execute("UPDATE inquiry_suppliers SET is_selected=1 WHERE id=?", (_sel_id,))
@@ -4749,22 +4769,41 @@ def api_inquiry_select(iid):
     items = conn.execute("SELECT * FROM request_items WHERE req_id=?", (i['req_id'],)).fetchall()
     if not pr or not items:
         conn.close(); return jsonify({'error': '来源申请或明细缺失'}), 400
-    # 生成采购订单: 供应商=选中家, 金额=报价总价按明细参考金额比例分摊
+    # 生成采购订单: 供应商=选中家; V11.170: 明细价格优先用商家报价(quote_details按全量物资顺序存unit_price),
+    # 不再按申请参考金额分摊(参考金额常为0, 导致首项吃全额/后项变0, 合同丢明细)
     no = gen_no('CG', 'purchase_orders', 'order_no', conn)
     total = float(s['quote_price'])
-    base_sum = sum(float(it['total_price'] or 0) for it in items)
+    _qd_map = {}
+    try:
+        _qd_list = json.loads(s['quote_details'] or '[]')
+        for _qi, _q in enumerate(_qd_list):
+            _qd_map[_qi] = _q
+    except Exception:
+        _qd_map = {}
     rows = []
     grand_amt = 0.0
     for idx, it in enumerate(items):
         qty = float(it['quantity'] or 1)
-        if base_sum > 0 and idx < len(items) - 1:
-            amt = total * (float(it['total_price'] or 0) / base_sum)
-        else:
-            amt = total - grand_amt  # 最后一行吃余数, 保证合计=报价
-        amt = round(amt, 2)
-        price = round(amt / qty, 2) if qty else 0
+        _q = _qd_map.get(idx, {})
+        price = float(_q.get('unit_price') or 0) or 0
+        amt = round(price * qty, 2)
         grand_amt += amt
         rows.append((it['item_name'], it['spec'] or '', it['unit'] or '个', qty, price, amt))
+    # 兜底: 商家未填单价(旧数据) → 回退按申请参考金额比例分摊报价总额
+    if grand_amt <= 0:
+        rows = []
+        base_sum = sum(float(it['total_price'] or 0) for it in items)
+        grand_amt = 0.0
+        for idx, it in enumerate(items):
+            qty = float(it['quantity'] or 1)
+            if base_sum > 0 and idx < len(items) - 1:
+                amt = total * (float(it['total_price'] or 0) / base_sum)
+            else:
+                amt = total - grand_amt  # 最后一行吃余数, 保证合计=报价
+            amt = round(amt, 2)
+            price = round(amt / qty, 2) if qty else 0
+            grand_amt += amt
+            rows.append((it['item_name'], it['spec'] or '', it['unit'] or '个', qty, price, amt))
     first = rows[0]
     # 商家详细信息自动填入订单
     contact = (s['contact'] or '').strip()
