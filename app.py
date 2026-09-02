@@ -5845,6 +5845,10 @@ def api_inquiry_export(iid):
     row += 1
     # V11.52: 逐行三家对比 — 每家一列组(单价/总价/品牌/交付/质保/备注), 备注独立列跟商家走
     # V11.126: 增加 交付日期/质保时间 逐项对比列(商家按行报价的交付/质保直接进Excel)
+    # V11.188: 每家厂家一组列用独立浅色区分(厂家A蓝/B绿/C黄/D紫/E橙...), 一眼看清各家报价; 最低价红底覆盖仍醒目
+    _PALETTE = ['D6E4F0', 'D8EAD3', 'FFF2CC', 'E4DFEC', 'FDE9D9', 'D5E8D4', 'FCE4D6', 'DDEBF7']
+    def _sup_fill(si):
+        return PatternFill('solid', fgColor=_PALETTE[(si or 0) % len(_PALETTE)])
     quoted = [s for s in sups if s['quote_price'] and s['quote_price'] > 0]
     # 解析每家行明细(V11.180: 主明细=采购调整后; 另存厂家原始明细留痕)
     sup_details = []
@@ -5868,8 +5872,18 @@ def api_inquiry_export(iid):
                      f"{s['supplier_name']} 厂家原始报价"]
     # col_count 已在前面按 4+每家7列 算好
     for ci, h in enumerate(sup_head, 1):
-        c = ws.cell(row, ci, h); c.font = head_font; c.fill = head_fill; c.border = border
+        c = ws.cell(row, ci, h); c.border = border
         c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        # V11.188: 每家厂家的表头列组涂各自浅色(厂家名行首列), 视觉上一家一块; 文字用深色(浅底白字看不清)
+        if ci > 4:
+            _si = (ci - 5) // 7
+            if 0 <= _si < n_sup:
+                c.fill = _sup_fill(_si)
+                c.font = Font(name='微软雅黑', size=10, bold=True, color='1F3864')
+            else:
+                c.fill = head_fill; c.font = head_font
+        else:
+            c.fill = head_fill; c.font = head_font
     ws.row_dimensions[row].height = 30
     row += 1
     # 每物料一行
@@ -5924,13 +5938,18 @@ def api_inquiry_export(iid):
         for ci, v in enumerate(vals, 1):
             c = ws.cell(row, ci, v); c.border = border
             c.alignment = Alignment(horizontal='center' if ci <= 4 or (ci - 5) % 7 != 0 else 'left', vertical='center', wrap_text=True)
+            # V11.188: 数据行厂家列组浅色底(最低价标红时红底覆盖)
+            if ci > 4:
+                _si = (ci - 5) // 7
+                if 0 <= _si < n_sup:
+                    c.fill = _sup_fill(_si)
             # 单价列: 最低标红加粗+★（V11.145: 领导一眼看到每项最便宜的厂家）— V11.180: 每组7列
             if unit_prices and min_unit is not None:
                 k = (ci - 5) // 7
                 if 0 <= k < n_sup and (ci - 5) % 7 == 0:
                     if row_prices[k][0] is not None and abs(row_prices[k][0] - min_unit) < 0.001:
                         c.font = Font(name='微软雅黑', size=11, bold=True, color='C00000')
-                        c.fill = PatternFill('solid', fgColor='FFF2CC')
+                        c.fill = PatternFill('solid', fgColor='FFEB9C')  # V11.188: 最低价深黄高亮(区别于厂家浅色组)
                         if c.value:
                             c.value = '★' + str(c.value)
                         continue
@@ -5944,20 +5963,22 @@ def api_inquiry_export(iid):
         ws.cell(row, cc).border = border
     total_min = None
     for si, t in enumerate(total_per_sup):
-        # V11.126: 总价落位修正到 总价列(7+si*7) — V11.180: 每组7列
+        # V11.126: 总价落位修正到 总价列(7+si*7) — V11.180: 每组7列; V11.188: 合计行厂家组同色
         ws.cell(row, 6 + si * 7, '').border = border
         c = ws.cell(row, 7 + si * 7, '{:,.2f}'.format(round(t, 2)))
         c.border = border; c.font = label_font
         c.alignment = Alignment(horizontal='center', vertical='center')
+        c.fill = _sup_fill(si)
         if t > 0 and (total_min is None or t < total_min):
             total_min = t
         for cc in range(8 + si * 7, 12 + si * 7):
             ws.cell(row, cc).border = border
+            ws.cell(row, cc).fill = _sup_fill(si)
     for si, t in enumerate(total_per_sup):
         if t > 0 and total_min is not None and abs(t - total_min) < 0.001:
             _min_c = ws.cell(row, 7 + si * 7)
             _min_c.font = min_font_s
-            _min_c.fill = PatternFill('solid', fgColor='FFF2CC')
+            _min_c.fill = PatternFill('solid', fgColor='FFEB9C')  # V11.188: 最低总价深黄底(区别于厂家浅色)
     # V11.132: ★说明移到合计行最后列, 最低总价已标红黄底, 领导一眼看到最便宜
     ws.cell(row, col_count, '★=该项最低价').font = note_font
     ws.cell(row, col_count).border = border
