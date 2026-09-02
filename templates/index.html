@@ -1306,7 +1306,7 @@ async function loadPRequests(){
   keys.forEach(k=>{
     const list=groups[k];
     html+=`<div style="margin:8px 0 4px;font-size:12px;font-weight:700;color:#1f6feb;background:#eef4ff;padding:5px 10px;border-radius:5px">📅 ${k} <span style="font-weight:400;color:#888;font-size:10px">${list.length}单</span></div>`;
-    html+=rnder(list,['req_no','dept','purpose','req_type','status','id'],['编号','部门','用途','类型','状态','操作'],
+    html+=rnder(list,['req_no','dept','purpose','req_type','status','id'],['编号','部门','用途','类型','状态','驳回','操作'],
       x=>{
         // 类型: 灰色小字不抢色
         const tp = (x.req_type||'物资采购')=='设备维修'
@@ -1314,8 +1314,8 @@ async function loadPRequests(){
           : '<span style="color:#666;background:#f0f0f0;padding:1px 6px;border-radius:3px;font-size:9px">📦 采购</span>';
         return `<td><b>${esc(x.req_no)}</b>${x.urgent?' <span style="color:#e74c3c;font-weight:700">🚨加急</span>':''}</td><td>${esc(x.dept)}</td><td>${esc(x.purpose||'')}</td>
         <td>${tp}</td>
-        <td>${tag(x.status)}${x.status=='已驳回'&&x.rejected_reason?`<div style="font-size:8px;color:var(--d)">驳回: ${esc(x.rejected_reason)}</div>`:''}</td>
-        
+        <td>${tag(x.status)}</td>
+        ${rejCell(x)}
         <td style="white-space:nowrap"><button class="lnk" onclick="showPRequest(${x.id})">详情</button>
         <button class="lnk" style="color:var(--s)" onclick="window.open('/api/prequests/${x.id}/download','_blank')">⬇️下载</button>
         <button class="lnk" style="color:#b08900" onclick="editDoc('purchase_request',${x.id},'采购申请')">✏️修改</button>
@@ -1896,7 +1896,7 @@ async function selectInquirySupplier(iid,sid){
 // Orders
 async function loadOrders(){
   const o=await api('/orders');
-  id('ordersTable').innerHTML=rnder(o,['order_no','item_name','supplier','trade_mode','total_amount','status','progress','id'],['单号','物资','供应商','模式','金额','状态','采购进度','操作'],
+  id('ordersTable').innerHTML=rnder(o,['order_no','item_name','supplier','trade_mode','total_amount','status','progress','id'],['单号','物资','供应商','模式','金额','状态','采购进度','驳回','操作'],
     r=>{
       // 采购进度：根据items状态计算
       const pg = r.progress=='contact'?'<span class="tag" style="background:#fdecea;color:#c0392b">🟥 未联系厂家</span>'
@@ -1905,7 +1905,8 @@ async function loadOrders(){
                 : '<span style="color:#bbb">—</span>';
       return `<td><b>${esc(r.order_no)}</b></td><td>${esc(r.item_name)}</td><td>${esc(r.supplier)}</td>
       <td><span class="tag ${r.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(r.trade_mode||'货到付款')}</span></td>
-      <td>¥${(r.total_amount||0).toFixed(0)}</td><td>${tag(r.status)}${r.status=='已驳回'&&r.rejected_reason?`<div style="font-size:8px;color:var(--d)">驳回: ${esc(r.rejected_reason)}</div>`:''}</td><td>${pg}</td>
+      <td>¥${(r.total_amount||0).toFixed(0)}</td><td>${tag(r.status)}</td><td>${pg}</td>
+      ${rejCell(r)}
       <td><button class="lnk" onclick="showOrder(${r.id})">详情</button> <button class="lnk" style="color:#b08900" onclick="editDoc('purchase_order',${r.id},'采购订单')">✏️修改</button>
       
       ${(r.status=='待审批'||r.status=='已通过'||r.status=='审批通过')?` <button class="lnk" style="color:var(--o)" onclick="withdrawDoc('purchase_order',${r.id},'采购订单')">↩️撤回</button>`:''}${(r.status=='待审批'||r.status=='已驳回'||r.status=='草稿')?` <button class="lnk" style="color:var(--d)" onclick="delDoc('purchase_order',${r.id},'采购订单')">🗑️删除</button>`:''}</td>`;
@@ -2160,6 +2161,12 @@ async function loadRejectLogs(bt,bid,boxId){
         <div style="color:#a93226;margin-top:2px">理由：${esc(l.comment||'-')}</div></div>`).join('')+'</div>';
   }catch(e){}
 }
+// V11.175c: 列表独立"驳回"列 — 含人/时间/理由(最新一条), 不再挤在状态列下
+function rejCell(x){
+  if(!x||x.status!='已驳回')return '<td style="color:#ddd">—</td>';
+  const r=x.rejected_reason||'';
+  return `<td style="max-width:160px;color:#c0392b;font-size:9px">${r?`<div style="font-weight:600">${esc(r)}</div>`:'<div style="color:#e07b7b">（无理由）</div>'}${x.rejected_by?`<div style="color:#999;font-size:8px;margin-top:1px">${esc(x.rejected_by)} ${esc((x.rejected_at||'').slice(5,16))}</div>`:''}</td>`;
+}
 function canApprove(x){
   // V7.0: 仅当前节点指定审批人/系统管理员可审批
   if(ME.role=='系统管理员')return true;
@@ -2301,7 +2308,7 @@ async function genMonthlyContract(supplier){
   if(r.success){alert(`✅ 月度合同 ${r.contract_no} 已生成(汇总${r.count}单, ¥${(r.amount||0).toFixed(0)}), 已进入合同审批`);loadContracts()}
   else alert(r.error||'生成失败');
 }
-async function loadContracts(){const c=await api('/contracts');id('contractsTable').innerHTML=rnder(c,['contract_no','contract_name','supplier','amount','status','id'],['编号','名称','供应商','金额','状态','操作'],r=>`<td><b>${esc(r.contract_no)}</b></td><td>${esc(r.contract_name)}</td><td>${esc(r.supplier)}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}${r.status=='已驳回'&&r.rejected_reason?`<div style="font-size:8px;color:var(--d)">驳回: ${esc(r.rejected_reason)}</div>`:''}</td>
+async function loadContracts(){const c=await api('/contracts');id('contractsTable').innerHTML=rnder(c,['contract_no','contract_name','supplier','amount','status','id'],['编号','名称','供应商','金额','状态','驳回','操作'],r=>`<td><b>${esc(r.contract_no)}</b></td><td>${esc(r.contract_name)}</td><td>${esc(r.supplier)}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}</td>${rejCell(r)}
   <td style="white-space:nowrap"><button class="lnk" onclick="showContract(${r.id})">查看</button>${r.file_path?` <button class="lnk" style="color:var(--s)" onclick="window.open('/uploads/${esc(r.file_path)}','_blank')">📄下载</button>`:''} <button class="lnk" style="color:#b08900" onclick="editDoc('contract',${r.id},'合同')">✏️修改</button> ${(r.status=='待审批'||r.status=='已通过'||r.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('contract',${r.id},'合同')">↩️撤回</button>`:''}${(r.status=='待审批'||r.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('contract',${r.id},'合同')">🗑️删除</button>`:''}</td>`)}
 async function showContract(id){
   // V11.150: 防连点 + 最新打开者优先
@@ -2406,7 +2413,7 @@ async function loadReceivings(){
   const estPending=(r||[]).filter(x=>x.is_est&&!x.invoice_no);
   const estHint=estPending.length?`<div style="margin:4px 0 6px;padding:5px 8px;background:#fff3e0;border-left:3px solid #e65100;font-size:10px;color:#e65100">
     📋 <b>${estPending.length}</b> 张暂估入库单发票未回, 收到发票后点单号旁"🧾发票核对"红冲转正式</div>`:'';
-  id('receivingsTable').innerHTML=estHint+rnder(r,['receive_no','dept','item_name','quantity','trade_mode','status','id'],['单号','部门','物资','数量','交易模式','状态','操作'],
+  id('receivingsTable').innerHTML=estHint+rnder(r,['receive_no','dept','item_name','quantity','trade_mode','status','id'],['单号','部门','物资','数量','交易模式','状态','驳回','操作'],
     x=>{
       // V11.37: 合同自动生成的待入库单 = 到货提醒(需先确认到货)
       const isAuto=(x.remark||'').includes('合同生效后自动')||(x.remark||'').includes('自动进入库');
@@ -2428,7 +2435,8 @@ async function loadReceivings(){
       const urgTag = x.urgent?' <span style="color:#e74c3c;font-weight:700">加急</span>':'';
       const qtyTxt = `${x.total_qty||x.quantity}${esc(x.unit||'')}`;
       return `<td><b>${esc(x.receive_no)}</b></td><td>${deptTag}</td><td>${esc(x.item_name)}${cntTag}${urgTag}</td><td>${qtyTxt}</td>
-    <td><span class="tag ${x.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(x.trade_mode||'货到付款')}</span></td><td>${stTag}${estTag}${x.status=='已驳回'&&x.rejected_reason?`<div style="font-size:8px;color:var(--d)">驳回: ${esc(x.rejected_reason)}</div>`:''}</td>
+    <td><span class="tag ${x.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(x.trade_mode||'货到付款')}</span></td><td>${stTag}${estTag}</td>
+    ${rejCell(x)}
     <td>${ops}${ops2}
       <button class="lnk" style="color:#b08900" onclick="editDoc('receiving',${x.id},'入库单')">✏️修改</button> <button class="lnk" onclick="window.open('/api/receivings/${x.id}/download','_blank')">⬇️ 下载</button> ${x.status=='已入库'?`<button class="lnk" style="color:var(--d)" onclick="voidRcv(${x.id})">作废</button>`:''} ${(x.status=='待审批'||x.status=='已通过'||x.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('receiving',${x.id},'入库单')">↩️撤回</button>`:''}${(x.status=='待审批'||x.status=='待入库'||x.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('receiving',${x.id},'入库单')">🗑️删除</button>`:''}</td>`;
     })}
@@ -2635,7 +2643,7 @@ async function submitBatchRcv(rid,n){
   else alert(r.error||'入库失败');
 }
 async function loadCredits(){const c=await api('/credits');id('creditsTable').innerHTML=rnder(c,['credit_no','item_name','amount','status'],['编号','内容','金额','状态'],r=>`<td><b>${esc(r.credit_no)}</b></td><td>${esc(r.item_name)}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}</td>`)}
-async function loadPayments(){const p=await api('/payments');id('paymentsTable').innerHTML=rnder(p,['payment_no','payment_type','amount','status','id'],['编号','类型','金额','状态','操作'],r=>`<td><b>${esc(r.payment_no)}</b></td><td>${esc(r.payment_type)}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}${r.status=='已驳回'&&r.rejected_reason?`<div style="font-size:8px;color:var(--d)">驳回: ${esc(r.rejected_reason)}</div>`:''}</td><td>${r.status=='已通过'?`<button class="lnk" style="color:var(--s)" onclick="doPay(${r.id})">付款</button>`:''} ${(r.status=='待审批'||r.status=='已驳回'||r.status=='草稿')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('payment',${r.id},'付款单')">🗑️删除</button>`:''}</td>`)}
+async function loadPayments(){const p=await api('/payments');id('paymentsTable').innerHTML=rnder(p,['payment_no','payment_type','amount','status','id'],['编号','类型','金额','状态','驳回','操作'],r=>`<td><b>${esc(r.payment_no)}</b></td><td>${esc(r.payment_type)}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}</td>${rejCell(r)}<td>${r.status=='已通过'?`<button class="lnk" style="color:var(--s)" onclick="doPay(${r.id})">付款</button>`:''} ${(r.status=='待审批'||r.status=='已驳回'||r.status=='草稿')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('payment',${r.id},'付款单')">🗑️删除</button>`:''}</td>`)}
 async function doPay(id){if(!confirm('确认付款?'))return;await api(`/payments/${id}/pay`,{method:'POST',body:JSON.stringify({})});loadPayments()}
 let invSortKey='id',invSortDir=1;
 function invFilterCat(){
@@ -2875,8 +2883,9 @@ async function submitReq(items){
 }
 async function loadRequisitions(){
   const r=await api('/requisitions');
-  id('reqListBox').innerHTML=rnder(r,['req_no','receiver','receive_dept','item_count','total_qty','status','created_at','id'],['单号','领取人','领取部门','商品数','数量','状态','时间','操作'],
-    x=>`<td><b>${esc(x.req_no)}</b></td><td>${esc(x.receiver||x.requester||'')}</td><td>${esc(x.receive_dept||x.dept||'')}</td><td>${x.item_count||1}项</td><td>${x.total_qty||x.quantity}</td><td>${tag(x.status)}${x.status=='已驳回'&&x.rejected_reason?`<div style="font-size:8px;color:var(--d)">驳回: ${esc(x.rejected_reason)}</div>`:''}</td><td style="font-size:8px;color:#999">${esc((x.created_at||'').slice(0,16))}</td>
+  id('reqListBox').innerHTML=rnder(r,['req_no','receiver','receive_dept','item_count','total_qty','status','created_at','id'],['单号','领取人','领取部门','商品数','数量','状态','时间','驳回','操作'],
+    x=>`<td><b>${esc(x.req_no)}</b></td><td>${esc(x.receiver||x.requester||'')}</td><td>${esc(x.receive_dept||x.dept||'')}</td><td>${x.item_count||1}项</td><td>${x.total_qty||x.quantity}</td><td>${tag(x.status)}</td><td style="font-size:8px;color:#999">${esc((x.created_at||'').slice(0,16))}</td>
+    ${rejCell(x)}
     <td><button class="lnk" style="color:#b08900" onclick="editDoc('requisition',${x.id},'出库单')">✏️修改</button> <button class="lnk" onclick="window.open('/api/requisitions/${x.id}/download','_blank')">⬇️下载</button> ${x.status=='已出库'||x.status=='待审批'?`<button class="lnk" style="color:var(--d)" onclick="voidReq(${x.id})">作废</button>`:''} ${(x.status=='待审批'||x.status=='已通过'||x.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('requisition',${x.id},'出库单')">↩️撤回</button>`:''}${(x.status=='待审批'||x.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('requisition',${x.id},'出库单')">🗑️删除</button>`:''}</td>`);
 }
 async function voidReq(id){

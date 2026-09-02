@@ -555,6 +555,19 @@ def init_db():
         ('purchase_orders', 'rejected_reason', "ALTER TABLE purchase_orders ADD COLUMN rejected_reason TEXT DEFAULT ''"),
         ('credit_notes', 'rejected_reason', "ALTER TABLE credit_notes ADD COLUMN rejected_reason TEXT DEFAULT ''"),
         ('payment_requests', 'rejected_reason', "ALTER TABLE payment_requests ADD COLUMN rejected_reason TEXT DEFAULT ''"),
+        # V11.175c: 列表独立驳回列 — 各业务表补最新驳回人/时间
+        ('requisitions', 'rejected_by', "ALTER TABLE requisitions ADD COLUMN rejected_by TEXT DEFAULT ''"),
+        ('receivings', 'rejected_by', "ALTER TABLE receivings ADD COLUMN rejected_by TEXT DEFAULT ''"),
+        ('contracts', 'rejected_by', "ALTER TABLE contracts ADD COLUMN rejected_by TEXT DEFAULT ''"),
+        ('purchase_orders', 'rejected_by', "ALTER TABLE purchase_orders ADD COLUMN rejected_by TEXT DEFAULT ''"),
+        ('credit_notes', 'rejected_by', "ALTER TABLE credit_notes ADD COLUMN rejected_by TEXT DEFAULT ''"),
+        ('payment_requests', 'rejected_by', "ALTER TABLE payment_requests ADD COLUMN rejected_by TEXT DEFAULT ''"),
+        ('requisitions', 'rejected_at', "ALTER TABLE requisitions ADD COLUMN rejected_at TEXT DEFAULT ''"),
+        ('receivings', 'rejected_at', "ALTER TABLE receivings ADD COLUMN rejected_at TEXT DEFAULT ''"),
+        ('contracts', 'rejected_at', "ALTER TABLE contracts ADD COLUMN rejected_at TEXT DEFAULT ''"),
+        ('purchase_orders', 'rejected_at', "ALTER TABLE purchase_orders ADD COLUMN rejected_at TEXT DEFAULT ''"),
+        ('credit_notes', 'rejected_at', "ALTER TABLE credit_notes ADD COLUMN rejected_at TEXT DEFAULT ''"),
+        ('payment_requests', 'rejected_at', "ALTER TABLE payment_requests ADD COLUMN rejected_at TEXT DEFAULT ''"),
     ]:
         _cols = [r[1] for r in conn.execute(f"PRAGMA table_info({_tbl})").fetchall()]
         if _col not in _cols:
@@ -1321,18 +1334,27 @@ def log_reject(biz_type, biz_id, approver, approver_id, comment, source='system'
             conn.execute("INSERT INTO approval_reject_logs(biz_type,biz_id,approver,approver_id,comment,processed_at,source) VALUES(?,?,?,?,?,?,?)",
                          (biz_type, biz_id, str(approver or '')[:50], int(approver_id or 0), str(comment or '')[:500], now(), source))
             try:
-                conn.execute(f"UPDATE {biz_table(biz_type)} SET rejected_reason=? WHERE id=?", (str(comment or '')[:200], biz_id))
+                # V11.175c: 父单据同步最新驳回人/时间/理由(列表独立驳回列展示)
+                conn.execute(f"UPDATE {biz_table(biz_type)} SET rejected_reason=?, rejected_by=?, rejected_at=? WHERE id=?",
+                             (str(comment or '')[:200], str(approver or '')[:50], now(), biz_id))
             except Exception:
-                pass
+                try:
+                    conn.execute(f"UPDATE {biz_table(biz_type)} SET rejected_reason=? WHERE id=?", (str(comment or '')[:200], biz_id))
+                except Exception:
+                    pass
             return
         c = db()
         c.execute("INSERT INTO approval_reject_logs(biz_type,biz_id,approver,approver_id,comment,processed_at,source) VALUES(?,?,?,?,?,?,?)",
                   (biz_type, biz_id, str(approver or '')[:50], int(approver_id or 0), str(comment or '')[:500], now(), source))
         # 父单据 rejected_reason 同步为最新驳回理由(展示用; 完整历史查 reject_logs)
         try:
-            c.execute(f"UPDATE {biz_table(biz_type)} SET rejected_reason=? WHERE id=?", (str(comment or '')[:200], biz_id))
+            c.execute(f"UPDATE {biz_table(biz_type)} SET rejected_reason=?, rejected_by=?, rejected_at=? WHERE id=?",
+                      (str(comment or '')[:200], str(approver or '')[:50], now(), biz_id))
         except Exception:
-            pass
+            try:
+                c.execute(f"UPDATE {biz_table(biz_type)} SET rejected_reason=? WHERE id=?", (str(comment or '')[:200], biz_id))
+            except Exception:
+                pass
         c.commit(); c.close()
     except Exception:
         pass
