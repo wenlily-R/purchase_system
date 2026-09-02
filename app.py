@@ -3829,11 +3829,38 @@ def notify_submitter_rejected(biz_type, biz_id, approver, comment, source='syste
                 _doc_no = str(_row[_k]); break
         if not _doc_no:
             _doc_no = f'{biz_type}#{biz_id}'
-        # 提交人(各表字段不同: 申请requester/订单owner/入库inspector/出库requester/合同-)
+        # 提交人(各表字段不同: 申请requester/订单owner/入库inspector/出库requester)
+        # V11.179: 合同/挂账/付款表无提交人字段 → 通过 order_id 关联订单取 owner, 再兜底credit关联
         _submitter = None
         for _k in ('requester', 'owner', 'inspector', 'created_by', 'apply_by'):
             if _k in _row.keys() and _row[_k]:
                 _submitter = str(_row[_k]); break
+        if not _submitter:
+            try:
+                if biz_type == 'contract' and _row['order_id']:
+                    _po = _c2 = db()
+                    _po2 = _po.execute("SELECT owner, requester FROM purchase_orders WHERE id=?", (_row['order_id'],)).fetchone()
+                    _po.close()
+                    if _po2:
+                        _submitter = str(_po2['owner'] or _po2['requester'] or '')
+                elif biz_type == 'payment' and _row['credit_id']:
+                    _cc = db()
+                    _cn = _cc.execute("SELECT order_id FROM credit_notes WHERE id=?", (_row['credit_id'],)).fetchone()
+                    _cc.close()
+                    if _cn and _cn['order_id']:
+                        _po = db()
+                        _po2 = _po.execute("SELECT owner, requester FROM purchase_orders WHERE id=?", (_cn['order_id'],)).fetchone()
+                        _po.close()
+                        if _po2:
+                            _submitter = str(_po2['owner'] or _po2['requester'] or '')
+                elif biz_type == 'credit' and _row['order_id']:
+                    _po = db()
+                    _po2 = _po.execute("SELECT owner, requester FROM purchase_orders WHERE id=?", (_row['order_id'],)).fetchone()
+                    _po.close()
+                    if _po2:
+                        _submitter = str(_po2['owner'] or _po2['requester'] or '')
+            except Exception:
+                pass
         if not _submitter:
             return
         _u = db()

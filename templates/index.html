@@ -1747,7 +1747,10 @@ async function showInquiry(id){
   else if(d.status=='已生成订单') lowestNote = `<div style="margin:8px 0;padding:8px 10px;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:6px;font-size:11px;color:#2e7d32">✅ 已按领导审批结果生成采购订单，可在【采购订单】查看</div>`;
   const btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button><button class="btn btn-p" onclick="exportInquiry(${d.id})">📥 导出Excel</button>${splitBtn}${submitBtn}`;
   if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
-  showDetail(`询价单 ${d.inq_no}`,lowestNote+h,btns);
+  // V11.179: 询价审批详情也显示审批流程+驳回记录
+  showDetail(`询价单 ${d.inq_no}`,lowestNote+h+'<div id="approvalFlowBox"></div><div id="rejectLogsBox"></div>',btns);
+  loadApprovalFlow('inquiry_approval',d.id,'approvalFlowBox');
+  loadRejectLogs('inquiry_approval',d.id,'rejectLogsBox');
 }
 // V11.145: 分项定标弹窗 — 每个物资逐项选供应商, 支持一键智能选最低价
 async function showSplitSelect(iid){
@@ -2191,7 +2194,9 @@ async function loadApprovalFlow(bt,bid,boxId){
 function rejCell(x){
   if(!x||x.status!='已驳回')return '<td style="color:#ddd">—</td>';
   const r=x.rejected_reason||'';
-  return `<td style="max-width:160px;color:#c0392b;font-size:9px">${r?`<div style="font-weight:600">${esc(r)}</div>`:'<div style="color:#e07b7b">（无理由）</div>'}${x.rejected_by?`<div style="color:#999;font-size:8px;margin-top:1px">${esc(x.rejected_by)} ${esc((x.rejected_at||'').slice(5,16))}</div>`:''}</td>`;
+  // V11.179: 老数据无驳回人时显示"审批人"; 无理由显示占位
+  const by=x.rejected_by?`<div style="color:#999;font-size:8px;margin-top:1px">${esc(x.rejected_by)} ${esc((x.rejected_at||'').slice(5,16))}</div>`:'';
+  return `<td style="max-width:160px;color:#c0392b;font-size:9px">${r?`<div style="font-weight:600">${esc(r)}</div>`:'<div style="color:#e07b7b">（无理由）</div>'}${by}</td>`;
 }
 function canApprove(x){
   // V7.0: 仅当前节点指定审批人/系统管理员可审批
@@ -2670,7 +2675,7 @@ async function submitBatchRcv(rid,n){
   if(r.success){alert('✅ '+(r.message||'批量入库完成'));closeMod();loadReceivings();loadDashboard()}
   else alert(r.error||'入库失败');
 }
-async function loadCredits(){const c=await api('/credits');id('creditsTable').innerHTML=rnder(c,['credit_no','item_name','amount','status'],['编号','内容','金额','状态'],r=>`<td><b>${esc(r.credit_no)}</b></td><td>${esc(r.item_name)}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}</td>`)}
+async function loadCredits(){const c=await api('/credits');id('creditsTable').innerHTML=rnder(c,['credit_no','item_name','amount','status'],['编号','内容','金额','状态','驳回'],r=>`<td><b>${esc(r.credit_no)}</b></td><td>${esc(r.item_name)}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}</td>${rejCell(r)}`)}
 async function loadPayments(){const p=await api('/payments');id('paymentsTable').innerHTML=rnder(p,['payment_no','payment_type','amount','status','id'],['编号','类型','金额','状态','驳回','操作'],r=>`<td><b>${esc(r.payment_no)}</b></td><td>${esc(r.payment_type)}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}</td>${rejCell(r)}<td>${r.status=='已通过'?`<button class="lnk" style="color:var(--s)" onclick="doPay(${r.id})">付款</button>`:''} ${(r.status=='待审批'||r.status=='已驳回'||r.status=='草稿')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('payment',${r.id},'付款单')">🗑️删除</button>`:''}</td>`)}
 async function doPay(id){if(!confirm('确认付款?'))return;await api(`/payments/${id}/pay`,{method:'POST',body:JSON.stringify({})});loadPayments()}
 let invSortKey='id',invSortDir=1;
