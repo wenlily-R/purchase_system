@@ -18,8 +18,10 @@ while true; do
       echo "$line"
       URL=$(echo "$line" | grep -oE 'https://[a-z0-9]+-[0-9]+-[0-9]+-[0-9]+-[0-9]+\.serveo\.net|https://[a-z0-9]+\.serveo\.net' | head -1)
       if [ -n "$URL" ]; then
-        echo "$URL" > data/public_url.txt
-        echo "[$(date '+%H:%M:%S')] 新地址: $URL"
+        # V11.169: serveo 不再写 public_url.txt(主隧道独占, 避免双隧道互抢地址文件导致地址频繁跳变);
+        # serveo 地址只写备用文件, 主隧道(localhost.run)失效时人工/脚本接管
+        echo "$URL" > data/serveo_url.txt
+        echo "[$(date '+%H:%M:%S')] serveo 备用地址: $URL"
       fi
     done
   echo "[$(date '+%H:%M:%S')] 隧道断开, 5秒后重连..."
