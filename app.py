@@ -2560,10 +2560,25 @@ def dt_send_todo(userids, title, text, extra='', biz_type='', biz_id=0, push_typ
         if not agent: return False
         userids = [u for u in userids if u]
         if not userids: return False
+        # V11.174: "去处理"优先跳钉钉OA审批实例页(审批人点开直接在钉钉里审批, 不再绕采购系统网页)
         url = ''
-        pu = dt_public_url()
-        if pu:
-            url = pu.rstrip('/') + '/#approvals'
+        _inst_code = ''
+        if biz_type and biz_id:
+            try:
+                c2 = db()
+                _row = c2.execute("SELECT instance_code FROM dingtalk_instances WHERE biz_type=? AND biz_id=? AND status NOT IN ('error','cancelled') ORDER BY id DESC LIMIT 1", (biz_type, biz_id)).fetchone()
+                c2.close()
+                if _row and _row['instance_code'] and not str(_row['instance_code']).startswith('ERR-'):
+                    _inst_code = str(_row['instance_code'])
+            except Exception:
+                pass
+        if _inst_code:
+            # 钉钉OA审批详情H5页: 手机钉钉内打开直接进入该审批单, 可原地审批
+            url = 'https://aflow.dingtalk.com/dingtalk/web/process/' + _inst_code
+        else:
+            pu = dt_public_url()
+            if pu:
+                url = pu.rstrip('/') + '/#approvals'
         msg = {'msgtype': 'action_card', 'action_card': {
             'title': title,
             'markdown': text + ('\n' + extra if extra else ''),
