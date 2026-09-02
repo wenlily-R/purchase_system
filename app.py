@@ -555,6 +555,8 @@ def init_db():
         # V11.181: 驳回附件同步 — 驳回记录存附件元数据+钉钉实例号(查看详情可直达OA审批单看附件)
         ('approval_reject_logs', 'attachments', "ALTER TABLE approval_reject_logs ADD COLUMN attachments TEXT DEFAULT ''"),
         ('approval_reject_logs', 'instance_code', "ALTER TABLE approval_reject_logs ADD COLUMN instance_code TEXT DEFAULT ''"),
+        # V11.184: 审批节点附件全量同步(同意/驳回上传的图片附件) — 独立表, 一条审批操作一条记录, 多次审批不覆盖
+        # 列: biz_type/biz_id/action(agree|reject)/approver/comment/processed_at/attachments(JSON)/source/instance_code/created_at
         # V11.175: 驳回展示 — 各业务表补 rejected_reason(列表/详情显示最近驳回理由)
         ('requisitions', 'rejected_reason', "ALTER TABLE requisitions ADD COLUMN rejected_reason TEXT DEFAULT ''"),
         ('receivings', 'rejected_reason', "ALTER TABLE receivings ADD COLUMN rejected_reason TEXT DEFAULT ''"),
@@ -597,6 +599,21 @@ def init_db():
             source TEXT DEFAULT 'system',
             created_at TEXT DEFAULT (datetime('now','localtime')));
         CREATE INDEX IF NOT EXISTS idx_reject_logs ON approval_reject_logs(biz_type, biz_id);
+    """)
+    # V11.184: 审批流转操作记录表(同意/驳回统一) — 每条审批操作(含上传附件元数据)独立一行, 多次审批不覆盖
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS approval_action_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            biz_type TEXT, biz_id INTEGER,
+            action TEXT DEFAULT 'agree',          -- agree=同意 / reject=驳回
+            approver TEXT, approver_id INTEGER DEFAULT 0,
+            comment TEXT DEFAULT '',              -- 审批意见文字
+            processed_at TEXT,
+            attachments TEXT DEFAULT '[]',        -- JSON: [{fileName,fileId,spaceId,fileSize,fileType}]
+            source TEXT DEFAULT 'system',         -- dingtalk / system
+            instance_code TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now','localtime')));
+        CREATE INDEX IF NOT EXISTS idx_action_logs ON approval_action_logs(biz_type, biz_id);
     """)
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS order_items (
@@ -1329,6 +1346,46 @@ def _scope_where(alias):
         return f"{alias}requester_id={session.get('user_id', 0)}"  # 部门负责人仅看自己(暂简化, 后续按部门)
     return ''  # 管理员/领导/采购/库管/财务 由各接口决定(业务域不同)
 
+def log_approval_action(biz_type, biz_id, action, approver, approver_id=0, comment='', processed_at='', attachments=None, source='system', instance_code='', conn=None):
+    """V11.184: 审批流转操作记录(同意/驳回统一) — 每条审批操作独立一行, 附件元数据随行存, 多次审批不覆盖。
+    action: agree/reject; attachments: [{fileName,fileId,spaceId,fileSize,fileType}]
+    钉钉审批(来源dingtalk, 含实例号)与系统审批(来源system)都走这里; 系统驳回同时写 approval_reject_logs(兼容旧逻辑)"""
+    try:
+        _att = json.dumps(attachments or [], ensure_ascii=False) if attachments else '[]'
+        _pt = processed_at or now()
+        if conn is not None:
+            conn.execute("INSERT INTO approval_action_logs(biz_type,biz_id,action,approver,approver_id,comment,processed_at,attachments,source,instance_code) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                         (biz_type, biz_id, action, str(approver or '')[:50], int(approver_id or 0),
+                          str(comment or '')[:500], _pt, _att, source, str(instance_code or '')[:100]))
+        else:
+            c = db()
+            c.execute("INSERT INTO approval_action_logs(biz_type,biz_id,action,approver,approver_id,comment,processed_at,attachments,source,instance_code) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                      (biz_type, biz_id, action, str(approver or '')[:50], int(approver_id or 0),
+                       str(comment or '')[:500], _pt, _att, source, str(instance_code or '')[:100]))
+            c.commit(); c.close()
+    except Exception:
+        pass
+
+
+def get_approval_action_logs(biz_type, biz_id):
+    """V11.184: 读取审批流转操作记录(时间正序), 附件JSON已解析"""
+    try:
+        c = db()
+        rows = c.execute("SELECT * FROM approval_action_logs WHERE biz_type=? AND biz_id=? ORDER BY id ASC", (biz_type, biz_id)).fetchall()
+        c.close()
+        out = []
+        for r in rows:
+            d = dict_row(r)
+            try:
+                d['attachments'] = json.loads(d.get('attachments') or '[]') if d.get('attachments') else []
+            except Exception:
+                d['attachments'] = []
+            out.append(d)
+        return out
+    except Exception:
+        return []
+
+
 def _src_of(approver, approver_id):
     """V11.175: 判定驳回来源 — 钉钉轮询回调(approver=钉钉或approver_id=0)标dingtalk; 系统审批标system"""
     if str(approver) == '钉钉' or not int(approver_id or 0):
@@ -1402,8 +1459,15 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
                 # 飞书回调场景: 节点全pending但审批已全过 → 一次性全部置approved
                 c.execute("UPDATE approval_instances SET status='approved', approver=?, approver_id=?, comment=?, processed_at=? WHERE biz_type=? AND biz_id=? AND status='pending'",
                           (approver, approver_id, comment, now(), biz_type, biz_id))
+                # V11.184: 同意操作记录(含钉钉上传附件)
+                log_approval_action(biz_type, biz_id, 'agree', approver, approver_id, comment or '', now(),
+                                    attachments or [], _src_of(approver, approver_id), instance_code, conn=c)
             else:
                 c.close(); return False  # 系统内逐级审批中, 还有待审节点, 不改父状态
+        else:
+            # V11.184: 末节点同意(系统逐级审批最后一关) — 记录操作
+            log_approval_action(biz_type, biz_id, 'agree', approver, approver_id, comment or '', now(),
+                                attachments or [], _src_of(approver, approver_id), instance_code, conn=c)
         st = biz_parent_status(biz_type, 'ok')
     else:
         c.execute("UPDATE approval_instances SET status='rejected', approver=?, approver_id=?, comment=?, processed_at=? WHERE biz_type=? AND biz_id=? AND status='pending'",
@@ -1412,6 +1476,9 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
         # V11.181: 附件元数据+钉钉实例号随驳回记录存储
         log_reject(biz_type, biz_id, approver, approver_id, comment, source=_src_of(approver, approver_id), conn=c,
                    attachments=attachments or [], instance_code=instance_code)
+        # V11.184: 驳回操作记录(统一日志, 含附件)
+        log_approval_action(biz_type, biz_id, 'reject', approver, approver_id, comment or '', now(),
+                            attachments or [], _src_of(approver, approver_id), instance_code, conn=c)
         st = biz_parent_status(biz_type, 'reject')
     # V11.126: 询价定标审批无通用 biz_table(父单据=inquiries), 单独处理; 其他走通用表
     if biz_type == 'inquiry_approval':
@@ -2958,6 +3025,69 @@ def find_user_by_dingtalk_id(dtid):
         return None
 
 
+def dt_extract_agree_op(inst):
+    """V11.184: 从钉钉实例详情提取同意操作(人/意见/时间/附件)。旧版operation_records无附件,
+    附件通道: ①新版API operationRecords[].files(需开通, 未开通自动跳过) ②表单附件控件(发起时挂载)"""
+    try:
+        ops = inst.get('operation_records') or inst.get('operationRecords') or []
+        if not isinstance(ops, list):
+            return None
+        for op in ops:
+            if not isinstance(op, dict):
+                continue
+            if str(op.get('operation_result') or op.get('result') or '').upper() in ('AGREE', 'APPROVE'):
+                _userid = op.get('userid') or op.get('user_id') or ''
+                _name = op.get('user_name') or ''
+                if not _name:
+                    _u = find_user_by_dingtalk_id(_userid)
+                    _name = _u['name'] if _u else ''
+                if not _name:
+                    _name = '钉钉'
+                _comment = op.get('remark') or op.get('comment') or ''
+                _ts = op.get('date') or op.get('operate_time') or op.get('create_time') or ''
+                if _ts:
+                    try:
+                        import datetime as _dtm
+                        _ts = _dtm.datetime.fromtimestamp(int(_ts) / 1000).strftime('%Y-%m-%d %H:%M:%S')
+                    except Exception:
+                        _ts = str(_ts)[:19]
+                # 附件: 操作记录files + 表单附件控件
+                _att = []
+                try:
+                    _files = op.get('files') or op.get('attachments') or []
+                    if isinstance(_files, list):
+                        for _fi in _files:
+                            if isinstance(_fi, dict) and (_fi.get('fileName') or _fi.get('file_name') or _fi.get('fileId') or _fi.get('file_id')):
+                                _att.append({'fileName': _fi.get('fileName') or _fi.get('file_name') or '附件',
+                                             'fileId': _fi.get('fileId') or _fi.get('file_id') or '',
+                                             'spaceId': _fi.get('spaceId') or _fi.get('space_id') or '',
+                                             'fileSize': _fi.get('fileSize') or _fi.get('file_size') or 0,
+                                             'fileType': _fi.get('fileType') or _fi.get('file_type') or ''})
+                except Exception:
+                    pass
+                if not _att:
+                    try:
+                        for _fc in (inst.get('form_component_values') or []):
+                            if not isinstance(_fc, dict) or '附件' not in str(_fc.get('name') or ''):
+                                continue
+                            _v = _fc.get('value') or ''
+                            _fl = json.loads(_v) if isinstance(_v, str) and _v.strip().startswith('[') else (_v if isinstance(_v, list) else [])
+                            for _fi in (_fl if isinstance(_fl, list) else []):
+                                if isinstance(_fi, dict) and _fi.get('fileId'):
+                                    _att.append({'fileName': _fi.get('fileName') or '附件',
+                                                 'fileId': str(_fi.get('fileId') or ''),
+                                                 'spaceId': str(_fi.get('spaceId') or ''),
+                                                 'fileSize': _fi.get('fileSize') or 0,
+                                                 'fileType': _fi.get('fileType') or ''})
+                    except Exception:
+                        pass
+                return {'approver': _name, 'approver_id': 0, 'comment': _comment, 'processed_at': _ts,
+                        'attachments': _att}
+    except Exception:
+        pass
+    return None
+
+
 def dt_poll_results():
     """遍历 dingtalk_instances 中 pending 状态实例, 查询钉钉侧结果并回写系统
     V11.28: 只查最近7天内活跃的pending实例(老实例不查, API消耗大降)"""
@@ -2993,7 +3123,13 @@ def dt_poll_results():
                         else:
                             dt_sync_result(r['instance_code'], 'reject')
                     else:
-                        dt_sync_result(r['instance_code'], 'agree' if _res in ('agree', 'agree_ok') else 'reject')
+                        # V11.184: 同意也提取审批人/意见/附件(仅末节点有操作记录时)
+                        _op = dt_extract_agree_op(inst)
+                        if _op and _op.get('processed_at'):
+                            dt_sync_result(r['instance_code'], 'agree' if _res in ('agree', 'agree_ok') else 'reject',
+                                           _op['comment'], _op['approver'], _op['approver_id'], _op['processed_at'], _op.get('attachments') or [])
+                        else:
+                            dt_sync_result(r['instance_code'], 'agree' if _res in ('agree', 'agree_ok') else 'reject')
                     n += 1
                 elif st in ('REJECTED',):
                     # V11.175: 提取钉钉实际驳回人+驳回意见 → 实时同步(人/时间/理由)
@@ -3894,51 +4030,90 @@ def api_reject_logs(biz_type, biz_id):
     return jsonify(get_reject_logs(biz_type, biz_id))
 
 
+@app.route('/api/approvals/<biz_type>/<int:biz_id>/action-logs')
+@login_required
+def api_action_logs(biz_type, biz_id):
+    """V11.184: 审批流转操作日志(同意/驳回统一, 每条含审批人/时间/意见/附件元数据)"""
+    return jsonify(get_approval_action_logs(biz_type, biz_id))
+
+
 @app.route('/api/dingtalk/attachment-download', methods=['POST'])
 @login_required
 def api_dt_attachment_download():
-    """V11.181: 下载钉钉审批附件(表单附件/驳回附件)到本地并返回可访问URL。
-    需应用开通 qyapi_aflow_att_auth_code 权限; 未开通时返回明确提示+OA审批单链接兜底"""
+    """V11.184: 下载钉钉审批附件到本地(多通道) → 返回可访问URL。
+    通道①: 本地已缓存(同fileId已下载过) 通道②: 旧版 /topapi/processinstance/file/download
+    通道③: 新版 storage downloadInfos(签名URL) 全部失败 → OA审批单链接兜底+友好提示"""
     d = request.json or {}
     instance_id = d.get('instance_id') or ''
     file_id = d.get('file_id') or ''
     space_id = d.get('space_id') or ''
     fname = d.get('file_name') or '附件'
-    if not instance_id or not file_id:
+    if not file_id:
         return jsonify({'error': '缺少参数'}), 400
+    _dir = os.path.join(BASE, 'uploads', 'dingtalk_att')
+    os.makedirs(_dir, exist_ok=True)
+    _safe = re.sub(r'[^\w.\-\u4e00-\u9fff]', '_', fname)[:60]
+    # 通道①: 本地已缓存
     try:
-        code, resp = dt_post('/topapi/processinstance/file/download', {
-            'agent_id': dt_agent_id(),
-            'process_instance_id': instance_id,
-            'file_id': file_id,
-            'space_id': space_id,
-        })
-        # 成功: resp 为文件二进制(base64?) 或 {download_url}
-        dl_url = resp.get('download_url') or resp.get('url') or resp.get('fileUrl') or ''
-        if code == 0 and dl_url:
-            # 下载到本地uploads/reject_files/
-            import urllib.request as _ur
-            import time as _tm
-            _dir = os.path.join(BASE, 'uploads', 'reject_files')
-            os.makedirs(_dir, exist_ok=True)
-            _fn = ('rej_%d_%s' % (int(_tm.time()), re.sub(r'[^\w.\-\u4e00-\u9fff]', '_', fname)[:60]))
-            _path = os.path.join(_dir, _fn)
-            _ur.urlretrieve(dl_url, _path)
-            return jsonify({'success': True, 'url': '/uploads/reject_files/' + _fn, 'name': fname})
-        if code == 0 and isinstance(resp, bytes) and resp:
-            _dir = os.path.join(BASE, 'uploads', 'reject_files')
-            os.makedirs(_dir, exist_ok=True)
-            _fn = ('rej_%d_%s' % (int(time.time()), re.sub(r'[^\w.\-\u4e00-\u9fff]', '_', fname)[:60]))
-            with open(os.path.join(_dir, _fn), 'wb') as _f:
-                _f.write(resp)
-            return jsonify({'success': True, 'url': '/uploads/reject_files/' + _fn, 'name': fname})
-        # 权限不足或失败: 给明确提示+OA直达链接
-        oa_url = 'https://n.dingtalk.com/dingtalk/web/process/%s' % instance_id
-        sub = resp.get('sub_msg') or resp.get('errmsg') or ''
-        return jsonify({'error': '钉钉附件下载未开通权限' if '60011' in str(sub) else (sub or '下载失败'),
-                        'oa_url': oa_url}), 403
+        for _f in os.listdir(_dir):
+            if _f.startswith(file_id + '_') or (file_id + '_') in _f:
+                return jsonify({'success': True, 'url': '/uploads/dingtalk_att/' + _f, 'name': fname, 'cached': True})
+    except Exception:
+        pass
+    _fn = '%s_%s' % (file_id, _safe)
+    _path = os.path.join(_dir, _fn)
+    oa_url = 'https://n.dingtalk.com/dingtalk/web/process/%s' % instance_id if instance_id else ''
+    err_chain = []
+    try:
+        # 通道②: 旧版审批附件下载(需 qyapi_aflow_att_auth_code)
+        if instance_id:
+            code, resp = dt_post('/topapi/processinstance/file/download', {
+                'agent_id': dt_agent_id(), 'process_instance_id': instance_id,
+                'file_id': file_id, 'space_id': space_id or ''})
+            resp = resp if isinstance(resp, dict) else {}
+            if code == 0:
+                dl_url = resp.get('download_url') or resp.get('url') or resp.get('fileUrl') or ''
+                data_b = resp.get('data') if isinstance(resp, dict) else None
+                if dl_url:
+                    import urllib.request as _ur
+                    with open(_path, 'wb') as _f:
+                        _f.write(_ur.urlopen(dl_url, timeout=30).read())
+                    return jsonify({'success': True, 'url': '/uploads/dingtalk_att/' + _fn, 'name': fname})
+                if isinstance(data_b, str) and data_b:
+                    import base64 as _b64
+                    try:
+                        raw = _b64.b64decode(data_b)
+                        with open(_path, 'wb') as _f:
+                            _f.write(raw)
+                        return jsonify({'success': True, 'url': '/uploads/dingtalk_att/' + _fn, 'name': fname})
+                    except Exception:
+                        pass
+            err_chain.append(str(resp.get('sub_msg') or resp.get('errmsg') or f'code={code}')[:100])
+        # 通道③: 新版 storage downloadInfos(签名URL, 与上传同接口族)
+        try:
+            _uid = dt_union_id()
+            _sid = space_id or dt_storage_space_id()
+            if _uid and _sid:
+                c2, r2 = dt_new_post(f'/v1.0/storage/spaces/{_sid}/files/downloadInfos/query?unionId={_uid}',
+                                     {'fileId': file_id})
+                if c2 == 0:
+                    dl2 = (r2.get('downloadInfos') or [{}])[0].get('resourceUrl') or r2.get('resourceUrl') or ''
+                    if dl2:
+                        import urllib.request as _ur2
+                        with open(_path, 'wb') as _f:
+                            _f.write(_ur2.urlopen(dl2, timeout=30).read())
+                        return jsonify({'success': True, 'url': '/uploads/dingtalk_att/' + _fn, 'name': fname})
+                else:
+                    err_chain.append(str(r2.get('message') or '')[:80])
+        except Exception as e3:
+            err_chain.append(str(e3)[:80])
+        # 全部失败: 友好提示 + OA链接兜底(用户可前往钉钉查看原件)
+        _hint = '该审批附件获取失败，请前往钉钉审批单查看'
+        if oa_url:
+            return jsonify({'error': _hint, 'oa_url': oa_url, 'detail': '; '.join(err_chain)[:150]}), 200
+        return jsonify({'error': _hint, 'detail': '; '.join(err_chain)[:150]}), 200
     except Exception as e:
-        return jsonify({'error': str(e)[:100]}), 500
+        return jsonify({'error': '该审批附件获取失败，请前往钉钉审批单查看', 'oa_url': oa_url, 'detail': str(e)[:100]}), 200
 
 def notify_submitter_rejected(biz_type, biz_id, approver, comment, source='system'):
     """V11.178: 单据被驳回后 → 钉钉工作通知提交人(含单据号/驳回人/理由/处理建议)
@@ -8163,11 +8338,13 @@ def api_upload_file(filename):
 
 # ---- V55: 采购申请单下载(单个申请生成标准xlsx含明细行) ----
 def append_reject_rows(ws, start_row, biz_type, biz_id, ncols=11, CN=None):
-    """V11.175: 导出/打印单据时在底部追加驳回审批记录(多次驳回全部列出)。
-    返回下一可用行号; 无驳回记录时原样返回 start_row"""
+    """V11.175/V11.184: 导出/打印单据时在底部追加审批流转日志(同意/驳回全部列出, 含附件名)。
+    数据源: approval_action_logs(完整操作+附件) 为主; 无则回退驳回记录。
+    返回下一可用行号; 无记录时原样返回 start_row"""
     try:
+        acts = get_approval_action_logs(biz_type, biz_id)
         logs = get_reject_logs(biz_type, biz_id)
-        if not logs:
+        if not acts and not logs:
             return start_row
         def _f(bold=False, size=10, color=None):
             if CN:
@@ -8179,28 +8356,45 @@ def append_reject_rows(ws, start_row, biz_type, biz_id, ncols=11, CN=None):
             return Font(**kw)
         from openpyxl.styles import Alignment, Border, Side, PatternFill
         thin = Side(style='thin'); border = Border(left=thin, right=thin, top=thin, bottom=thin)
-        red_fill = PatternFill('solid', fgColor='FDECEC')
+        log_fill = PatternFill('solid', fgColor='FFF8E1')   # 审批日志浅黄
+        red_fill = PatternFill('solid', fgColor='FDECEC')   # 驳回浅红
         r = start_row + 1
+        # 用 action_logs(同意+驳回+附件) 为主展示
+        items = acts if acts else [dict(l, action='reject') for l in logs if isinstance(l, dict)]
+        title = '📋 审批流转日志（%d条）' % len(items)
         ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=ncols)
-        c = ws.cell(row=r, column=1, value='❌ 驳回审批记录（%d次）' % len(logs))
-        c.font = _f(bold=True, size=11, color='C0392B')
-        c.fill = red_fill
+        c = ws.cell(row=r, column=1, value=title)
+        c.font = _f(bold=True, size=11, color='1F6FEB')
+        c.fill = log_fill
         c.alignment = Alignment(horizontal='left', vertical='center')
         for rr in range(1, ncols + 1):
             ws.cell(row=r, column=rr).border = border
-            ws.cell(row=r, column=rr).fill = red_fill
+            ws.cell(row=r, column=rr).fill = log_fill
         ws.row_dimensions[r].height = 18
         r += 1
-        for l in logs:
-            _src = '【钉钉】' if l.get('source') == 'dingtalk' else '【系统】'
-            txt = '%s 驳回人：%s    时间：%s    理由：%s' % (_src, l.get('approver') or '钉钉', (l.get('processed_at') or '')[:16], l.get('comment') or '-')
+        for it in items:
+            is_rej = it.get('action') == 'reject' or (not it.get('action') and it.get('source') == 'dingtalk' and '驳回' in str(it.get('comment') or ''))
+            _src = '【钉钉】' if it.get('source') == 'dingtalk' else '【系统】'
+            _act = '驳回' if (it.get('action') == 'reject' or (it.get('action') != 'agree' and is_rej)) else ('同意' if it.get('action') == 'agree' else '驳回')
+            _att_txt = ''
+            try:
+                _atts = it.get('attachments') or []
+                if _atts:
+                    _att_txt = '  附件: ' + '、'.join(str(a.get('fileName') or '附件') for a in _atts)
+            except Exception:
+                pass
+            txt = '%s %s 审批人：%s    时间：%s    意见：%s%s' % (_src, _act, it.get('approver') or '钉钉',
+                                                          (it.get('processed_at') or '')[:16],
+                                                          it.get('comment') or '-', _att_txt)
             ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=ncols)
             c = ws.cell(row=r, column=1, value=txt)
             c.font = _f(size=10)
             c.alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
             for rr in range(1, ncols + 1):
                 ws.cell(row=r, column=rr).border = border
-            ws.row_dimensions[r].height = 18
+                if _act == '驳回' or is_rej:
+                    ws.cell(row=r, column=rr).fill = red_fill
+            ws.row_dimensions[r].height = 20
             r += 1
         return r
     except Exception:

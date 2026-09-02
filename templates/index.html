@@ -1584,12 +1584,7 @@ async function showPRequest(id){
     <h4 style="font-size:10px;margin:6px 0 3px">📋 物资明细</h4><div style="font-size:9px">`;
   items.forEach(i=>{h+=`<div style="padding:2px 0;border-bottom:1px solid var(--b)">${esc(i.item_name)} ${esc(i.spec||'')} x${i.quantity}${esc(i.unit)}</div>`});
   h+=`</div>`;
-  if(approvals.length){
-    h+=`<h4 style="font-size:10px;margin:6px 0 3px">✅ 审批进度（含电子签名）</h4>`;
-    approvals.forEach(a=>{
-      const apv=(a.approver=='钉钉')?'钉钉OA电子审批':(a.approver||'');
-      h+=`<div style="font-size:9px;padding:3px 0;border-bottom:1px dashed var(--b)">${a.status=='approved'?'✅':a.status=='rejected'?'❌':'⏳'} ${esc(a.role)} ${a.status} ${a.processed_at||''}${a.comment?` <span style="color:#888">｜${esc(a.comment)}</span>`:''}${apv?` <span style="color:var(--s)">${esc(apv)}</span>`:''}${a.signature?` <img src="${a.signature}" alt="签名" loading="lazy" style="height:34px;vertical-align:middle;border:1px solid #e3e9f2;border-radius:3px;background:#fff;margin-left:4px">`:''}</div>`});
-  }
+  // V11.184: 审批进度统一由 approvalFlowBox 的 loadApprovalFlow 渲染(含同意/驳回+附件), 不再内联
   if(r.urgent)h='<div style="background:#fff5f5;border:1px solid #f5c6c6;color:#e74c3c;font-weight:700;font-size:10px;padding:4px 8px;border-radius:4px;margin-bottom:6px">🚨 加急审批</div>'+h;
   if(r.attachments){
     try{
@@ -1601,7 +1596,8 @@ async function showPRequest(id){
     <button class="btn btn-p btn-sm" onclick="window.open('/api/prequests/${r.id}/download','_blank')">⬇️ 下载申请单</button>
     ${(ME.role=='系统管理员'||ME.name==r.requester)?`<button class="btn btn-o btn-sm" style="color:#e67e22;border-color:#e67e22" onclick="urgentRemind('purchase_request',${r.id})">⏰ 钉钉加急提醒</button>`:''}`;
   if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
-  showDetail(`申请单 ${r.req_no}`,h+'<div id="rejectLogsBox"></div>',btns);
+  showDetail(`申请单 ${r.req_no}`,h+'<div id="approvalFlowBox"></div><div id="rejectLogsBox"></div>',btns);
+  loadApprovalFlow('purchase_request',id,'approvalFlowBox');
   loadRejectLogs('purchase_request',id,'rejectLogsBox');
 }
 
@@ -2255,11 +2251,35 @@ async function dlRejAtt(fileId,spaceId,fname){
   else if(r.oa_url){alert(r.error+'\\n\\n已为您打开钉钉OA审批单，可在其中查看附件');window.open(r.oa_url,'_blank')}
   else alert(r.error||'下载失败');
 }
-// V11.177: 通用"审批流程"板块 — 渲染所有审批节点(通过/驳回/待审) + 驳回理由醒目显示; 挂到各详情弹窗
+// V11.177/V11.184: 通用"审批流转日志"板块 — 渲染审批节点(通过/驳回/待审) + 每条操作的意见与附件(图片预览/下载)
+// 数据源: approval_instances(节点状态) + approval_action_logs(操作记录含钉钉同步的附件)
 async function loadApprovalFlow(bt,bid,boxId){
   try{
     const list=await api(`/approvals/${bt}/${bid}/list`,{noCache:true});
     const box=id(boxId);if(!box)return;
+    // V11.184: 操作日志(同意/驳回+附件, 钉钉同步) — 覆盖审批节点展示
+    let acts=[];
+    try{acts=await api(`/approvals/${bt}/${bid}/action-logs`,{noCache:true})}catch(e){}
+    if(acts&&acts.length){
+      window.__curActLogs=acts;  // V11.184: 附件下载时取对应实例号
+      let h='<div style="margin-top:8px;border-top:1px solid var(--b);padding-top:6px">'+
+        '<div style="font-size:10px;font-weight:700;color:#1f6feb;margin-bottom:4px">📋 审批流转日志（'+acts.length+'条）</div>';
+      acts.forEach((a,ai)=>{
+        const ico=a.action=='agree'?'✅':'❌';
+        const stTxt=a.action=='agree'?'同意':'驳回';
+        const srcTag=a.source=='dingtalk'?'<span style="color:#1f6feb;font-size:8px;border:1px solid #1f6feb;border-radius:3px;padding:0 3px">钉钉</span>':'<span style="color:#666;font-size:8px;border:1px solid #bbb;border-radius:3px;padding:0 3px">系统</span>';
+        h+=`<div style="font-size:9px;padding:4px 0;border-bottom:1px dashed var(--b)">
+          ${ico} <b>${esc(a.approver||'审批人')}</b> ${stTxt} <span style="color:#999">${esc((a.processed_at||'').slice(0,16))}</span> ${srcTag}
+          ${(a.comment||'')?`<div style="color:${a.action=='reject'?'#c0392b':'#555'};background:${a.action=='reject'?'#fff5f5':'#f7faf7'};border-radius:3px;padding:2px 6px;margin-top:2px;white-space:pre-wrap">${a.action=='reject'?'理由：':''}${esc(a.comment)}</div>`:''}
+          ${renderAttHtml(a.attachments,a.instance_code||'')}
+          ${a.signature?`<img src="${a.signature}" alt="签名" loading="lazy" style="height:30px;vertical-align:middle;border:1px solid #e3e9f2;border-radius:3px;background:#fff;margin-top:2px">`:''}
+          </div>`;
+      });
+      h+='</div>';
+      box.innerHTML=h;
+      return;
+    }
+    // 兜底: 无操作日志时显示审批节点(旧数据/未走新记录逻辑的单据)
     if(!list||!list.length){box.innerHTML='';return}
     let h='<div style="margin-top:8px;border-top:1px solid var(--b);padding-top:6px">'+
       '<div style="font-size:10px;font-weight:700;color:#1f6feb;margin-bottom:4px">📋 审批流程</div>';
@@ -2268,15 +2288,49 @@ async function loadApprovalFlow(bt,bid,boxId){
       const ico=a.status=='approved'?'✅':a.status=='rejected'?'❌':'⏳';
       const stTxt=a.status=='approved'?'已通过':a.status=='rejected'?'已驳回':'待审批';
       h+=`<div style="font-size:9px;padding:3px 0;border-bottom:1px dashed var(--b)">${ico} <b>${esc(a.role||'')}</b> ${stTxt} ${esc((a.processed_at||'').slice(0,16)||'')}${apv?` <span style="color:var(--s)">${esc(apv)}</span>`:''}`;
-      // 驳回: 理由红色醒目(审批实例comment)
       if(a.status=='rejected') h+=`<div style="color:#c0392b;background:#fff5f5;border-radius:3px;padding:2px 6px;margin-top:2px">理由：${esc(a.comment||'-')}</div>`;
-      // 通过: 意见灰色
       else if(a.comment) h+=` <span style="color:#888">｜${esc(a.comment)}</span>`;
       h+=`${a.signature?` <img src="${a.signature}" alt="签名" loading="lazy" style="height:34px;vertical-align:middle;border:1px solid #e3e9f2;border-radius:3px;background:#fff;margin-left:4px">`:''}</div>`;
     });
     h+='</div>';
     box.innerHTML=h;
   }catch(e){}
+}
+// V11.184: 审批附件渲染 — 图片缩略可点大图, 文件显示名称, 点击调下载(未开通权限→友好提示+OA链接)
+function renderAttHtml(atts,instCode){
+  if(!atts||!atts.length)return'';
+  return '<div style="margin-top:3px">'+atts.map(a=>{
+    const fn=esc(a.fileName||'附件');
+    const isImg=/\.(png|jpe?g|gif|webp|bmp)$/i.test(a.fileName||'');
+    const fid=esc(String(a.fileId||''));
+    const spid=esc(String(a.spaceId||''));
+    const ic=esc(String(instCode||''));
+    if(isImg){
+      return `<span style="display:inline-block;margin:2px 6px 2px 0;vertical-align:middle" title="${fn}">
+        <img src="/static/img/att-placeholder.png"
+          style="width:52px;height:52px;object-fit:cover;border:1px solid #e3e9f2;border-radius:6px;background:#f0f2f5;cursor:pointer"
+          onclick="dlAttShow(this,'${fid}','${spid}','${fn.replace(/'/g,"\\'")}','${ic}')">
+        <div style="font-size:8px;color:#666;max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${fn}</div></span>`;
+    }
+    return `<span style="display:inline-block;margin:2px 6px 2px 0;font-size:9px;color:#1f6feb;border:1px solid #cfe0f7;border-radius:4px;padding:2px 6px;background:#f5f9ff;cursor:pointer" onclick="dlAttShow(this,'${fid}','${spid}','${fn.replace(/'/g,"\\'")}','${ic}')">📄 ${fn} ⬇</span>`;
+  }).join('')+'</div>';
+}
+// V11.184: 附件点击处理 — 调下载接口; 成功后预览/打开; 失败提示"该审批附件获取失败,请前往钉钉审批单查看"
+async function dlAttShow(el,fid,spid,fn,instCode){
+  const r=await api('/dingtalk/attachment-download',{method:'POST',body:JSON.stringify({
+    instance_id:instCode||'',file_id:fid,space_id:spid,file_name:fn})});
+  if(r&&r.success){
+    const isImg=/\.(png|jpe?g|gif|webp|bmp)$/i.test(fn||'');
+    if(el&&el.tagName=='IMG'){el.src=r.url;el.onclick=()=>window.open(r.url,'_blank');el.style.cursor='pointer';return}
+    if(isImg){window.open(r.url,'_blank')}else{alert('✅ 已获取附件，点击确定后在新窗口打开/下载');window.open(r.url,'_blank')}
+  }else{
+    // 友好提示: 附件获取失败 → 引导前往钉钉审批单(不崩溃)
+    if(r&&r.oa_url){
+      if(confirm('该审批附件获取失败，请前往钉钉审批单查看。\n\n是否现在打开钉钉审批单？')){window.open(r.oa_url,'_blank')}
+    }else{
+      alert('该审批附件获取失败，请前往钉钉审批单查看');
+    }
+  }
 }
 // V11.175c: 列表独立"驳回"列 — 含人/时间/理由(最新一条), 不再挤在状态列下
 function rejCell(x){
