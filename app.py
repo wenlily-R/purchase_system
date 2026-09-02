@@ -552,6 +552,9 @@ def init_db():
         ('inquiry_suppliers', 'adj_details', "ALTER TABLE inquiry_suppliers ADD COLUMN adj_details TEXT DEFAULT ''"),
         ('inquiry_suppliers', 'adj_price', "ALTER TABLE inquiry_suppliers ADD COLUMN adj_price REAL DEFAULT 0"),
         ('inquiry_suppliers', 'adj_remark', "ALTER TABLE inquiry_suppliers ADD COLUMN adj_remark TEXT DEFAULT ''"),
+        # V11.181: 驳回附件同步 — 驳回记录存附件元数据+钉钉实例号(查看详情可直达OA审批单看附件)
+        ('approval_reject_logs', 'attachments', "ALTER TABLE approval_reject_logs ADD COLUMN attachments TEXT DEFAULT ''"),
+        ('approval_reject_logs', 'instance_code', "ALTER TABLE approval_reject_logs ADD COLUMN instance_code TEXT DEFAULT ''"),
         # V11.175: 驳回展示 — 各业务表补 rejected_reason(列表/详情显示最近驳回理由)
         ('requisitions', 'rejected_reason', "ALTER TABLE requisitions ADD COLUMN rejected_reason TEXT DEFAULT ''"),
         ('receivings', 'rejected_reason', "ALTER TABLE receivings ADD COLUMN rejected_reason TEXT DEFAULT ''"),
@@ -1330,13 +1333,15 @@ def _src_of(approver, approver_id):
         return 'dingtalk'
     return 'system'
 
-def log_reject(biz_type, biz_id, approver, approver_id, comment, source='system', conn=None):
+def log_reject(biz_type, biz_id, approver, approver_id, comment, source='system', conn=None, attachments=None, instance_code=''):
     """V11.175: 追加驳回历史(每次驳回一条, 不覆盖) + 同步父单据rejected_reason(取最新)
+    V11.181: attachments(钉钉驳回附件元数据JSON)/instance_code(钉钉实例号) 一并存储
     conn: 复用调用方连接(避免SQLite写锁冲突); 无则自开连接"""
     try:
+        _att_json = json.dumps(attachments or [], ensure_ascii=False) if attachments else ''
         if conn is not None:
-            conn.execute("INSERT INTO approval_reject_logs(biz_type,biz_id,approver,approver_id,comment,processed_at,source) VALUES(?,?,?,?,?,?,?)",
-                         (biz_type, biz_id, str(approver or '')[:50], int(approver_id or 0), str(comment or '')[:500], now(), source))
+            conn.execute("INSERT INTO approval_reject_logs(biz_type,biz_id,approver,approver_id,comment,processed_at,source,attachments,instance_code) VALUES(?,?,?,?,?,?,?,?,?)",
+                         (biz_type, biz_id, str(approver or '')[:50], int(approver_id or 0), str(comment or '')[:500], now(), source, _att_json, str(instance_code or '')[:100]))
             try:
                 # V11.175c: 父单据同步最新驳回人/时间/理由(列表独立驳回列展示)
                 conn.execute(f"UPDATE {biz_table(biz_type)} SET rejected_reason=?, rejected_by=?, rejected_at=? WHERE id=?",
@@ -1348,8 +1353,8 @@ def log_reject(biz_type, biz_id, approver, approver_id, comment, source='system'
                     pass
             return
         c = db()
-        c.execute("INSERT INTO approval_reject_logs(biz_type,biz_id,approver,approver_id,comment,processed_at,source) VALUES(?,?,?,?,?,?,?)",
-                  (biz_type, biz_id, str(approver or '')[:50], int(approver_id or 0), str(comment or '')[:500], now(), source))
+        c.execute("INSERT INTO approval_reject_logs(biz_type,biz_id,approver,approver_id,comment,processed_at,source,attachments,instance_code) VALUES(?,?,?,?,?,?,?,?,?)",
+                  (biz_type, biz_id, str(approver or '')[:50], int(approver_id or 0), str(comment or '')[:500], now(), source, _att_json, str(instance_code or '')[:100]))
         # 父单据 rejected_reason 同步为最新驳回理由(展示用; 完整历史查 reject_logs)
         try:
             c.execute(f"UPDATE {biz_table(biz_type)} SET rejected_reason=?, rejected_by=?, rejected_at=? WHERE id=?",
@@ -1364,17 +1369,26 @@ def log_reject(biz_type, biz_id, approver, approver_id, comment, source='system'
         pass
 
 def get_reject_logs(biz_type, biz_id):
-    """V11.175: 读取驳回历史(按时间正序)"""
+    """V11.175: 读取驳回历史(按时间正序); V11.181: 含附件元数据+钉钉实例号"""
     try:
         c = db()
-        rows = c.execute("SELECT approver, approver_id, comment, processed_at, source FROM approval_reject_logs WHERE biz_type=? AND biz_id=? ORDER BY id ASC", (biz_type, biz_id)).fetchall()
+        rows = c.execute("SELECT approver, approver_id, comment, processed_at, source, attachments, instance_code FROM approval_reject_logs WHERE biz_type=? AND biz_id=? ORDER BY id ASC", (biz_type, biz_id)).fetchall()
         c.close()
-        return [dict_row(r) for r in rows]
+        out = []
+        for r in rows:
+            d = dict_row(r)
+            try:
+                d['attachments'] = json.loads(d.get('attachments') or '[]') if d.get('attachments') else []
+            except Exception:
+                d['attachments'] = []
+            out.append(d)
+        return out
     except Exception:
         return []
 
-def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_id=0, comment='飞书审批同步'):
+def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_id=0, comment='飞书审批同步', attachments=None, instance_code=''):
     """result: 'ok'=通过, 'reject'=驳回; 同步更新审批节点/父单据/飞书实例状态 (幂等)
+    V11.181: attachments(驳回附件元数据)/instance_code(钉钉实例号) 随驳回记录存储
     场景覆盖: ①系统内逐级审批(每过一级pending减1, 全过才置父状态)
     ②飞书回调(回调时节点全pending, 一次性全部通过) ③驳回(全部pending置rejected)"""
     c = db()
@@ -1393,7 +1407,9 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
         c.execute("UPDATE approval_instances SET status='rejected', approver=?, approver_id=?, comment=?, processed_at=? WHERE biz_type=? AND biz_id=? AND status='pending'",
                   (approver, approver_id, comment, now(), biz_type, biz_id))
         # V11.175: 追加驳回历史(人/时间/理由/来源), 多次驳回不覆盖; 复用本连接避免写锁冲突
-        log_reject(biz_type, biz_id, approver, approver_id, comment, source=_src_of(approver, approver_id), conn=c)
+        # V11.181: 附件元数据+钉钉实例号随驳回记录存储
+        log_reject(biz_type, biz_id, approver, approver_id, comment, source=_src_of(approver, approver_id), conn=c,
+                   attachments=attachments or [], instance_code=instance_code)
         st = biz_parent_status(biz_type, 'reject')
     # V11.126: 询价定标审批无通用 biz_table(父单据=inquiries), 单独处理; 其他走通用表
     if biz_type == 'inquiry_approval':
@@ -2777,11 +2793,12 @@ def dt_urgent_remind(biz_type, biz_id, operator):
         return False, f'加急提醒异常: {str(e)[:80]}'
 
 # ---- 审批结果同步(幂等) ----
-def dt_sync_result(instance_id, result, comment='', approver='', approver_id=0, processed_at=''):
+def dt_sync_result(instance_id, result, comment='', approver='', approver_id=0, processed_at='', attachments=None):
     """V6.0: 钉钉审批结果回写系统(幂等)
     - result: agree/reject
     - comment: 钉钉审批意见(驳回原因等) → 回写单据留痕
     - V11.175: approver/approver_id/processed_at = 钉钉实际驳回人/时间(从实例详情提取), 实时同步
+    - V11.181: attachments = 驳回附件元数据列表[{fileName,fileId,spaceId,...}], 存驳回记录供查看
     审批状态双向同步: 钉钉同意→系统单据通过; 钉钉驳回→系统单据驳回+原因留痕"""
     c = db()
     r = c.execute("SELECT * FROM dingtalk_instances WHERE instance_code=?", (instance_id,)).fetchone()
@@ -2802,7 +2819,8 @@ def dt_sync_result(instance_id, result, comment='', approver='', approver_id=0, 
             pass
         c2.commit(); c2.close()
         log('钉钉', '审批意见回写', f"{r['biz_type']}#{r['biz_id']} 驳回人:{_approver} 理由:{str(comment)[:100]}")
-    finish_approvals(r['biz_type'], r['biz_id'], 'ok' if result == 'agree' else 'reject', _approver, _approver_id, comment or f'钉钉审批{result}')
+    finish_approvals(r['biz_type'], r['biz_id'], 'ok' if result == 'agree' else 'reject', _approver, _approver_id, comment or f'钉钉审批{result}',
+                     attachments=attachments or [], instance_code=instance_id)
     # V11.28: 审批结果即时通知申请人(钉钉工作通知, 一次审批一次调用, 消耗可忽略)
     # V11.178: 仅"通过"在此通知(驳回由 finish_approvals 统一通知, 含理由, 避免重复)
     if result == 'agree':
@@ -2854,6 +2872,7 @@ def dt_query_instance(instance_id):
 
 def dt_extract_reject_op(inst):
     """V11.175: 从钉钉实例详情提取驳回操作(人/意见/时间)。
+    V11.181: 同时提取附件(operation_records.files 及 表单附件控件), 供系统同步展示。
     钉钉 operation_records 里每个节点一条, 找出 result=REJECT 的那条。"""
     try:
         ops = inst.get('operation_records') or inst.get('operationRecords') or []
@@ -2879,7 +2898,39 @@ def dt_extract_reject_op(inst):
                         _ts = _dtm.datetime.fromtimestamp(int(_ts) / 1000).strftime('%Y-%m-%d %H:%M:%S')
                     except Exception:
                         _ts = str(_ts)[:19]
-                return {'approver': _name, 'approver_id': 0, 'comment': _comment, 'processed_at': _ts}
+                # V11.181: 提取附件(操作记录files 或 表单附件控件)
+                _att = []
+                try:
+                    _files = op.get('files') or op.get('attachments') or []
+                    if isinstance(_files, list):
+                        for _fi in _files:
+                            if isinstance(_fi, dict) and (_fi.get('fileName') or _fi.get('file_name') or _fi.get('fileId') or _fi.get('file_id')):
+                                _att.append({'fileName': _fi.get('fileName') or _fi.get('file_name') or '附件',
+                                             'fileId': _fi.get('fileId') or _fi.get('file_id') or '',
+                                             'spaceId': _fi.get('spaceId') or _fi.get('space_id') or '',
+                                             'fileSize': _fi.get('fileSize') or _fi.get('file_size') or 0,
+                                             'fileType': _fi.get('fileType') or _fi.get('file_type') or ''})
+                except Exception:
+                    pass
+                if not _att:
+                    # 表单附件控件(如 单据凭证xlsx/图片) 一并带上
+                    try:
+                        for _fc in (inst.get('form_component_values') or []):
+                            if not isinstance(_fc, dict) or '附件' not in str(_fc.get('name') or ''):
+                                continue
+                            _v = _fc.get('value') or ''
+                            _fl = json.loads(_v) if isinstance(_v, str) and _v.strip().startswith('[') else (_v if isinstance(_v, list) else [])
+                            for _fi in (_fl if isinstance(_fl, list) else []):
+                                if isinstance(_fi, dict) and _fi.get('fileId'):
+                                    _att.append({'fileName': _fi.get('fileName') or '附件',
+                                                 'fileId': str(_fi.get('fileId') or ''),
+                                                 'spaceId': str(_fi.get('spaceId') or ''),
+                                                 'fileSize': _fi.get('fileSize') or 0,
+                                                 'fileType': _fi.get('fileType') or ''})
+                    except Exception:
+                        pass
+                return {'approver': _name, 'approver_id': 0, 'comment': _comment, 'processed_at': _ts,
+                        'attachments': _att}
     except Exception:
         pass
     return None
@@ -2929,7 +2980,7 @@ def dt_poll_results():
                         # V11.177: COMPLETED+refuse 也是驳回 — 提取驳回人/理由/时间(原只传reject丢理由)
                         _op = dt_extract_reject_op(inst)
                         if _op:
-                            dt_sync_result(r['instance_code'], 'reject', _op['comment'], _op['approver'], _op['approver_id'], _op['processed_at'])
+                            dt_sync_result(r['instance_code'], 'reject', _op['comment'], _op['approver'], _op['approver_id'], _op['processed_at'], _op.get('attachments') or [])
                         else:
                             dt_sync_result(r['instance_code'], 'reject')
                     else:
@@ -2939,7 +2990,7 @@ def dt_poll_results():
                     # V11.175: 提取钉钉实际驳回人+驳回意见 → 实时同步(人/时间/理由)
                     _op = dt_extract_reject_op(inst)
                     if _op:
-                        dt_sync_result(r['instance_code'], 'reject', _op['comment'], _op['approver'], _op['approver_id'], _op['processed_at'])
+                        dt_sync_result(r['instance_code'], 'reject', _op['comment'], _op['approver'], _op['approver_id'], _op['processed_at'], _op.get('attachments') or [])
                     else:
                         dt_sync_result(r['instance_code'], 'reject')
                     n += 1
@@ -3826,8 +3877,55 @@ def api_approval_list(biz_type, biz_id):
 @app.route('/api/approvals/<biz_type>/<int:biz_id>/reject-logs')
 @login_required
 def api_reject_logs(biz_type, biz_id):
-    """V11.175: 驳回历史(人/时间/理由/来源), 各模块详情弹窗展示用"""
+    """V11.175: 驳回历史(人/时间/理由/来源), 各模块详情弹窗展示用; V11.181: 含附件+钉钉实例号"""
     return jsonify(get_reject_logs(biz_type, biz_id))
+
+
+@app.route('/api/dingtalk/attachment-download', methods=['POST'])
+@login_required
+def api_dt_attachment_download():
+    """V11.181: 下载钉钉审批附件(表单附件/驳回附件)到本地并返回可访问URL。
+    需应用开通 qyapi_aflow_att_auth_code 权限; 未开通时返回明确提示+OA审批单链接兜底"""
+    d = request.json or {}
+    instance_id = d.get('instance_id') or ''
+    file_id = d.get('file_id') or ''
+    space_id = d.get('space_id') or ''
+    fname = d.get('file_name') or '附件'
+    if not instance_id or not file_id:
+        return jsonify({'error': '缺少参数'}), 400
+    try:
+        code, resp = dt_post('/topapi/processinstance/file/download', {
+            'agent_id': dt_agent_id(),
+            'process_instance_id': instance_id,
+            'file_id': file_id,
+            'space_id': space_id,
+        })
+        # 成功: resp 为文件二进制(base64?) 或 {download_url}
+        dl_url = resp.get('download_url') or resp.get('url') or resp.get('fileUrl') or ''
+        if code == 0 and dl_url:
+            # 下载到本地uploads/reject_files/
+            import urllib.request as _ur
+            import time as _tm
+            _dir = os.path.join(BASE, 'uploads', 'reject_files')
+            os.makedirs(_dir, exist_ok=True)
+            _fn = ('rej_%d_%s' % (int(_tm.time()), re.sub(r'[^\w.\-\u4e00-\u9fff]', '_', fname)[:60]))
+            _path = os.path.join(_dir, _fn)
+            _ur.urlretrieve(dl_url, _path)
+            return jsonify({'success': True, 'url': '/uploads/reject_files/' + _fn, 'name': fname})
+        if code == 0 and isinstance(resp, bytes) and resp:
+            _dir = os.path.join(BASE, 'uploads', 'reject_files')
+            os.makedirs(_dir, exist_ok=True)
+            _fn = ('rej_%d_%s' % (int(time.time()), re.sub(r'[^\w.\-\u4e00-\u9fff]', '_', fname)[:60]))
+            with open(os.path.join(_dir, _fn), 'wb') as _f:
+                _f.write(resp)
+            return jsonify({'success': True, 'url': '/uploads/reject_files/' + _fn, 'name': fname})
+        # 权限不足或失败: 给明确提示+OA直达链接
+        oa_url = 'https://n.dingtalk.com/dingtalk/web/process/%s' % instance_id
+        sub = resp.get('sub_msg') or resp.get('errmsg') or ''
+        return jsonify({'error': '钉钉附件下载未开通权限' if '60011' in str(sub) else (sub or '下载失败'),
+                        'oa_url': oa_url}), 403
+    except Exception as e:
+        return jsonify({'error': str(e)[:100]}), 500
 
 def notify_submitter_rejected(biz_type, biz_id, approver, comment, source='system'):
     """V11.178: 单据被驳回后 → 钉钉工作通知提交人(含单据号/驳回人/理由/处理建议)

@@ -2209,11 +2209,51 @@ async function loadRejectLogs(bt,bid,boxId){
     if(!logs||!logs.length){box.innerHTML='';return}
     box.innerHTML='<div style="margin-top:8px;border-top:1px dashed #e5d0d0;padding-top:6px">'+
       '<div style="font-size:10px;font-weight:700;color:#c0392b;margin-bottom:4px">❌ 驳回记录（'+logs.length+'次）</div>'+
-      logs.map(l=>`<div style="font-size:9px;background:#fff5f5;border:1px solid #f5d0d0;border-radius:4px;padding:5px 8px;margin-bottom:4px">
+      logs.map((l,li)=>`<div style="font-size:9px;background:#fff5f5;border:1px solid #f5d0d0;border-radius:4px;padding:5px 8px;margin-bottom:4px">
         <b style="color:#c0392b">${esc(l.approver||'钉钉')}</b> <span style="color:#999">${esc((l.processed_at||'').slice(0,16))}</span>
         ${l.source=='dingtalk'?'<span style="color:#1f6feb;font-size:8px;border:1px solid #1f6feb;border-radius:3px;padding:0 3px">钉钉</span>':''}
+        ${l.attachments&&l.attachments.length?`<span style="color:#7b241c;font-size:8px">📎${l.attachments.length}个附件</span>`:''}
+        <button class="lnk" style="color:#1f6feb;font-size:9px;float:right" onclick="showRejectDetail(${li})">📋 查看详情</button>
         <div style="color:#a93226;margin-top:2px">理由：${esc(l.comment||'-')}</div></div>`).join('')+'</div>';
+    // V11.181: 附件数据缓存供查看详情弹窗用
+    window.__rejectLogs=logs;
   }catch(e){}
+}
+// V11.181: 驳回查看详情 — 完整信息(人/时间/理由/来源/环节) + 附件(可预览/下载) + 直达钉钉OA审批单
+function showRejectDetail(li){
+  const logs=(window.__rejectLogs||[]);
+  const l=logs[li]; if(!l)return;
+  window.__rejDetailIdx=li;  // 下载附件时定位实例号
+  let attHtml='<div style="color:#999;font-size:9px">（无附件）</div>';
+  if(l.attachments&&l.attachments.length){
+    attHtml=l.attachments.map(a=>{
+      const fn=esc(a.fileName||'附件');
+      const isImg=/\.(png|jpe?g|gif|webp|bmp)$/i.test(a.fileName||'');
+      const dlBtn=`<button class="btn btn-sm" style="margin-top:2px" onclick="dlRejAtt('${esc(String(a.fileId||''))}','${esc(String(a.spaceId||''))}','${fn}')">⬇️ 下载</button>`;
+      return `<div style="font-size:9px;border:1px solid #e8e0e0;border-radius:4px;padding:4px 6px;margin:3px 0;background:#fff">
+        ${isImg?'<div style="color:#666">🖼️ '+fn+'</div>':('<div style="color:#666">📄 '+fn+(a.fileSize?'（'+(a.fileSize/1024).toFixed(1)+'KB）':'')+'</div>')}
+        ${dlBtn}</div>`;
+    }).join('');
+  }
+  const oaBtn = l.instance_code?`<button class="btn btn-o btn-sm" onclick="window.open('https://n.dingtalk.com/dingtalk/web/process/${esc(l.instance_code)}','_blank')">🔗 钉钉OA查看原件</button>`:'';
+  showDetail(`📋 驳回详情 #${li+1}`,`<div class="c2">
+      <div><dt>驳回人</dt><dd><b>${esc(l.approver||'钉钉')}</b></dd><dt>驳回时间</dt><dd>${esc(l.processed_at||'-')}</dd><dt>来源</dt><dd>${l.source=='dingtalk'?'钉钉审批':'系统审批'}</dd></div>
+      <div><dt>单据</dt><dd>${esc(l.biz_type||'')}#${esc(l.biz_id||'')}</dd><dt>审批单</dt><dd>${l.instance_code?esc(l.instance_code.slice(0,10)+'…'):'—'}</dd></div></div>
+    <div style="margin-top:8px"><div style="font-size:10px;font-weight:700;color:#c0392b">驳回理由</div>
+      <div style="font-size:11px;background:#fff5f5;border:1px solid #f5d0d0;border-radius:6px;padding:8px;margin-top:3px;white-space:pre-wrap">${esc(l.comment||'（未填写理由）')}</div></div>
+    <div style="margin-top:8px"><div style="font-size:10px;font-weight:700;color:#7b241c">📎 附件（${(l.attachments||[]).length}）</div>${attHtml}</div>
+    <div style="margin-top:6px;font-size:9px;color:#999">💡 附件文件保存在钉钉OA审批中，点「下载」同步到系统；如未开通下载权限，可点「钉钉OA查看原件」直接打开审批单查看附件。</div>`,
+    `<button class="btn btn-o" onclick="closeMod()">关闭</button>${oaBtn}`);
+}
+async function dlRejAtt(fileId,spaceId,fname){
+  // 从当前查看的驳回记录找instance_code
+  const l=(window.__rejectLogs||[])[window.__rejDetailIdx||0];
+  if(!l||!l.instance_code){alert('缺少审批实例信息');return}
+  const r=await api('/dingtalk/attachment-download',{method:'POST',body:JSON.stringify({
+    instance_id:l.instance_code,file_id:fileId,space_id:spaceId,file_name:fname})});
+  if(r.success){alert('✅ 已下载: '+r.name);window.open(r.url,'_blank')}
+  else if(r.oa_url){alert(r.error+'\\n\\n已为您打开钉钉OA审批单，可在其中查看附件');window.open(r.oa_url,'_blank')}
+  else alert(r.error||'下载失败');
 }
 // V11.177: 通用"审批流程"板块 — 渲染所有审批节点(通过/驳回/待审) + 驳回理由醒目显示; 挂到各详情弹窗
 async function loadApprovalFlow(bt,bid,boxId){
