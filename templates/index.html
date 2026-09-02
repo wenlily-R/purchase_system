@@ -2095,10 +2095,30 @@ function viewBiz(t,oid){
   else if(t=='purchase_order')showOrder(oid);
   else if(t=='inquiry_approval')showInquiry(oid);
   else if(t=='contract')showContract(oid);
+  else if(t=='receiving')showRcvDetail(oid);   // V11.172: 入库审批详情可点
+  else if(t=='requisition')showRequisitionDetail(oid);  // V11.172: 出库审批详情可点
   else if(t=='credit'||t=='payment'){
     const a=id('approvalsTable').innerHTML;
     alert('请打开对应单据页查看详情');
   }
+}
+async function showRequisitionDetail(rid){
+  // V11.172: 出库单详情(审批页"详情"按钮用) — 读取单据+明细, 弹窗展示
+  if(__guardOpen('rqdt:'+rid))return;
+  try{
+    const d=await api(`/requisitions/${rid}`,{noCache:true});
+    const r=d.requisition||d;
+    if(!r){alert('出库单不存在');return}
+    let itemsHtml='';
+    if(d.items&&d.items.length){
+      itemsHtml='<table class="tb" style="font-size:9px;margin-top:4px"><thead><tr><th>物资</th><th>规格</th><th>数量</th><th>单位</th></tr></thead><tbody>'+
+        d.items.map(it=>`<tr><td>${esc(it.item_name)}</td><td>${esc(it.spec||'')}</td><td>${it.quantity}</td><td>${esc(it.unit||'')}</td></tr>`).join('')+'</tbody></table>';
+    }
+    showDetail(`出库单 ${r.req_no||('#'+rid)}`,`
+      <div class="c2"><div><dt>单号</dt><dd><b>${esc(r.req_no||'')}</b></dd><dt>状态</dt><dd>${tag(r.status)}</dd><dt>领取人</dt><dd>${esc(r.receiver||r.requester||'')}</dd></div>
+      <div><dt>部门</dt><dd>${esc(r.receive_dept||r.dept||'')}</dd><dt>物资</dt><dd>${esc(r.item_name||'')}</dd><dt>创建时间</dt><dd>${esc((r.created_at||'').slice(0,16))}</dd></div></div>
+      ${itemsHtml}`, `<button class="btn btn-o" onclick="closeMod()">关闭</button>`);
+  }catch(e){alert('加载失败:'+(e.message||e))}
 }
 function canApprove(x){
   // V7.0: 仅当前节点指定审批人/系统管理员可审批

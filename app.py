@@ -1134,15 +1134,9 @@ def fs_biz_info(biz_type, biz_id):
         c.close()
         if not r: return None
         return (r['inq_no'], r['title'] or r['inq_no'], 0, r['created_by'] or '', '')
-    r = c.execute("SELECT * FROM receivings WHERE id=?", (biz_id,)).fetchone()
-    c.close()
-    if not r: return None
-    return (r['receive_no'], r['item_name'] or r['receive_no'], r['quantity'] or 0, r['inspector'] or '系统', r['created_at'])
-    if biz_type == 'inquiry_approval':
-        r = c.execute("SELECT * FROM inquiries WHERE id=?", (biz_id,)).fetchone()
-        c.close()
-        if not r: return None
-        return (r['inq_no'], r['title'] or r['inq_no'], 0, r['created_by'] or '', '')
+    # V11.172: 修复缺少 if 条件的 receiving 分支 — 原本无条件查 receivings 表,
+    # 导致 requisition 等类型走到这里查不到记录返回 None, 钉钉审批永远发不出去
+    if biz_type == 'receiving':
         r = c.execute("SELECT * FROM receivings WHERE id=?", (biz_id,)).fetchone()
         c.close()
         if not r: return None
@@ -2629,8 +2623,8 @@ def dt_urgent_remind(biz_type, biz_id, operator):
         if not u or not u['dingtalk_userid']:
             return False, '当前审批人未绑定钉钉'
         # V8.3: 审批提醒统一走OA审批原生通知时, 手动加急不再经工作通知机器人推送
-        if cfg_get('dingtalk_oa_notify_only', '0') == '1':
-            return True, '审批提醒已统一走钉钉OA审批通知（钉钉会自动提醒当前审批人）'
+        # V11.172: 修复"加急按钮是死的" — 用户手动点加急=明确要催办, 必须实际推送,
+        # 不再被 oa_notify_only 拦截(该配置只管自动节点推送, 不影响手动加急)
         doc_no = dt_biz_info(biz_type, biz_id)
         doc_no = doc_no[0] if doc_no else f'{biz_type}#{biz_id}'
         title = '⏰ 人工加急提醒，请尽快审批'
@@ -5957,6 +5951,23 @@ def api_requisitions():
         out.append(d)
     conn.close()
     return jsonify(out)
+
+@app.route('/api/requisitions/<int:rid>')
+@login_required
+def api_requisition_detail(rid):
+    """V11.172: 出库单详情(审批页"详情"按钮) — 单据+明细行"""
+    role = session.get('user_role')
+    if role in ('采购员', '财务'):
+        return jsonify({'error': '无权限'}), 403
+    conn = db()
+    r = conn.execute("SELECT * FROM requisitions WHERE id=?", (rid,)).fetchone()
+    if not r:
+        conn.close(); return jsonify({'error': '出库单不存在'}), 404
+    items = conn.execute("SELECT * FROM requisition_items WHERE requisition_id=? ORDER BY id", (rid,)).fetchall()
+    conn.close()
+    d = dict_row(r)
+    d['items'] = [dict_row(x) for x in items]
+    return jsonify({'requisition': d, 'items': [dict_row(x) for x in items]})
 
 @app.route('/api/requisitions', methods=['POST'])
 @login_required
