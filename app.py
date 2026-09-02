@@ -924,10 +924,12 @@ def get_approval_config(biz_type, amount):
     conn.close()
     return rows
 
-def create_approvals(biz_type, biz_id, amount):
+def create_approvals(biz_type, biz_id, amount, submitter=''):
     """V5.0: 按审批流配置生成审批实例
     - 节点配置了具体审批人(approver=用户名) → 绑定该用户
     - 未配置(留空) → 按角色在 users 表找有效用户
+    - V11.183: submitter参数预留(提交人) — 钉钉模板固定审批人模式下不校验发起人=审批人,
+      且穆娇自提交的单由模板固定审批人正常处理(实测发起成功), 因此不做自动换人, 保持系统与钉钉审批人一致
     支持每个环节独立配置/更换审批负责人, 页面可视化维护, 无需改代码"""
     configs = get_approval_config(biz_type, amount)
     conn = db()
@@ -2623,12 +2625,6 @@ def dt_start_instance(biz_type, biz_id):
         if not originator:
             # 兜底: 第一个已绑定钉钉ID的审批人, 再不行用系统内任意已绑定用户
             originator = approvers[0] if approvers else dt_first_bound_userid()
-        # V11.182: 发起人不能=审批人(钉钉820003) — 本人提交的单(如领导自己申请)由系统管理员代发起
-        if originator and approvers and originator in approvers:
-            _adm = find_user_by_role('系统管理员')
-            if _adm and _adm['dingtalk_userid'] and _adm['dingtalk_userid'] not in approvers:
-                originator = _adm['dingtalk_userid']
-                log('系统', '钉钉审批代发起', f"{info[0]} 发起人=审批人({info[3]}), 由系统管理员代发起")
         if not originator:
             log('系统', '钉钉审批未发起', f"{biz_type}#{biz_id} 无已绑定钉钉ID的用户")
             return None
@@ -4260,7 +4256,7 @@ def api_create_prequest():
     conn.commit()
     # V11.154: 草稿不创建审批实例(采购员检查后手动提交)
     if not d.get('draft'):
-        create_approvals('purchase_request', prid, total)
+        create_approvals('purchase_request', prid, total, submitter=session['user_name'])
         start_instances('purchase_request', prid)   # 飞书/钉钉同步发起审批(未配置则跳过)
     conn.close()
     log(session['user_name'], '创建采购申请', f'{no} 共{len(items)}项 ¥{total:.0f}{" (草稿)" if d.get("draft") else ""}')
@@ -4301,7 +4297,7 @@ def api_inventory_replenish(iid):
                  (prid, inv['item_name'], inv['spec'] or '', inv['unit'] or '个', buy_qty, price, est,
                   '库存自动补货', inv['cat_code'] or '', '', ''))
     conn.commit()
-    create_approvals('purchase_request', prid, est)
+    create_approvals('purchase_request', prid, est, submitter=session['user_name'])
     try: start_instances('purchase_request', prid)
     except Exception: pass
     conn.close()
@@ -4356,7 +4352,7 @@ def api_resubmit_prequest(rid):
     conn.execute("DELETE FROM approval_instances WHERE biz_type='purchase_request' AND biz_id=?", (rid,))
     conn.execute("DELETE FROM dingtalk_instances WHERE biz_type='purchase_request' AND biz_id=?", (rid,))
     conn.commit()
-    create_approvals('purchase_request', rid, total)
+    create_approvals('purchase_request', rid, total, submitter=session['user_name'])
     start_instances('purchase_request', rid)
     conn.close()
     log(session['user_name'], '修改采购申请', f'申请#{rid} 重新进入审批')
@@ -4519,7 +4515,7 @@ def api_create_order():
             conn.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,dept,items_json,is_est) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,0)",
                 (rno, None, oid, _name, '', total_qty, first[2], 0, '待入库', now(), '货到付款: 下单后自动进入入库板块(整批%d项)' % len(rows), _dept, _items_json))
     conn.commit()
-    create_approvals('purchase_order', oid, grand_total)   # 一张订单一次审批
+    create_approvals('purchase_order', oid, grand_total, submitter=session['user_name'])   # 一张订单一次审批
     start_instances('purchase_order', oid)
     conn.close()
     log(session['user_name'], '创建采购订单', '%s 共%d项商品 ¥%.0f' % (no, len(rows), grand_total))
@@ -4541,7 +4537,7 @@ def api_order_submit(oid):
     conn.execute("UPDATE purchase_orders SET status='待审批', updated_at=? WHERE id=?", (now(), oid))
     conn.commit()
     amount = float(o['total_amount'] or 0)
-    create_approvals('purchase_order', oid, amount)
+    create_approvals('purchase_order', oid, amount, submitter=session['user_name'])
     try:
         start_instances('purchase_order', oid)
     except Exception as e:
@@ -5806,7 +5802,7 @@ def api_create_contract():
     cid = conn.execute("SELECT id FROM contracts WHERE contract_no=?", (no,)).fetchone()[0]
     if d.get('order_id'): conn.execute("UPDATE purchase_orders SET status='已签合同',updated_at=? WHERE id=?", (now(),d['order_id']))
     conn.commit()
-    create_approvals('contract', cid, float(d.get('amount',0)))
+    create_approvals('contract', cid, float(d.get('amount',0)), submitter=session['user_name'])
     start_instances('contract', cid)   # 飞书/钉钉同步发起合同审批(未配置则跳过)
     conn.close()
     log(session['user_name'],'创建合同',f'{no}')
@@ -5872,7 +5868,7 @@ def api_monthly_generate():
         except Exception: pass
         conn.execute("UPDATE purchase_orders SET settled_at=?, status='已签合同' WHERE id=?", (datetime.date.today().strftime('%Y-%m-%d'), oid))
     conn.commit()
-    create_approvals('contract', cid, round(total, 2))
+    create_approvals('contract', cid, round(total, 2), submitter=session['user_name'])
     conn.close()
     try: start_instances('contract', cid)
     except Exception: pass
@@ -6047,7 +6043,7 @@ def api_complete_receiving(rid):
                   (rn['remark'] or '') + ' 提交审批', rid))
     conn.commit()
     # 创建审批实例(入库单审批) + 同步发起钉钉/飞书审批
-    create_approvals('receiving', rid, 0)
+    create_approvals('receiving', rid, 0, submitter=session['user_name'])
     conn.close()
     try: start_instances('receiving', rid)
     except Exception as e: print('receiving start_instances err:', e)
@@ -6529,7 +6525,7 @@ def api_create_requisition():
                      (rid, it['item_name'], it.get('spec', ''), it.get('unit', '个'),
                       float(it['quantity']), it.get('purpose', d.get('purpose', '')), now()))
     conn.commit()
-    create_approvals('requisition', rid, 0)
+    create_approvals('requisition', rid, 0, submitter=session['user_name'])
     conn.close()
     try: start_instances('requisition', rid)
     except Exception as e: print('requisition start_instances err:', e)
@@ -6572,7 +6568,7 @@ def api_create_receiving():
     rid = conn.execute("SELECT id FROM receivings WHERE receive_no=?", (no,)).fetchone()[0]
     # 手动入库单没有 order_items, 明细暂存 remark; 审批通过时按 quantity 入库
     conn.commit()
-    create_approvals('receiving', rid, 0)
+    create_approvals('receiving', rid, 0, submitter=session['user_name'])
     conn.close()
     try: start_instances('receiving', rid)
     except Exception as e: print('receiving start_instances err:', e)
@@ -7278,7 +7274,7 @@ def api_orders_from_requests():
     for rid in used_reqs:
         conn.execute("UPDATE purchase_requests SET status='已下单', updated_at=? WHERE id=?", (now(), rid))
     conn.commit()
-    create_approvals('purchase_order', oid, grand_total)   # 一张订单一次审批
+    create_approvals('purchase_order', oid, grand_total, submitter=session['user_name'])   # 一张订单一次审批
     start_instances('purchase_order', oid)
     conn.close()
     log(session['user_name'], '加购下单', '%s 合并%d项商品 ¥%.0f 模式:%s' % (no, len(rows), grand_total, tm))
@@ -8049,7 +8045,7 @@ def api_contract_generate():
          (o['created_at'] or '')[:10], o['target_date'], full_text, fname, '待审批', f"由订单{o['order_no']}自动生成", datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
     cid = conn.execute("SELECT id FROM contracts WHERE contract_no=?", (cno,)).fetchone()[0]
     conn.commit()
-    create_approvals('contract', cid, o['total_amount'] or 0)
+    create_approvals('contract', cid, o['total_amount'] or 0, submitter=session['user_name'])
     start_instances('contract', cid)
     conn.close()
     log(session['user_name'], '自动生成合同', f'{cno} 订单{o["order_no"]} 模式:{tm}')
@@ -8721,7 +8717,7 @@ def api_doc_withdraw(biz_type, bid):
         elif 'amount' in row.keys(): amount = float(row['amount'] or 0)
     except Exception:
         amount = 0
-    create_approvals(biz, bid, amount)
+    create_approvals(biz, bid, amount, submitter=session.get('user_name',''))
     start_instances(biz, bid)
     conn.close()
     log(session['user_name'], '撤回审批', f'{biz_type}#{bid} {no} 重新进入审批流')
@@ -8833,7 +8829,7 @@ def api_doc_update(biz_type, bid):
                 elif 'amount' in row.keys(): amount = float(d.get('amount', row['amount']) or 0)
             except Exception:
                 amount = 0
-            create_approvals(biz, bid, amount)
+            create_approvals(biz, bid, amount, submitter=session.get('user_name',''))
             start_instances(biz, bid)
         else:
             conn.commit()
