@@ -7547,7 +7547,9 @@ def api_upload_file(filename):
         return '文件不存在', 404
     from flask import send_from_directory
     if filename.lower().endswith('.docx'):
-        return send_from_directory(d, filename, as_attachment=False,
+        # V11.165: docx 强制下载(attachment) — Windows 浏览器(Chrome/Edge)无 docx 内置预览,
+        # inline 响应会"打不开/下载不了"; attachment 让 Windows 直接下载文件
+        return send_from_directory(d, filename, as_attachment=True,
             mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             download_name=filename)
     return send_from_directory(d, filename, as_attachment=True)
