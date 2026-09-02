@@ -3892,7 +3892,8 @@ async function loadSecUsers(){
         <td style="white-space:nowrap">${ME.can_config?`<button class="btn btn-p btn-sm" onclick="editUser(${u.id})">✏️编辑</button>
         <button class="btn btn-w btn-sm" onclick="resetPwd(${u.id},'${esc(u.name)}')">重置密码</button>
         <button class="btn btn-o btn-sm" onclick="bindDing(${u.id},'${esc(u.name)}')">绑钉钉</button>
-        ${u.dingtalk_userid?`<button class="btn btn-o btn-sm" style="color:var(--d)" onclick="unbindDing(${u.id},'${esc(u.name)}')">解绑</button>`:''}`:''}</td>
+        ${u.dingtalk_userid?`<button class="btn btn-o btn-sm" style="color:var(--d)" onclick="unbindDing(${u.id},'${esc(u.name)}')">解绑</button>`:''}
+        <button class="btn btn-d btn-sm" onclick="delUser(${u.id},'${esc(u.name)}','${esc(u.role)}')">🗑删除</button>`:''}</td>
       </tr>`).join('')}</tbody></table>
       <button class="btn btn-p btn-sm" style="margin-top:6px" onclick="addUserForm()">+ 新增用户</button>`;
   }catch(e){}
@@ -3911,7 +3912,8 @@ function showUserModal(){
         <td style="white-space:nowrap">${ME.can_config?`<button class="btn btn-p btn-sm" onclick="editUser(${u.id})">✏️编辑</button>
         <button class="btn btn-w btn-sm" onclick="resetPwd(${u.id},'${esc(u.name)}')">重置密码</button>
         <button class="btn btn-o btn-sm" onclick="bindDing(${u.id},'${esc(u.name)}')">绑钉钉</button>
-        ${u.dingtalk_userid?`<button class="btn btn-o btn-sm" style="color:var(--d)" onclick="unbindDing(${u.id},'${esc(u.name)}')">解绑</button>`:''}`:''}</td>
+        ${u.dingtalk_userid?`<button class="btn btn-o btn-sm" style="color:var(--d)" onclick="unbindDing(${u.id},'${esc(u.name)}')">解绑</button>`:''}
+        <button class="btn btn-d btn-sm" onclick="delUser(${u.id},'${esc(u.name)}','${esc(u.role)}')">🗑删除</button>`:''}</td>
       </tr>`).join('')}</tbody></table>
       <button class="btn btn-p btn-sm" style="margin-top:6px" onclick="addUserForm()">+ 新增用户</button>`;
   }).catch(()=>{id('secUsers2').innerHTML='加载失败'});
@@ -3922,6 +3924,21 @@ async function resetPwd(uid,name){
   if(pw.length<6){alert('密码至少6位');return}
   const r=await api(`/users/${uid}/reset-password`,{method:'POST',body:JSON.stringify({new_password:pw})});
   alert(r.success?r.message:(r.error||'失败'));
+}
+// V11.166: 删除用户 — 确认后调DELETE接口, 成功后刷新两处列表
+async function delUser(uid,name,role){
+  if(role==='系统管理员'){alert('系统管理员账号不能删除（可改为停用）');return}
+  if(!confirm('确定删除用户「'+name+'」吗？\n删除后该账号将无法登录，历史单据不受影响（单据只记录姓名）。'))return;
+  if(!confirm('再次确认：删除「'+name+'」？此操作不可恢复。'))return;
+  const r=await api(`/users/${uid}`,{method:'DELETE'});
+  if(r.success){
+    alert('✅ '+r.message);
+    // 刷新两个列表(哪个存在刷哪个)
+    if(id('secUsers'))loadSecUsers();
+    if(id('secUsers2'))showUserModal();
+  }else{
+    alert(r.error||'删除失败');
+  }
 }
 // V11.157: 编辑用户 — 修改 账号/姓名/角色/部门/电话/职务/钉钉绑定/状态
 let __editUserOrig=null;  // V11.157e: 编辑时的原始数据快照(保存时对比, 零网络等待)

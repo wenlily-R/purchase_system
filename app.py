@@ -834,6 +834,25 @@ def api_user_update(uid):
     log(session.get('user_name',''), '修改用户', '更新用户 %s (%s, 部门%d, 钉钉%s, 状态%d)' % (username, role, dept_id or 0, dingtalk_userid or '无', is_active))
     return jsonify({'success': True, 'message': '用户信息已更新'})
 
+@app.route('/api/users/<int:uid>', methods=['DELETE'])
+@admin_required
+def api_user_delete(uid):
+    """V11.166: 删除用户 — 物理删除users记录
+    保护规则: 不能删除自己; 不能删除系统管理员角色(防止权限失控);
+    业务单据只存姓名不存user_id, 删除不影响历史单据显示"""
+    conn = db()
+    u = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+    if not u:
+        conn.close(); return jsonify({'error': '用户不存在'}), 404
+    if uid == session.get('user_id'):
+        conn.close(); return jsonify({'error': '不能删除当前登录账号'}), 400
+    if u['role'] == '系统管理员':
+        conn.close(); return jsonify({'error': '系统管理员账号不能删除(可改为停用)'}), 400
+    conn.execute("DELETE FROM users WHERE id=?", (uid,))
+    conn.commit(); conn.close()
+    log(session.get('user_name',''), '删除用户', '删除账号 %s (%s, %s)' % (u['username'], u['name'], u['role']))
+    return jsonify({'success': True, 'message': '用户 %s 已删除' % u['name']})
+
 @app.route('/api/change-password', methods=['POST'])
 @login_required
 def api_change_password():
