@@ -1524,50 +1524,68 @@ async function saveEditDoc(bizType, bid, label){
   else alert('❌ '+(r.error||'保存失败'));
 }
 async function editPRequest(oid){
-  // V8.0: 修改采购申请(完整表单, 对齐新建申请; 任意状态可编辑)
-  // 参数名用 oid 避免遮蔽全局 id() 函数(历史bug: 点击无反应)
-  const d=await api(`/prequests/${oid}`),r=d.request,items=d.items;
+  // V11.187: 修改采购申请 = 新建申请同一套表单(布局/字段/明细行/附件/加急/类型完全一致), 仅预填当前值
+  const d=await api(`/prequests/${oid}`),r=d.request,items=d.items||[];
   id('dmTitle').textContent='📝 修改采购申请 '+r.req_no;
   const depts=await api('/departments').catch(()=>[]);
   const bs=await api('/budgets').catch(()=>[]);
+  // 整单附件回显(原有附件+可继续加)
+  reqAtts=[];try{reqAtts=JSON.parse(r.attachments||'[]')}catch(e){}
   id('dmBody').innerHTML=`
-    <div class="fr"><div class="fg"><label class="fl2">申请单号</label><input class="fc" id="rrNo" readonly value="${esc(r.req_no)}" style="background:#f5f5f5"></div>
-    <div class="fg"><label class="fl2">申请日期</label><input class="fc" id="rrApplyDate" readonly value="${esc(r.apply_date||'')}" style="background:#f5f5f5"></div></div>
-    <div class="fr"><div class="fg"><label class="fl2">申请部门</label><select class="fc" id="rrDept">${depts.map(x=>`<option ${x.name==r.dept?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div>
-    <div class="fg"><label class="fl2">预算科目</label><select class="fc" id="rrBud">${bs.map(x=>`<option value="${x.code}" ${x.code==r.budget_code?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div></div>
-    <div class="fr"><div class="fg"><label class="fl2">用途说明 *</label><input class="fc" id="rrPurp" value="${esc(r.purpose||'')}"></div>
-    <div class="fg"><label class="fl2">目标到货日</label><input class="fc" id="rrDate" type="date" value="${esc(r.target_date||'')}"></div></div>
-    <div class="fg"><label class="fl2">备注</label><input class="fc" id="rrRem" value="${esc(r.remark||'')}"></div>
-    ${(r.status=='已驳回'||(r.status=='草稿'&&(r.reject_count||0)>0))&&r.rejected_reason?`<div class="fg"><label class="fl2" style="color:var(--d)">驳回原因</label><div style="font-size:9px;color:var(--d);padding:4px;background:#fff5f5;border-radius:4px">${esc(r.rejected_reason)}</div></div>`:''}
-    <div style="border:1px solid var(--b);border-radius:4px;padding:6px;margin-top:4px"><label class="fl2">采购物资明细(可修改)</label><div id="rrItems"></div>
-    <button class="btn btn-o btn-sm" style="margin-top:4px" onclick="addRRItem()">+ 添加一行</button></div>`;
+    <div class="fr"><div class="fg"><label class="fl2">申请单号</label><input class="fc" id="fReqNo" readonly value="${esc(r.req_no)}" style="background:#f5f5f5"></div>
+    <div class="fg"><label class="fl2">申请日期</label><input class="fc" id="fReqApplyDate" readonly value="${esc(r.apply_date||'')}" style="background:#f5f5f5"></div></div>
+    <div class="fr"><div class="fg"><label class="fl2">类型</label><select class="fc" id="fReqType" onchange="reqTypeTip()"><option>物资采购</option><option>设备维修</option></select></div>
+    <div class="fg"><label class="fl2" id="fReqTypeTip" style="color:#b76e00;font-size:9px;align-self:center">📦 买物资: 填物资名称/规格/数量</label></div></div>
+    <div class="fr"><div class="fg"><label class="fl2">申请部门</label><select class="fc" id="fReqDept"><option value="">请选择（选填）</option>${depts.map(x=>`<option ${x.name==r.dept?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div>
+    <div class="fg"><label class="fl2">预算科目</label><select class="fc" id="fReqBud"><option value="">无</option></select></div></div>
+    <div class="fr"><div class="fg"><label class="fl2">用途说明 *</label><input class="fc" id="fReqPurp" value="${esc(r.purpose||'')}"></div>
+    <div class="fg"><label class="fl2">目标到货日(选填)</label><input class="fc" id="fReqDate" type="date" value="${esc(r.target_date||'')}"></div></div>
+    <div class="fg"><label class="fl2">备注</label><input class="fc" id="fReqRem" value="${esc(r.remark||'')}"></div>
+    <div class="fr"><div class="fg" style="display:flex;align-items:center;gap:6px;padding-top:6px"><input type="checkbox" id="fReqUrgent" style="width:14px;height:14px" ${r.urgent?'checked':''}> <label style="color:#e74c3c;font-weight:600">加急审批</label></div>
+    <div class="fg"><label class="fl2">附件上传</label><input class="fc" id="fReqFiles" type="file" multiple onchange="uploadReqAtt(this)"></div></div>
+    <div id="reqAttList" style="font-size:9px;color:#666;margin-top:2px"></div>
+    ${((r.status=='已驳回'||(r.status=='草稿'&&(r.reject_count||0)>0))&&r.rejected_reason)?`<div style="font-size:9px;color:var(--d);padding:4px 8px;background:#fff5f5;border-radius:4px;margin:4px 0">❌ 驳回原因：${esc(r.rejected_reason)}${r.rejected_by?`（${esc(r.rejected_by)} ${esc((r.rejected_at||'').slice(5,16))}）`:''}</div>`:''}
+    <div style="border:1px solid var(--b);border-radius:4px;padding:6px;margin-top:4px">
+      <label class="fl2">采购物资明细(可修改)</label>
+      <div id="reqItemList"></div>
+      <button class="btn btn-o btn-sm" style="margin-top:4px" onclick="addReqItem()">+ 添加一行</button>
+    </div>`;
   id('detailModal').classList.add('show');
-  id('dmFooter').innerHTML=`<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="doResubmit(${oid})">保存修改</button>`;
-  rrCount=0;
-  items.forEach(it=>addRRItem(it));
+  id('dmFooter').innerHTML=`<button class="btn btn-o" onclick="closeMod()">取消</button>
+    <button class="btn btn-w" onclick="doSavePReq(true)">💾 存草稿</button>
+    <button class="btn btn-p" onclick="doSavePReq()">✅ 保存并提交审批</button>`;
+  // 预算回显
+  id('fReqBud').innerHTML='<option value="">无</option>'+bs.map(b=>`<option value="${b.code}" ${b.code==r.budget_code?'selected':''}>${esc(b.name)} (¥${(b.annual_budget||0).toFixed(0)})</option>`).join('');
+  // 类型回显+提示
+  if(r.req_type){const _t=id('fReqType');_t.value=r.req_type==='物资采购'?'物资采购':'设备维修'}
+  reqTypeTip();
+  // 整单附件列表回显
+  reqAtts.forEach(a=>{const _wrap=document.createElement('div');_wrap.style.display='flex';_wrap.style.alignItems='center';_wrap.style.gap='6px';_wrap.innerHTML=`<a href="/uploads/${esc(a)}" target="_blank" style="color:#3370ff">📄 ${esc(a.split('/').pop())}</a><span onclick="this.parentElement.remove()" style="cursor:pointer;color:var(--d)">✕</span>`;id('reqAttList').appendChild(_wrap)});
+  // 明细行回显(富字段)
+  reqItemCount=0;id('reqItemList').innerHTML='';
+  if(items.length)items.forEach(it=>addReqItem(it));
+  else addReqItem();
 }
-let rrCount=0;
-function addRRItem(it){
-  const c=++rrCount;
-  id('rrItems').insertAdjacentHTML('beforeend',`<div style="display:flex;gap:4px;margin:2px 0;align-items:center" id="rritem${c}">
-    <input placeholder="物资名称" id="rrn${c}" value="${esc(it?.item_name||'')}" style="flex:2;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px">
-    <input placeholder="规格" id="rrs${c}" value="${esc(it?.spec||'')}" style="flex:1;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px">
-    <input type="number" placeholder="数量" id="rrq${c}" value="${it?.quantity||1}" style="width:50px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px">
-    <input type="number" placeholder="单价" id="rrp${c}" value="${it?.estimated_price||0}" style="width:60px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px">
-    <span onclick="this.parentElement.remove()" style="cursor:pointer;color:var(--d);font-size:12px">✕</span></div>`);
-}
+// V11.187: 修改采购申请 — 保存动作(doSavePReq)统一在下方; doResubmit 为兼容旧入口包装
 async function doResubmit(oid){
+  // V11.187: 修改采购申请保存 — 读取与新建一致的字段集(类型/加急/附件/富明细行)
+  await doSavePReq(false,oid);
+}
+async function doSavePReq(asDraft,oid){
+  // asDraft=true 存草稿(不进审批); false 保存并提交审批
   const items=[];
-  document.querySelectorAll('[id^="rritem"]').forEach(d=>{
-    const i=d.id.replace('rritem','');
-    const n=id('rrn'+i)?.value;
-    if(n)items.push({item_name:n,spec:id('rrs'+i)?.value||'',quantity:parseFloat(id('rrq'+i)?.value)||1,unit:'个',estimated_price:parseFloat(id('rrp'+i)?.value)||0});
+  document.querySelectorAll('#reqItemList [id^="ritem"]').forEach(d=>{
+    const i=d.id.replace('ritem','');
+    const n=id('rin'+i)?.value;
+    if(n)items.push({item_name:n,spec:id('ris'+i)?.value||'',quantity:parseFloat(id('riq'+i)?.value)||1,unit:id('riu'+i)?.value||'个',estimated_price:parseFloat(id('rip'+i)?.value)||0,category:id('ric'+i)?.value||'',brand_param:id('rib'+i)?.value||'',arrival_date:id('ria'+i)?.value||'',remark:id('rir'+i)?.value||'',attach:id('riatt'+i)?.dataset?.attach||''});
   });
   if(!items.length){alert('请填至少一行物资');return}
-  const r=await api(`/prequests/${oid}/resubmit`,{method:'POST',body:JSON.stringify({
-    purpose:id('rrPurp').value,dept:id('rrDept')?.value||'',budget_code:id('rrBud')?.value||'',
-    target_date:id('rrDate').value,remark:id('rrRem')?.value||'',items})});
-  if(r.success){alert('✅ 已保存修改，重新进入审批流程');closeMod();loadPRequests();loadDashboard()}
+  const body={purpose:id('fReqPurp').value,dept:id('fReqDept')?.value||'',budget_code:id('fReqBud')?.value||'',
+    target_date:id('fReqDate').value,remark:id('fReqRem')?.value||'',req_type:id('fReqType')?.value||'物资采购',
+    urgent:id('fReqUrgent')?.checked?1:0,attachments:reqAtts||[],apply_date:(id('fReqApplyDate')?.value||'').replace(/年/g,'-').replace(/月/g,'-').replace(/日/g,''),items};
+  if(asDraft)body.draft=true;
+  const r=await api(`/prequests/${oid}/resubmit`,{method:'POST',body:JSON.stringify(body)});
+  if(r.success){alert(asDraft?'✅ 已存草稿（未提交审批，可稍后继续修改再提交）':'✅ 已保存修改并提交审批，进入审批流程');closeMod();loadPRequests();loadDashboard();loadApprovals&&loadApprovals()}
   else alert(r.error||'保存失败');
 }
 async function showPRequest(id){
@@ -3554,26 +3572,31 @@ async function showForm(type){
   }
 }
 let reqItemCount=0;
-function addReqItem(){
+function addReqItem(it){
   const c=++reqItemCount;
   const d=new Date();d.setDate(d.getDate()+14);
+  const _it=it||{};
   id('reqItemList').insertAdjacentHTML('beforeend',`<div style="display:flex;gap:4px;margin:2px 0;align-items:center;flex-wrap:wrap" id="ritem${c}">
     <span style="position:relative;flex:1.4;min-width:80px;display:inline-flex;align-items:center">
-      <input placeholder="物资名称" id="rin${c}" style="flex:1;min-width:70px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px" onchange="checkStock(this,${c})">
+      <input placeholder="物资名称" id="rin${c}" value="${esc(_it.item_name||'')}" style="flex:1;min-width:70px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px" onchange="checkStock(this,${c})">
       <span id="rstk${c}" style="position:absolute;right:0;top:-1px;font-size:7px;padding:0 2px;border-radius:2px;white-space:nowrap;display:none;pointer-events:none"></span>
     </span>
     <select id="ric${c}" style="width:64px;padding:2px;border:1px solid var(--b);border-radius:3px;font-size:9px"><option value="">类别</option><option>固定资产</option><option>行政办公</option><option>酒店日耗</option><option>工程采购</option><option>基础材料</option><option>备品备件</option></select>
-    <input placeholder="厂家/品牌/参数" id="rib${c}" style="flex:1.2;min-width:70px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px">
-    <input placeholder="规格" id="ris${c}" style="flex:0.9;min-width:50px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px">
-    <input type="number" placeholder="数量" id="riq${c}" value="1" style="width:48px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px">
+    <input placeholder="厂家/品牌/参数" id="rib${c}" value="${esc(_it.brand_param||'')}" style="flex:1.2;min-width:70px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px">
+    <input placeholder="规格" id="ris${c}" value="${esc(_it.spec||'')}" style="flex:0.9;min-width:50px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px">
+    <input type="number" placeholder="数量" id="riq${c}" value="${_it.quantity!=null?_it.quantity:1}" style="width:48px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px">
     <select id="riu${c}" style="width:42px;padding:2px;border:1px solid var(--b);border-radius:3px;font-size:9px"><option>个</option><option>箱</option><option>桶</option><option>条</option></select>
-    <input type="date" id="ria${c}" style="width:100px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px" title="到货日期(选填)">
-    <input type="hidden" id="rip${c}" value="0">
-    <input placeholder="备注" id="rir${c}" style="width:80px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px">
+    <input type="date" id="ria${c}" value="${esc(_it.arrival_date||'')}" style="width:100px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px" title="到货日期(选填)">
+    <input type="hidden" id="rip${c}" value="${_it.estimated_price!=null?_it.estimated_price:0}">
+    <input placeholder="备注" id="rir${c}" value="${esc(_it.remark||'')}" style="width:80px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px">
     <label style="font-size:8px;color:#666;cursor:pointer" title="上传该行物资的附图(打印时显示在备注栏)">📎<input type="file" id="ria_${c}" style="display:none" onchange="uploadRowAtt(this,${c})"></label>
-    <span id="riatt${c}" style="font-size:8px;color:#2e7d32"></span>
+    <span id="riatt${c}" style="font-size:8px;color:#2e7d32">${_it.attach?('✅ 已附图'):''}</span>
     <span onclick="this.parentElement.remove()" style="cursor:pointer;color:var(--d);font-size:12px">✕</span>
   </div>`);
+  // V11.187: 预填类别/单位/附图路径(编辑回显)
+  const _selC=id('ric'+c); if(_it.category){for(const o of _selC.options){if(o.value==_it.category||o.text==_it.category){_selC.value=o.value;break}}}
+  const _selU=id('riu'+c); if(_it.unit){for(const o of _selU.options){if(o.text==_it.unit){_selU.value=o.text;break}}}
+  if(_it.attach){const _span=id('riatt'+c);_span.textContent='✅ '+String(_it.attach).split('/').pop();_span.dataset.attach=_it.attach;_span.title=_it.attach}
 }
 // V11.38: 填物资名称后自动查库存(采购员不用跑库房)
 // V11.49b: 提示改为悬浮小标签(不占行空间, 行保持整齐)

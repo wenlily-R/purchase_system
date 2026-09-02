@@ -4620,9 +4620,23 @@ def api_resubmit_prequest(rid):
     items = d.get('items') or []
     if not items: items = [dict(i) for i in conn.execute("SELECT * FROM request_items WHERE req_id=?", (rid,)).fetchall()]
     total = sum(float(i.get('quantity',1)) * float(i.get('estimated_price',0)) for i in items)
-    conn.execute("UPDATE purchase_requests SET purpose=?, dept=?, budget_code=?, target_date=?, remark=?, total_estimated=?, status='待审批', rejected_reason='', rejected_items='', resubmit_count=resubmit_count+1, updated_at=? WHERE id=?",
-                 (d.get('purpose', pr['purpose']), d.get('dept', pr['dept']), d.get('budget_code', pr['budget_code']),
-                  d.get('target_date', pr['target_date']), d.get('remark', pr['remark']), total, now(), rid))
+    # V11.187: 存草稿(draft=true) — 保存内容但状态保持草稿(不进审批/不清驳回标记); 提交则清标记+回待审批
+    if d.get('draft'):
+        conn.execute("UPDATE purchase_requests SET purpose=?, dept=?, budget_code=?, target_date=?, remark=?, req_type=?, urgent=?, attachments=?, total_estimated=?, status='草稿', updated_at=? WHERE id=?",
+                     (d.get('purpose', pr['purpose']), d.get('dept', pr['dept']), d.get('budget_code', pr['budget_code']),
+                      d.get('target_date', pr['target_date']), d.get('remark', pr['remark']),
+                      d.get('req_type', pr['req_type'] if 'req_type' in pr.keys() else '物资采购'),
+                      1 if d.get('urgent') else (pr['urgent'] if 'urgent' in pr.keys() else 0),
+                      json.dumps(d.get('attachments') or [], ensure_ascii=False) if d.get('attachments') is not None else (pr['attachments'] if 'attachments' in pr.keys() else '[]'),
+                      total, now(), rid))
+    else:
+        conn.execute("UPDATE purchase_requests SET purpose=?, dept=?, budget_code=?, target_date=?, remark=?, req_type=?, urgent=?, attachments=?, total_estimated=?, status='待审批', rejected_reason='', rejected_items='', resubmit_count=resubmit_count+1, updated_at=? WHERE id=?",
+                     (d.get('purpose', pr['purpose']), d.get('dept', pr['dept']), d.get('budget_code', pr['budget_code']),
+                      d.get('target_date', pr['target_date']), d.get('remark', pr['remark']),
+                      d.get('req_type', pr['req_type'] if 'req_type' in pr.keys() else '物资采购'),
+                      1 if d.get('urgent') else (pr['urgent'] if 'urgent' in pr.keys() else 0),
+                      json.dumps(d.get('attachments') or [], ensure_ascii=False) if d.get('attachments') is not None else (pr['attachments'] if 'attachments' in pr.keys() else '[]'),
+                      total, now(), rid))
     if items:
         # V11.154: 传了明细才重建(编辑时); 不传则保留现有明细(草稿提交审批场景)
         conn.execute("DELETE FROM request_items WHERE req_id=?", (rid,))
@@ -4633,6 +4647,11 @@ def api_resubmit_prequest(rid):
                           float(it.get('estimated_price',0)), tp, it.get('remark',''),
                           it.get('category',''), it.get('brand_param',''), it.get('arrival_date',''),
                           it.get('attach','') or ''))
+    if d.get('draft'):
+        # V11.187: 存草稿 — 保留现有审批实例记录(驳回历史仍在), 不进审批流不发钉钉
+        conn.commit(); conn.close()
+        log(session['user_name'], '修改采购申请', f'申请#{rid} 保存为草稿(未提交)')
+        return jsonify({'success':True, 'draft':True})
     conn.execute("DELETE FROM approval_instances WHERE biz_type='purchase_request' AND biz_id=?", (rid,))
     conn.execute("DELETE FROM dingtalk_instances WHERE biz_type='purchase_request' AND biz_id=?", (rid,))
     conn.commit()
