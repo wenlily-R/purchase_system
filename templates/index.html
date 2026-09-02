@@ -1601,7 +1601,8 @@ async function showPRequest(id){
     <button class="btn btn-p btn-sm" onclick="window.open('/api/prequests/${r.id}/download','_blank')">⬇️ 下载申请单</button>
     ${(ME.role=='系统管理员'||ME.name==r.requester)?`<button class="btn btn-o btn-sm" style="color:#e67e22;border-color:#e67e22" onclick="urgentRemind('purchase_request',${r.id})">⏰ 钉钉加急提醒</button>`:''}`;
   if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
-  showDetail(`申请单 ${r.req_no}`,h,btns);
+  showDetail(`申请单 ${r.req_no}`,h+'<div id="rejectLogsBox"></div>',btns);
+  loadRejectLogs('purchase_request',id,'rejectLogsBox');
 }
 
 // ── 三方询价 (V11.0) ──
@@ -1904,7 +1905,7 @@ async function loadOrders(){
                 : '<span style="color:#bbb">—</span>';
       return `<td><b>${esc(r.order_no)}</b></td><td>${esc(r.item_name)}</td><td>${esc(r.supplier)}</td>
       <td><span class="tag ${r.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(r.trade_mode||'货到付款')}</span></td>
-      <td>¥${(r.total_amount||0).toFixed(0)}</td><td>${tag(r.status)}</td><td>${pg}</td>
+      <td>¥${(r.total_amount||0).toFixed(0)}</td><td>${tag(r.status)}${r.status=='已驳回'&&r.rejected_reason?`<div style="font-size:8px;color:var(--d)">驳回: ${esc(r.rejected_reason)}</div>`:''}</td><td>${pg}</td>
       <td><button class="lnk" onclick="showOrder(${r.id})">详情</button> <button class="lnk" style="color:#b08900" onclick="editDoc('purchase_order',${r.id},'采购订单')">✏️修改</button>
       
       ${(r.status=='待审批'||r.status=='已通过'||r.status=='审批通过')?` <button class="lnk" style="color:var(--o)" onclick="withdrawDoc('purchase_order',${r.id},'采购订单')">↩️撤回</button>`:''}${(r.status=='待审批'||r.status=='已驳回'||r.status=='草稿')?` <button class="lnk" style="color:var(--d)" onclick="delDoc('purchase_order',${r.id},'采购订单')">🗑️删除</button>`:''}</td>`;
@@ -1946,7 +1947,8 @@ async function showOrder(id){
     btns+=`<button class="btn btn-d btn-sm" onclick="voidDoc('/api/orders/${id}/void','订单')">作废</button>`;
   btns+=`<button class="btn btn-o btn-sm" style="color:#e67e22;border-color:#e67e22" onclick="urgentRemind('purchase_order',${id})">⏰ 钉钉加急提醒</button>`;
   if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
-  showDetail(`订单 ${o.order_no}`,h,btns);
+  showDetail(`订单 ${o.order_no}`,h+'<div id="rejectLogsBox"></div>',btns);
+  loadRejectLogs('purchase_order',id,'rejectLogsBox');
 }
 async function updateItemStatus(iid, newStatus){
   // V11.150: 防连点
@@ -2120,8 +2122,9 @@ async function showFinDetail(t,oid){
       ['状态',r.status],['创建时间',(r.created_at||'').slice(0,16)]
     ];
     showDetail((t=='credit'?'挂账单 ':'付款单 ')+(r.credit_no||r.payment_no||('#'+oid)),
-      '<div class="c2">'+f.map(([k,v])=>`<div><dt>${k}</dt><dd>${esc(v||'')}</dd></div>`).join('')+'</div>',
+      '<div class="c2">'+f.map(([k,v])=>`<div><dt>${k}</dt><dd>${esc(v||'')}</dd></div>`).join('')+'</div><div id="rejectLogsBox"></div>',
       '<button class="btn btn-o" onclick="closeMod()">关闭</button>');
+    loadRejectLogs(t,oid,'rejectLogsBox');
   }catch(e){alert('加载失败:'+(e.message||e))}
 }
 async function showRequisitionDetail(rid){
@@ -2139,8 +2142,23 @@ async function showRequisitionDetail(rid){
     showDetail(`出库单 ${r.req_no||('#'+rid)}`,`
       <div class="c2"><div><dt>单号</dt><dd><b>${esc(r.req_no||'')}</b></dd><dt>状态</dt><dd>${tag(r.status)}</dd><dt>领取人</dt><dd>${esc(r.receiver||r.requester||'')}</dd></div>
       <div><dt>部门</dt><dd>${esc(r.receive_dept||r.dept||'')}</dd><dt>物资</dt><dd>${esc(r.item_name||'')}</dd><dt>创建时间</dt><dd>${esc((r.created_at||'').slice(0,16))}</dd></div></div>
-      ${itemsHtml}`, `<button class="btn btn-o" onclick="closeMod()">关闭</button>`);
+      ${itemsHtml}<div id="rejectLogsBox"></div>`, `<button class="btn btn-o" onclick="closeMod()">关闭</button>`);
+    loadRejectLogs('requisition',rid,'rejectLogsBox');
   }catch(e){alert('加载失败:'+(e.message||e))}
+}
+// V11.175: 通用驳回历史展示 — 各模块详情弹窗调用; 历史多次驳回全部显示
+async function loadRejectLogs(bt,bid,boxId){
+  try{
+    const logs=await api(`/approvals/${bt}/${bid}/reject-logs`,{noCache:true});
+    const box=id(boxId);if(!box)return;
+    if(!logs||!logs.length){box.innerHTML='';return}
+    box.innerHTML='<div style="margin-top:8px;border-top:1px dashed #e5d0d0;padding-top:6px">'+
+      '<div style="font-size:10px;font-weight:700;color:#c0392b;margin-bottom:4px">❌ 驳回记录（'+logs.length+'次）</div>'+
+      logs.map(l=>`<div style="font-size:9px;background:#fff5f5;border:1px solid #f5d0d0;border-radius:4px;padding:5px 8px;margin-bottom:4px">
+        <b style="color:#c0392b">${esc(l.approver||'钉钉')}</b> <span style="color:#999">${esc((l.processed_at||'').slice(0,16))}</span>
+        ${l.source=='dingtalk'?'<span style="color:#1f6feb;font-size:8px;border:1px solid #1f6feb;border-radius:3px;padding:0 3px">钉钉</span>':''}
+        <div style="color:#a93226;margin-top:2px">理由：${esc(l.comment||'-')}</div></div>`).join('')+'</div>';
+  }catch(e){}
 }
 function canApprove(x){
   // V7.0: 仅当前节点指定审批人/系统管理员可审批
@@ -2283,7 +2301,7 @@ async function genMonthlyContract(supplier){
   if(r.success){alert(`✅ 月度合同 ${r.contract_no} 已生成(汇总${r.count}单, ¥${(r.amount||0).toFixed(0)}), 已进入合同审批`);loadContracts()}
   else alert(r.error||'生成失败');
 }
-async function loadContracts(){const c=await api('/contracts');id('contractsTable').innerHTML=rnder(c,['contract_no','contract_name','supplier','amount','status','id'],['编号','名称','供应商','金额','状态','操作'],r=>`<td><b>${esc(r.contract_no)}</b></td><td>${esc(r.contract_name)}</td><td>${esc(r.supplier)}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}</td>
+async function loadContracts(){const c=await api('/contracts');id('contractsTable').innerHTML=rnder(c,['contract_no','contract_name','supplier','amount','status','id'],['编号','名称','供应商','金额','状态','操作'],r=>`<td><b>${esc(r.contract_no)}</b></td><td>${esc(r.contract_name)}</td><td>${esc(r.supplier)}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}${r.status=='已驳回'&&r.rejected_reason?`<div style="font-size:8px;color:var(--d)">驳回: ${esc(r.rejected_reason)}</div>`:''}</td>
   <td style="white-space:nowrap"><button class="lnk" onclick="showContract(${r.id})">查看</button>${r.file_path?` <button class="lnk" style="color:var(--s)" onclick="window.open('/uploads/${esc(r.file_path)}','_blank')">📄下载</button>`:''} <button class="lnk" style="color:#b08900" onclick="editDoc('contract',${r.id},'合同')">✏️修改</button> ${(r.status=='待审批'||r.status=='已通过'||r.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('contract',${r.id},'合同')">↩️撤回</button>`:''}${(r.status=='待审批'||r.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('contract',${r.id},'合同')">🗑️删除</button>`:''}</td>`)}
 async function showContract(id){
   // V11.150: 防连点 + 最新打开者优先
@@ -2296,7 +2314,8 @@ async function showContract(id){
   if(c.file_path)h+=`<div style="margin-top:8px"><button class="btn btn-p btn-sm" onclick="window.open('/uploads/${esc(c.file_path)}','_blank')">📄 打开/下载合同文件</button> <button class="btn btn-w btn-sm" onclick="editContract(${id})">✏️ 编辑合同文本</button></div>`;
   h+=`<div style="margin-top:6px"><button class="btn btn-o btn-sm" style="color:#b08900;border-color:#b08900" onclick="editDoc('contract',${id},'合同')">✏️ 修改合同信息</button></div>`;
   if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
-  showDetail(`合同 ${c.contract_no}`,h);
+  showDetail(`合同 ${c.contract_no}`,h+'<div id="rejectLogsBox"></div>');
+  loadRejectLogs('contract',id,'rejectLogsBox');
 }
 // 合同在线编辑: 修改文本/补充条款 → 保存自动重建Word归档
 async function editContract(oid){
@@ -2359,7 +2378,8 @@ async function showRcvDetail(id){
     ${r.status=='待入库'?`<button class="btn btn-p btn-sm" onclick="completeRcv(${r.id},${r.total_qty||r.quantity},${r.order_id||0})">📤 提交审批</button>`:''}
     <button class="btn btn-o btn-sm" style="color:#b08900;border-color:#b08900" onclick="editDoc('receiving',${r.id},'入库单')">✏️ 修改</button>`;
   if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
-  showDetail(`入库单 ${r.receive_no}`,h,btns);
+  showDetail(`入库单 ${r.receive_no}`,h+'<div id="rejectLogsBox"></div>',btns);
+  loadRejectLogs('receiving',id,'rejectLogsBox');
 }
 async function loadReceivings(){
   // V11.158: 强制noCache — 入库验收高频操作页, 每次拉最新(提交审批/确认到货/作废后立即反映)
@@ -2408,7 +2428,7 @@ async function loadReceivings(){
       const urgTag = x.urgent?' <span style="color:#e74c3c;font-weight:700">加急</span>':'';
       const qtyTxt = `${x.total_qty||x.quantity}${esc(x.unit||'')}`;
       return `<td><b>${esc(x.receive_no)}</b></td><td>${deptTag}</td><td>${esc(x.item_name)}${cntTag}${urgTag}</td><td>${qtyTxt}</td>
-    <td><span class="tag ${x.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(x.trade_mode||'货到付款')}</span></td><td>${stTag}${estTag}</td>
+    <td><span class="tag ${x.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(x.trade_mode||'货到付款')}</span></td><td>${stTag}${estTag}${x.status=='已驳回'&&x.rejected_reason?`<div style="font-size:8px;color:var(--d)">驳回: ${esc(x.rejected_reason)}</div>`:''}</td>
     <td>${ops}${ops2}
       <button class="lnk" style="color:#b08900" onclick="editDoc('receiving',${x.id},'入库单')">✏️修改</button> <button class="lnk" onclick="window.open('/api/receivings/${x.id}/download','_blank')">⬇️ 下载</button> ${x.status=='已入库'?`<button class="lnk" style="color:var(--d)" onclick="voidRcv(${x.id})">作废</button>`:''} ${(x.status=='待审批'||x.status=='已通过'||x.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('receiving',${x.id},'入库单')">↩️撤回</button>`:''}${(x.status=='待审批'||x.status=='待入库'||x.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('receiving',${x.id},'入库单')">🗑️删除</button>`:''}</td>`;
     })}
@@ -2615,7 +2635,7 @@ async function submitBatchRcv(rid,n){
   else alert(r.error||'入库失败');
 }
 async function loadCredits(){const c=await api('/credits');id('creditsTable').innerHTML=rnder(c,['credit_no','item_name','amount','status'],['编号','内容','金额','状态'],r=>`<td><b>${esc(r.credit_no)}</b></td><td>${esc(r.item_name)}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}</td>`)}
-async function loadPayments(){const p=await api('/payments');id('paymentsTable').innerHTML=rnder(p,['payment_no','payment_type','amount','status','id'],['编号','类型','金额','状态','操作'],r=>`<td><b>${esc(r.payment_no)}</b></td><td>${esc(r.payment_type)}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}</td><td>${r.status=='已通过'?`<button class="lnk" style="color:var(--s)" onclick="doPay(${r.id})">付款</button>`:''} ${(r.status=='待审批'||r.status=='已驳回'||r.status=='草稿')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('payment',${r.id},'付款单')">🗑️删除</button>`:''}</td>`)}
+async function loadPayments(){const p=await api('/payments');id('paymentsTable').innerHTML=rnder(p,['payment_no','payment_type','amount','status','id'],['编号','类型','金额','状态','操作'],r=>`<td><b>${esc(r.payment_no)}</b></td><td>${esc(r.payment_type)}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}${r.status=='已驳回'&&r.rejected_reason?`<div style="font-size:8px;color:var(--d)">驳回: ${esc(r.rejected_reason)}</div>`:''}</td><td>${r.status=='已通过'?`<button class="lnk" style="color:var(--s)" onclick="doPay(${r.id})">付款</button>`:''} ${(r.status=='待审批'||r.status=='已驳回'||r.status=='草稿')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('payment',${r.id},'付款单')">🗑️删除</button>`:''}</td>`)}
 async function doPay(id){if(!confirm('确认付款?'))return;await api(`/payments/${id}/pay`,{method:'POST',body:JSON.stringify({})});loadPayments()}
 let invSortKey='id',invSortDir=1;
 function invFilterCat(){
@@ -2856,7 +2876,7 @@ async function submitReq(items){
 async function loadRequisitions(){
   const r=await api('/requisitions');
   id('reqListBox').innerHTML=rnder(r,['req_no','receiver','receive_dept','item_count','total_qty','status','created_at','id'],['单号','领取人','领取部门','商品数','数量','状态','时间','操作'],
-    x=>`<td><b>${esc(x.req_no)}</b></td><td>${esc(x.receiver||x.requester||'')}</td><td>${esc(x.receive_dept||x.dept||'')}</td><td>${x.item_count||1}项</td><td>${x.total_qty||x.quantity}</td><td>${tag(x.status)}</td><td style="font-size:8px;color:#999">${esc((x.created_at||'').slice(0,16))}</td>
+    x=>`<td><b>${esc(x.req_no)}</b></td><td>${esc(x.receiver||x.requester||'')}</td><td>${esc(x.receive_dept||x.dept||'')}</td><td>${x.item_count||1}项</td><td>${x.total_qty||x.quantity}</td><td>${tag(x.status)}${x.status=='已驳回'&&x.rejected_reason?`<div style="font-size:8px;color:var(--d)">驳回: ${esc(x.rejected_reason)}</div>`:''}</td><td style="font-size:8px;color:#999">${esc((x.created_at||'').slice(0,16))}</td>
     <td><button class="lnk" style="color:#b08900" onclick="editDoc('requisition',${x.id},'出库单')">✏️修改</button> <button class="lnk" onclick="window.open('/api/requisitions/${x.id}/download','_blank')">⬇️下载</button> ${x.status=='已出库'||x.status=='待审批'?`<button class="lnk" style="color:var(--d)" onclick="voidReq(${x.id})">作废</button>`:''} ${(x.status=='待审批'||x.status=='已通过'||x.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('requisition',${x.id},'出库单')">↩️撤回</button>`:''}${(x.status=='待审批'||x.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('requisition',${x.id},'出库单')">🗑️删除</button>`:''}</td>`);
 }
 async function voidReq(id){

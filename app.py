@@ -548,6 +548,13 @@ def init_db():
         ('request_items', 'arrival_date', "ALTER TABLE request_items ADD COLUMN arrival_date TEXT DEFAULT ''"),
         # V11.126: 钉钉实例存审批表单值(询价定标审批需要读取领导在钉钉选的供应商)
         ('dingtalk_instances', 'form_values', "ALTER TABLE dingtalk_instances ADD COLUMN form_values TEXT"),
+        # V11.175: 驳回展示 — 各业务表补 rejected_reason(列表/详情显示最近驳回理由)
+        ('requisitions', 'rejected_reason', "ALTER TABLE requisitions ADD COLUMN rejected_reason TEXT DEFAULT ''"),
+        ('receivings', 'rejected_reason', "ALTER TABLE receivings ADD COLUMN rejected_reason TEXT DEFAULT ''"),
+        ('contracts', 'rejected_reason', "ALTER TABLE contracts ADD COLUMN rejected_reason TEXT DEFAULT ''"),
+        ('purchase_orders', 'rejected_reason', "ALTER TABLE purchase_orders ADD COLUMN rejected_reason TEXT DEFAULT ''"),
+        ('credit_notes', 'rejected_reason', "ALTER TABLE credit_notes ADD COLUMN rejected_reason TEXT DEFAULT ''"),
+        ('payment_requests', 'rejected_reason', "ALTER TABLE payment_requests ADD COLUMN rejected_reason TEXT DEFAULT ''"),
     ]:
         _cols = [r[1] for r in conn.execute(f"PRAGMA table_info({_tbl})").fetchall()]
         if _col not in _cols:
@@ -559,6 +566,17 @@ def init_db():
             success INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now','localtime')));
         CREATE TABLE IF NOT EXISTS system_meta (
             key TEXT PRIMARY KEY, value TEXT);
+    """)
+    # V11.175: 驳回历史表 — 每次驳回追加一条(人/时间/理由/来源), 多次驳回不覆盖; 列表/详情/打印导出共用
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS approval_reject_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            biz_type TEXT, biz_id INTEGER,
+            approver TEXT, approver_id INTEGER DEFAULT 0,
+            comment TEXT, processed_at TEXT,
+            source TEXT DEFAULT 'system',
+            created_at TEXT DEFAULT (datetime('now','localtime')));
+        CREATE INDEX IF NOT EXISTS idx_reject_logs ON approval_reject_logs(biz_type, biz_id);
     """)
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS order_items (
@@ -1289,6 +1307,46 @@ def _scope_where(alias):
         return f"{alias}requester_id={session.get('user_id', 0)}"  # 部门负责人仅看自己(暂简化, 后续按部门)
     return ''  # 管理员/领导/采购/库管/财务 由各接口决定(业务域不同)
 
+def _src_of(approver, approver_id):
+    """V11.175: 判定驳回来源 — 钉钉轮询回调(approver=钉钉或approver_id=0)标dingtalk; 系统审批标system"""
+    if str(approver) == '钉钉' or not int(approver_id or 0):
+        return 'dingtalk'
+    return 'system'
+
+def log_reject(biz_type, biz_id, approver, approver_id, comment, source='system', conn=None):
+    """V11.175: 追加驳回历史(每次驳回一条, 不覆盖) + 同步父单据rejected_reason(取最新)
+    conn: 复用调用方连接(避免SQLite写锁冲突); 无则自开连接"""
+    try:
+        if conn is not None:
+            conn.execute("INSERT INTO approval_reject_logs(biz_type,biz_id,approver,approver_id,comment,processed_at,source) VALUES(?,?,?,?,?,?,?)",
+                         (biz_type, biz_id, str(approver or '')[:50], int(approver_id or 0), str(comment or '')[:500], now(), source))
+            try:
+                conn.execute(f"UPDATE {biz_table(biz_type)} SET rejected_reason=? WHERE id=?", (str(comment or '')[:200], biz_id))
+            except Exception:
+                pass
+            return
+        c = db()
+        c.execute("INSERT INTO approval_reject_logs(biz_type,biz_id,approver,approver_id,comment,processed_at,source) VALUES(?,?,?,?,?,?,?)",
+                  (biz_type, biz_id, str(approver or '')[:50], int(approver_id or 0), str(comment or '')[:500], now(), source))
+        # 父单据 rejected_reason 同步为最新驳回理由(展示用; 完整历史查 reject_logs)
+        try:
+            c.execute(f"UPDATE {biz_table(biz_type)} SET rejected_reason=? WHERE id=?", (str(comment or '')[:200], biz_id))
+        except Exception:
+            pass
+        c.commit(); c.close()
+    except Exception:
+        pass
+
+def get_reject_logs(biz_type, biz_id):
+    """V11.175: 读取驳回历史(按时间正序)"""
+    try:
+        c = db()
+        rows = c.execute("SELECT approver, approver_id, comment, processed_at, source FROM approval_reject_logs WHERE biz_type=? AND biz_id=? ORDER BY id ASC", (biz_type, biz_id)).fetchall()
+        c.close()
+        return [dict_row(r) for r in rows]
+    except Exception:
+        return []
+
 def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_id=0, comment='飞书审批同步'):
     """result: 'ok'=通过, 'reject'=驳回; 同步更新审批节点/父单据/飞书实例状态 (幂等)
     场景覆盖: ①系统内逐级审批(每过一级pending减1, 全过才置父状态)
@@ -1308,6 +1366,8 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
     else:
         c.execute("UPDATE approval_instances SET status='rejected', approver=?, approver_id=?, comment=?, processed_at=? WHERE biz_type=? AND biz_id=? AND status='pending'",
                   (approver, approver_id, comment, now(), biz_type, biz_id))
+        # V11.175: 追加驳回历史(人/时间/理由/来源), 多次驳回不覆盖; 复用本连接避免写锁冲突
+        log_reject(biz_type, biz_id, approver, approver_id, comment, source=_src_of(approver, approver_id), conn=c)
         st = biz_parent_status(biz_type, 'reject')
     # V11.126: 询价定标审批无通用 biz_table(父单据=inquiries), 单独处理; 其他走通用表
     if biz_type == 'inquiry_approval':
@@ -2653,28 +2713,32 @@ def dt_urgent_remind(biz_type, biz_id, operator):
         return False, f'加急提醒异常: {str(e)[:80]}'
 
 # ---- 审批结果同步(幂等) ----
-def dt_sync_result(instance_id, result, comment=''):
+def dt_sync_result(instance_id, result, comment='', approver='', approver_id=0, processed_at=''):
     """V6.0: 钉钉审批结果回写系统(幂等)
     - result: agree/reject
     - comment: 钉钉审批意见(驳回原因等) → 回写单据留痕
+    - V11.175: approver/approver_id/processed_at = 钉钉实际驳回人/时间(从实例详情提取), 实时同步
     审批状态双向同步: 钉钉同意→系统单据通过; 钉钉驳回→系统单据驳回+原因留痕"""
     c = db()
     r = c.execute("SELECT * FROM dingtalk_instances WHERE instance_code=?", (instance_id,)).fetchone()
     c.close()
     if not r or r['status'] in ('synced', 'error'): return
+    _approver = approver or '钉钉'
+    _approver_id = int(approver_id or 0)
+    _proc_at = processed_at or now()
     if comment:
         # 审批意见留痕: 写入审批实例 comment + 单据 rejected_reason
         c2 = db()
-        c2.execute("UPDATE approval_instances SET comment=? WHERE biz_type=? AND biz_id=? AND status='pending'",
-                   (str(comment)[:200], r['biz_type'], r['biz_id']))
+        c2.execute("UPDATE approval_instances SET comment=?, approver=?, approver_id=?, processed_at=? WHERE biz_type=? AND biz_id=? AND status='pending'",
+                   (str(comment)[:200], _approver, _approver_id, _proc_at, r['biz_type'], r['biz_id']))
         try:
             c2.execute(f"UPDATE {biz_table(r['biz_type'])} SET rejected_reason=? WHERE id=? AND rejected_reason IS NOT NULL",
                        (str(comment)[:200], r['biz_id']))
         except Exception:
             pass
         c2.commit(); c2.close()
-        log('钉钉', '审批意见回写', f"{r['biz_type']}#{r['biz_id']}: {str(comment)[:100]}")
-    finish_approvals(r['biz_type'], r['biz_id'], 'ok' if result == 'agree' else 'reject', '钉钉', 0, comment or f'钉钉审批{result}')
+        log('钉钉', '审批意见回写', f"{r['biz_type']}#{r['biz_id']} 驳回人:{_approver} 理由:{str(comment)[:100]}")
+    finish_approvals(r['biz_type'], r['biz_id'], 'ok' if result == 'agree' else 'reject', _approver, _approver_id, comment or f'钉钉审批{result}')
     # V11.28: 审批结果即时通知申请人(钉钉工作通知, 一次审批一次调用, 消耗可忽略)
     try:
         if dingtalk_enabled():
@@ -2723,6 +2787,52 @@ def dt_query_instance(instance_id):
         return None
 
 
+def dt_extract_reject_op(inst):
+    """V11.175: 从钉钉实例详情提取驳回操作(人/意见/时间)。
+    钉钉 operation_records 里每个节点一条, 找出 result=REJECT 的那条。"""
+    try:
+        ops = inst.get('operation_records') or inst.get('operationRecords') or []
+        if not isinstance(ops, list):
+            return None
+        for op in ops:
+            if not isinstance(op, dict):
+                continue
+            if str(op.get('operation_result') or op.get('result') or '').upper() in ('REJECT', 'REFUSE'):
+                _userid = op.get('userid') or op.get('user_id') or ''
+                _name = op.get('user_name') or ''
+                if not _name:
+                    _u = find_user_by_dingtalk_id(_userid)
+                    _name = _u['name'] if _u else ''
+                if not _name:
+                    _name = '钉钉'
+                _comment = op.get('remark') or op.get('comment') or ''
+                _ts = op.get('date') or op.get('operate_time') or op.get('create_time') or ''
+                if _ts:
+                    try:
+                        import datetime as _dtm
+                        # 钉钉返回毫秒时间戳
+                        _ts = _dtm.datetime.fromtimestamp(int(_ts) / 1000).strftime('%Y-%m-%d %H:%M:%S')
+                    except Exception:
+                        _ts = str(_ts)[:19]
+                return {'approver': _name, 'approver_id': 0, 'comment': _comment, 'processed_at': _ts}
+    except Exception:
+        pass
+    return None
+
+
+def find_user_by_dingtalk_id(dtid):
+    """按钉钉userid查系统用户(供驳回人回填)"""
+    if not dtid:
+        return None
+    try:
+        c = db()
+        r = c.execute("SELECT * FROM users WHERE dingtalk_userid=?", (dtid,)).fetchone()
+        c.close()
+        return r
+    except Exception:
+        return None
+
+
 def dt_poll_results():
     """遍历 dingtalk_instances 中 pending 状态实例, 查询钉钉侧结果并回写系统
     V11.28: 只查最近7天内活跃的pending实例(老实例不查, API消耗大降)"""
@@ -2752,7 +2862,13 @@ def dt_poll_results():
                     _res = str(inst.get('result', 'agree') or 'agree').lower()
                     dt_sync_result(r['instance_code'], 'agree' if _res in ('agree', 'agree_ok') else 'reject'); n += 1
                 elif st in ('REJECTED',):
-                    dt_sync_result(r['instance_code'], 'reject'); n += 1
+                    # V11.175: 提取钉钉实际驳回人+驳回意见 → 实时同步(人/时间/理由)
+                    _op = dt_extract_reject_op(inst)
+                    if _op:
+                        dt_sync_result(r['instance_code'], 'reject', _op['comment'], _op['approver'], _op['approver_id'], _op['processed_at'])
+                    else:
+                        dt_sync_result(r['instance_code'], 'reject')
+                    n += 1
                 elif st in ('TERMINATED', 'CANCELED'):
                     dt_sync_result(r['instance_code'], 'refuse'); n += 1
             except Exception:
@@ -3632,6 +3748,12 @@ def api_all_pending():
 def api_approval_list(biz_type, biz_id):
     conn = db(); rows = conn.execute("SELECT * FROM approval_instances WHERE biz_type=? AND biz_id=? ORDER BY level_no", (biz_type,biz_id)).fetchall(); conn.close()
     return jsonify([dict_row(r) for r in rows])
+
+@app.route('/api/approvals/<biz_type>/<int:biz_id>/reject-logs')
+@login_required
+def api_reject_logs(biz_type, biz_id):
+    """V11.175: 驳回历史(人/时间/理由/来源), 各模块详情弹窗展示用"""
+    return jsonify(get_reject_logs(biz_type, biz_id))
 
 @app.route('/api/approvals/<biz_type>/<int:biz_id>/approve', methods=['POST'])
 @login_required
@@ -5839,6 +5961,8 @@ def api_receiving_download(rid):
         ws.column_dimensions[chr(64 + j)].width = w
     # V11.27: 审批通过 → 盖章领导预录签名
     stamp_leader_sign(ws, r - 1, 'receiving', rn['id'])
+    # V11.175: 底部追加驳回审批记录
+    append_reject_rows(ws, r, 'receiving', rn['id'], ncols=10, CN=CN)
     ws.page_setup.orientation = 'landscape'
     ws.page_setup.fitToWidth = 1
     bio = io.BytesIO(); wb.save(bio); bio.seek(0)
@@ -5937,6 +6061,8 @@ def api_requisition_download(rid):
         ws.column_dimensions[chr(64 + j)].width = w
     # V11.27: 审批通过 → 盖章领导预录签名
     stamp_leader_sign(ws, r, 'requisition', rq['id'])
+    # V11.175: 底部追加驳回审批记录
+    append_reject_rows(ws, r, 'requisition', rq['id'], ncols=7, CN=CN)
     ws.page_setup.orientation = 'landscape'
     ws.page_setup.fitToWidth = 1
     bio = io.BytesIO(); wb.save(bio); bio.seek(0)
@@ -7663,6 +7789,51 @@ def api_upload_file(filename):
     return send_from_directory(d, filename, as_attachment=True)
 
 # ---- V55: 采购申请单下载(单个申请生成标准xlsx含明细行) ----
+def append_reject_rows(ws, start_row, biz_type, biz_id, ncols=11, CN=None):
+    """V11.175: 导出/打印单据时在底部追加驳回审批记录(多次驳回全部列出)。
+    返回下一可用行号; 无驳回记录时原样返回 start_row"""
+    try:
+        logs = get_reject_logs(biz_type, biz_id)
+        if not logs:
+            return start_row
+        def _f(bold=False, size=10, color=None):
+            if CN:
+                return CN(bold=bold, size=size)
+            from openpyxl.styles import Font
+            kw = {'name': '宋体', 'bold': bold, 'size': size}
+            if color:
+                kw['color'] = color
+            return Font(**kw)
+        from openpyxl.styles import Alignment, Border, Side, PatternFill
+        thin = Side(style='thin'); border = Border(left=thin, right=thin, top=thin, bottom=thin)
+        red_fill = PatternFill('solid', fgColor='FDECEC')
+        r = start_row + 1
+        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=ncols)
+        c = ws.cell(row=r, column=1, value='❌ 驳回审批记录（%d次）' % len(logs))
+        c.font = _f(bold=True, size=11, color='C0392B')
+        c.fill = red_fill
+        c.alignment = Alignment(horizontal='left', vertical='center')
+        for rr in range(1, ncols + 1):
+            ws.cell(row=r, column=rr).border = border
+            ws.cell(row=r, column=rr).fill = red_fill
+        ws.row_dimensions[r].height = 18
+        r += 1
+        for l in logs:
+            _src = '【钉钉】' if l.get('source') == 'dingtalk' else '【系统】'
+            txt = '%s 驳回人：%s    时间：%s    理由：%s' % (_src, l.get('approver') or '钉钉', (l.get('processed_at') or '')[:16], l.get('comment') or '-')
+            ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=ncols)
+            c = ws.cell(row=r, column=1, value=txt)
+            c.font = _f(size=10)
+            c.alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
+            for rr in range(1, ncols + 1):
+                ws.cell(row=r, column=rr).border = border
+            ws.row_dimensions[r].height = 18
+            r += 1
+        return r
+    except Exception:
+        return start_row
+
+
 @app.route('/api/prequests/<int:rid>/download')
 @login_required
 def api_prequest_download(rid):
@@ -7778,6 +7949,8 @@ def api_prequest_download(rid):
         ws.column_dimensions[chr(64 + j)].width = w
     # V11.27: 审批通过 → 盖章领导预录签名
     stamp_leader_sign(ws, sign1, 'purchase_request', rid)
+    # V11.175: 底部追加驳回审批记录(多次驳回全部列出)
+    append_reject_rows(ws, sign2 + 3, 'purchase_request', rid, ncols=11, CN=CN)
     # ── 打印设置: A4 横向 ──
     ws.page_setup.orientation = 'landscape'
     ws.page_setup.paperSize = 9  # A4
@@ -7916,6 +8089,8 @@ def api_order_download(oid):
         ws.column_dimensions[chr(64 + j)].width = w
     # V11.27: 审批通过 → 盖章领导预录签名
     stamp_leader_sign(ws, r, 'purchase_order', oid)
+    # V11.175: 底部追加驳回审批记录
+    append_reject_rows(ws, r + 2, 'purchase_order', oid, ncols=8, CN=CN)
     ws.page_setup.orientation = 'landscape'
     ws.page_setup.paperSize = 9
     ws.page_setup.fitToWidth = 1
