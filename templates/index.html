@@ -567,10 +567,11 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
       <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
         <select class="fc" id="afBizType" style="width:140px" onchange="loadApprovalFlowEdit()">
           <option value="purchase_request">📝采购申请</option>
+          <option value="inquiry_approval">🔍三方询价</option>
           <option value="purchase_order">📋采购订单</option>
           <option value="contract">📄合同</option>
-          <option value="payment">💰付款</option>
           <option value="receiving">📦入库</option>
+          <option value="payment">💰付款</option>
           <option value="requisition">📤出库</option>
         </select>
         <span style="color:#888">当前单据金额到达区间 → 依次经过该区间所有审批环节</span>
@@ -3727,7 +3728,7 @@ async function loadApprConfigCheck(){
     // 审批链明细(按单据类型分组)
     const byBiz={};
     flows.forEach(f=>{(byBiz[f.biz_type]=byBiz[f.biz_type]||[]).push(f)});
-    const BIZ_N={purchase_request:'采购申请',purchase_order:'采购订单',contract:'合同',credit:'挂账',payment:'付款',receiving:'入库',requisition:'出库'};
+    const BIZ_N={purchase_request:'采购申请',inquiry_approval:'三方询价',purchase_order:'采购订单',contract:'合同',credit:'挂账',payment:'付款',receiving:'入库',requisition:'出库'};
     h+='<table class="tb" style="font-size:8px"><thead><tr><th>单据类型</th><th>金额区间</th><th>审批角色</th><th>配置审批人</th><th>钉钉绑定</th><th>飞书绑定</th><th>状态</th></tr></thead><tbody>';
     Object.keys(byBiz).forEach(bt=>{
       byBiz[bt].forEach(f=>{
