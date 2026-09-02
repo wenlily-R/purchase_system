@@ -1499,10 +1499,11 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
         # V11.184: 驳回操作记录(统一日志, 含附件)
         log_approval_action(biz_type, biz_id, 'reject', approver, approver_id, comment or '', now(),
                             attachments or [], _src_of(approver, approver_id), instance_code, conn=c)
-        st = biz_parent_status(biz_type, 'reject')
+        # V11.186: 驳回后单据回到"草稿"(可编辑后重新提交) — 非终态'已驳回'
+        st = '草稿'
     # V11.126: 询价定标审批无通用 biz_table(父单据=inquiries), 单独处理; 其他走通用表
     if biz_type == 'inquiry_approval':
-        # V11.185: 询价驳回 → 回"询价中"(采购可改报价/重新提交审批), 累计驳回次数留痕
+        # V11.185/186: 询价驳回 → 回"询价中"(采购可改报价/重新提交审批), 累计驳回次数留痕
         if result != 'ok':
             _rc = c.execute("SELECT COALESCE(reject_count,0) FROM inquiries WHERE id=?", (biz_id,)).fetchone()
             _rc_n = (_rc[0] if _rc else 0) + 1
@@ -4281,9 +4282,9 @@ def api_generic_resubmit(biz_type, biz_id):
         row = conn.execute(f"SELECT * FROM {tbl} WHERE id=?", (biz_id,)).fetchone()
         if not row:
             conn.close(); return jsonify({'error': '单据不存在'}), 404
-        # 仅已驳回可重提(草稿/待审批走各自原接口)
-        if row['status'] != '已驳回':
-            conn.close(); return jsonify({'error': '仅已驳回状态的单据可重新提交'}), 400
+        # 仅"被驳回退回的草稿"可重提: 状态=草稿 且 reject_count>0(曾驳回); 纯手动草稿走原提交接口
+        if row['status'] != '草稿' or not (int(row['reject_count'] or 0) > 0):
+            conn.close(); return jsonify({'error': '仅被驳回退回草稿的单据可重新提交（手动草稿请在编辑后直接提交审批）'}), 400
         # 提交人本人/管理员 才可重提(取各表提交人字段)
         who = row['requester'] if 'requester' in row.keys() else (row['created_by'] if 'created_by' in row.keys() else '')
         me = conn.execute("SELECT * FROM users WHERE id=?", (session['user_id'],)).fetchone()
