@@ -2768,9 +2768,16 @@ function reqSelBar(){
 }
 function quickReq(name,spec,stock){
   // 单品直接出库 (V9.1: 带规格)
-  const qty=prompt(`出库数量（当前库存 ${stock}）:`,'1');
-  if(!qty)return;
-  const q=parseFloat(qty);
+  // V11.171: 优先用该行"出库数量"输入框已填的值, 不再重复弹窗询问(用户反馈步骤繁琐);
+  // 只有行内没填时才弹窗询问
+  const key=name+'||'+(spec||'');
+  const rowQty=(reqSel[key]||'').trim();
+  let q=rowQty?parseFloat(rowQty):NaN;
+  if(!q||q<=0){
+    const qty=prompt(`出库数量（当前库存 ${stock}）:`,'1');
+    if(!qty)return;
+    q=parseFloat(qty);
+  }
   if(!q||q<=0){alert('数量无效');return}
   if(q>stock){alert(`库存不足: 当前 ${stock}`);return}
   submitReq([{item_name:name,spec:spec||'',quantity:q,purpose:''}]);
