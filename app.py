@@ -2623,6 +2623,12 @@ def dt_start_instance(biz_type, biz_id):
         if not originator:
             # 兜底: 第一个已绑定钉钉ID的审批人, 再不行用系统内任意已绑定用户
             originator = approvers[0] if approvers else dt_first_bound_userid()
+        # V11.182: 发起人不能=审批人(钉钉820003) — 本人提交的单(如领导自己申请)由系统管理员代发起
+        if originator and approvers and originator in approvers:
+            _adm = find_user_by_role('系统管理员')
+            if _adm and _adm['dingtalk_userid'] and _adm['dingtalk_userid'] not in approvers:
+                originator = _adm['dingtalk_userid']
+                log('系统', '钉钉审批代发起', f"{info[0]} 发起人=审批人({info[3]}), 由系统管理员代发起")
         if not originator:
             log('系统', '钉钉审批未发起', f"{biz_type}#{biz_id} 无已绑定钉钉ID的用户")
             return None
@@ -2669,8 +2675,15 @@ def dt_start_instance(biz_type, biz_id):
             log('系统', '钉钉审批发起异常', f"{biz_type}#{biz_id}: {e}")
             return None
         c = db()
-        c.execute("INSERT INTO dingtalk_instances(instance_code,biz_type,biz_id,status,error) VALUES(?,?,?,'error',?)",
-                  (f'ERR-{biz_type}-{biz_id}-{int(time.time())}', biz_type, biz_id, json.dumps(resp, ensure_ascii=False)[:500]))
+        # V11.182: 防死循环 — 同一单据已存在 error 记录则只更新错误信息, 不再无限插新记录
+        # (dt_retry_failed_instances 每轮重试失败曾导致单据#22 堆积2194条ERR, 数据库膨胀)
+        _ex = c.execute("SELECT id FROM dingtalk_instances WHERE biz_type=? AND biz_id=? AND status='error' ORDER BY id DESC LIMIT 1", (biz_type, biz_id)).fetchone()
+        if _ex:
+            c.execute("UPDATE dingtalk_instances SET error=?, updated_at=? WHERE id=?",
+                      (json.dumps(resp, ensure_ascii=False)[:500], now(), _ex['id']))
+        else:
+            c.execute("INSERT INTO dingtalk_instances(instance_code,biz_type,biz_id,status,error) VALUES(?,?,?,'error',?)",
+                      (f'ERR-{biz_type}-{biz_id}-{int(time.time())}', biz_type, biz_id, json.dumps(resp, ensure_ascii=False)[:500]))
         c.commit(); c.close()
         log('系统', '钉钉审批发起失败', f"{biz_type}#{biz_id}: {json.dumps(resp, ensure_ascii=False)[:200]}")
         return None
@@ -3004,11 +3017,15 @@ def dt_poll_results():
 
 
 def dt_retry_failed_instances():
-    """error 状态的钉钉实例自动重试(表单错误等修复后无需人工操作); 已过3分钟的才重试"""
+    """error 状态的钉钉实例自动重试(表单错误等修复后无需人工操作); 已过3分钟的才重试
+    V11.182: 单单据error记录超5条(重试超5轮)则放弃 — 审批人无效等配置问题不再无限重试烧API"""
     try:
         c = db()
-        rows = c.execute("""SELECT * FROM dingtalk_instances WHERE status='error'
-            AND created_at <= datetime('now','localtime','-3 minutes') LIMIT 5""").fetchall()
+        # 只挑 error 次数≤5 的单据重试(同单已重试过多=配置问题, 放弃等人工修复)
+        rows = c.execute("""SELECT d.id, d.biz_type, d.biz_id FROM dingtalk_instances d
+            WHERE d.status='error' AND d.created_at <= datetime('now','localtime','-3 minutes')
+            AND (SELECT COUNT(*) FROM dingtalk_instances e WHERE e.biz_type=d.biz_type AND e.biz_id=d.biz_id AND e.status='error') <= 5
+            ORDER BY d.id LIMIT 5""").fetchall()
         c.close()
         for r in rows:
             try:
