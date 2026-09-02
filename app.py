@@ -2655,8 +2655,9 @@ def dt_send_todo(userids, title, text, extra='', biz_type='', biz_id=0, push_typ
             except Exception:
                 pass
         if _inst_code:
-            # 钉钉OA审批详情H5页: 手机钉钉内打开直接进入该审批单, 可原地审批
-            url = 'https://aflow.dingtalk.com/dingtalk/web/process/' + _inst_code
+            # V11.176: 钉钉OA审批详情H5页用移动端域名 n.dingtalk.com —
+            # 原 aflow.dingtalk.com 是PC后台域名, 手机钉钉打开跳"登录已过期"打不开(实测确认)
+            url = 'https://n.dingtalk.com/dingtalk/web/process/' + _inst_code
         else:
             pu = dt_public_url()
             if pu:
@@ -2716,6 +2717,12 @@ def dt_urgent_remind(biz_type, biz_id, operator):
         u = None
         if cur['approver_id']:
             u = c.execute("SELECT * FROM users WHERE id=?", (cur['approver_id'],)).fetchone()
+        # V11.176: 优先按审批实例配置的审批人(用户名/姓名)精确匹配 — 原逻辑直接按角色取第一个
+        # 用户, 导致审批人配置是xingguo(邢果)却推给了同角色的赵培姝
+        if not u and cur['approver']:
+            u = c.execute("SELECT * FROM users WHERE username=? AND is_active=1 AND dingtalk_userid IS NOT NULL AND dingtalk_userid!='' ORDER BY id LIMIT 1", (cur['approver'],)).fetchone()
+            if u is None:
+                u = c.execute("SELECT * FROM users WHERE name=? AND is_active=1 AND dingtalk_userid IS NOT NULL AND dingtalk_userid!='' ORDER BY id LIMIT 1", (cur['approver'],)).fetchone()
         if not u:
             u = c.execute("SELECT * FROM users WHERE role=? AND is_active=1 AND dingtalk_userid IS NOT NULL AND dingtalk_userid!='' ORDER BY id LIMIT 1", (cur['role'],)).fetchone()
         c.close()
