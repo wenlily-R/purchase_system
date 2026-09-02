@@ -2552,7 +2552,9 @@ def dt_send_todo(userids, title, text, extra='', biz_type='', biz_id=0, push_typ
     V8.3: 审批类提醒(auto/urgent)改用钉钉OA审批原生通知(实例创建后钉钉自动通知审批人),
     不再经工作通知机器人(jiao助手)推送; 开关 sys_config.dingtalk_oa_notify_only=1 时生效"""
     try:
-        if push_type in ('auto', 'urgent') and cfg_get('dingtalk_oa_notify_only', '0') == '1':
+        # V11.172: 手动加急(urgent)强制推送 — 用户点加急=明确要催办, 不被 oa_notify_only 拦截;
+        # 仅自动节点推送(auto)走OA审批原生通知(钉钉会自动提醒审批人, 避免重复打扰)
+        if push_type == 'auto' and cfg_get('dingtalk_oa_notify_only', '0') == '1':
             return False
         agent = dt_agent_id()
         if not agent: return False
@@ -6042,10 +6044,13 @@ def api_create_receiving():
     # V11.54: 入库单默认"暂估"(货到发票未到), 采购收到发票后红冲转正式
     _is_est = 1 if d.get('is_est', True) else 0
     _est_amt = round(float(d.get('est_amount') or 0), 2)
-    conn.execute("INSERT INTO receivings(receive_no,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,items_json,attachments,dept,is_est,est_amount) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    # V11.172: 经办人(inspector)必须写当前登录用户 — 否则fs_biz_info取发起人返回'系统',
+    # 钉钉发起时兜底成审批人自己(发起人=审批人) → 820003审批实例参数错误
+    _inspector = (d.get('inspector') or '').strip() or session.get('user_name', '') or '系统'
+    conn.execute("INSERT INTO receivings(receive_no,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,items_json,attachments,dept,is_est,est_amount,inspector) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                  (no, d.get('order_id'), first['item_name'], first.get('spec', ''), total_q,
                   first.get('unit', '个'), 0, '待审批', now(), '手动入库单: %d项商品' % len(items),
-                  json.dumps(items, ensure_ascii=False), _atts_json, _dept, _is_est, _est_amt))
+                  json.dumps(items, ensure_ascii=False), _atts_json, _dept, _is_est, _est_amt, _inspector))
     rid = conn.execute("SELECT id FROM receivings WHERE receive_no=?", (no,)).fetchone()[0]
     # 手动入库单没有 order_items, 明细暂存 remark; 审批通过时按 quantity 入库
     conn.commit()
