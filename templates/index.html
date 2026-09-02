@@ -1318,7 +1318,7 @@ async function loadPRequests(){
         ${rejCell(x)}
         <td style="white-space:nowrap"><button class="lnk" onclick="showPRequest(${x.id})">详情</button>
         <button class="lnk" style="color:var(--s)" onclick="window.open('/api/prequests/${x.id}/download','_blank')">⬇️下载</button>
-        <button class="lnk" style="color:#b08900" onclick="editDoc('purchase_request',${x.id},'采购申请')">✏️修改</button>
+        <button class="lnk" style="color:#b08900" onclick="editPRequest(${x.id})">✏️修改</button>
         ${x.status=='草稿'?` <button class="lnk" style="color:var(--s);font-weight:600" onclick="submitPRequestDraft(${x.id})">📤 提交审批</button>`:''}
         ${(x.status=='待审批'||x.status=='已通过'||x.status=='已驳回')?` <button class="lnk" style="color:var(--o)" onclick="withdrawDoc('purchase_request',${x.id},'采购申请')">↩️撤回</button>`:''}
         ${x.status!='已作废'?` <button class="lnk" style="color:var(--d)" onclick="delDoc('purchase_request',${x.id},'采购申请')">🗑️删除</button>`:''}</td>`;
@@ -1556,9 +1556,11 @@ async function editPRequest(oid){
     <button class="btn btn-p" onclick="doSavePReq()">✅ 保存并提交审批</button>`;
   // 预算回显
   id('fReqBud').innerHTML='<option value="">无</option>'+bs.map(b=>`<option value="${b.code}" ${b.code==r.budget_code?'selected':''}>${esc(b.name)} (¥${(b.annual_budget||0).toFixed(0)})</option>`).join('');
-  // 类型回显+提示
+  // 类型回显+提示(编辑模式标题保持"修改采购申请")
   if(r.req_type){const _t=id('fReqType');_t.value=r.req_type==='物资采购'?'物资采购':'设备维修'}
-  reqTypeTip();
+  const _tip=id('fReqTypeTip');if(_tip)_tip.textContent = (id('fReqType').value=='设备维修')
+    ? '🛠 报维修: 物资名称填设备名(如"传动轴"), 用途填使用地点+故障, 可附图'
+    : '📦 买物资: 填物资名称/规格/数量, 自动查库存';
   // 整单附件列表回显
   reqAtts.forEach(a=>{const _wrap=document.createElement('div');_wrap.style.display='flex';_wrap.style.alignItems='center';_wrap.style.gap='6px';_wrap.innerHTML=`<a href="/uploads/${esc(a)}" target="_blank" style="color:#3370ff">📄 ${esc(a.split('/').pop())}</a><span onclick="this.parentElement.remove()" style="cursor:pointer;color:var(--d)">✕</span>`;id('reqAttList').appendChild(_wrap)});
   // 明细行回显(富字段)
@@ -3659,7 +3661,9 @@ function reqTypeTip(){
   tip.textContent = t=='设备维修'
     ? '🛠 报维修: 物资名称填设备名(如"传动轴"), 用途填使用地点+故障, 可附图'
     : '📦 买物资: 填物资名称/规格/数量, 自动查库存';
-  // 标题也提示
+  // 标题也提示 — V11.187: 编辑模式(标题已是"修改采购申请")不改标题
+  const _title=id('dmTitle').textContent||'';
+  if(_title.includes('修改'))return;
   id('dmTitle').textContent = t=='设备维修' ? '🛠 新建申请(设备维修)' : '📝 新建申请(物资采购)';
 }
 async function createPRequest(asDraft){
