@@ -1649,16 +1649,35 @@ def fs_send_reminders(force=False):
     c.commit(); c.close()
 
 def dt_poll_loop():
-    """钉钉审批结果即时同步线程: 每60秒轮询一次(V11.28: 15s→60s, API消耗降75%)"""
+    """钉钉审批结果即时同步线程:
+    V11.28: 15s→60s 固定轮询(API消耗降75%)
+    V11.168: 动态轮询 — 有pending审批时15秒快轮询(钉钉审批通过后系统侧快速同步),
+             无pending时60秒慢轮询(平时不耗API); 兼顾同步速度与API配额"""
     while True:
         try:
-            time.sleep(60)
             if dingtalk_enabled():
+                _pend = dt_pending_count()
                 dt_poll_results()
                 dt_retry_failed_instances()
                 dt_terminate_stale()
+                # 有待审批 → 15秒后再查(审批结果同步快); 无待审批 → 60秒慢轮询(省API)
+                time.sleep(15 if _pend > 0 else 60)
+            else:
+                time.sleep(60)
         except Exception:
-            pass
+            time.sleep(60)
+
+
+def dt_pending_count():
+    """当前待同步的钉钉审批实例数(仅本地DB查询, 不耗钉钉API)"""
+    try:
+        c = db()
+        n = c.execute("""SELECT COUNT(*) FROM dingtalk_instances WHERE status='pending'
+            AND updated_at >= datetime('now','localtime','-7 days')""").fetchone()[0]
+        c.close()
+        return n or 0
+    except Exception:
+        return 0
 
 
 def dt_terminate_stale():
