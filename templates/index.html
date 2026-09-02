@@ -1579,10 +1579,14 @@ async function showPRequest(id){
   let d;
   try{d=await api(`/prequests/${id}`)}catch(e){if(my!==__dmSeq)return;id('dmBody').innerHTML='<div style="padding:20px;text-align:center;color:#c0392b;font-size:11px">⚠️ 加载失败(网络较慢)，请点击重试 <button class="btn btn-p btn-sm" onclick="showPRequest('+id+')">重试</button></div>';return}
   const r=d.request,items=d.items,approvals=d.approvals;
+  window.__rejItems=[];  // V11.185: 本单被驳回条目集合(统一字符串比较)
+  try{window.__rejItems=(r.rejected_items||'')=='__all__'?items.map(x=>String(x.id)):(JSON.parse(r.rejected_items||'[]')||[]).map(String)}catch(e){}
   let h=`<div class="c2"><div><dt>编号</dt><dd><b>${esc(r.req_no)}</b></dd><dt>部门</dt><dd>${esc(r.dept)}</dd><dt>申请人</dt><dd>${esc(r.requester)}</dd><dt>预算科目</dt><dd>${esc(r.budget_code||'-')}</dd></div>
-    <div><dt>用途</dt><dd>${esc(r.purpose)}</dt><dt>目标日</dt><dd>${r.target_date||'-'}</dd><dt>状态</dt><dd>${tag(r.status)}</dd></div></div>
+    <div><dt>用途</dt><dd>${esc(r.purpose)}</dt><dt>目标日</dt><dd>${r.target_date||'-'}</dd><dt>状态</dt><dd>${tag(r.status)}${(r.reject_count||0)>0?` <span style="font-size:9px;color:#c0392b;background:#fdeaea;border-radius:3px;padding:1px 5px">已驳回${r.reject_count}次</span>`:''}</dd></div></div>
     <h4 style="font-size:10px;margin:6px 0 3px">📋 物资明细</h4><div style="font-size:9px">`;
-  items.forEach(i=>{h+=`<div style="padding:2px 0;border-bottom:1px solid var(--b)">${esc(i.item_name)} ${esc(i.spec||'')} x${i.quantity}${esc(i.unit)}</div>`});
+  items.forEach(i=>{
+    const isRej=window.__rejItems.includes(String(i.id));
+    h+=`<div style="padding:2px 0;border-bottom:1px solid var(--b);${isRej?'background:#fdeaea;border-radius:3px;padding:3px 6px;margin:2px -4px':''}">${isRej?'❌':''} ${esc(i.item_name)} ${esc(i.spec||'')} x${i.quantity}${esc(i.unit)}${isRej?`<span style="color:#c0392b;font-size:8px;margin-left:6px;font-weight:700">已驳回</span>`:''}</div>`});
   h+=`</div>`;
   // V11.184: 审批进度统一由 approvalFlowBox 的 loadApprovalFlow 渲染(含同意/驳回+附件), 不再内联
   if(r.urgent)h='<div style="background:#fff5f5;border:1px solid #f5c6c6;color:#e74c3c;font-weight:700;font-size:10px;padding:4px 8px;border-radius:4px;margin-bottom:6px">🚨 加急审批</div>'+h;
@@ -1594,7 +1598,8 @@ async function showPRequest(id){
   }
   const btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button>
     <button class="btn btn-p btn-sm" onclick="window.open('/api/prequests/${r.id}/download','_blank')">⬇️ 下载申请单</button>
-    ${(ME.role=='系统管理员'||ME.name==r.requester)?`<button class="btn btn-o btn-sm" style="color:#e67e22;border-color:#e67e22" onclick="urgentRemind('purchase_request',${r.id})">⏰ 钉钉加急提醒</button>`:''}`;
+    ${(ME.role=='系统管理员'||ME.name==r.requester)?`<button class="btn btn-o btn-sm" style="color:#e67e22;border-color:#e67e22" onclick="urgentRemind('purchase_request',${r.id})">⏰ 钉钉加急提醒</button>`:''}
+    ${(r.status=='已驳回'&&(ME.role=='系统管理员'||ME.name==r.requester))?`<button class="btn btn-p btn-sm" style="background:#16a34a;border-color:#16a34a" onclick="resubmitDoc('purchase_request',${r.id},'申请单','${esc(r.req_no)}')">🔄 再次提交审批</button>`:''}`;
   if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
   showDetail(`申请单 ${r.req_no}`,h+'<div id="approvalFlowBox"></div><div id="rejectLogsBox"></div>',btns);
   loadApprovalFlow('purchase_request',id,'approvalFlowBox');
@@ -1994,6 +1999,8 @@ async function showOrder(id){
   if(['待审批','审批通过'].includes(o.status))
     btns+=`<button class="btn btn-d btn-sm" onclick="voidDoc('/api/orders/${id}/void','订单')">作废</button>`;
   btns+=`<button class="btn btn-o btn-sm" style="color:#e67e22;border-color:#e67e22" onclick="urgentRemind('purchase_order',${id})">⏰ 钉钉加急提醒</button>`;
+  if(o.status=='已驳回'&&(ME.role=='系统管理员'||ME.name==o.requester))
+    btns+=`<button class="btn btn-p btn-sm" style="background:#16a34a;border-color:#16a34a" onclick="resubmitDoc('purchase_order',${id},'订单','${esc(o.order_no)}')">🔄 再次提交审批</button>`;
   if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
   showDetail(`订单 ${o.order_no}`,h+'<div id="approvalFlowBox"></div><div id="rejectLogsBox"></div>',btns);
   loadApprovalFlow('purchase_order',id,'approvalFlowBox');
@@ -2190,9 +2197,10 @@ async function showRequisitionDetail(rid){
         d.items.map(it=>`<tr><td>${esc(it.item_name)}</td><td>${esc(it.spec||'')}</td><td>${it.quantity}</td><td>${esc(it.unit||'')}</td></tr>`).join('')+'</tbody></table>';
     }
     showDetail(`出库单 ${r.req_no||('#'+rid)}`,`
-      <div class="c2"><div><dt>单号</dt><dd><b>${esc(r.req_no||'')}</b></dd><dt>状态</dt><dd>${tag(r.status)}</dd><dt>领取人</dt><dd>${esc(r.receiver||r.requester||'')}</dd></div>
+      <div class="c2"><div><dt>单号</dt><dd><b>${esc(r.req_no||'')}</b></dd><dt>状态</dt><dd>${tag(r.status)}${(r.reject_count||0)>0?` <span style="font-size:9px;color:#c0392b;background:#fdeaea;border-radius:3px;padding:1px 5px">已驳回${r.reject_count}次</span>`:''}</dd><dt>领取人</dt><dd>${esc(r.receiver||r.requester||'')}</dd></div>
       <div><dt>部门</dt><dd>${esc(r.receive_dept||r.dept||'')}</dd><dt>物资</dt><dd>${esc(r.item_name||'')}</dd><dt>创建时间</dt><dd>${esc((r.created_at||'').slice(0,16))}</dd></div></div>
-      ${itemsHtml}<div id="approvalFlowBox"></div><div id="rejectLogsBox"></div>`, `<button class="btn btn-o" onclick="closeMod()">关闭</button>`);
+      ${itemsHtml}<div id="approvalFlowBox"></div><div id="rejectLogsBox"></div>`, `<button class="btn btn-o" onclick="closeMod()">关闭</button>
+      ${(r.status=='已驳回'&&(ME.role=='系统管理员'||ME.name==r.requester))?`<button class="btn btn-p btn-sm" style="background:#16a34a;border-color:#16a34a" onclick="resubmitDoc('requisition',${rid},'出库单','${esc(r.req_no||'')}')">🔄 再次提交审批</button>`:''}`);
     loadApprovalFlow('requisition',rid,'approvalFlowBox');
     loadRejectLogs('requisition',rid,'rejectLogsBox');
   }catch(e){alert('加载失败:'+(e.message||e))}
@@ -2455,10 +2463,65 @@ async function submitSign(bt,bid){
   if(r.success){alert('✅ 已签字并同意');closeMod();loadApprovals();loadDashboard()}
   else alert(r.error||'审批失败');
 }
+// V11.185: 驳回弹窗 — 支持条目级驳回(勾选问题物资) + 整单驳回; 理由必填; 上传附件可选(存日志)
 async function doReject(bt,bid){
-  const c=prompt('驳回原因:');if(!c)return;
-  await api(`/approvals/${bt}/${bid}/approve`,{method:'POST',body:JSON.stringify({action:'rejected',comment:c})});
-  loadApprovals();
+  // 尝试拉单据明细供勾选(申请单/订单/入库/出库; 询价/合同无独立明细则整单)
+  let items=[];
+  try{
+    if(bt=='purchase_request'){const d=await api(`/prequests/${bid}`);items=(d.items||[]).map((x,i)=>({id:x.id||('i'+i),name:(x.item_name||'')+(x.spec?' '+x.spec:''),qty:x.quantity,unit:x.unit||''}))}
+    else if(bt=='purchase_order'){const d=await api(`/orders/${bid}/detail`);items=(d.items||d.order_items||[]).map((x,i)=>({id:x.id||('i'+i),name:(x.item_name||'')+(x.spec?' '+x.spec:''),qty:x.quantity,unit:x.unit||''}))}
+    else if(bt=='receiving'){const d=await api(`/receivings/${bid}/detail`);items=(d.items||[]).map((x,i)=>({id:x.id||('i'+i),name:(x.item_name||'')+(x.spec?' '+x.spec:''),qty:x.quantity,unit:x.unit||''}))}
+    else if(bt=='requisition'){const d=await api(`/requisitions/${bid}/detail`);items=(d.items||[]).map((x,i)=>({id:x.id||('i'+i),name:(x.item_name||'')+(x.spec?' '+x.spec:''),qty:x.quantity,unit:x.unit||''}))}
+  }catch(e){}
+  const itemHtml=items.length?`<div style="margin:8px 0 4px;font-size:11px;font-weight:700">请勾选有问题的物资条目（不勾选=整单驳回）:</div>
+    <div style="max-height:180px;overflow:auto;border:1px solid #e3e9f2;border-radius:6px;padding:6px;background:#fafbfc">
+    ${items.map((it,i)=>`<label style="display:flex;align-items:center;gap:6px;padding:4px 2px;font-size:11px;cursor:pointer;border-bottom:1px dashed #eef1f5">
+      <input type="checkbox" class="rejItemCk" value="${esc(String(it.id))}"> <span style="flex:1">${esc(it.name)}</span><span style="color:#999;font-size:10px">x${it.qty||''}${esc(it.unit||'')}</span></label>`).join('')}
+    </div>`:'';
+  showDetail('✕ 驳回审批',`
+    <div style="font-size:11px;color:#666;margin-bottom:6px">单据被驳回后，提交人可在<b style="color:var(--d)">原单据上修改</b>并「再次提交审批」</div>
+    ${itemHtml}
+    <div style="margin-top:8px;font-size:11px;font-weight:700">驳回理由 <span style="color:var(--d)">*</span></div>
+    <textarea id="rejReason" rows="3" style="width:100%;border:1px solid #d9e2ef;border-radius:6px;padding:6px;font-size:12px;box-sizing:border-box" placeholder="请填写驳回原因，将通知提交人并记录留痕"></textarea>
+    <div style="margin-top:4px;font-size:10px;color:#999">驳回后将记录：驳回人/时间/理由/问题条目，提交人修改后可再次提交，多次驳回累计留痕</div>`,
+    `<button class="btn btn-o" onclick="closeMod()">取消</button>
+     <button class="btn btn-d" onclick="submitReject('${bt}',${bid})">✕ 确认驳回</button>`);
+}
+async function submitReject(bt,bid){
+  const c=id('rejReason').value.trim();
+  if(!c){alert('请填写驳回理由');return}
+  const cks=[...document.querySelectorAll('.rejItemCk:checked')].map(x=>x.value);
+  const body={action:'rejected',comment:c};
+  if(cks.length)body.rejected_items=cks;  // 勾选了条目 → 条目级驳回
+  await api(`/approvals/${bt}/${bid}/approve`,{method:'POST',body:JSON.stringify(body)});
+  alert('✅ 已驳回，提交人将收到通知并可在原单据修改后重新提交');
+  closeMod(); loadApprovals();
+}
+
+// V11.185: 通用"再次提交审批" — 驳回单据在原单上重提(不新建); 修改后标记自动消失
+async function resubmitDoc(bt,bid,label,no){
+  const r=await api(`/approvals/${bt}/${bid}/resubmit`,{method:'POST',body:JSON.stringify({})});
+  if(r.success){
+    alert(`✅ ${label} ${no} 已重新提交审批（第${r.resubmit_count}次）\n\n驳回标记已清除，审批人将收到新的审批通知`);
+    closeMod();
+    // 刷新当前模块列表
+    if(bt=='purchase_request')loadPRequests&&loadPRequests();
+    else if(bt=='purchase_order')loadOrders&&loadOrders();
+    else if(bt=='contract')loadContracts&&loadContracts();
+    else if(bt=='receiving')loadReceivings&&loadReceivings();
+    else if(bt=='requisition')loadRequisitions&&loadRequisitions();
+    else if(bt=='inquiry_approval')loadInquiries&&loadInquiries();
+    if(typeof loadApprovals==='function')loadApprovals();
+    if(typeof loadDashboard==='function')loadDashboard();
+  } else {
+    alert(r.error||'重新提交失败');
+  }
+}
+// V11.185: 带修改内容的重提(采购申请编辑后) — 由编辑保存按钮调用, items=新明细
+async function resubmitDocWithItems(bt,bid,items){
+  const r=await api(`/approvals/${bt}/${bid}/resubmit`,{method:'POST',body:JSON.stringify({items})});
+  if(r.success){alert(`✅ 已修改并重新提交审批（第${r.resubmit_count}次），驳回标记已清除`);closeMod();loadPRequests&&loadPRequests();loadApprovals&&loadApprovals()}
+  else alert(r.error||'重新提交失败');
 }
 
 // Contracts, Deliveries, Receivings, Credits, Payments, Inventory, Suppliers
@@ -2490,9 +2553,10 @@ async function showContract(id){
   const c=(await api('/contracts')).find(x=>x.id===id);
   if(!c){if(my!==__dmSeq)return;alert('未找到该合同(可能已被删除), 请刷新后重试');return}
   let h=`<div class="c2"><div><dt>合同号</dt><dd><b>${esc(c.contract_no)}</b></dd><dt>名称</dt><dd>${esc(c.contract_name)}</dd><dt>供应商</dt><dd>${esc(c.supplier)}</dd><dt>金额</dt><dd>¥${(c.amount||0).toFixed(2)}（大写：${c.amount_upper||''}）</dd></div>
-    <div><dt>状态</dt><dd>${tag(c.status)}</dd><dt>签订日期</dt><dd>${esc(c.sign_date||'-')}</dd><dt>关联订单</dt><dd>#${c.order_id||'-'}</dd></div></div>`;
+    <div><dt>状态</dt><dd>${tag(c.status)}${(c.reject_count||0)>0?` <span style="font-size:9px;color:#c0392b;background:#fdeaea;border-radius:3px;padding:1px 5px">已驳回${c.reject_count}次</span>`:''}</dd><dt>签订日期</dt><dd>${esc(c.sign_date||'-')}</dd><dt>关联订单</dt><dd>#${c.order_id||'-'}</dd></div></div>`;
   if(c.file_path)h+=`<div style="margin-top:8px"><button class="btn btn-p btn-sm" onclick="window.open('/uploads/${esc(c.file_path)}','_blank')">📄 打开/下载合同文件</button> <button class="btn btn-w btn-sm" onclick="editContract(${id})">✏️ 编辑合同文本</button></div>`;
-  h+=`<div style="margin-top:6px"><button class="btn btn-o btn-sm" style="color:#b08900;border-color:#b08900" onclick="editDoc('contract',${id},'合同')">✏️ 修改合同信息</button></div>`;
+  h+=`<div style="margin-top:6px"><button class="btn btn-o btn-sm" style="color:#b08900;border-color:#b08900" onclick="editDoc('contract',${id},'合同')">✏️ 修改合同信息</button>
+    ${(c.status=='已驳回'&&ME.role=='系统管理员')?`<button class="btn btn-p btn-sm" style="background:#16a34a;border-color:#16a34a" onclick="resubmitDoc('contract',${id},'合同','${esc(c.contract_no)}')">🔄 再次提交审批</button>`:''}</div>`;
   if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
   showDetail(`合同 ${c.contract_no}`,h+'<div id="approvalFlowBox"></div><div id="rejectLogsBox"></div>');
   loadApprovalFlow('contract',id,'approvalFlowBox');
@@ -2557,7 +2621,8 @@ async function showRcvDetail(id){
   }
   const btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button>
     ${r.status=='待入库'?`<button class="btn btn-p btn-sm" onclick="completeRcv(${r.id},${r.total_qty||r.quantity},${r.order_id||0})">📤 提交审批</button>`:''}
-    <button class="btn btn-o btn-sm" style="color:#b08900;border-color:#b08900" onclick="editDoc('receiving',${r.id},'入库单')">✏️ 修改</button>`;
+    <button class="btn btn-o btn-sm" style="color:#b08900;border-color:#b08900" onclick="editDoc('receiving',${r.id},'入库单')">✏️ 修改</button>
+    ${(r.status=='已驳回'&&ME.role=='系统管理员')?`<button class="btn btn-p btn-sm" style="background:#16a34a;border-color:#16a34a" onclick="resubmitDoc('receiving',${r.id},'入库单','${esc(r.receive_no)}')">🔄 再次提交审批</button>`:''}`;
   if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
   showDetail(`入库单 ${r.receive_no}`,h+'<div id="approvalFlowBox"></div><div id="rejectLogsBox"></div>',btns);
   loadApprovalFlow('receiving',id,'approvalFlowBox');

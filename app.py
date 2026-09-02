@@ -577,6 +577,26 @@ def init_db():
         ('purchase_orders', 'rejected_at', "ALTER TABLE purchase_orders ADD COLUMN rejected_at TEXT DEFAULT ''"),
         ('credit_notes', 'rejected_at', "ALTER TABLE credit_notes ADD COLUMN rejected_at TEXT DEFAULT ''"),
         ('payment_requests', 'rejected_at', "ALTER TABLE payment_requests ADD COLUMN rejected_at TEXT DEFAULT ''"),
+        # V11.185: 驳回退回重提闭环 — 各业务表补 reject_count(累计驳回次数)/resubmit_count(累计重提次数)
+        #          + rejected_items(本次被驳回的明细条目id JSON; 整单驳回='__all__'; 空=无标记)
+        ('purchase_requests', 'reject_count', "ALTER TABLE purchase_requests ADD COLUMN reject_count INTEGER DEFAULT 0"),
+        ('purchase_requests', 'resubmit_count', "ALTER TABLE purchase_requests ADD COLUMN resubmit_count INTEGER DEFAULT 0"),
+        ('purchase_requests', 'rejected_items', "ALTER TABLE purchase_requests ADD COLUMN rejected_items TEXT DEFAULT ''"),
+        ('purchase_orders', 'reject_count', "ALTER TABLE purchase_orders ADD COLUMN reject_count INTEGER DEFAULT 0"),
+        ('purchase_orders', 'resubmit_count', "ALTER TABLE purchase_orders ADD COLUMN resubmit_count INTEGER DEFAULT 0"),
+        ('purchase_orders', 'rejected_items', "ALTER TABLE purchase_orders ADD COLUMN rejected_items TEXT DEFAULT ''"),
+        ('contracts', 'reject_count', "ALTER TABLE contracts ADD COLUMN reject_count INTEGER DEFAULT 0"),
+        ('contracts', 'resubmit_count', "ALTER TABLE contracts ADD COLUMN resubmit_count INTEGER DEFAULT 0"),
+        ('contracts', 'rejected_items', "ALTER TABLE contracts ADD COLUMN rejected_items TEXT DEFAULT ''"),
+        ('receivings', 'reject_count', "ALTER TABLE receivings ADD COLUMN reject_count INTEGER DEFAULT 0"),
+        ('receivings', 'resubmit_count', "ALTER TABLE receivings ADD COLUMN resubmit_count INTEGER DEFAULT 0"),
+        ('receivings', 'rejected_items', "ALTER TABLE receivings ADD COLUMN rejected_items TEXT DEFAULT ''"),
+        ('requisitions', 'reject_count', "ALTER TABLE requisitions ADD COLUMN reject_count INTEGER DEFAULT 0"),
+        ('requisitions', 'resubmit_count', "ALTER TABLE requisitions ADD COLUMN resubmit_count INTEGER DEFAULT 0"),
+        ('requisitions', 'rejected_items', "ALTER TABLE requisitions ADD COLUMN rejected_items TEXT DEFAULT ''"),
+        ('inquiries', 'reject_count', "ALTER TABLE inquiries ADD COLUMN reject_count INTEGER DEFAULT 0"),
+        ('inquiries', 'resubmit_count', "ALTER TABLE inquiries ADD COLUMN resubmit_count INTEGER DEFAULT 0"),
+        ('inquiries', 'rejected_items', "ALTER TABLE inquiries ADD COLUMN rejected_items TEXT DEFAULT ''"),
     ]:
         _cols = [r[1] for r in conn.execute(f"PRAGMA table_info({_tbl})").fetchall()]
         if _col not in _cols:
@@ -1445,7 +1465,7 @@ def get_reject_logs(biz_type, biz_id):
     except Exception:
         return []
 
-def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_id=0, comment='飞书审批同步', attachments=None, instance_code=''):
+def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_id=0, comment='飞书审批同步', attachments=None, instance_code='', rejected_items=None):
     """result: 'ok'=通过, 'reject'=驳回; 同步更新审批节点/父单据/飞书实例状态 (幂等)
     V11.181: attachments(驳回附件元数据)/instance_code(钉钉实例号) 随驳回记录存储
     场景覆盖: ①系统内逐级审批(每过一级pending减1, 全过才置父状态)
@@ -1482,9 +1502,24 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
         st = biz_parent_status(biz_type, 'reject')
     # V11.126: 询价定标审批无通用 biz_table(父单据=inquiries), 单独处理; 其他走通用表
     if biz_type == 'inquiry_approval':
-        c.execute("UPDATE inquiries SET status=?, updated_at=? WHERE id=?", (st, now(), biz_id))
+        # V11.185: 询价驳回 → 回"询价中"(采购可改报价/重新提交审批), 累计驳回次数留痕
+        if result != 'ok':
+            _rc = c.execute("SELECT COALESCE(reject_count,0) FROM inquiries WHERE id=?", (biz_id,)).fetchone()
+            _rc_n = (_rc[0] if _rc else 0) + 1
+            c.execute("UPDATE inquiries SET status='询价中', updated_at=?, reject_count=?, rejected_items=? WHERE id=?",
+                      (now(), _rc_n, '__all__', biz_id))
+        else:
+            c.execute("UPDATE inquiries SET status=?, updated_at=? WHERE id=?", (st, now(), biz_id))
     else:
-        c.execute(f"UPDATE {biz_table(biz_type)} SET status=?, updated_at=? WHERE id=?", (st, now(), biz_id))
+        _tbl = biz_table(biz_type)
+        # V11.185: 驳回退回闭环 — 累计驳回次数+标记条目(通用表); 通过/正常只改状态
+        if result != 'ok' and _tbl:
+            _rc = c.execute(f"SELECT COALESCE(reject_count,0) FROM {_tbl} WHERE id=?", (biz_id,)).fetchone()
+            _rc_n = (_rc[0] if _rc else 0) + 1
+            c.execute(f"UPDATE {_tbl} SET status=?, updated_at=?, reject_count=?, rejected_items=? WHERE id=?",
+                      (st, now(), _rc_n, rejected_items if rejected_items is not None else '__all__', biz_id))
+        else:
+            c.execute(f"UPDATE {_tbl} SET status=?, updated_at=? WHERE id=?", (st, now(), biz_id))
     # V11.67: 询价定标审批通过 → 同步询价单状态(定标审批中→已生成订单); 驳回→恢复询价中
     if biz_type == 'purchase_order':
         if result == 'ok' and st in ('已通过', '审批通过'):
@@ -4214,7 +4249,12 @@ def api_approve_action(biz_type, biz_id):
     if d.get('action') == 'rejected':
         # 驳回: 全部待审节点驳回 + 父单据置为已驳回 (同步飞书实例)
         # 注: 提交人通知由 finish_approvals 内统一触发(避免重复)
-        finish_approvals(biz_type, biz_id, 'reject', session['user_name'], session['user_id'], d.get('comment',''))
+        # V11.185: 条目级驳回 — 前端可勾选问题条目id列表(rejected_items), 整单驳回不传=全部标记
+        _rej_items = d.get('rejected_items')
+        if isinstance(_rej_items, list):
+            _rej_items = json.dumps(_rej_items, ensure_ascii=False) if _rej_items else None
+        finish_approvals(biz_type, biz_id, 'reject', session['user_name'], session['user_id'], d.get('comment',''),
+                         rejected_items=_rej_items)
         dt_sync_now(biz_type, biz_id)  # 立即同步钉钉: 终止挂起的审批实例
         return jsonify({'success':True})
     sig = d.get('signature', '')
@@ -4223,6 +4263,74 @@ def api_approve_action(biz_type, biz_id):
     finish_approvals(biz_type, biz_id, 'ok', session['user_name'], session['user_id'], d.get('comment',''))
     dt_sync_now(biz_type, biz_id)  # 立即同步钉钉: 查询最新状态/终态时终止实例
     return jsonify({'success':True})
+
+
+@app.route('/api/approvals/<biz_type>/<int:biz_id>/resubmit', methods=['POST'])
+@login_required
+def api_generic_resubmit(biz_type, biz_id):
+    """V11.185: 通用"再次提交审批" — 驳回后的单据(不新建)在原单上重新进入审批流。
+    适用: purchase_request/purchase_order/contract/receiving/requisition/inquiry_approval
+    流程: 校验已驳回 → (可选带items修改明细) → 清驳回标记 → resubmit_count+1 → 重建审批实例 → 重新发起钉钉
+    日志: 写 approval_action_logs(action=resubmit) 完整留痕"""
+    try:
+        d = request.json or {}
+        conn = db()
+        tbl = biz_table(biz_type)
+        if not tbl:
+            conn.close(); return jsonify({'error': '该单据类型不支持重新提交'}), 400
+        row = conn.execute(f"SELECT * FROM {tbl} WHERE id=?", (biz_id,)).fetchone()
+        if not row:
+            conn.close(); return jsonify({'error': '单据不存在'}), 404
+        # 仅已驳回可重提(草稿/待审批走各自原接口)
+        if row['status'] != '已驳回':
+            conn.close(); return jsonify({'error': '仅已驳回状态的单据可重新提交'}), 400
+        # 提交人本人/管理员 才可重提(取各表提交人字段)
+        who = row['requester'] if 'requester' in row.keys() else (row['created_by'] if 'created_by' in row.keys() else '')
+        me = conn.execute("SELECT * FROM users WHERE id=?", (session['user_id'],)).fetchone()
+        is_admin = me and me['role'] == '系统管理员'
+        if not is_admin and who and me and me['name'] != who:
+            conn.close(); return jsonify({'error': '仅提交人本人可重新提交'}), 403
+        # 金额(各表字段不同)
+        amount = 0
+        for k in ('total_estimated', 'total_amount', 'amount', 'est_amount'):
+            if k in row.keys() and row[k]:
+                try: amount = float(row[k] or 0); break
+                except Exception: pass
+        # V11.185: 可选带修改的明细(编辑后重提) — 申请单重建request_items
+        items = d.get('items')
+        if isinstance(items, list) and items and biz_type == 'purchase_request':
+            conn.execute("DELETE FROM request_items WHERE req_id=?", (biz_id,))
+            _tot = 0
+            for it in items:
+                _tp = float(it.get('quantity', 1) or 1) * float(it.get('estimated_price', 0) or 0)
+                _tot += _tp
+                conn.execute("INSERT INTO request_items(req_id,item_name,spec,unit,quantity,estimated_price,total_price,remark,category,brand_param,arrival_date,attach) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                             (biz_id, it.get('item_name',''), it.get('spec',''), it.get('unit','个'), float(it.get('quantity',1)),
+                              float(it.get('estimated_price',0)), _tp, it.get('remark',''),
+                              it.get('category',''), it.get('brand_param',''), it.get('arrival_date',''),
+                              it.get('attach','') or ''))
+            amount = _tot
+            conn.execute(f"UPDATE {tbl} SET total_estimated=?, updated_at=? WHERE id=?", (_tot, now(), biz_id))
+        # 重提: 状态回待审批 + 清驳回标记 + 次数+1
+        _rs_n = int(row['resubmit_count'] or 0) + 1
+        conn.execute(f"UPDATE {tbl} SET status='待审批', rejected_reason='', rejected_items='', resubmit_count=?, updated_at=? WHERE id=?",
+                     (_rs_n, now(), biz_id))
+        # 重建审批实例 + 清旧钉钉实例
+        conn.execute("DELETE FROM approval_instances WHERE biz_type=? AND biz_id=?", (biz_type, biz_id))
+        conn.execute("DELETE FROM dingtalk_instances WHERE biz_type=? AND biz_id=?", (biz_type, biz_id))
+        conn.commit(); conn.close()
+        # 记录重提操作日志(重新开连接, 事务已提交)
+        log_approval_action(biz_type, biz_id, 'resubmit', session['user_name'], session['user_id'],
+                            f'第{_rs_n}次重新提交审批' + ('(含明细修改)' if items else ''), now(), [], 'system', '')
+        create_approvals(biz_type, biz_id, amount, submitter=session['user_name'])
+        try:
+            start_instances(biz_type, biz_id)
+        except Exception:
+            pass
+        log(session['user_name'], '重新提交审批', f'{biz_type}#{biz_id} 第{_rs_n}次重提')
+        return jsonify({'success': True, 'resubmit_count': _rs_n})
+    except Exception as e:
+        return jsonify({'error': str(e)[:120]}), 500
 
 # ============================================================
 # V11.27 ── 预录签名(签名版): 领导手写一次, 审批通过的单据自动盖章
@@ -4511,7 +4619,7 @@ def api_resubmit_prequest(rid):
     items = d.get('items') or []
     if not items: items = [dict(i) for i in conn.execute("SELECT * FROM request_items WHERE req_id=?", (rid,)).fetchall()]
     total = sum(float(i.get('quantity',1)) * float(i.get('estimated_price',0)) for i in items)
-    conn.execute("UPDATE purchase_requests SET purpose=?, dept=?, budget_code=?, target_date=?, remark=?, total_estimated=?, status='待审批', rejected_reason='', updated_at=? WHERE id=?",
+    conn.execute("UPDATE purchase_requests SET purpose=?, dept=?, budget_code=?, target_date=?, remark=?, total_estimated=?, status='待审批', rejected_reason='', rejected_items='', resubmit_count=resubmit_count+1, updated_at=? WHERE id=?",
                  (d.get('purpose', pr['purpose']), d.get('dept', pr['dept']), d.get('budget_code', pr['budget_code']),
                   d.get('target_date', pr['target_date']), d.get('remark', pr['remark']), total, now(), rid))
     if items:
