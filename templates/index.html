@@ -1688,6 +1688,7 @@ async function showInquiry(id){
   showDetail('🔍 询价单 #'+id,'<div class="loading">加载中...</div>');
   let d;
   try{d=await api(`/inquiries/${id}`)}catch(e){if(my!==__dmSeq)return;id('dmBody').innerHTML='<div style="padding:20px;text-align:center;color:#c0392b;font-size:11px">⚠️ 加载失败(网络较慢)，请点击重试 <button class="btn btn-p btn-sm" onclick="showInquiry('+id+')">重试</button></div>';return}
+  window.__inqSup = d.suppliers||[];  // V11.180: 议价弹窗用(读厂家原始/调整数据)
   const r=d.request||{};
   let h=`<div class="c2"><div><dt>询价单号</dt><dd><b>${esc(d.inq_no)}</b></dd><dt>申请单号</dt><dd>${esc(r.req_no||('#'+d.req_id))}</dd><dt>部门</dt><dd>${esc(r.dept||'')}</dd><dt>状态</dt><dd>${tag(d.status)}${d.deadline?` <span style="font-size:9px;color:${d.deadline<new Date().toISOString().slice(0,10)?'#c0392b':'#b08900'}">⏰截止${esc(d.deadline)}${d.deadline<new Date().toISOString().slice(0,10)?' 已截止':''}</span>`:''}</dd></div>
     <div><dt>采购事由</dt><dd>${esc(d.purpose||'')}</dd><dt>发起人</dt><dd>${esc(d.created_by||'')}</dd><dt>发起时间</dt><dd>${esc(d.created_at||'')}</dd></div></div>`;
@@ -1698,12 +1699,18 @@ async function showInquiry(id){
   if(!d.suppliers||!d.suppliers.length)h+='<div style="font-size:11px;color:#999;padding:10px">无供应商</div>';
   else{
     h+=`<div style="background:#f8f9fa;border-radius:8px;padding:12px;margin:8px 0">`;
-    h+=`<table class="tb" style="font-size:11px"><thead><tr><th>供应商</th><th>联系人</th><th>总价（含税含运）</th><th>交付日期</th><th>质保</th><th>品牌</th><th>厂家备注</th><th>操作</th></tr></thead><tbody>`;
+    // V11.180: 采购可议价(仅采购岗位/管理员), 议价完成才允许提交审批
+    const canAdjust = ME && (ME.role=='系统管理员'||ME.role=='采购员'||ME.role=='分管领导'||ME.role=='总经理');
+    h+=`<table class="tb" style="font-size:11px"><thead><tr><th>供应商</th><th>联系人</th><th>报价（含税含运）</th><th>交付日期</th><th>质保</th><th>品牌</th><th>厂家备注</th><th>采购议价</th><th>操作</th></tr></thead><tbody>`;
     d.suppliers.forEach(s=>{
-      // V11.162: 明细行的含税单价/含税总价(从quote_details取)
+      // V11.180: 调整后报价(adj_*)优先, 原始报价(quote_*)留痕
+      const isAdj = (parseFloat(s.adj_price)||0)>0 || (s.adj_details&&s.adj_details.trim());
+      const effPrice = isAdj ? (parseFloat(s.adj_price)||0) : (parseFloat(s.quote_price)||0);
+      const effDetails = isAdj && s.adj_details ? s.adj_details : (s.quote_details||'[]');
+      // V11.162: 明细行的含税单价/含税总价(从有效明细取)
       let detailHtml='';
       try{
-        const qd=JSON.parse(s.quote_details||'[]');
+        const qd=JSON.parse(effDetails||'[]');
         if(qd&&qd.length){
           let detailRows='';
           qd.forEach((q,qi)=>{if(q&&q.unit_price>0){detailRows+=`<tr><td style="padding:2px 4px;border:1px solid #e8edf3;text-align:left">${esc(q.item_name||('物料'+(qi+1)))}${q.remark?(' <span style="color:#999">('+esc(q.remark)+')</span>'):''}</td><td style="padding:2px 4px;border:1px solid #e8edf3;text-align:right;white-space:nowrap">¥${(q.unit_price||0).toFixed(2)}</td><td style="padding:2px 4px;border:1px solid #e8edf3;text-align:center;white-space:nowrap">${q.qty||1}</td><td style="padding:2px 4px;border:1px solid #e8edf3;text-align:right;white-space:nowrap"><b>¥${((q.unit_price||0)*(q.qty||1)).toFixed(2)}</b></td></tr>`}});
@@ -1718,24 +1725,29 @@ async function showInquiry(id){
         if(s.brand_analysis.缺点) brandHtml += `<div>⚠️ ${esc(s.brand_analysis.缺点)}</div>`;
         brandHtml += `</div>`;
       }
+      // V11.180: 采购议价备注显示(内部)
+      const adjRemarkHtml = (s.adj_remark&&s.adj_remark.trim())?`<div style="font-size:9px;color:#7b241c;background:#fdecea;border-radius:4px;padding:3px 6px;margin-top:3px">💬 ${esc(s.adj_remark)}</div>`:'';
+      // V11.180: 原始报价留痕显示(已议价时)
+      const oriPriceHtml = isAdj?`<div style="font-size:9px;color:#999">厂家原始报价：<span style="text-decoration:line-through">¥${(parseFloat(s.quote_price)||0).toFixed(2)}</span></div>`:'';
       h+=`<tr style="${s.is_selected?'background:#e8f5e9;':''}">
-        <td><b>${esc(s.supplier_name)}</b>${s.is_selected?' <span class="tag tg-g">✓已选中</span>':''}</td>
+        <td><b>${esc(s.supplier_name)}</b>${s.is_selected?' <span class="tag tg-g">✓已选中</span>':''}${isAdj?' <span class="tag" style="background:#fdecea;color:#c0392b">💰已议价</span>':''}</td>
         <td>${esc(s.contact||'')}${s.phone?'<br><span style="font-size:9px;color:#999">'+esc(s.phone)+'</span>':''}</td>
-        <td style="font-weight:700;color:${s.quote_price?'#e67e22':'#999'};font-size:13px">${s.quote_price?('¥'+(s.quote_price||0).toFixed(2)):'<span style="color:#ccc">未报价</span>'}${detailHtml}</td>
+        <td style="font-weight:700;color:${effPrice?'#e67e22':'#999'};font-size:13px">${effPrice?('¥'+(effPrice||0).toFixed(2)):'<span style="color:#ccc">未报价</span>'}${oriPriceHtml}${detailHtml}</td>
         <td>${s.quote_delivery?esc(s.quote_delivery):'<span style="color:#ccc">-</span>'}</td>
         <td>${s.quote_warranty?esc(s.quote_warranty):'<span style="color:#ccc">-</span>'}</td>
         <td>${esc(s.quote_brand||s.brand||'-')}${brandHtml}</td>
         <td style="max-width:120px;word-break:break-all">${esc(s.quote_remark||'')}</td>
+        <td style="max-width:150px">${adjRemarkHtml}${canAdjust&&s.quote_price?`<button class="lnk" style="color:#7b241c" onclick="showAdjustModal(${d.id},${s.id},'${esc(s.supplier_name)}')">✏️ 议价</button>`:''}</td>
         <td style="white-space:nowrap">
           <button class="lnk" onclick="copyInqLink('${s.token}')">📋链接</button>
-          ${(d.status=='询价中'&&s.quote_price&&!s.is_selected)?`<button class="lnk" style="color:#27ae60;margin-left:4px" onclick="selectInquirySupplier(${d.id},${s.id})">✅选中</button>`:''}
+          ${(d.status=='询价中'&&effPrice&&!s.is_selected)?`<button class="lnk" style="color:#27ae60;margin-left:4px" onclick="selectInquirySupplier(${d.id},${s.id})">✅选中</button>`:''}
         </td>
       </tr>`;
     });
     h+=`</tbody></table></div>`;
   }
-  // V11.93: 所有供应商报价后显示"提交审批"按钮
-  const allQuoted = d.suppliers && d.suppliers.length > 0 && d.suppliers.every(s => s.quote_price && s.quote_price > 0);
+  // V11.93: 所有供应商报价后显示"提交审批"按钮 — V11.180: 议价完成后(已报价)即可提交, 由采购手动点
+  const allQuoted = d.suppliers && d.suppliers.length > 0 && d.suppliers.every(s => (parseFloat(s.adj_price)||parseFloat(s.quote_price)) > 0);
   const submitBtn = (d.status=='询价中' && allQuoted) ? `<button class="btn btn-s" onclick="submitInquiryApproval(${d.id})" style="background:#27ae60">✅ 提交审批</button>` : '';
   // V11.145: 分项定标按钮(审批通过后采购员拆单用; 询价中且已报价即可用)
   // V11.155: 待定标(领导同意按最低价)时显示醒目提示+分项定标按钮
@@ -1751,6 +1763,42 @@ async function showInquiry(id){
   showDetail(`询价单 ${d.inq_no}`,lowestNote+h+'<div id="approvalFlowBox"></div><div id="rejectLogsBox"></div>',btns);
   loadApprovalFlow('inquiry_approval',d.id,'approvalFlowBox');
   loadRejectLogs('inquiry_approval',d.id,'rejectLogsBox');
+}
+// V11.180: 采购议价弹窗 — 修改含税单价/含税总价/含运总价 + 采购内部备注; 厂家原始报价只读展示留痕
+function showAdjustModal(iid, sid, sname){
+  if(__guardOpen('adj:'+iid+':'+sid))return;
+  const s = (window.__inqSup||[]).find(x=>x.id===sid) || {};
+  const oriPrice = parseFloat(s.quote_price)||0;
+  const isAdj = (parseFloat(s.adj_price)||0)>0 || (s.adj_details&&s.adj_details.trim());
+  const curPrice = isAdj ? (parseFloat(s.adj_price)||0) : oriPrice;
+  const curRemark = (s.adj_remark||'')||'';
+  // 明细行(厂家原始, 只读参考)
+  let oriDetailHtml='<div style="color:#999;font-size:9px">（未填行明细）</div>';
+  try{
+    const qd=JSON.parse(s.quote_details||'[]');
+    if(qd&&qd.length){
+      oriDetailHtml='<table style="width:100%;border-collapse:collapse;font-size:9px;color:#666;margin-top:3px"><tr style="background:#f0f2f5;font-weight:bold"><th style="padding:2px 4px;border:1px solid #e8edf3">物料</th><th style="padding:2px 4px;border:1px solid #e8edf3">原始单价</th><th style="padding:2px 4px;border:1px solid #e8edf3">数量</th></tr>'+
+        qd.map((q,qi)=>`<tr><td style="padding:2px 4px;border:1px solid #e8edf3;text-align:left">${esc(q.item_name||('物料'+(qi+1)))}</td><td style="padding:2px 4px;border:1px solid #e8edf3;text-align:right">¥${(parseFloat(q.unit_price)||0).toFixed(2)}</td><td style="padding:2px 4px;border:1px solid #e8edf3;text-align:center">${q.qty||1}</td></tr>`).join('')+'</table>';
+    }
+  }catch(e){}
+  showDetail(`✏️ 采购议价 — ${sname}`,`
+    <div style="font-size:9px;color:#666;margin-bottom:6px;background:#f5f6f8;border-radius:6px;padding:6px 8px">
+      📌 厂家原始报价（只读留痕，不可修改）：<b style="color:#c0392b">¥${oriPrice.toFixed(2)}</b>${s.quote_remark?`<br>厂家备注：${esc(s.quote_remark)}`:''}
+      ${oriDetailHtml}
+    </div>
+    <div class="fr"><div class="fg"><label class="fl2">调整后含运总价 *</label><input class="fc" id="adjPrice" type="number" min="0" step="0.01" value="${curPrice||''}"></div></div>
+    <div class="fg"><label class="fl2">采购方内部备注（议价说明/谈判情况，仅内部可见）</label><textarea class="fc" id="adjRemark" rows="3" style="width:100%;box-sizing:border-box" placeholder="如：电话沟通后供应商同意降价至xxx，含运费">${esc(curRemark)}</textarea></div>
+    <div style="font-size:9px;color:#999;margin-top:4px">💡 保存后：审批、导出、钉钉审批均展示调整后报价；厂家原始报价永久留痕可查。明细单价修改请在报价提交前由厂家调整或联系后重新报价。</div>`,
+    `<button class="btn btn-o" onclick="closeMod()">取消</button>
+     <button class="btn btn-p" onclick="saveAdjust(${iid},${sid})">💾 保存议价</button>`);
+}
+async function saveAdjust(iid, sid){
+  const price=parseFloat(id('adjPrice').value||'0');
+  const remark=id('adjRemark').value||'';
+  if(!price||price<=0){alert('请填写有效的调整后总价');return}
+  const r=await api(`/inquiries/${iid}/adjust`,{method:'POST',body:JSON.stringify({supplier_id:sid,adj_price:price,adj_remark:remark})});
+  if(r.success){alert('✅ '+r.message);closeMod();showInquiry(iid);loadInquiries()}
+  else alert(r.error||'保存失败');
 }
 // V11.145: 分项定标弹窗 — 每个物资逐项选供应商, 支持一键智能选最低价
 async function showSplitSelect(iid){

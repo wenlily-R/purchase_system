@@ -548,6 +548,10 @@ def init_db():
         ('request_items', 'arrival_date', "ALTER TABLE request_items ADD COLUMN arrival_date TEXT DEFAULT ''"),
         # V11.126: 钉钉实例存审批表单值(询价定标审批需要读取领导在钉钉选的供应商)
         ('dingtalk_instances', 'form_values', "ALTER TABLE dingtalk_instances ADD COLUMN form_values TEXT"),
+        # V11.180: 三方询价采购方议价 — 厂家原始报价保留在 quote_* 不动, 新增采购调整字段
+        ('inquiry_suppliers', 'adj_details', "ALTER TABLE inquiry_suppliers ADD COLUMN adj_details TEXT DEFAULT ''"),
+        ('inquiry_suppliers', 'adj_price', "ALTER TABLE inquiry_suppliers ADD COLUMN adj_price REAL DEFAULT 0"),
+        ('inquiry_suppliers', 'adj_remark', "ALTER TABLE inquiry_suppliers ADD COLUMN adj_remark TEXT DEFAULT ''"),
         # V11.175: 驳回展示 — 各业务表补 rejected_reason(列表/详情显示最近驳回理由)
         ('requisitions', 'rejected_reason', "ALTER TABLE requisitions ADD COLUMN rejected_reason TEXT DEFAULT ''"),
         ('receivings', 'rejected_reason', "ALTER TABLE receivings ADD COLUMN rejected_reason TEXT DEFAULT ''"),
@@ -1476,8 +1480,13 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
                     if _sup and _iq:
                         _pr = c.execute("SELECT * FROM purchase_requests WHERE id=?", (_iq['req_id'],)).fetchone()
                         _items = c.execute("SELECT * FROM request_items WHERE req_id=? ORDER BY id", (_iq['req_id'],)).fetchall()
-                        _total = float(_sup['quote_price'] or 0)
+                        # V11.180: 采购已议价时用调整后报价生成订单(原始报价留痕)
+                        _sup_d = dict(_sup)
+                        _total = float(inquiry_eff_price(_sup_d, 'quote_price'))
                         _remark = '询价单:%s 供应商:%s 报价¥%.0f' % (_iq['inq_no'], _sup['supplier_name'], _total)
+                        _adj_rm = (_sup_d.get('adj_remark') or '').strip()
+                        if _adj_rm:
+                            _remark += '; 采购议价备注:%s' % _adj_rm
                         # 优先完善提交时生成的草稿订单, 没有才新建(防重复订单)
                         _draft = c.execute("SELECT id FROM purchase_orders WHERE inquiry_id=? AND status='草稿' ORDER BY id LIMIT 1", (biz_id,)).fetchone()
                         if _draft:
@@ -1495,9 +1504,10 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
                             _oid = c.execute("SELECT id FROM purchase_orders WHERE order_no=?", (_no,)).fetchone()[0]
                         # V11.170: 明细价格优先用商家报价(quote_details按全量物资顺序存unit_price),
                         # 不再按申请参考金额分摊(参考金额常为0, 导致首项吃全额/后项变0, 合同丢明细)
+                        # V11.180: 采购已议价时用调整后明细
                         _qd = {}
                         try:
-                            _qd_list = json.loads(_sup['quote_details'] or '[]')
+                            _qd_list = json.loads(inquiry_eff_price(_sup_d, 'quote_details'))
                             for _qi, _q in enumerate(_qd_list):
                                 _qd[_qi] = _q
                         except Exception:
@@ -2125,21 +2135,33 @@ def dt_build_form(biz_type, biz_id, info):
                 if not iq:
                     c2.close(); return []
                 # 查询供应商(按添加顺序id升序=Excel比价单从左到右顺序, 厂家A=最左/厂家C=最右, 与Excel一一对应不混淆)
-                sups = c2.execute("SELECT id, supplier_name, quote_price, quote_remark, quote_brand FROM inquiry_suppliers WHERE inquiry_id=? ORDER BY id ASC", (biz_id,)).fetchall()
+                sups = c2.execute("SELECT * FROM inquiry_suppliers WHERE inquiry_id=? ORDER BY id ASC", (biz_id,)).fetchall()
                 _abc = ('厂家A', '厂家B', '厂家C')
                 supplier_opts = []
                 supplier_details = []
                 for _i, si in enumerate(sups):
                     _tag = _abc[_i] if _i < 3 else ('厂家' + chr(65 + _i))
-                    supplier_opts.append({'value': str(si['id']), 'text': '%s (¥%.0f)' % (si['supplier_name'], si['quote_price'] or 0)})
-                    detail = '%s[%s] 总价（含税含运）¥%.0f' % (_tag, si['supplier_name'], si['quote_price'] or 0)
+                    # V11.180: 采购已议价时钉钉审批展示调整后最终报价(原始报价留痕可查)
+                    _eff_price = inquiry_eff_price(dict(si), 'quote_price')
+                    _is_adj = inquiry_is_adjusted(dict(si))
+                    supplier_opts.append({'value': str(si['id']), 'text': '%s (¥%.0f)' % (si['supplier_name'], _eff_price or 0)})
+                    detail = '%s[%s] 总价（含税含运）¥%.0f' % (_tag, si['supplier_name'], _eff_price or 0)
+                    if _is_adj:
+                        detail += '【采购已议价】'
+                        _ori = float(si['quote_price'] or 0)
+                        if _ori:
+                            detail += '(原始报价¥%.0f)' % _ori
                     if si['quote_brand']:
                         detail += ' 品牌:%s' % si['quote_brand']
                     if si['quote_remark']:
                         detail += ' 厂家备注:%s' % si['quote_remark']
-                    # V11.162: 含税单价/含税总价 明细同步进钉钉审批
+                    # V11.180: 采购内部备注(领导看谈判情况)
+                    _adj_rm = (si['adj_remark'] or '').strip() if 'adj_remark' in si.keys() else ''
+                    if _adj_rm:
+                        detail += ' 【采购议价备注】%s' % _adj_rm
+                    # V11.162: 含税单价/含税总价 明细同步进钉钉审批(调整后明细优先)
                     try:
-                        _qd = json.loads(si['quote_details'] or '[]')
+                        _qd = json.loads(inquiry_eff_price(dict(si), 'quote_details'))
                         if _qd:
                             _qd_txt = []
                             for _q in _qd:
@@ -4727,6 +4749,77 @@ def api_create_inquiry():
     log(session['user_name'], '发起三方询价', '%s 申请#%s %d家' % (no, req_id, len([x for x in suppliers if (x.get('name') or '').strip()])))
     return jsonify({'success': True, 'inq_no': no, 'id': iid})
 
+def inquiry_eff_price(s, key='quote_price'):
+    """V11.180: 取供应商"有效报价" — 采购已议价(adj_price>0)时用调整价, 否则用厂家原始报价
+    key: 'quote_price'(含运总价) 或 'quote_details'(行明细)"""
+    try:
+        if key == 'quote_price':
+            adj = float(s.get('adj_price') or 0)
+            if adj > 0:
+                return adj
+            return float(s.get('quote_price') or 0)
+        if key == 'quote_details':
+            adj = (s.get('adj_details') or '').strip()
+            if adj:
+                try:
+                    _l = json.loads(adj)
+                    if isinstance(_l, list) and _l:
+                        return _l
+                except Exception:
+                    pass
+            return s.get('quote_details') or '[]'
+    except Exception:
+        pass
+    return s.get(key) or ('[]' if key == 'quote_details' else 0)
+
+
+def inquiry_is_adjusted(s):
+    """V11.180: 该供应商报价是否已被采购调整过(adj_price>0 或 adj_details非空)"""
+    try:
+        if float(s.get('adj_price') or 0) > 0:
+            return True
+        if (s.get('adj_details') or '').strip():
+            return True
+    except Exception:
+        pass
+    return False
+
+
+@app.route('/api/inquiries/<int:iid>/adjust', methods=['POST'])
+@login_required
+def api_inquiry_adjust(iid):
+    """V11.180: 采购方议价 — 修改供应商含税单价/含税总价/含运总价 + 采购内部备注
+    仅采购员/系统管理员可操作; 厂家原始报价(quote_*)永不覆盖, 留痕可溯"""
+    me = db().execute("SELECT * FROM users WHERE id=?", (session['user_id'],)).fetchone()
+    if not (me and me['role'] in ('系统管理员', '采购员', '分管领导', '总经理')):
+        return jsonify({'error': '仅采购岗位可修改报价'}), 403
+    d = request.json or {}
+    sid = int(d.get('supplier_id') or 0)
+    conn = db()
+    s = conn.execute("SELECT * FROM inquiry_suppliers WHERE id=? AND inquiry_id=?", (sid, iid)).fetchone()
+    if not s:
+        conn.close(); return jsonify({'error': '供应商不存在'}), 404
+    i = conn.execute("SELECT * FROM inquiries WHERE id=?", (iid,)).fetchone()
+    if not i:
+        conn.close(); return jsonify({'error': '询价单不存在'}), 404
+    if i['status'] not in ('询价中', '待定标'):
+        conn.close(); return jsonify({'error': '当前状态不可议价（仅询价中/待定标可操作）'}), 400
+    # 行明细调整(可选): [{unit_price, qty}] 按申请物资顺序
+    adj_details = d.get('adj_details')
+    adj_price = float(d.get('adj_price') or 0)
+    adj_remark = (d.get('adj_remark') or '').strip()[:500]
+    if adj_details is not None:
+        if not isinstance(adj_details, list):
+            conn.close(); return jsonify({'error': '调整明细格式错误'}), 400
+        conn.execute("UPDATE inquiry_suppliers SET adj_details=?, adj_price=?, adj_remark=?, is_selected=0 WHERE id=?",
+                     (json.dumps(adj_details, ensure_ascii=False), adj_price, adj_remark, sid))
+    else:
+        conn.execute("UPDATE inquiry_suppliers SET adj_price=?, adj_remark=? WHERE id=?", (adj_price, adj_remark, sid))
+    conn.commit(); conn.close()
+    log(session['user_name'], '采购议价', f'询价#{iid} {s["supplier_name"]} 调整后含运总价¥{adj_price:.0f} 备注:{adj_remark[:40]}')
+    return jsonify({'success': True, 'message': '议价已保存（厂家原始报价保留留痕）', 'adj_price': adj_price})
+
+
 @app.route('/api/inquiries/<int:iid>')
 @login_required
 def api_inquiry_detail(iid):
@@ -4978,9 +5071,12 @@ def api_inquiry_submit(iid):
     if not pr or not items:
         conn.close()
         return jsonify({'error': '来源申请或明细缺失'}), 400
-    # 取最低报价
+    # 取最低报价(V11.180: 按采购调整后有效价取最低, 无调整用厂家原始价)
     cheapest = conn.execute("SELECT * FROM inquiry_suppliers WHERE inquiry_id=? AND quote_price>0 ORDER BY quote_price ASC LIMIT 1", (iid,)).fetchone()
-    total = float(cheapest['quote_price'] or 0) if cheapest else 0
+    cheapest = dict(cheapest) if cheapest else None
+    if cheapest:
+        cheapest['_eff'] = inquiry_eff_price(cheapest, 'quote_price')
+    total = float(cheapest['_eff'] if cheapest and cheapest.get('_eff') else (cheapest['quote_price'] if cheapest else 0))
     remark = '询价单:%s 商家已报价完成，最低报价¥%.0f(%s)，请领导定标' % (i['inq_no'], total, cheapest['supplier_name'] if cheapest else '待定')
     # V11.126: 已存在草稿订单(如驳回后重新提交)则复用更新, 不重复建单
     _draft = conn.execute("SELECT id FROM purchase_orders WHERE inquiry_id=? AND status='草稿' ORDER BY id LIMIT 1", (iid,)).fetchone()
@@ -5035,11 +5131,13 @@ def api_inquiry_select(iid):
         conn.close(); return jsonify({'error': '来源申请或明细缺失'}), 400
     # 生成采购订单: 供应商=选中家; V11.170: 明细价格优先用商家报价(quote_details按全量物资顺序存unit_price),
     # 不再按申请参考金额分摊(参考金额常为0, 导致首项吃全额/后项变0, 合同丢明细)
+    # V11.180: 采购已议价(adj_*)时用调整后报价生成订单, 原始报价留痕
     no = gen_no('CG', 'purchase_orders', 'order_no', conn)
-    total = float(s['quote_price'])
+    s_dict = dict(s)
+    total = float(inquiry_eff_price(s_dict, 'quote_price'))
     _qd_map = {}
     try:
-        _qd_list = json.loads(s['quote_details'] or '[]')
+        _qd_list = json.loads(inquiry_eff_price(s_dict, 'quote_details'))
         for _qi, _q in enumerate(_qd_list):
             _qd_map[_qi] = _q
     except Exception:
@@ -5086,6 +5184,10 @@ def api_inquiry_select(iid):
         detail_parts.append('质保时间: %s' % quote_warranty)
     if quote_remark:
         detail_parts.append('备注: %s' % quote_remark)
+    # V11.180: 采购内部备注同步订单(给领导看议价情况)
+    _adj_remark = (s_dict.get('adj_remark') or '').strip()
+    if _adj_remark:
+        detail_parts.append('采购议价备注: %s' % _adj_remark)
     detail_parts.append('询价单号: %s' % i['inq_no'])
     remark = '; '.join(detail_parts)
     tm = '货到付款'
@@ -5163,10 +5265,10 @@ def api_inquiry_split_select(iid):
         s = g['sup']
         its = g['items']
         no = gen_no('CG', 'purchase_orders', 'order_no', conn)
-        # 该供应商的逐项报价(quote_details, 按全量物资顺序)
+        # 该供应商的逐项报价(quote_details, 按全量物资顺序) — V11.180: 采购已议价时用调整后明细
         qd = {}
         try:
-            qd_list = json.loads(s.get('quote_details') or '[]')
+            qd_list = json.loads(inquiry_eff_price(dict(s), 'quote_details'))
             for idx, q in enumerate(qd_list):
                 qd[idx] = q
         except Exception:
@@ -5184,11 +5286,15 @@ def api_inquiry_split_select(iid):
             rows.append((it['item_name'], it['spec'] or '', it['unit'] or '个', qty, price, amt,
                          (q.get('brand') or ''), (q.get('delivery') or ''), (q.get('warranty') or ''), (q.get('remark') or '')))
         if total <= 0:
-            total = float(s['quote_price'] or 0)
+            total = float(inquiry_eff_price(dict(s), 'quote_price')) or float(s['quote_price'] or 0)
         first = rows[0]
         detail_parts = ['三方询价分项定标: %s' % s['supplier_name']]
         for r in rows:
             detail_parts.append('%s x%s ¥%.2f' % (r[0], r[3], r[5]))
+        # V11.180: 采购内部备注同步订单
+        _adj_rm = (s.get('adj_remark') or '').strip() if 'adj_remark' in s.keys() else ''
+        if _adj_rm:
+            detail_parts.append('采购议价备注: %s' % _adj_rm)
         detail_parts.append('询价单号: %s' % i['inq_no'])
         remark = '; '.join(detail_parts)
         conn.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,
@@ -5267,9 +5373,9 @@ def api_inquiry_export(iid):
     conn.close()
 
     wb = Workbook(); ws = wb.active; ws.title = '询价单'
-    # V11.132: 列数提前算(4+每家6列), 标题/章节/备注框全部按全宽合并
+    # V11.132: 列数提前算(4+每家7列 — V11.180: 每家加"厂家原始报价"留痕列), 标题/章节/备注框全部按全宽合并
     n_sup = len(sups)
-    col_count = 4 + n_sup * 6
+    col_count = 4 + n_sup * 7
     # V11.132: 横向A4+缩放, 否则16列挤在纵向A4上必乱
     ws.page_setup.orientation = 'landscape'
     ws.page_setup.paperSize = 9  # A4
@@ -5326,20 +5432,27 @@ def api_inquiry_export(iid):
     # V11.52: 逐行三家对比 — 每家一列组(单价/总价/品牌/交付/质保/备注), 备注独立列跟商家走
     # V11.126: 增加 交付日期/质保时间 逐项对比列(商家按行报价的交付/质保直接进Excel)
     quoted = [s for s in sups if s['quote_price'] and s['quote_price'] > 0]
-    # 解析每家行明细(商家按申请明细顺序报价)
+    # 解析每家行明细(V11.180: 主明细=采购调整后; 另存厂家原始明细留痕)
     sup_details = []
+    sup_ori_details = []
     for s in sups:
         try:
-            sup_details.append(json.loads(s['quote_details']) if s['quote_details'] else None)
+            sup_details.append(json.loads(inquiry_eff_price(s, 'quote_details')) or None)
         except Exception:
             sup_details.append(None)
+        try:
+            sup_ori_details.append(json.loads(s.get('quote_details') or '[]') or None)
+        except Exception:
+            sup_ori_details.append(None)
     n_sup = len(sups)
-    # 表头: 序号/物料/数量/规格 | 每家6列(含税单价/含税总价/品牌/交付/质保/厂家备注)
+    # 表头: 序号/物料/数量/规格 | 每家7列(调整后含税单价/调整后含税总价/品牌/交付/质保/厂家备注/厂家原始报价)
     sup_head = ['序号', '物料名称', '数量', '规格型号']
     for s in sups:
-        sup_head += [f"{s['supplier_name']} 含税单价", f"{s['supplier_name']} 总价（含税含运）", f"{s['supplier_name']} 品牌",
-                     f"{s['supplier_name']} 交付", f"{s['supplier_name']} 质保", f"{s['supplier_name']} 厂家备注"]
-    # col_count 已在前面按 4+每家6列 算好
+        _tag_adj = '（调整后）' if inquiry_is_adjusted(s) else ''
+        sup_head += [f"{s['supplier_name']} 含税单价{_tag_adj}", f"{s['supplier_name']} 总价（含税含运）{_tag_adj}", f"{s['supplier_name']} 品牌",
+                     f"{s['supplier_name']} 交付", f"{s['supplier_name']} 质保", f"{s['supplier_name']} 厂家备注",
+                     f"{s['supplier_name']} 厂家原始报价"]
+    # col_count 已在前面按 4+每家7列 算好
     for ci, h in enumerate(sup_head, 1):
         c = ws.cell(row, ci, h); c.font = head_font; c.fill = head_fill; c.border = border
         c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
@@ -5361,13 +5474,20 @@ def api_inquiry_export(iid):
             else:
                 s_brand_remark = ''
             det = sup_details[si]
+            ori_det = sup_ori_details[si]
             unit_p = None; total_p = None; remark = ''
+            ori_unit_p = None; ori_total_p = None
             if det and idx - 1 < len(det):
                 d_i = det[idx - 1]
                 if d_i.get('unit_price') is not None:
                     unit_p = float(d_i.get('unit_price') or 0)
                     total_p = unit_p * qty
                 remark = d_i.get('remark') or ''
+            if ori_det and idx - 1 < len(ori_det):
+                o_i = ori_det[idx - 1]
+                if o_i.get('unit_price') is not None:
+                    ori_unit_p = float(o_i.get('unit_price') or 0)
+                    ori_total_p = ori_unit_p * qty
             # 获取品牌/交付/质保
             brand = ''; delivery = ''; warranty = ''
             if det and idx - 1 < len(det):
@@ -5376,22 +5496,24 @@ def api_inquiry_export(iid):
                 warranty = det[idx - 1].get('warranty') or ''
             if unit_p is not None:
                 # V11.132: 金额千分位+两位小数, 领导看更专业
+                # V11.180: 末列=厂家原始报价(留痕); 未议价时原始价=调整价且标注"—"
+                _ori_txt = '{:,.2f}'.format(ori_total_p) if (ori_total_p is not None and inquiry_is_adjusted(s)) else ('{:,.2f}'.format(total_p) if ori_total_p is None else '{:,.2f}'.format(ori_total_p))
                 vals += ['{:,.2f}'.format(unit_p), '{:,.2f}'.format(total_p),
-                         brand, delivery, warranty, remark]
+                         brand, delivery, warranty, remark, _ori_txt]
                 total_per_sup[si] += total_p
             else:
-                vals += ['', '', brand, delivery, warranty, remark]
+                vals += ['', '', brand, delivery, warranty, remark, '']
             row_prices.append((unit_p, total_p))
         # 最低单价标红
         unit_prices = [p[0] for p in row_prices if p[0] is not None]
         min_unit = min(unit_prices) if unit_prices else None
         for ci, v in enumerate(vals, 1):
             c = ws.cell(row, ci, v); c.border = border
-            c.alignment = Alignment(horizontal='center' if ci <= 4 or (ci - 5) % 6 != 0 else 'left', vertical='center', wrap_text=True)
-            # 单价列: 最低标红加粗+★（V11.145: 领导一眼看到每项最便宜的厂家）
+            c.alignment = Alignment(horizontal='center' if ci <= 4 or (ci - 5) % 7 != 0 else 'left', vertical='center', wrap_text=True)
+            # 单价列: 最低标红加粗+★（V11.145: 领导一眼看到每项最便宜的厂家）— V11.180: 每组7列
             if unit_prices and min_unit is not None:
-                k = (ci - 5) // 6
-                if 0 <= k < n_sup and (ci - 5) % 6 == 0:
+                k = (ci - 5) // 7
+                if 0 <= k < n_sup and (ci - 5) % 7 == 0:
                     if row_prices[k][0] is not None and abs(row_prices[k][0] - min_unit) < 0.001:
                         c.font = Font(name='微软雅黑', size=11, bold=True, color='C00000')
                         c.fill = PatternFill('solid', fgColor='FFF2CC')
@@ -5408,18 +5530,18 @@ def api_inquiry_export(iid):
         ws.cell(row, cc).border = border
     total_min = None
     for si, t in enumerate(total_per_sup):
-        # V11.126: 总价落位修正到 总价列(6+si*6)
-        ws.cell(row, 5 + si * 6, '').border = border
-        c = ws.cell(row, 6 + si * 6, '{:,.2f}'.format(round(t, 2)))
+        # V11.126: 总价落位修正到 总价列(7+si*7) — V11.180: 每组7列
+        ws.cell(row, 6 + si * 7, '').border = border
+        c = ws.cell(row, 7 + si * 7, '{:,.2f}'.format(round(t, 2)))
         c.border = border; c.font = label_font
         c.alignment = Alignment(horizontal='center', vertical='center')
         if t > 0 and (total_min is None or t < total_min):
             total_min = t
-        for cc in range(7 + si * 6, 11 + si * 6):
+        for cc in range(8 + si * 7, 12 + si * 7):
             ws.cell(row, cc).border = border
     for si, t in enumerate(total_per_sup):
         if t > 0 and total_min is not None and abs(t - total_min) < 0.001:
-            _min_c = ws.cell(row, 6 + si * 6)
+            _min_c = ws.cell(row, 7 + si * 7)
             _min_c.font = min_font_s
             _min_c.fill = PatternFill('solid', fgColor='FFF2CC')
     # V11.132: ★说明移到合计行最后列, 最低总价已标红黄底, 领导一眼看到最便宜
@@ -5472,12 +5594,21 @@ def api_inquiry_export(iid):
         brand_text = '【品牌对比】' + chr(10) + chr(10).join(brand_analysis_lines)
         decision = decision + chr(10) + chr(10) + brand_text
     # V11.162: 每家含运总价 + 厂家备注(整单) 汇总显示
+    # V11.180: 已议价厂家显示调整后总价+原始价+采购内部备注
     _ship_lines = []
     for s in sups:
         if s['quote_price'] and s['quote_price'] > 0:
-            _ship_lines.append('%s：总价（含税含运） ¥%s%s' % (s['supplier_name'],
-                format(float(s['quote_price']), ',.2f'),
-                ('（' + (s['quote_remark'] or '') + '）') if (s['quote_remark'] or '').strip() else ''))
+            _eff = inquiry_eff_price(s, 'quote_price')
+            _adj_flag = '【采购调整后】' if inquiry_is_adjusted(s) else ''
+            _line = '%s：总价（含税含运） ¥%s%s' % (s['supplier_name'],
+                format(float(_eff), ',.2f'), _adj_flag)
+            if inquiry_is_adjusted(s) and float(s['quote_price']) > 0:
+                _line += '（厂家原始报价 ¥%s）' % format(float(s['quote_price']), ',.2f')
+            if (s.get('quote_remark') or '').strip():
+                _line += '（厂家备注：%s）' % (s['quote_remark'] or '')
+            if (s.get('adj_remark') or '').strip():
+                _line += '【采购议价备注】%s' % (s['adj_remark'] or '')
+            _ship_lines.append(_line)
     if _ship_lines:
         decision = decision + chr(10) + chr(10) + '【总价（含税含运）】' + chr(10) + chr(10).join(_ship_lines)
     c = ws.cell(row, 1, decision)
