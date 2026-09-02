@@ -2098,9 +2098,31 @@ function viewBiz(t,oid){
   else if(t=='receiving')showRcvDetail(oid);   // V11.172: 入库审批详情可点
   else if(t=='requisition')showRequisitionDetail(oid);  // V11.172: 出库审批详情可点
   else if(t=='credit'||t=='payment'){
-    const a=id('approvalsTable').innerHTML;
-    alert('请打开对应单据页查看详情');
+    // V11.173: 挂账/付款详情弹窗(原为alert提示, 体验差)
+    showFinDetail(t,oid);
   }
+}
+async function showFinDetail(t,oid){
+  // V11.173: 挂账/付款 审批详情 — 从列表接口取单据数据展示
+  if(__guardOpen('fin:'+t+':'+oid))return;
+  try{
+    const url=t=='credit'?'/credits':'/payments';
+    const list=await api(url,{noCache:true});
+    const r=(list||[]).find(x=>x.id===oid);
+    if(!r){alert('单据不存在');return}
+    const f=t=='credit'?[
+      ['挂账单号',r.credit_no],['供应商',r.supplier],['类别',r.category],
+      ['金额','¥'+(r.amount||0).toFixed(2)],['发票号',r.invoice_no],['内容',r.item_name],
+      ['状态',r.status],['创建时间',(r.created_at||'').slice(0,16)]
+    ]:[
+      ['付款单号',r.payment_no],['类型',r.payment_type],['事由',r.reason||r.purpose||''],
+      ['金额','¥'+(r.amount||0).toFixed(2)],['收款人',r.payee],['收款账户',r.account],
+      ['状态',r.status],['创建时间',(r.created_at||'').slice(0,16)]
+    ];
+    showDetail((t=='credit'?'挂账单 ':'付款单 ')+(r.credit_no||r.payment_no||('#'+oid)),
+      '<div class="c2">'+f.map(([k,v])=>`<div><dt>${k}</dt><dd>${esc(v||'')}</dd></div>`).join('')+'</div>',
+      '<button class="btn btn-o" onclick="closeMod()">关闭</button>');
+  }catch(e){alert('加载失败:'+(e.message||e))}
 }
 async function showRequisitionDetail(rid){
   // V11.172: 出库单详情(审批页"详情"按钮用) — 读取单据+明细, 弹窗展示
@@ -2769,7 +2791,9 @@ async function loadReqInv(){
   reqSelBar();
 }
 function reqSelToggle(key,chk){
-  if(chk)reqSel[key]='';
+  // V11.173: 勾选时不再清空已填数量 — 原逻辑 if(chk)reqSel[key]='' 会把先填的数量抹掉,
+  // 导致点直接出库时取到空值又弹窗问数量(用户反馈数量问题复现)
+  if(chk){ if(reqSel[key]===undefined)reqSel[key]=''; }
   else delete reqSel[key];
   reqSelBar(); reqSelCnt();
 }
