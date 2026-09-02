@@ -2889,7 +2889,16 @@ def dt_poll_results():
                 if st in ('APPROVED', 'COMPLETED'):
                     # COMPLETED(旧API) 需结合 result 判断 agree/reject
                     _res = str(inst.get('result', 'agree') or 'agree').lower()
-                    dt_sync_result(r['instance_code'], 'agree' if _res in ('agree', 'agree_ok') else 'reject'); n += 1
+                    if _res in ('refuse', 'reject'):
+                        # V11.177: COMPLETED+refuse 也是驳回 — 提取驳回人/理由/时间(原只传reject丢理由)
+                        _op = dt_extract_reject_op(inst)
+                        if _op:
+                            dt_sync_result(r['instance_code'], 'reject', _op['comment'], _op['approver'], _op['approver_id'], _op['processed_at'])
+                        else:
+                            dt_sync_result(r['instance_code'], 'reject')
+                    else:
+                        dt_sync_result(r['instance_code'], 'agree' if _res in ('agree', 'agree_ok') else 'reject')
+                    n += 1
                 elif st in ('REJECTED',):
                     # V11.175: 提取钉钉实际驳回人+驳回意见 → 实时同步(人/时间/理由)
                     _op = dt_extract_reject_op(inst)
