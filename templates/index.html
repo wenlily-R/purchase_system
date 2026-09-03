@@ -905,6 +905,24 @@ function initApp(){
   // V11.18: 预加载公网地址, 供报价链接复制使用(商家必须用公网链接才能打开)
   (async()=>{try{const c=await fetch('/api/public-url',{credentials:'include'}).then(r=>r.json());if(c&&c.url)window._basePublicUrl=c.url}catch(e){}})();
   loadDashboard();
+  // V11.192: 钉钉通知/加急"去处理"免登落地 — 打开对应单据详情/审批弹窗
+  try{
+    const p=new URLSearchParams(location.search).get('dtopen')||'';
+    if(p&&p.includes(':')){
+      const parts=p.split(':');
+      if(parts.length>=2){
+        const _bt=parts[0],_bid=parseInt(parts[1]),_act=parts[2]||'detail';
+        if(_bt&&_bid){
+          setTimeout(()=>{
+            if(_act=='approve'&&typeof doApprove==='function'){doApprove(_bt,_bid);return}
+            if(typeof viewBiz==='function'){viewBiz(_bt,_bid);return}
+          },900);
+          // 清理地址栏参数, 避免刷新重复弹
+          try{history.replaceState(null,'',location.pathname+location.hash)}catch(e){}
+        }
+      }
+    }
+  }catch(e){}
 }
 function buildNav(){
   const role=ME.role;
@@ -2118,7 +2136,7 @@ async function delDoc(bizType,id,label){
 async function withdrawDoc(bizType,id,label){
   // V11.150: 防连点
   if(__guardOpen('wd:'+bizType+':'+id))return;
-  if(!confirm(`确认撤回该${label}的审批？撤回后单据回到待审批状态，重新走完整审批流程（已审批记录作废）`))return;
+  if(!confirm(`确认撤回该${label}的审批？\n\n撤回后单据退回「草稿」，审批流程终止（审批记录保留留痕）。\n请在单据上修改确认后，点「🔄 再次提交审批」重新进入审批流。`))return;
   const r=await api(`/docs/${bizType}/${id}/withdraw`,{method:'POST',body:'{}'});
   if(r.success){alert('✅ '+r.message);closeMod();refreshAfterDel(bizType)}
   else alert('❌ '+(r.error||'撤回失败'));
@@ -2666,7 +2684,7 @@ async function showRcvDetail(id){
   const btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button>
     ${r.status=='待入库'?`<button class="btn btn-p btn-sm" onclick="completeRcv(${r.id},${r.total_qty||r.quantity},${r.order_id||0})">📤 提交审批</button>`:''}
     <button class="btn btn-o btn-sm" style="color:#b08900;border-color:#b08900" onclick="editDoc('receiving',${r.id},'入库单')">✏️ 修改</button>
-    ${((r.status=='已驳回'||(r.status=='草稿'&&(r.reject_count||0)>0))&&ME.role=='系统管理员')?`<button class="btn btn-p btn-sm" style="background:#16a34a;border-color:#16a34a" onclick="resubmitDoc('receiving',${r.id},'入库单','${esc(r.receive_no)}')">🔄 再次提交审批</button>`:''}`;
+    ${((r.status=='已驳回'||(r.status=='草稿'&&(r.reject_count||0)>0))&&(ME.role=='系统管理员'||ME.name==r.inspector))?`<button class="btn btn-p btn-sm" style="background:#16a34a;border-color:#16a34a" onclick="resubmitDoc('receiving',${r.id},'入库单','${esc(r.receive_no)}')">🔄 再次提交审批</button>`:''}`;
   if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
   showDetail(`入库单 ${r.receive_no}`,h+'<div id="approvalFlowBox"></div><div id="rejectLogsBox"></div>',btns);
   loadApprovalFlow('receiving',id,'approvalFlowBox');
@@ -2708,6 +2726,7 @@ async function loadReceivings(){
       const ops2= x.status=='待入库'&&isAuto?`<button class="lnk" style="color:var(--s);font-weight:600" onclick="confirmArrived(${x.id})">✅ 确认到货</button>`
                 : x.status=='待入库'?`<button class="lnk" style="color:var(--s);font-weight:600" onclick="completeRcv(${x.id},${x.total_qty||x.quantity},${x.order_id||0})">📤 提交审批</button>`
                 : x.status=='入库中'?`<button class="lnk" style="color:var(--s);font-weight:600" onclick="completeRcv(${x.id},${x.total_qty||x.quantity},${x.order_id||0})">📤 提交审批</button>`
+                : (x.status=='草稿'&&(x.reject_count||0)>0)?`<button class="lnk" style="color:var(--s);font-weight:600" onclick="resubmitDoc('receiving',${x.id},'入库单','${esc(x.receive_no)}')">🔄 再次提交审批</button>`
                 : x.status=='待审批'?'<span style="color:#b08900;font-size:8px">审批中</span>':'';
       // V11.54/V11.153: 暂估/红冲/正式标签(有发票号=已红冲优先; 无发票号且is_est=暂估; 都无=正式)
       const estTag = x.invoice_no?'<span class="tag" style="background:#e8f5e9;color:#2e7d32">已红冲</span>'

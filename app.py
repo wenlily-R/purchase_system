@@ -2814,6 +2814,8 @@ def dt_send_todo(userids, title, text, extra='', biz_type='', biz_id=0, push_typ
         userids = [u for u in userids if u]
         if not userids: return False
         # V11.174: "去处理"优先跳钉钉OA审批实例页(审批人点开直接在钉钉里审批, 不再绕采购系统网页)
+        # V11.192: 改为跳系统免登直达页 — 原n.dingtalk.com OA H5 对申请人/非当前审批人打开白屏/跳登录
+        # (钉钉OA H5 需审批登录态+可信域名); 系统 /sso/goto 自动钉钉免登+跳对应单据详情/审批弹窗, 复制链接兜底
         url = ''
         _inst_code = ''
         if biz_type and biz_id:
@@ -2825,19 +2827,17 @@ def dt_send_todo(userids, title, text, extra='', biz_type='', biz_id=0, push_typ
                     _inst_code = str(_row['instance_code'])
             except Exception:
                 pass
-        if _inst_code:
-            # V11.176: 钉钉OA审批详情H5页用移动端域名 n.dingtalk.com —
-            # 原 aflow.dingtalk.com 是PC后台域名, 手机钉钉打开跳"登录已过期"打不开(实测确认)
-            url = 'https://n.dingtalk.com/dingtalk/web/process/' + _inst_code
-        else:
-            pu = dt_public_url()
-            if pu:
-                url = pu.rstrip('/') + '/#approvals'
+        # V11.192: 跳系统免登直达页(带单据定位), 全部通知/加急统一; 审批提醒用act=approve, 结果通知用act=detail
+        _act = 'approve' if push_type in ('auto', 'urgent', 'overdue') else 'detail'
+        _pu = dt_public_url()
+        if _pu:
+            url = _pu.rstrip('/') + f'/sso/goto?biz={biz_type}&id={biz_id}&act={_act}' if biz_type and biz_id else _pu.rstrip('/') + '/#approvals'
+        _copy_url = url
         msg = {'msgtype': 'action_card', 'action_card': {
             'title': title,
-            'markdown': text + ('\n' + extra if extra else ''),
+            'markdown': text + ('\n' + extra if extra else '') + (f'\n\n📎 打不开请点上方按钮，或复制链接到浏览器：\n{_copy_url}' if _copy_url else ''),
             'btn_orientation': '1',
-            'btn_json_list': [{'title': '去处理', 'action_url': url}] if url else [],
+            'btn_json_list': [{'title': '去处理' if push_type in ('auto', 'urgent', 'overdue') else '查看详情', 'action_url': url}] if url else [],
         }}
         code_r, resp = dt_post('/topapi/message/corpconversation/asyncsend_v2', {
             'agent_id': agent, 'userid_list': ','.join(userids), 'msg': msg,
@@ -3864,6 +3864,85 @@ def api_dingtalk_jsapi_ticket():
     sig = hashlib.sha1(f"jsapi_ticket={_DT_TICKET['t']}&noncestr={nonce}&timestamp={ts}&url={jsurl}".encode('utf-8')).hexdigest()
     return jsonify({'agentId': cfg_get('dingtalk_agent_id', ''), 'corpId': cfg_get('dingtalk_corp_id', ''),
                     'timeStamp': ts, 'nonceStr': nonce, 'signature': sig, 'ticket_ok': True})
+
+
+# V11.192: 钉钉通知/加急"去处理"免登直达页 — 申请人/审批人点开即自动免登进系统对应单据
+# 根因修复: 原action_card跳 n.dingtalk.com OA H5 需钉钉审批登录态+可信域名, 通知对象(申请人/非审批人)
+# 打开白屏/跳登录 → 改为跳系统单据直达(免登鉴权由 /api/dingtalk/sso 完成, 系统域名无需在钉钉后台配置可信域名)
+@app.route('/sso/goto')
+def api_sso_goto():
+    bt = str(request.args.get('biz', '')).strip()
+    bid = str(request.args.get('id', '')).strip()
+    act = str(request.args.get('act', 'detail')).strip()
+    if act not in ('detail', 'approve'):
+        act = 'detail'
+    # 单据号/名称预取(免登前展示, 用户知道点的是什么)
+    _doc_no, _doc_tip = '', ''
+    _tip = '单据详情' if act != 'approve' else '单据审批'
+    try:
+        if bt and bid.isdigit():
+            _t = biz_table(bt)
+            if _t:
+                _c = db()
+                _row = _c.execute(f"SELECT * FROM {_t} WHERE id=?", (int(bid),)).fetchone()
+                _c.close()
+                if _row is not None:
+                    for _k in ('req_no', 'order_no', 'contract_no', 'receive_no', 'payment_no', 'credit_no', 'inq_no'):
+                        if _k in _row.keys() and _row[_k]:
+                            _doc_no = str(_row[_k]); break
+                    if not _doc_no:
+                        _doc_no = f'{bt}#{bid}'
+                    _tip = '单据审批' if act == 'approve' else '单据详情'
+    except Exception:
+        pass
+    _DT_BIZ_CN = DT_BIZ.get(bt, '单据')
+    return f'''<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>正成能源采购 · {_DT_BIZ_CN}</title>
+<style>body{{margin:0;font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;background:linear-gradient(160deg,#0d2c54,#1a4a7a);min-height:100vh;display:flex;align-items:center;justify-content:center}}
+.card{{background:#fff;border-radius:14px;padding:28px 24px;width:86%;max-width:340px;box-shadow:0 10px 30px rgba(0,0,0,.25);text-align:center}}
+.logo{{font-size:28px}}h2{{font-size:16px;color:#16325c;margin:8px 0 4px}}p{{font-size:12px;color:#666;margin:4px 0;line-height:1.7;word-break:break-all}}
+.btn{{display:block;width:100%;padding:11px 0;border:none;border-radius:8px;font-size:14px;font-weight:600;margin-top:12px;cursor:pointer}}
+.btn-p{{background:#1a6bff;color:#fff}}.btn-o{{background:#f0f4fa;color:#16325c}}
+.tip{{font-size:11px;color:#999;margin-top:10px}}</style></head><body>
+<div class="card"><div class="logo">📋</div><h2>{_DT_BIZ_CN} · {_tip}</h2>
+<p>{_doc_no or '单据加载中…'}</p>
+<div id="st" style="font-size:12px;color:#1a6bff;margin-top:8px">正在验证钉钉身份，请稍候…</div>
+<a class="btn btn-p" id="bOpen" style="display:none;text-decoration:none" href="/?dtopen={bt}:{bid}:{act}">✅ 已登录，打开单据</a>
+<a class="btn btn-o" id="bCopy" style="display:none" href="javascript:void(0)">📋 复制链接(手机浏览器打开)</a>
+<p class="tip" id="tipTxt" style="display:none">非钉钉环境/免登失败：请复制下方链接，用<b>手机浏览器或电脑浏览器</b>打开后按系统账号登录即可查看单据。</p>
+<script src="https://g.alicdn.com/dingding/dingtalk-jsapi/2.10.4/dingtalk.open.js"></script>
+<script>
+(function(){{
+  const UA=navigator.userAgent||'', IS_DT=UA.includes('DingTalk');
+  const link=location.origin+'/?dtopen={bt}:{bid}:{act}';
+  async function go(){{
+    try{{
+      const cfg=await fetch('/api/dingtalk/jsapi-ticket?url='+encodeURIComponent(location.href.split('#')[0]),{{credentials:'include'}}).then(r=>r.json());
+      if(!cfg.agentId||!cfg.corpId||cfg.error)throw new Error(cfg.error||'钉钉未配置');
+      dd.config({{agentId:cfg.agentId,corpId:cfg.corpId,timeStamp:cfg.timeStamp,nonceStr:cfg.nonceStr,signature:cfg.signature,jsApiList:['runtime.permission.requestAuthCode']}});
+      dd.ready(function(){{
+        dd.runtime.permission.requestAuthCode({{corpId:cfg.corpId,onSuccess:async function(r){{
+          const res=await fetch('/api/dingtalk/sso',{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'include',body:JSON.stringify({{authCode:r.code}})}}).then(x=>x.json());
+          if(res.success){{location.href=link}}
+          else{{document.getElementById('st').textContent='免登未绑定系统账号：'+res.error;showCopy()}}
+        }},onFail:function(e){{document.getElementById('st').textContent='钉钉授权未完成';showCopy()}}}});
+      }});
+      dd.error(function(e){{document.getElementById('st').textContent='签名校验失败，请用浏览器打开';showCopy()}});
+    }}catch(e){{document.getElementById('st').textContent='免登不可用：'+e.message;showCopy()}}
+  }}
+  function showCopy(){{
+    const b=document.getElementById('bCopy');b.style.display='block';b.onclick=function(){{
+      if(navigator.clipboard&&navigator.clipboard.writeText){{navigator.clipboard.writeText(link).then(()=>{{document.getElementById('tipTxt').textContent='✅ 链接已复制：'+link}})}}else{{
+        const ta=document.createElement('textarea');ta.value=link;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
+        document.getElementById('tipTxt').textContent='✅ 链接已复制：'+link}}
+    }};
+    const tip=document.getElementById('tipTxt');tip.style.display='block';tip.textContent='非钉钉环境/免登失败：请复制链接，用浏览器打开后按系统账号登录查看。\\n'+link;
+    document.getElementById('bOpen').style.display='block';
+  }}
+  if(IS_DT){{go()}}else{{document.getElementById('st').textContent='请在钉钉客户端打开，或复制链接到浏览器查看';showCopy()}}
+}})();
+</script></body></html>'''
 
 @app.route('/api/approval-flow')
 @login_required
@@ -9085,14 +9164,20 @@ def api_doc_withdraw(biz_type, bid):
     - 钉钉实例终止(若有), 重新发起
     - 已执行库存操作(入库已入库/出库已出库)的: 需先作废回滚, 不可直接撤回
     - 已生成下游单据(申请→订单/订单→入库/合同)的: 禁止撤回"""
+    conn = db()
     if not can_manage_config():
-        return jsonify({'error': '仅系统管理员可撤回审批'}), 403
+        # V11.192: 单据提交人本人也可撤回自己的单(管理员不受限); 其他角色 403
+        _me = conn.execute("SELECT * FROM users WHERE id=?", (session.get('user_id', 0),)).fetchone()
+        if not _me:
+            conn.close(); return jsonify({'error': '未登录'}), 401
+        _who = find_doc_submitter(biz_type, bid)
+        if not _who or _who.get('name') != _me['name']:
+            conn.close(); return jsonify({'error': '仅单据提交人或系统管理员可撤回审批'}), 403
     if biz_type not in _DELETE_TABLE:
         return jsonify({'error': f'不支持的撤回类型: {biz_type}'}), 400
     table = _DELETE_TABLE[biz_type]
     no_col = _DELETE_NO_COL[biz_type]
     biz = _DELETE_BIZTYPE[biz_type]
-    conn = db()
     row = conn.execute(f"SELECT * FROM {table} WHERE id=?", (bid,)).fetchone()
     if not row:
         conn.close(); return jsonify({'error': '单据不存在'}), 404
@@ -9115,24 +9200,32 @@ def api_doc_withdraw(biz_type, bid):
         conn.close(); return jsonify({'error': '该入库单已完成入库(已加库存)，请先作废回滚后再撤回'}), 400
     if biz_type == 'requisition' and status == '已出库':
         conn.close(); return jsonify({'error': '该出库单已完成出库(已扣库存)，请先作废回滚后再撤回'}), 400
-    # 撤回: 状态回待审批, 原审批实例作废, 重新生成
-    conn.execute(f"UPDATE {table} SET status='待审批', updated_at=? WHERE id=?", (now(), bid))
+    # V11.192: 撤回 = 单据回到"草稿"(提交人可修改), 审批实例留痕作废, 钉钉实例终止; 不自动重新审批
+    # 提交人改完点「再次提交审批」(resubmit) 才重新进入审批流+推钉钉 — 修复: 撤回后一直审批中/无按钮/推不到钉钉
+    conn.execute(f"UPDATE {table} SET status='草稿', updated_at=? WHERE id=?", (now(), bid))
+    # 审批实例留痕: 待审/已过节点置 withdrawn(撤回), 保留历史可见(审批流转日志仍显示原流程)
     conn.execute("UPDATE approval_instances SET status='rejected', comment='发起人撤回' WHERE biz_type=? AND biz_id=? AND status IN ('pending','approved')", (biz, bid))
+    # 钉钉实例终止(若钉钉侧还有 RUNNING) — 避免撤回后钉钉审批人仍能批
+    _insts = conn.execute("SELECT instance_code FROM dingtalk_instances WHERE biz_type=? AND biz_id=? AND status IN ('pending','synced')", (biz, bid)).fetchall()
+    for _ins in _insts:
+        try:
+            if _ins['instance_code'] and not str(_ins['instance_code']).startswith('ERR-'):
+                dt_terminate_instance(str(_ins['instance_code']), dt_first_bound_userid() or '')
+        except Exception:
+            pass
     conn.execute("DELETE FROM dingtalk_instances WHERE biz_type=? AND biz_id=?", (biz, bid))
-    conn.commit()
-    # 重新生成审批链 + 钉钉发起
-    amount = 0
+    # 撤回操作留痕(审批流转日志统一记录, 申请人/审批人可见)
+    log_approval_action(biz_type, bid, 'withdraw', session.get('user_name',''), session.get('user_id',0),
+                        '发起人撤回，单据退回草稿，修改后可再次提交审批', now(), None, 'system', '', conn=conn)
+    # 撤回次数累计(留痕用, 语义=被打回修改过几次)
     try:
-        if 'total_amount' in row.keys(): amount = float(row['total_amount'] or 0)
-        elif 'total_estimated' in row.keys(): amount = float(row['total_estimated'] or 0)
-        elif 'amount' in row.keys(): amount = float(row['amount'] or 0)
+        conn.execute(f"UPDATE {table} SET reject_count=COALESCE(reject_count,0)+1 WHERE id=?", (bid,))
     except Exception:
-        amount = 0
-    create_approvals(biz, bid, amount, submitter=session.get('user_name',''))
-    start_instances(biz, bid)
+        pass
+    conn.commit()
     conn.close()
-    log(session['user_name'], '撤回审批', f'{biz_type}#{bid} {no} 重新进入审批流')
-    return jsonify({'success': True, 'message': f'单据 {no} 已撤回，重新进入审批流'})
+    log(session['user_name'], '撤回审批', f'{biz_type}#{bid} {no} 撤回退回草稿(未自动重审)')
+    return jsonify({'success': True, 'message': f'单据 {no} 已撤回退回草稿。修改确认后请点「🔄 再次提交审批」重新进入审批流'})
 
 
 @app.route('/api/docs/<biz_type>/<int:bid>/update', methods=['POST'])
