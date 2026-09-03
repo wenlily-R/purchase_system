@@ -355,10 +355,11 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <button class="act" data-t="" onclick="apprTab('')">全部</button>
     <button data-t="purchase_request" onclick="apprTab('purchase_request')">📝采购申请</button>
     <button data-t="inquiry_approval" onclick="apprTab('inquiry_approval')">🔍比价单</button>
-    <button data-t="purchase_order" onclick="apprTab('purchase_order')">📋采购订单</button>
     <button data-t="contract" onclick="apprTab('contract')">📄合同审批</button>
     <button data-t="receiving" onclick="apprTab('receiving')">📦入库审批</button>
     <button data-t="requisition" onclick="apprTab('requisition')">📤出库审批</button>
+    <!-- V11.202: 审批中心删除采购订单栏目; 退库审批放 出库后、付款前 -->
+    <button data-t="return_request" onclick="apprTab('return_request')">↩️退库审批</button>
     <button data-t="payment" onclick="apprTab('payment')">💰付款审批</button>
     <button data-t="rejected" onclick="apprTab('rejected')" style="color:#ea4335">❌未通过</button>
   </div>
@@ -370,6 +371,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <!-- V11.29: 部门/类别 筛选下拉 -->
     <select id="rcvFDept" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px" onchange="loadReceivings()"><option value="">全部部门</option></select>
     <select id="rcvFCat" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px" onchange="loadReceivings()"><option value="">全部类别</option></select>
+    <select id="rcvFType" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px" onchange="loadReceivings()"><option value="">全部入库类型</option><option value="est">暂估入库</option><option value="formal">正式入库</option></select>
     <button class="btn btn-p btn-sm" style="margin-left:auto" onclick="showRcvForm()">➕ 新建入库单</button>
   </div>
   <div class="card"><div class="cb" id="receivingsTable"><div class="loading">加载中...</div></div></div></div>
@@ -1224,7 +1226,7 @@ setInterval(()=>{
 },60000);
 function showDetail(t,h,f){id('dmTitle').textContent=t;id('dmBody').innerHTML=h;id('dmFooter').innerHTML=f||'<button class="btn btn-o" onclick="closeMod()">关闭</button>';id('detailModal').classList.add('show')}
 
-function tag(s){const m={'已完成':'tg-g','已付款':'tg-g','已通过':'tg-g','已入库':'tg-g','已签收':'tg-g','待审批':'tg-o','待签收':'tg-o','待检验':'tg-o','待入库':'tg-o','验收中':'tg-o','验收完成':'tg-g','审批通过':'tg-b','已签合同':'tg-b','已发货':'tg-b','已到货':'tg-b','已挂账':'tg-b','已驳回':'tg-r','已关闭':'tg-gy','执行中':'tg-b'};return `<span class="tag ${m[s]||'tg-gy'}">${esc(s)}</span>`}
+function tag(s){const m={'已完成':'tg-g','已付款':'tg-g','已通过':'tg-g','已入库':'tg-g','已签收':'tg-g','待审批':'tg-o','待签收':'tg-o','待检验':'tg-o','待入库':'tg-o','验收中':'tg-o','验收完成':'tg-g','审批通过':'tg-b','已签合同':'tg-b','已发货':'tg-b','已到货':'tg-b','已挂账':'tg-b','已驳回':'tg-r','已关闭':'tg-gy','执行中':'tg-b','部分到货，待继续验收':'tg-o','全部已验收':'tg-g'};return `<span class="tag ${m[s]||'tg-gy'}">${esc(s)}</span>`}
 function rnder(d,k,h,f){if(!d||!d.length)return'<div style="padding:8px;color:#999;font-size:10px;text-align:center">暂无数据</div>';return `<table><tr>${h.map(x=>`<th>${x}</th>`).join('')}</tr>${d.map(r=>`<tr>${f(r)}</tr>`).join('')}</table>`}
 // V11.191: 通用按日期分组渲染(各列表板块统一) — 组头"📅 MM.DD N单", 组内表格同rnder
 function groupRnder(d, getDate, h, f){
@@ -2165,6 +2167,30 @@ async function showOrder(id){
       }).join('')}
       <tr style="font-weight:700;background:#f4f7fd"><td colspan="3">合计</td><td>${o.total_qty||o.quantity}</td><td></td><td>¥${(o.total_amount||0).toFixed(2)}</td><td colspan="2"></td></tr></tbody></table>`;
   }
+  // V11.202 分批验收: 验收台账面板(订单总数量/已验收入库/待验收待定 + 暂估/正式分组台账 + 新增批次入口)
+  if(d.rcv_stats){
+    const st=d.rcv_stats;
+    const isWarehouseB=['系统管理员','库管员','部门负责人','分管领导','总经理'].includes(ME.role);
+    const doneAll=st.pending<=0.001;
+    const openSt=['已通过','审批通过','已签合同','执行中','部分到货，待继续验收'].includes(o.status);
+    const fmtN=n=>{const v=Number(n||0);return (v%1===0)?v.toString():v.toFixed(2)};
+    const rowsOf=arr=>arr.length?`<table class="tb" style="font-size:9px"><thead><tr><th>批次</th><th>入库单号</th><th>本批数量</th><th>类型</th><th>验收人</th><th>时间</th><th>状态</th><th>操作</th></tr></thead><tbody>${arr.map(b=>{
+      const typTxt=b.invoice_no?'<span class="tag" style="background:#e8f5e9;color:#2e7d32">已红冲</span>':(b.is_est?'<span class="tag" style="background:#fff3e0;color:#e65100">暂估</span>':'<span class="tag" style="background:#e8f5e9;color:#2e7d32">正式</span>');
+      return `<tr><td>${esc(b.batch_no||'整批')}</td><td><b>${esc(b.receive_no)}</b></td><td>${fmtN(b._qty)}${esc(b.unit||'')}</td><td>${typTxt}</td><td style="font-size:8px;color:#666">${esc(b.inspector||'-')}</td><td style="font-size:8px;color:#666">${esc((b.completed_at||b.created_at||'').slice(0,16))}</td><td>${tag(b.status)}</td><td><button class="lnk" onclick="showRcvDetail(${b.id})">详情</button></td></tr>`}).join('')}</tbody></table>`:'<div style="font-size:9px;color:#999;padding:2px 0">暂无批次</div>';
+    const estB=(st.batches||[]).filter(b=>b.is_est), fmB=(st.batches||[]).filter(b=>!b.is_est);
+    h+=`<div style="margin-top:8px;border:1px solid #cfe0f5;border-radius:8px;padding:8px;background:#fbfdff">
+      <div style="font-size:10px;font-weight:bold;color:#0a5ab8;margin-bottom:6px">📦 验收入库（分批）</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;font-size:9px;margin-bottom:6px">
+        <span style="background:#eef2f8;padding:3px 10px;border-radius:12px">订单总数量 <b>${fmtN(st.order_total)}</b></span>
+        <span style="background:#e8f5e9;padding:3px 10px;border-radius:12px;color:#2e7d32">已验收入库 <b>${fmtN(st.accepted)}</b></span>
+        <span style="background:${doneAll?'#e8f5e9':'#fff3e0'};padding:3px 10px;border-radius:12px;color:${doneAll?'#2e7d32':'#e65100'}">待验收待定 <b>${fmtN(doneAll?0:st.pending)}</b></span>
+        <span style="background:#fff8f0;padding:3px 10px;border-radius:12px;color:#b7791f">🟠暂估合计 <b>${fmtN(st.est_total)}</b> ｜ 🟢正式合计 <b>${fmtN(st.formal_total)}</b></span>
+      </div>
+      <div style="font-size:9px;font-weight:bold;color:#e65100;margin:5px 0 2px">🟠 暂估入库批次（${estB.length}）</div>${rowsOf(estB)}
+      <div style="font-size:9px;font-weight:bold;color:#2e7d32;margin:5px 0 2px">🟢 正式入库批次（${fmB.length}）</div>${rowsOf(fmB)}
+      ${(openSt&&!doneAll&&isWarehouseB)?`<div style="margin-top:6px"><button class="btn btn-p btn-sm" onclick="showRcvBatchForm(${id})">➕ 新增验收批次</button> <span style="font-size:8px;color:#888">当前待验收待定 ${fmtN(st.pending)} 件，可继续分批验收</span></div>`:(doneAll?'<div style="font-size:8px;color:#2e7d32;margin-top:4px">✅ 全部数量已验收完成，新增验收入口已关闭</div>':'')}
+    </div>`;
+  }
   let btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button>
     <button class="btn btn-p btn-sm" onclick="downloadOrder(${id})">⬇️ 下载采购订单</button>
     <button class="btn btn-w btn-sm" onclick="printDoc('订单 ${esc(o.order_no)}','${esc(o.order_no)} | ${esc(o.item_name)} | ${esc(o.supplier)} | ¥${(o.total_amount||0).toFixed(0)} | ${esc(o.status)}')">🖨 打印</button>`;
@@ -2292,7 +2318,7 @@ async function loadApprovals(){
   // 55.docx需求4: 审批未通过独立板块(按业务类别分组)
   if(APPR_FILTER=='rejected'){
     document.querySelectorAll('#apprTabs button').forEach(b=>{b.innerHTML=(b.dataset.t==''?'全部':(APPR_TM[b.dataset.t]||['',''])[0])+(b.dataset.t==''?'':'')});
-    const rj=await api('/approvals/rejected');
+    const rj=(await api('/approvals/rejected')).filter(x=>x.biz_type!=='purchase_order');  // V11.202: 订单审批栏目已删除
     if(!rj.length){id('approvalsTable').innerHTML='<div style="padding:24px;text-align:center;color:#999;font-size:10px">✅ 暂无驳回单据</div>';return}
     const groups={};rj.forEach(x=>{groups[x.biz_type]=(groups[x.biz_type]||[]).concat(x)});
     id('approvalsTable').innerHTML=Object.entries(groups).map(([bt,list])=>{
@@ -2303,7 +2329,8 @@ async function loadApprovals(){
     }).join('');
     return;
   }
-  const a=await api('/approvals/all-pending');
+  // V11.202: 审批中心订单审批栏目已删除, 待审批列表不再显示采购订单(后台链路保留, 钉钉审批不受影响)
+  const a=(await api('/approvals/all-pending')).filter(x=>x.biz_type!=='purchase_order');
   // tab 徽标数量
   const cnt={};a.forEach(x=>{cnt[x.biz_type]=(cnt[x.biz_type]||0)+1});
   document.querySelectorAll('#apprTabs button').forEach(b=>{
@@ -2808,8 +2835,8 @@ async function showRcvDetail(id){
 async function loadReceivings(){
   // V11.158: 强制noCache — 入库验收高频操作页, 每次拉最新(提交审批/确认到货/作废后立即反映)
   // V11.29: 部门/类别筛选
-  const fDept=id('rcvFDept')?.value||'', fCat=id('rcvFCat')?.value||'';
-  const qs=new URLSearchParams();if(fDept)qs.set('dept',fDept);if(fCat)qs.set('cat',fCat);
+  const fDept=id('rcvFDept')?.value||'', fCat=id('rcvFCat')?.value||'', fType=id('rcvFType')?.value||'';
+  const qs=new URLSearchParams();if(fDept)qs.set('dept',fDept);if(fCat)qs.set('cat',fCat);if(fType)qs.set('type',fType);
   const r=await api('/receivings'+(qs.toString()?'?'+qs:''),{noCache:true});
   // 填充筛选下拉(部门/类别选项)
   try{
@@ -2856,7 +2883,9 @@ async function loadReceivings(){
                 : isWarehouse&&x.status=='入库中'?`<button class="lnk" style="color:var(--s);font-weight:600" onclick="completeRcv(${x.id},${x.total_qty||x.quantity},${x.order_id||0})">📤 提交审批</button>`
                 : isWarehouse&&x.status=='草稿'&&(x.reject_count||0)>0?`<button class="lnk" style="color:var(--s);font-weight:600" onclick="resubmitDoc('receiving',${x.id},'入库单','${esc(x.receive_no)}')">🔄 再次提交审批</button>`
                 : x.status=='待审批'?'<span style="color:#b08900;font-size:8px">审批中</span>':'';
-      return `<td><b>${esc(x.receive_no)}</b></td><td>${deptTag}</td><td>${esc(x.item_name)}${cntTag}${urgTag}</td><td>${qtyTxt}</td>
+      // V11.202: 分批验收单显示批次标签(第N批)
+      const batchTag = x.batch_no?` <span class="tag" style="background:#e8f0fe;color:#1a6bff">${esc(x.batch_no)}</span>`:'';
+      return `<td><b>${esc(x.receive_no)}</b>${batchTag}</td><td>${deptTag}</td><td>${esc(x.item_name)}${cntTag}${urgTag}</td><td>${qtyTxt}</td>
     <td><span class="tag ${x.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(x.trade_mode||'货到付款')}</span></td><td>${stTag}${estTag}</td>
     ${rejCell(x)}
     <td>${ops}${ops2}
@@ -3096,6 +3125,52 @@ async function submitBatchRcv(rid,n){
   const r=await api(`/receivings/${rid}/complete`,{method:'POST',body:JSON.stringify({items,is_est:rcvType=='est'?1:0})});
   if(r.success){alert(`✅ ${r.message||'批量入库完成'}（${rcvType=='est'?'🟠暂估':'🟢正式'}）`);closeMod();loadReceivings();loadDashboard()}
   else alert(r.error||'入库失败');
+}
+// V11.202 分批验收: 订单新增验收批次弹窗(每行填本批数量 + 独立选暂估/正式)
+async function showRcvBatchForm(oid){
+  if(__guardOpen('rcvb:'+oid))return;
+  id('dmTitle').textContent='📦 新增验收批次';
+  id('dmBody').innerHTML='<div class="loading">加载中...</div>';
+  id('detailModal').classList.add('show');
+  let d;
+  try{d=await api(`/orders/${oid}`)}catch(e){id('dmBody').innerHTML='<div style="padding:20px;text-align:center;color:#c0392b">⚠️ 加载失败，请重试 <button class="btn btn-p btn-sm" onclick="showRcvBatchForm('+oid+')">重试</button></div>';return}
+  const st=d.rcv_stats;
+  if(!st||st.pending<=0.001){alert('该订单已全部验收完成，无需新增批次');closeMod();return}
+  const pl=st.per_line&&st.per_line.length?st.per_line:[{item_name:d.order.item_name,spec:'',unit:d.order.unit||'个',order_qty:st.order_total,accepted:st.accepted,remaining:st.pending}];
+  const canBatch=pl.some(x=>x.remaining>0.001);
+  if(!canBatch){alert('无待验收余量，不能新增批次');closeMod();return}
+  id('dmTitle').textContent=`📦 新增验收批次 · ${esc(d.order.order_no)}`;
+  id('dmBody').innerHTML=`
+    <div style="font-size:9px;color:#666;margin-bottom:6px">订单订 <b>${st.order_total}</b> 件，已验收入库 <b>${st.accepted}</b> 件，本批可验 <b>${st.pending}</b> 件。逐行填写本批到货验收数量，并选择入库类型（货到发票未到=🟠暂估；票货齐=🟢正式）。每批独立走审批，审批通过后才增加库存；未验完的数量继续挂在待验收待定。</div>
+    <div style="margin-bottom:8px"><label style="font-size:10px;color:#555;display:block;margin-bottom:3px">📄 入库类型 *（必选，本批独立选择）</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div style="flex:1;min-width:150px;border:2px solid var(--b);border-radius:6px;padding:8px;text-align:center;cursor:pointer;background:#fff" id="rcvTypeEst" onclick="rcvPickType('est')">
+          <div style="font-size:11px;font-weight:bold;color:#e65100">🟠 暂估入库 <span id="rcvEstChk" style="display:none">✓</span></div>
+          <div style="font-size:8px;color:#888;margin-top:2px">货到发票未到（先入账，发票到了红冲转正式）</div>
+        </div>
+        <div style="flex:1;min-width:150px;border:2px solid var(--b);border-radius:6px;padding:8px;text-align:center;cursor:pointer;background:#fff" id="rcvTypeFormal" onclick="rcvPickType('formal')">
+          <div style="font-size:11px;font-weight:bold;color:#2e7d32">🟢 正式入库 <span id="rcvFormalChk" style="display:none">✓</span></div>
+          <div style="font-size:8px;color:#888;margin-top:2px">发票和货都齐了（直接正式入库）</div>
+        </div>
+      </div>
+      <input type="hidden" id="rcvType" value=""></div>
+    <table class="tb" style="font-size:9px"><thead><tr><th>物资名称</th><th>规格</th><th>订单数量</th><th>已验收</th><th>待验收待定</th><th>本批验收数量</th></tr></thead>
+    <tbody>${pl.map((x,i)=>`<tr><td>${esc(x.item_name)}</td><td>${esc(x.spec||'')}</td><td>${x.order_qty}</td><td>${x.accepted}</td><td><b style="color:${x.remaining>0?'#e65100':'#2e7d32'}">${x.remaining}</b></td><td><input type="number" style="width:76px;padding:2px 4px;border:1px solid var(--b);border-radius:3px" id="bq${i}" value="${x.remaining>0?x.remaining:''}" min="0" step="any" ${x.remaining<=0?'disabled':''}></td></tr>`).join('')}</tbody></table>`;
+  id('dmFooter').innerHTML=`<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="submitRcvBatch(${oid},${pl.length})">✅ 提交本批审批</button>`;
+}
+async function submitRcvBatch(oid,n){
+  const t=(id('rcvType')?.value||'').trim();
+  if(!t){alert('请选择本批入库类型（暂估或正式）');return}
+  const items=[];
+  for(let i=0;i<n;i++){
+    const inp=id('bq'+i);if(!inp)continue;
+    const q=parseFloat(inp.value)||0;
+    items.push({quantity:q});
+  }
+  if(!items.some(x=>x.quantity>0)){alert('请至少填写一行本批验收数量');return}
+  const r=await api(`/orders/${oid}/receiving-batch`,{method:'POST',body:JSON.stringify({items,is_est:t=='est'?1:0})});
+  if(r.success){alert('✅ '+r.message);closeMod();loadOrders();loadReceivings();loadDashboard()}
+  else alert(r.error||'提交失败');
 }
 async function loadCredits(){const c=await api('/credits');id('creditsTable').innerHTML=groupRnder(c, r=>r.created_at,['编号','内容','金额','状态','驳回'],r=>`<td><b>${esc(r.credit_no)}</b></td><td>${esc(r.item_name)}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}</td>${rejCell(r)}`)}
 async function loadPayments(){const p=await api('/payments');id('paymentsTable').innerHTML=groupRnder(p, r=>r.created_at,['编号','类型','金额','状态','驳回','操作'],r=>`<td><b>${esc(r.payment_no)}</b></td><td>${esc(r.payment_type)}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}</td>${rejCell(r)}<td>${r.status=='已通过'?`<button class="lnk" style="color:var(--s)" onclick="doPay(${r.id})">付款</button>`:''} ${(r.status=='待审批'||r.status=='已驳回'||r.status=='草稿')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('payment',${r.id},'付款单')">🗑️删除</button>`:''}</td>`)}
@@ -3771,7 +3846,8 @@ async function remindNow(){const r=await api('/feishu/remind-now',{method:'POST'
 async function syncInsts(){const r=await api('/feishu/sync-instances',{method:'POST',body:'{}'});alert(r.success?`✅ 补发完成: ${r.pushed}/${r.total} 条`:'失败')}
 
 // DingTalk 钉钉对接
-const DT_BIZ_DEFS={'purchase_request':'采购申请','purchase_order':'采购订单','contract':'合同','credit':'挂账','payment':'付款'};
+// V11.202: 模板码输入框覆盖全部审批类型(含退库return_request — 修复退库审批推不到钉钉的配置入口)
+const DT_BIZ_DEFS={'purchase_request':'采购申请','inquiry_approval':'比价单','purchase_order':'采购订单','contract':'合同','receiving':'入库','requisition':'出库','return_request':'退库','credit':'挂账','payment':'付款'};
 async function loadDingTalk(){await loadDtConfig();loadDtUsers();loadDtStatus();loadDtInstances()}
 async function loadDtConfig(){
   try{
@@ -5027,7 +5103,7 @@ function reportTab(t){
 }
 async function loadApprTodo(){
   try{
-    const a=await api('/approvals/all-pending');
+    const a=(await api('/approvals/all-pending')).filter(x=>x.biz_type!=='purchase_order');  // V11.202: 订单审批栏目已删除
     const groups={purchase_request:'采购申请',purchase_order:'采购订单',contract:'合同',credit:'挂账',payment:'付款'};
     const cnt={};
     a.forEach(x=>{cnt[x.biz_type]=(cnt[x.biz_type]||0)+1});

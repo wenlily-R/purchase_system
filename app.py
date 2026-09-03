@@ -297,7 +297,7 @@ def init_db():
         );
         CREATE TABLE IF NOT EXISTS contracts (id INTEGER PRIMARY KEY AUTOINCREMENT, contract_no TEXT UNIQUE NOT NULL, order_id INTEGER, contract_name TEXT, supplier TEXT, amount REAL DEFAULT 0, sign_date TEXT, start_date TEXT, end_date TEXT, content TEXT, file_path TEXT, status TEXT DEFAULT '执行中', remark TEXT, created_at TEXT DEFAULT (datetime('now','localtime')));
         CREATE TABLE IF NOT EXISTS deliveries (id INTEGER PRIMARY KEY AUTOINCREMENT, delivery_no TEXT UNIQUE NOT NULL, order_id INTEGER, contract_id INTEGER, supplier TEXT, item_name TEXT, spec TEXT, quantity REAL DEFAULT 0, unit TEXT DEFAULT '个', driver_name TEXT, vehicle_no TEXT, delivery_date TEXT, receiver TEXT, sign_status TEXT DEFAULT '待签收', sign_time TEXT, remark TEXT, created_at TEXT DEFAULT (datetime('now','localtime')));
-        CREATE TABLE IF NOT EXISTS receivings (id INTEGER PRIMARY KEY AUTOINCREMENT, receive_no TEXT UNIQUE NOT NULL, delivery_id INTEGER, order_id INTEGER, item_name TEXT, spec TEXT, quantity REAL DEFAULT 0, unit TEXT DEFAULT '个', qualified_qty REAL DEFAULT 0, defective_qty REAL DEFAULT 0, inspector TEXT, warehouse TEXT DEFAULT '主库房', status TEXT DEFAULT '待检验', received_at TEXT, remark TEXT, attachments TEXT DEFAULT '', dept TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now','localtime')));
+        CREATE TABLE IF NOT EXISTS receivings (id INTEGER PRIMARY KEY AUTOINCREMENT, receive_no TEXT UNIQUE NOT NULL, delivery_id INTEGER, order_id INTEGER, item_name TEXT, spec TEXT, quantity REAL DEFAULT 0, unit TEXT DEFAULT '个', qualified_qty REAL DEFAULT 0, defective_qty REAL DEFAULT 0, inspector TEXT, warehouse TEXT DEFAULT '主库房', status TEXT DEFAULT '待检验', received_at TEXT, remark TEXT, attachments TEXT DEFAULT '', dept TEXT DEFAULT '', batch_no TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now','localtime')));
         CREATE TABLE IF NOT EXISTS invoices (id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_no TEXT, invoice_code TEXT, order_id INTEGER, supplier TEXT, amount REAL DEFAULT 0, tax_amount REAL DEFAULT 0, total_amount REAL DEFAULT 0, invoice_date TEXT, invoice_type TEXT DEFAULT '增值税专用发票', file_path TEXT, status TEXT DEFAULT '待验证', remark TEXT, created_at TEXT DEFAULT (datetime('now','localtime')));
         CREATE TABLE IF NOT EXISTS credit_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, credit_no TEXT UNIQUE NOT NULL, order_id INTEGER, category TEXT, supplier TEXT, item_name TEXT, amount REAL DEFAULT 0, invoice_no TEXT, attachments TEXT, status TEXT DEFAULT '待审批', remark TEXT, created_at TEXT DEFAULT (datetime('now','localtime')), updated_at TEXT DEFAULT (datetime('now','localtime')));
         CREATE TABLE IF NOT EXISTS payment_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, payment_no TEXT UNIQUE NOT NULL, credit_id INTEGER, payment_type TEXT DEFAULT '正常付款', supplier TEXT, amount REAL DEFAULT 0, contract_id INTEGER, status TEXT DEFAULT '待审批', paid_at TEXT, remark TEXT, created_at TEXT DEFAULT (datetime('now','localtime')));
@@ -646,6 +646,10 @@ def init_db():
     _rcols = [r[1] for r in conn.execute("PRAGMA table_info(requisitions)").fetchall()]
     if 'returned_qty' not in _rcols:
         conn.execute("ALTER TABLE requisitions ADD COLUMN returned_qty REAL DEFAULT 0")
+    # ---- V11.202 分批验收: receivings 加批次号(空=老整批流程单, 非空=分批验收单, 幂等) ----
+    _rcvcols = [r[1] for r in conn.execute("PRAGMA table_info(receivings)").fetchall()]
+    if 'batch_no' not in _rcvcols:
+        conn.execute("ALTER TABLE receivings ADD COLUMN batch_no TEXT DEFAULT ''")
     # 退库审批流配置(首次建库时初始化; 幂等: 已有配置不覆盖)
     if conn.execute("SELECT COUNT(*) FROM approval_flow_config WHERE biz_type='return_request'").fetchone()[0] == 0:
         conn.execute("INSERT INTO approval_flow_config(biz_type,level_no,role,min_amount,max_amount,label) VALUES('return_request',1,'部门负责人',0,1000000,'退库审批-1级')")
@@ -2255,7 +2259,8 @@ def dt_build_form(biz_type, biz_id, info):
     """
     today = datetime.date.today().strftime('%Y-%m-%d')
     # V11.133: inquiry_approval 必须加入分支判断, 否则询价审批永远走回退表单(钉钉不显示选商家)
-    if biz_type in ('purchase_request', 'contract', 'purchase_order', 'receiving', 'requisition', 'payment', 'inquiry_approval'):
+    # V11.202: 加入 return_request(退库审批), 否则退库审批钉钉表单永远走回退字段(模板控件名对不上必失败)
+    if biz_type in ('purchase_request', 'contract', 'purchase_order', 'receiving', 'requisition', 'payment', 'inquiry_approval', 'return_request'):
         c = db()
         r = c.execute(f"SELECT * FROM {biz_table(biz_type)} WHERE id=?", (biz_id,)).fetchone()
         if r:
@@ -2315,6 +2320,18 @@ def dt_build_form(biz_type, biz_id, info):
                 form = [
                     {'name': '出库日期', 'value': str(r['issued_at'] or today)[:10]},
                     {'name': '备注', 'value': rdetail[:1900]},
+                ]
+                attach = dt_build_attachment(biz_type, r, c)
+                if attach:
+                    form.append({'name': '附件', 'value': json.dumps(attach, ensure_ascii=False)})
+                c.close()
+                return form
+            elif biz_type == 'return_request':
+                # V11.202 退库审批(模板字段与出库一致: 退库日期/备注/附件 — 用户按此建模板并填码)
+                rdetail = dt_build_detail('return_request', r, c)
+                form = [
+                    {'name': '退库日期', 'value': str(r['created_at'] or today)[:10]},
+                    {'name': '备注', 'value': (rdetail or ('退库单 %s 待审批' % r['return_no']))[:1900]},
                 ]
                 attach = dt_build_attachment(biz_type, r, c)
                 if attach:
@@ -2496,6 +2513,16 @@ def dt_build_detail(biz_type, r, c):
         lines['验收人'] = r['inspector'] or '-'
         lines['提交时间'] = str(r['created_at'] or '')[:16]
         lines['合格数量'] = f"{r['qualified_qty'] or r['quantity'] or 0}{r['unit'] or ''}"
+        # V11.202 分批验收: 钉钉审批详情同步展示 批次/本批入库数量/订单待验收待定余量(仅关联订单或分批单)
+        if 'batch_no' in r.keys() and r['batch_no']:
+            lines['批次'] = "%s · %s" % (r['batch_no'], '暂估入库' if r['is_est'] else '正式入库')
+        if r['order_id']:
+            try:
+                _ost = _order_rcv_stats(c, r['order_id'])
+                lines['本批入库数量'] = "%g%s" % ((_rcv_doc_qty(dict_row(r)) or 0), r['unit'] or '')
+                lines['订单验收进度'] = "订单总%g｜已验收入库%g｜待验收待定%g" % (_ost['order_total'], _ost['accepted'], _ost['pending'])
+            except Exception:
+                pass
         # 明细(手动入库单 items_json / 关联订单 order_items)
         its = []
         if r['items_json']:
@@ -2533,6 +2560,21 @@ def dt_build_detail(biz_type, r, c):
         lines['交易模式'] = r['trade_mode'] or '-'
         lines['紧急等级'] = '🚨加急' if r['urgent'] else '普通'
         if r['remark']: lines['备注'] = r['remark']
+    elif biz_type == 'return_request':
+        # V11.202 退库审批钉钉详情(退库审批模板的备注字段内容)
+        lines['退库单号'] = r['return_no']; lines['单据类型'] = '退库单'
+        lines['来源出库单'] = r['source_req_no'] or ('#' + str(r['source_req_id']) if r['source_req_id'] else '-')
+        lines['退库部门'] = r['dept'] or '-'
+        lines['退库人'] = r['receiver'] or r['requester'] or '-'
+        lines['仓库'] = r['warehouse'] or '-'
+        lines['退库原因'] = ((r['reason'] or '') + (('：' + str(r['reason_note'])) if r['reason_note'] else '')) or '-'
+        lines['退库金额'] = f"¥{float(r['total_amount'] or 0):,.2f}"
+        lines['提交时间'] = str(r['created_at'] or '')[:16]
+        its = c.execute("SELECT * FROM return_items WHERE return_id=? ORDER BY id", (r['id'],)).fetchall()
+        if its:
+            lines['商品明细'] = ''
+            for i, it in enumerate(its, 1):
+                lines['商品明细'] += f"{i}. {it['item_name']} {it['spec'] or ''} x{it['return_qty']}{it['unit'] or ''}\n"
     # 组装多行文本: "字段: 值"
     out = []
     for k, v in lines.items():
@@ -2778,7 +2820,10 @@ def dt_start_instance(biz_type, biz_id):
     try:
         if not dingtalk_enabled(): return None
         code = dt_approval_code(biz_type)
-        if not code: return None
+        if not code:
+            # V11.202: 缺模板码时留痕, 不再静默(用户查"为何没推到钉钉"有据可依)
+            log('系统', '钉钉审批未发起', f'{biz_type}#{biz_id}: 未配置钉钉审批模板码(请在系统设置-钉钉设置填写 {DT_BIZ.get(biz_type, biz_type)} 的PROC模板码)')
+            return None
         ak = dt_actioner_key(biz_type)
         c = db()
         if c.execute("SELECT COUNT(*) FROM dingtalk_instances WHERE biz_type=? AND biz_id=? AND status NOT IN ('error','cancelled')", (biz_type, biz_id)).fetchone()[0] > 0:
@@ -4957,10 +5002,128 @@ def api_order(oid):
     _has_ct = conn.execute(
         "SELECT 1 FROM contracts WHERE order_id=? AND status NOT IN ('已作废','已撤回','撤回') LIMIT 1",
         (oid,)).fetchone() is not None
+    # V11.202 分批验收: 订单验收统计(须在 conn 关闭前计算)
+    _st = None
+    try:
+        _st = _order_rcv_stats(conn, oid)
+    except Exception:
+        _st = None
     conn.close()
     _od = dict_row(o)
     _od['has_contract'] = _has_ct
-    return jsonify({'order':_od,'items':[dict_row(i) for i in items],'approvals':[dict_row(a) for a in approvals],'comparisons':[dict_row(p) for p in pcs]})
+    return jsonify({'order': _od, 'items': [dict_row(i) for i in items],
+                    'approvals': [dict_row(a) for a in approvals],
+                    'comparisons': [dict_row(p) for p in pcs],
+                    'rcv_stats': _st})
+
+
+@app.route('/api/orders/<int:oid>/receiving-batch', methods=['POST'])
+@login_required
+def api_order_receiving_batch(oid):
+    """V11.202 分批验收: 订单新增一批验收入库单(独立走审批, 审批通过+仓库确认后才加库存)。
+    校验: 本批数量>0 / 每明细行与订单累计都不超量 / 老整批流程单自动作废(防重复入库); 原暂估/正式逻辑完全复用。"""
+    if session.get('user_role') not in ('库管员', '部门负责人', '分管领导', '总经理', '系统管理员'):
+        return jsonify({'error': '无权限：分批验收入库仅限库管员/领导使用'}), 403
+    d = request.json or {}
+    is_est = 1 if int(d.get('is_est', 0) or 0) == 1 else 0
+    conn = db()
+    po = conn.execute("SELECT * FROM purchase_orders WHERE id=?", (oid,)).fetchone()
+    if not po:
+        conn.close(); return jsonify({'error': '订单不存在'}), 404
+    if po['status'] in ('草稿', '待审批', '已驳回', '已作废', '已取消', '已入库', '已核销', '全部已验收'):
+        conn.close(); return jsonify({'error': f'订单当前状态({po["status"]})不可新增验收批次'}), 400
+    st = _order_rcv_stats(conn, oid)
+    if st['pending'] <= 0.001:
+        conn.close(); return jsonify({'error': '该订单已全部验收完成，无需再新增批次'}), 400
+    # 老整批单正在审批中 → 必须先撤回(防止双流程重复入库)
+    _pend_full = conn.execute("SELECT id FROM receivings WHERE order_id=? AND (batch_no IS NULL OR batch_no='') AND status='待审批' LIMIT 1", (oid,)).fetchone()
+    if _pend_full:
+        conn.close(); return jsonify({'error': '该订单原有整批入库单正在审批中，请先在入库验收中撤回该单后再分批验收'}), 400
+    oi = conn.execute("SELECT * FROM order_items WHERE order_id=? ORDER BY id", (oid,)).fetchall()
+    qty_items = d.get('items')
+    # 解析本批每行数量: list按订单明细行序 / dict按物资名
+    parsed = []  # (order_item, qty)
+    if qty_items and isinstance(qty_items, list):
+        for idx, it in enumerate(oi):
+            q = 0.0
+            if idx < len(qty_items):
+                try:
+                    q = float((qty_items[idx].get('quantity') if isinstance(qty_items[idx], dict) else qty_items[idx]) or 0)
+                except Exception:
+                    q = 0.0
+            parsed.append((it, q))
+    elif qty_items and isinstance(qty_items, dict):
+        for it in oi:
+            try:
+                q = float(qty_items.get(it['item_name'], 0) or 0)
+            except Exception:
+                q = 0.0
+            parsed.append((it, q))
+    else:
+        conn.close(); return jsonify({'error': '请填写本批验收数量'}), 400
+    total_batch = 0.0
+    errs = []
+    for it, q in parsed:
+        if q < 0:
+            errs.append(f"「{it['item_name']}」数量不能为负")
+            continue
+        if q > 0:
+            total_batch += q
+            # 单行余量(订单行数量 - 已入库行累计; 规格一端为空的旧数据宽容匹配)
+            line_qty = float(it['quantity'] or 0)
+            line_acc = next((pl['accepted'] for pl in st['per_line'] if pl['item_name'] == it['item_name'] and ((pl['spec'] or '') == (it['spec'] or '') or not (pl['spec'] or '') or not (it['spec'] or ''))), 0.0)
+            if q > line_qty - line_acc + 1e-9:
+                errs.append(f"「{it['item_name']}」本批{q}超过可验余量{max(0, line_qty - line_acc):g}")
+    if errs:
+        conn.close(); return jsonify({'error': '；'.join(errs)}), 400
+    if total_batch <= 0:
+        conn.close(); return jsonify({'error': '本批验收数量必须大于0'}), 400
+    if st['accepted'] + total_batch > st['order_total'] + 1e-9:
+        conn.close(); return jsonify({'error': f'累计验收超量: 订单总数{st["order_total"]:g}，已验收{st["accepted"]:g}，本批{total_batch:g}'}), 400
+    # 批次号 = 已有批次序号+1
+    _n = conn.execute("SELECT COUNT(*) FROM receivings WHERE order_id=? AND batch_no IS NOT NULL AND batch_no<>''", (oid,)).fetchone()[0]
+    batch_no = '第%d批' % (_n + 1)
+    # 自动作废未入库存的老整批流程单(待入库/入库中/待检验/草稿/已驳回), 防双流程重复入库
+    _old_docs = conn.execute("SELECT id, receive_no, status FROM receivings WHERE order_id=? AND (batch_no IS NULL OR batch_no='') AND status IN ('待入库','入库中','待检验','草稿','已驳回')", (oid,)).fetchall()
+    for _od2 in _old_docs:
+        conn.execute("UPDATE receivings SET status='已作废', remark=COALESCE(remark,'')||' 订单启用分批验收,整批单自动作废' WHERE id=?", (_od2['id'],))
+        conn.execute("UPDATE approval_instances SET status='rejected', comment='订单启用分批验收,整批单作废' WHERE biz_type='receiving' AND biz_id=? AND status='pending'", (_od2['id'],))
+    # 部门带出(申请链)
+    _dept = ''
+    try:
+        if po['req_id']:
+            _pr = conn.execute("SELECT dept FROM purchase_requests WHERE id=?", (po['req_id'],)).fetchone()
+            if _pr and _pr['dept']:
+                _dept = _pr['dept']
+    except Exception:
+        pass
+    # 明细JSON(本批数量+订单单价)
+    _lines = []
+    for it, q in parsed:
+        if q > 0:
+            _lines.append({'item_name': it['item_name'], 'spec': it['spec'] or '', 'quantity': q,
+                           'unit': it['unit'] or '个', 'price': float(it['price'] or 0),
+                           'tax_rate': float(it['tax_rate'] or 13)})
+    _typ_txt = '暂估入库' if is_est else '正式入库'
+    _items_json = json.dumps(_lines, ensure_ascii=False)
+    _first = _lines[0]
+    _name = (_first['item_name'] + ' 等%d项' % len(_lines)) if len(_lines) > 1 else _first['item_name']
+    rno = gen_no('RK', 'receivings', 'receive_no', conn)
+    conn.execute("""INSERT INTO receivings(receive_no,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,dept,items_json,is_est,batch_no,inspector,warehouse)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 (rno, oid, _name, '', total_batch, _first['unit'] or '个', total_batch, '待审批', now(),
+                  f'分批验收{batch_no}·{_typ_txt}', _dept, _items_json, is_est, batch_no,
+                  session.get('user_name', ''), d.get('warehouse', '主库房')))
+    rid = conn.execute("SELECT id FROM receivings WHERE receive_no=?", (rno,)).fetchone()[0]
+    conn.commit()
+    create_approvals('receiving', rid, 0, submitter=session['user_name'])
+    conn.close()
+    try:
+        start_instances('receiving', rid)
+    except Exception as e:
+        print('receiving-batch start_instances err:', e)
+    log(session['user_name'], '分批验收入库', f'订单{po["order_no"]} {batch_no} {_typ_txt} {total_batch:g}件 入库单{rno} 待审批')
+    return jsonify({'success': True, 'message': f'{batch_no}({_typ_txt}) {total_batch:g}件已提交审批，审批通过后自动增加库存', 'receive_no': rno, 'id': rid, 'batch_no': batch_no})
 
 @app.route('/api/order_items/<int:iid>/status', methods=['POST'])
 @login_required
@@ -6499,9 +6662,10 @@ def api_receivings():
     # V11.64: 入库单 — 库管员/采购员/财务/领导/管理员可见(采购要发票核对+跟到货, 财务对账); 员工不看
     if session.get('user_role') == '员工':
         return jsonify([])
-    # V11.29: 部门/类别筛选
+    # V11.29: 部门/类别筛选; V11.202: 入库类型筛选(est=暂估入库/formal=正式入库)
     f_dept = (request.args.get('dept') or '').strip()
     f_cat = (request.args.get('cat') or '').strip()
+    f_type = (request.args.get('type') or '').strip()
     conn = db()
     sql = "SELECT r.*, po.trade_mode, po.order_no, po.supplier FROM receivings r LEFT JOIN purchase_orders po ON r.order_id=po.id"
     where = []; args = []
@@ -6510,6 +6674,10 @@ def api_receivings():
     if f_cat:
         where.append("(r.item_name IN (SELECT item_name FROM inventory WHERE cat_code=(SELECT code FROM categories WHERE name=?)))")
         args.append(f_cat)
+    if f_type == 'est':
+        where.append("r.is_est=1")
+    elif f_type == 'formal':
+        where.append("COALESCE(r.is_est,0)=0")
     if where:
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY r.id DESC LIMIT 80"
@@ -6660,15 +6828,91 @@ def _op_name():
         return '系统'
 
 
+def _rcv_doc_qty(doc):
+    """单据本批实际数量 = items_json 明细合计(与 do_receiving_stock 入库存口径一致); 无明细用 quantity"""
+    try:
+        if doc.get('items_json'):
+            its = json.loads(doc['items_json'])
+            s = sum(float(x.get('quantity') or 0) for x in its if isinstance(x, dict))
+            if s > 0:
+                return s
+    except Exception:
+        pass
+    return float(doc.get('quantity') or 0)
+
+
+def _order_rcv_stats(c, oid):
+    """V11.202 分批验收: 订单验收统计 — 总数量/已验收入库/待验收待定/暂估·正式合计/批次台账/各明细行余量。
+    已验收=该订单下 status='已入库' 的入库单实际入库量(按items_json口径); 作废/待审批不计入。"""
+    oi = c.execute("SELECT * FROM order_items WHERE order_id=? ORDER BY id", (oid,)).fetchall()
+    if oi:
+        order_total = sum(float(x['quantity'] or 0) for x in oi)
+    else:
+        po0 = c.execute("SELECT quantity FROM purchase_orders WHERE id=?", (oid,)).fetchone()
+        order_total = float((po0['quantity'] if po0 else 0) or 0)
+    docs = [dict_row(x) for x in c.execute("SELECT * FROM receivings WHERE order_id=? ORDER BY id", (oid,)).fetchall()]
+    accepted = 0.0
+    est_total = 0.0
+    formal_total = 0.0
+    per_line = []
+    if oi:
+        for x in oi:
+            per_line.append({'item_name': x['item_name'], 'spec': x['spec'] or '',
+                             'unit': x['unit'] or '个', 'order_qty': float(x['quantity'] or 0), 'accepted': 0.0})
+    batches = []
+    has_active_full_doc = False   # 存在未作废的老整批单(待入库/入库中/待检验/草稿/已驳回/待审批)
+    for doc in docs:
+        doc['_qty'] = _rcv_doc_qty(doc)
+        in_stock = doc['status'] == '已入库'
+        doc['_in_stock'] = in_stock
+        if not doc.get('batch_no') and doc['status'] not in ('已入库', '已作废'):
+            has_active_full_doc = True
+        if in_stock:
+            accepted += doc['_qty']
+            if doc['is_est']:
+                est_total += doc['_qty']
+            else:
+                formal_total += doc['_qty']
+            # 明细行已验(按名称+规格匹配)
+            if per_line:
+                try:
+                    dij = json.loads(doc['items_json']) if doc.get('items_json') else []
+                except Exception:
+                    dij = []
+                if dij:
+                    for it in dij:
+                        for pl in per_line:
+                            if pl['item_name'] == it.get('item_name') and ((pl['spec'] or '') == (it.get('spec') or '') or not (pl['spec'] or '') or not (it.get('spec') or '')):
+                                pl['accepted'] += float(it.get('quantity') or 0)
+                                break
+                else:
+                    for pl in per_line:
+                        if pl['item_name'] == doc['item_name'] and (pl['spec'] or '') == (doc.get('spec') or ''):
+                            pl['accepted'] += doc['_qty']
+                            break
+        if doc['status'] != '已作废':
+            batches.append(doc)
+    pending = max(0.0, order_total - accepted)
+    for pl in per_line:
+        pl['remaining'] = max(0.0, float(pl['order_qty']) - float(pl['accepted']))
+    return {'order_id': oid, 'order_total': order_total, 'accepted': accepted, 'pending': pending,
+            'est_total': est_total, 'formal_total': formal_total,
+            'per_line': per_line, 'batches': batches, 'has_active_full_doc': has_active_full_doc}
+
+
 def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty_override=None):
     """V5.0: 入库审批通过后执行 — 增加库存 + 写流水(幂等: 已有该单据入库流水则跳过)"""
     rn = c.execute("SELECT * FROM receivings WHERE id=?", (rid,)).fetchone()
     if not rn:
         return 0
-    # 幂等判断: 用流水表而非状态(父状态可能已被 finish_approvals 更新)
-    done = c.execute("SELECT 1 FROM inventory_flows WHERE doc_type='receiving' AND doc_id=? AND flow_type='入库' LIMIT 1", (rid,)).fetchone()
+    # 幂等判断: 用流水表而非状态(父状态可能已被 finish_approvals 更新) — V11.202 兼容分批流水类型
+    done = c.execute("SELECT 1 FROM inventory_flows WHERE doc_type='receiving' AND doc_id=? AND (flow_type='入库' OR flow_type LIKE '分批入库%') LIMIT 1", (rid,)).fetchone()
     if done:
         return 0
+    # V11.202 分批验收: 分批单流水类型标注来源(分批入库暂估/分批入库正式), 可溯源到批次单
+    _is_batch = bool(rn['batch_no'])
+    _ft = ('分批入库暂估' if rn['is_est'] else '分批入库正式') if _is_batch else '入库'
+    _ft_suffix = (f" 分批验收{rn['batch_no']}·{'暂估入库' if rn['is_est'] else '正式入库'}") if _is_batch else ''
     qty_override = qty_override or {}
     oi = []
     if rn['order_id']:
@@ -6705,8 +6949,8 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
                           (it['item_name'], it.get('spec','') or '', it.get('unit','个') or '个', q, warehouse, _price, _tr, now(), now()))
                 new_bal = q
             c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                      (it['item_name'], it.get('spec','') or '', it.get('unit','个') or '个', '入库', 'receiving', rid, rn['receive_no'], q, new_bal,
-                       _op_name(), f'入库单{rn["receive_no"]}审批通过', now()))
+                      (it['item_name'], it.get('spec','') or '', it.get('unit','个') or '个', _ft, 'receiving', rid, rn['receive_no'], q, new_bal,
+                       _op_name(), f'入库单{rn["receive_no"]}审批通过{_ft_suffix}', now()))
     elif oi:
         _po = c.execute("SELECT category, trade_mode, supplier FROM purchase_orders WHERE id=?", (rn['order_id'],)).fetchone()
         _po_sup = (_po['supplier'] or '') if _po else ''
@@ -6742,8 +6986,8 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
                           (it['item_name'], it['spec'] or '', it['unit'] or '个', q, warehouse, _price, _tr, _cat, now(), now(), _po_sup))
                 new_bal = q
             c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                      (it['item_name'], it['spec'] or '', it['unit'] or '个', '入库', 'receiving', rid, rn['receive_no'], q, new_bal,
-                       _op_name(), f'入库单{rn["receive_no"]}审批通过', now()))
+                      (it['item_name'], it['spec'] or '', it['unit'] or '个', _ft, 'receiving', rid, rn['receive_no'], q, new_bal,
+                       _op_name(), f'入库单{rn["receive_no"]}审批通过{_ft_suffix}', now()))
     else:
         q = float(rn['quantity'] or 0)
         total_q = q
@@ -6771,13 +7015,20 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
                       (rn['item_name'], rn['spec'] or '', rn['unit'] or '个', q, warehouse, _price, _tr, _cat, now(), now(), _sup))
             new_bal = q
         c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                  (rn['item_name'], rn['spec'] or '', rn['unit'] or '个', '入库', 'receiving', rid, rn['receive_no'], q, new_bal,
-                   _op_name(), f'入库单{rn["receive_no"]}审批通过', now()))
+                  (rn['item_name'], rn['spec'] or '', rn['unit'] or '个', _ft, 'receiving', rid, rn['receive_no'], q, new_bal,
+                   _op_name(), f'入库单{rn["receive_no"]}审批通过{_ft_suffix}', now()))
     c.execute("UPDATE receivings SET status='已入库',completed_at=?,warehouse=?,inspector=? WHERE id=?",
               (now(), warehouse, inspector or rn['inspector'] or '系统', rid))
     if rn['order_id']:
         po = c.execute("SELECT * FROM purchase_orders WHERE id=?", (rn['order_id'],)).fetchone()
-        if po and po['trade_mode'] == '先款后货':
+        if _is_batch and po:
+            # V11.202 分批验收: 订单状态按剩余待验收待定量流转(不是直接已入库)
+            _st = _order_rcv_stats(c, rn['order_id'])
+            if _st['pending'] <= 0.001:
+                c.execute("UPDATE purchase_orders SET status='全部已验收',updated_at=? WHERE id=?", (now(), rn['order_id']))
+            else:
+                c.execute("UPDATE purchase_orders SET status='部分到货，待继续验收',updated_at=? WHERE id=?", (now(), rn['order_id']))
+        elif po and po['trade_mode'] == '先款后货':
             c.execute("UPDATE purchase_orders SET status='已核销',updated_at=? WHERE id=?", (now(), rn['order_id']))
         else:
             c.execute("UPDATE purchase_orders SET status='已入库',updated_at=? WHERE id=?", (now(), rn['order_id']))
@@ -6828,6 +7079,19 @@ def api_receiving_download(rid):
         rows = [{'name': rn['item_name'], 'spec': rn['spec'] or '', 'qty': q, 'unit': rn['unit'] or '个',
                  'price': price, 'tax': tr, 'amt_no': price * q, 'amt_tax': price * q * (1 + tr / 100),
                  'remark': rn['remark'] or ''}]
+    # V11.202 分批验收: 导出同步展示 批次/本批入库数量/订单待验收待定余量(老单据无批次不显示, 表头自动下移)
+    _extra_lines = []
+    if rn['batch_no']:
+        _extra_lines.append(('批次', "%s · %s" % (rn['batch_no'], '暂估入库' if rn['is_est'] else '正式入库')))
+        _extra_lines.append(('本批入库数量', "%g 件" % (_rcv_doc_qty(dict_row(rn)) or 0)))
+    if rn['order_id']:
+        try:
+            _c2 = db()
+            _ost = _order_rcv_stats(_c2, rn['order_id'])
+            _c2.close()
+            _extra_lines.append(('订单验收进度', '订单总数量 %g ｜ 已验收入库 %g ｜ 待验收待定 %g' % (_ost['order_total'], _ost['accepted'], _ost['pending'])))
+        except Exception:
+            pass
     from openpyxl import Workbook
     from openpyxl.styles import Font, Alignment, Border, Side
     wb = Workbook(); ws = wb.active; ws.title = '入库单'
@@ -6851,15 +7115,26 @@ def api_receiving_download(rid):
     ws['F3'] = '归属部门：'; ws.merge_cells('G3:J3'); ws['G3'] = rn['dept'] if 'dept' in rn.keys() and rn['dept'] else ''
     for cc in ('A3','B3','D3','E3'):
         ws[cc].font = CN()
-    # 第4行表头 (10列连续, 无空白列)
+    # V11.202: 批次/验收进度信息行(有则显示) — 表头与明细行自动下移, 保持 10 列布局
+    _info_rows = 0
+    for _lab, _val in _extra_lines:
+        _r0 = 4 + _info_rows
+        ws.cell(row=_r0, column=1, value=_lab + '：').font = CN(bold=True)
+        ws.merge_cells(start_row=_r0, start_column=2, end_row=_r0, end_column=10)
+        ws.cell(row=_r0, column=2, value=_val).font = CN()
+        for j in range(1, 11):
+            ws.cell(row=_r0, column=j).border = bd
+        _info_rows += 1
+    _hr = 4 + _info_rows
+    # 表头 (10列连续, 无空白列)
     headers = ['No.', '品名', '规格', '数量', '单位', '不含税单价', '税率', '不含税金额', '含税金额', '备注']
     for j, h in enumerate(headers, 1):
-        cc = ws.cell(row=4, column=j, value=h)
+        cc = ws.cell(row=_hr, column=j, value=h)
         cc.font = CN(bold=True); cc.border = bd
         cc.alignment = Alignment(horizontal='center', vertical='center')
-    ws.row_dimensions[4].height = 18
+    ws.row_dimensions[_hr].height = 18
     # 明细行
-    r = 5
+    r = _hr + 1
     t_qty = 0.0; t_no = 0.0; t_tax = 0.0
     for idx, it in enumerate(rows, 1):
         t_qty += it['qty']; t_no += it['amt_no']; t_tax += it['amt_tax']
@@ -9332,8 +9607,8 @@ def api_receiving_void(rid):
     if rn['status'] == '已作废':
         c.close(); return jsonify({'error': '该入库单已作废'}), 400
     if rn['status'] == '已入库':
-        # 回滚库存: 删除该单入库流水 + 扣回库存
-        flows = c.execute("SELECT * FROM inventory_flows WHERE doc_type='receiving' AND doc_id=? AND flow_type='入库'", (rid,)).fetchall()
+        # 回滚库存: 删除该单入库流水 + 扣回库存 (V11.202 兼容分批入库流水类型)
+        flows = c.execute("SELECT * FROM inventory_flows WHERE doc_type='receiving' AND doc_id=? AND (flow_type='入库' OR flow_type LIKE '分批入库%')", (rid,)).fetchall()
         for f in flows:
             inv = c.execute("SELECT * FROM inventory WHERE item_name=? AND spec=? ORDER BY quantity DESC",
                             (f['item_name'], f['spec'] or '')).fetchone()
