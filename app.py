@@ -1750,33 +1750,41 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
         except Exception:
             pass
 
-    # V11.70: 审批办结通知发起人(站内信+钉钉工作通知)
-    if result == 'ok' and st in ('已通过', '审批通过', '已入库', '已出库', '已签合同'):
+    # V11.70: 审批办结通知发起人(站内信+钉钉工作通知) — V11.190: 用find_doc_submitter(合同/挂账/付款经order_id关联订单取提交人, 修复合同通过后不通知)
+    # 注意: 主连接c已在上面close, 这里必须新开连接(原代码用已关闭连接查单号→异常被吞→通知从未发出)
+    if result == 'ok' and st in ('已通过', '审批通过', '已入库', '已出库', '已签合同', '执行中'):
         try:
-            _d = c.execute(f"SELECT * FROM {biz_table(biz_type)} WHERE id=?", (biz_id,)).fetchone()
+            _doc_no = ''
+            _dc = db()
+            try:
+                _d = _dc.execute(f"SELECT * FROM {biz_table(biz_type)} WHERE id=?", (biz_id,)).fetchone()
+            except Exception:
+                _d = None
+            _dc.close()
             if _d:
-                _req = _d.get('requester') or _d.get('created_by') or _d.get('apply_by')
-                if _req:
-                    from app import find_user_by_name
-                    _u = find_user_by_name(_req)
-                    if _u and _u.get('dingtalk_userid'):
-                        import threading as _th
-                        def _notify():
-                            try:
-                                from app import dt_send_todo
-                                _doc_no = _d.get('req_no') or _d.get('order_no') or _d.get('contract_no') or ''
-                                dt_send_todo(
-                                    [_u['dingtalk_userid']],
-                                    f'✅ 审批通过 · {_doc_no}',
-                                    f'{biz_type}已审批通过，可继续后续操作',
-                                    f'单据: {_doc_no}',
-                                    biz_type, str(biz_id),
-                                    push_type='done',
-                                    operator=approver
-                                )
-                            except Exception as e:
-                                pass
-                        _th.Thread(target=_notify, args=(), daemon=True).start()
+                for _k in ('req_no', 'order_no', 'contract_no', 'receive_no', 'payment_no', 'credit_no'):
+                    if _k in _d.keys() and _d[_k]:
+                        _doc_no = str(_d[_k]); break
+            if not _doc_no:
+                _doc_no = f'{biz_type}#{biz_id}'
+            _u = find_doc_submitter(biz_type, biz_id)
+            if _u and _u.get('dingtalk_userid'):
+                import threading as _th
+                def _notify():
+                    try:
+                        from app import dt_send_todo
+                        dt_send_todo(
+                            [_u['dingtalk_userid']],
+                            f'✅ 审批通过 · {_doc_no}',
+                            f'您提交的{_doc_no}已审批通过，可继续后续操作',
+                            f'单据: {_doc_no}',
+                            biz_type, str(biz_id),
+                            push_type='done',
+                            operator=approver
+                        )
+                    except Exception:
+                        pass
+                _th.Thread(target=_notify, args=(), daemon=True).start()
         except Exception:
             pass
     return True
@@ -4150,6 +4158,66 @@ def api_dt_attachment_download():
         return jsonify({'error': _hint, 'detail': '; '.join(err_chain)[:150]}), 200
     except Exception as e:
         return jsonify({'error': '该审批附件获取失败，请前往钉钉审批单查看', 'oa_url': oa_url, 'detail': str(e)[:100]}), 200
+
+def find_doc_submitter(biz_type, biz_id):
+    """V11.190: 查单据提交人(系统用户对象) — 通过/驳回通知共用。
+    各表字段不同: 申请requester/订单owner/入库inspector/出库requester; 合同/挂账/付款表无提交人字段
+    → 经 order_id 关联订单取 owner/requester, 再兜底 credit 关联。返回用户Row或None"""
+    try:
+        _b = biz_table(biz_type)
+        _c = db()
+        try:
+            _row = _c.execute(f"SELECT * FROM {_b} WHERE id=?", (biz_id,)).fetchone()
+        except Exception:
+            _row = None
+        _c.close()
+        if _row is None:
+            return None
+        _submitter = None
+        for _k in ('requester', 'owner', 'inspector', 'created_by', 'apply_by'):
+            if _k in _row.keys() and _row[_k]:
+                _submitter = str(_row[_k]); break
+        if not _submitter:
+            try:
+                _oid = _row['order_id'] if 'order_id' in _row.keys() else None
+                if _oid:
+                    _po = db()
+                    _po2 = _po.execute("SELECT owner, requester FROM purchase_orders WHERE id=?", (_oid,)).fetchone()
+                    _po.close()
+                    if _po2:
+                        _submitter = str(_po2['owner'] or _po2['requester'] or '')
+                if not _submitter and biz_type == 'payment' and 'credit_id' in _row.keys() and _row['credit_id']:
+                    _cc = db()
+                    _cn = _cc.execute("SELECT order_id FROM credit_notes WHERE id=?", (_row['credit_id'],)).fetchone()
+                    _cc.close()
+                    if _cn and _cn['order_id']:
+                        _po = db()
+                        _po2 = _po.execute("SELECT owner, requester FROM purchase_orders WHERE id=?", (_cn['order_id'],)).fetchone()
+                        _po.close()
+                        if _po2:
+                            _submitter = str(_po2['owner'] or _po2['requester'] or '')
+            except Exception:
+                pass
+        if not _submitter:
+            return None
+        _u = db()
+        try:
+            _usr = _u.execute("SELECT * FROM users WHERE name=? AND is_active=1 LIMIT 1", (_submitter,)).fetchone()
+            if _usr is None:
+                _usr = _u.execute("SELECT * FROM users WHERE username=? AND is_active=1 LIMIT 1", (_submitter,)).fetchone()
+        except Exception:
+            _usr = None
+        _u.close()
+        # V11.190: 转dict — 调用方用 .get() 访问(sqlite3.Row无get方法会抛异常, 导致审批通过通知被吞)
+        if _usr is not None:
+            try:
+                return dict(_usr)
+            except Exception:
+                return _usr
+        return None
+    except Exception:
+        return None
+
 
 def notify_submitter_rejected(biz_type, biz_id, approver, comment, source='system'):
     """V11.178: 单据被驳回后 → 钉钉工作通知提交人(含单据号/驳回人/理由/处理建议)
