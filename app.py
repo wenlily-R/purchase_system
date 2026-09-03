@@ -2261,8 +2261,13 @@ def dt_build_form(biz_type, biz_id, info):
             if biz_type == 'purchase_request':
                 # V11.15: 申请模板控件=部门/采购类别/采购事由/交付日期/备注/附件
                 cat = dt_cat_option(r['budget_code'] or r['dept'] or '')
-                purpose = str(r['purpose'] or '')[:200]
+                purpose = str(r['purpose'] or '').strip()[:200]
+                # V11.199: 钉钉必填控件(采购事由TextField)空值会820001 required error — 空事由用占位保证必填
+                if not purpose:
+                    purpose = f"(未填采购事由, 详见备注) {r['req_no']}"
                 target = str(r['target_date'] or today)[:10]
+                if not target or target == 'None':
+                    target = today
                 form = [
                     {'name': '部门', 'value': '[1]'},
                     {'name': '采购类别', 'value': cat},
@@ -4729,6 +4734,12 @@ def api_create_prequest():
     items = d.get('items', [])
     total = sum(float(i.get('quantity',1)) * float(i.get('estimated_price',0)) for i in items)
     apply_date = d.get('apply_date') or datetime.date.today().strftime('%Y-%m-%d')
+    # V11.199: 提交审批(非草稿)必填采购事由/部门 — 空事由钉钉必填控件发起报820001, 源头拦截
+    if not d.get('draft'):
+        if not str(d.get('purpose') or '').strip():
+            conn.close(); return jsonify({'error': '请填写采购事由（这批物资买来做什么）'}), 400
+        if not str(d.get('dept') or '').strip():
+            conn.close(); return jsonify({'error': '请选择申请部门'}), 400
     # 并发安全: 单号冲突(UNIQUE)时重新生成重试(最多5次)
     no = ''
     for _try in range(5):

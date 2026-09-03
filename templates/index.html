@@ -4096,6 +4096,13 @@ async function createPRequest(asDraft){
       }
     });
     if(!items.length){alert('请添加至少一行物资');return}
+    // V11.199: 提交审批前必填校验(采购事由/部门) — 空事由会导致钉钉必填控件820001发起失败
+    const _purp=(id('fReqPurp')?.value||'').trim();
+    const _dept=(id('fReqDept')?.value||'').trim();
+    if(!asDraft){
+      if(!_purp){alert('请填写采购事由（这批物资买来做什么）');if(btn){btn.disabled=false;btn.textContent='提交申请'}return}
+      if(!_dept){alert('请选择申请部门');if(btn){btn.disabled=false;btn.textContent='提交申请'}return}
+    }
     const d={dept:id('fReqDept').value,budget_code:id('fReqBud').value,purpose:id('fReqPurp').value,target_date:id('fReqDate').value,remark:id('fReqRem').value,items,urgent:id('fReqUrgent')?.checked?1:0,attachments:reqAtts,apply_date:(id('fReqApplyDate')?.value||'').replace(/年/g,'-').replace(/月/g,'-').replace(/日/g,''),req_type:id('fReqType')?.value||'物资采购',draft:asDraft||false};
     const r=await api('/prequests',{method:'POST',body:JSON.stringify(d)});
     if(r.success){toast(asDraft?'✅ 已存草稿(可稍后在列表继续编辑提交)':('✅ 已提交'+(r.req_no?(' '+r.req_no):'')));closeMod();reqAtts=[];loadPRequests();loadDashboard()}
