@@ -6372,9 +6372,11 @@ def api_monthly_summary():
     try: conn.execute("ALTER TABLE purchase_orders ADD COLUMN settled_at TEXT DEFAULT ''")
     except Exception: pass
     m = datetime.date.today().strftime('%Y-%m')
+    # V11.200: 月结汇总条件放宽 — 月结订单只要未月结(settled_at空)且未作废/未取消就应列入,
+    # 含已入库未结款(原条件限'审批通过/已通过'导致入库后状态变'已入库'的单从汇总消失)
     rows = conn.execute("""SELECT supplier, COUNT(*) cnt, COALESCE(SUM(total_amount),0) amt,
         GROUP_CONCAT(order_no || ':' || item_name || 'x' || printf('%g',quantity) || ' ¥' || printf('%.2f',total_amount), '\n') detail
-        FROM purchase_orders WHERE settle_type='月结' AND status IN ('审批通过','已通过')
+        FROM purchase_orders WHERE settle_type='月结' AND status NOT IN ('已作废','已取消','草稿')
         AND (settled_at IS NULL OR settled_at='') AND created_at LIKE ?
         GROUP BY supplier ORDER BY amt DESC""", (m + '%',)).fetchall()
     conn.close()
@@ -6394,7 +6396,7 @@ def api_monthly_generate():
     conn = db()
     m = datetime.date.today().strftime('%Y-%m')
     orders = conn.execute("""SELECT * FROM purchase_orders WHERE supplier=? AND settle_type='月结'
-        AND status IN ('审批通过','已通过') AND (settled_at IS NULL OR settled_at='') AND created_at LIKE ?""",
+        AND status NOT IN ('已作废','已取消','草稿') AND (settled_at IS NULL OR settled_at='') AND created_at LIKE ?""",
         (supplier, m + '%')).fetchall()
     if not orders:
         conn.close(); return jsonify({'error': '该厂家本月无待月结订单'}), 400
