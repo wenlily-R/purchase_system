@@ -601,6 +601,52 @@ def init_db():
         _cols = [r[1] for r in conn.execute(f"PRAGMA table_info({_tbl})").fetchall()]
         if _col not in _cols:
             conn.execute(_ddl)
+    # ---- V11.193 退库模块: 退库申请单(已领用物资退回仓库) ----
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS return_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            return_no TEXT UNIQUE NOT NULL,
+            source_req_id INTEGER NOT NULL,
+            source_req_no TEXT DEFAULT '',
+            dept TEXT DEFAULT '',          -- 领用部门(自动带出)
+            receiver TEXT DEFAULT '',      -- 领用人(自动带出)
+            warehouse TEXT DEFAULT '主库房',
+            reason TEXT DEFAULT '',        -- 退库原因(领用剩余/物料未使用/错领物料/质量问题/其他)
+            reason_note TEXT DEFAULT '',   -- 自定义说明(原因=其他时)
+            total_amount REAL DEFAULT 0,
+            status TEXT DEFAULT '草稿',    -- 草稿/待审批/审批通过/退库已完成/已驳回/已作废
+            requester TEXT DEFAULT '',
+            attachments TEXT DEFAULT '[]',
+            warehouse_confirm_by TEXT DEFAULT '',
+            warehouse_confirm_at TEXT DEFAULT '',
+            reject_count INTEGER DEFAULT 0,
+            resubmit_count INTEGER DEFAULT 0,
+            rejected_items TEXT DEFAULT '',
+            rejected_reason TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            updated_at TEXT DEFAULT (datetime('now','localtime')),
+            finished_at TEXT DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS return_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            return_id INTEGER NOT NULL,
+            source_item_id INTEGER DEFAULT 0,  -- 源出库单明细id(requisition_items.id)
+            item_name TEXT, spec TEXT, unit TEXT DEFAULT '个',
+            issued_qty REAL DEFAULT 0,     -- 原领用出库数量(带出)
+            returned_qty REAL DEFAULT 0,   -- 该源明细累计已退(带出,只读)
+            return_qty REAL DEFAULT 0,     -- 本次退库数量(强校验: 0<qty<=可退)
+            price REAL DEFAULT 0,          -- 物料单价(带出)
+            amount REAL DEFAULT 0,         -- 退库金额=qty*price
+            created_at TEXT DEFAULT (datetime('now','localtime'))
+        );
+    """)
+    # requisitions 加累计已退数量字段(回写源出库单)
+    _rcols = [r[1] for r in conn.execute("PRAGMA table_info(requisitions)").fetchall()]
+    if 'returned_qty' not in _rcols:
+        conn.execute("ALTER TABLE requisitions ADD COLUMN returned_qty REAL DEFAULT 0")
+    # 退库审批流配置(首次建库时初始化; 幂等: 已有配置不覆盖)
+    if conn.execute("SELECT COUNT(*) FROM approval_flow_config WHERE biz_type='return_request'").fetchone()[0] == 0:
+        conn.execute("INSERT INTO approval_flow_config(biz_type,level_no,role,min_amount,max_amount,label) VALUES('return_request',1,'部门负责人',0,1000000,'退库审批-1级')")
     # ---- V5.1 安全加固: 登录审计/系统元数据(幂等) ----
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS login_attempts (
@@ -1315,6 +1361,7 @@ def biz_parent_status(biz_type, result):
         'purchase_request': ('已通过', '已驳回'), 'purchase_order': ('审批通过', '已驳回'),
         'contract': ('执行中', '已驳回'), 'credit': ('已通过', '已驳回'), 'payment': ('已通过', '已驳回'),
         'receiving': ('已入库', '已驳回'), 'requisition': ('已出库', '已驳回'),
+        'return_request': ('审批通过', '已驳回'),  # V11.193 退库: 审批通过=待仓库清点入库(库存不立即加)
     }
     ok, no = m.get(biz_type, ('已通过', '已驳回'))
     return ok if result == 'ok' else no
@@ -1323,6 +1370,7 @@ def biz_table(biz_type):
     return {'purchase_request': 'purchase_requests', 'purchase_order': 'purchase_orders',
             'contract': 'contracts', 'credit': 'credit_notes', 'payment': 'payment_requests',
             'receiving': 'receivings', 'requisition': 'requisitions',
+            'return_request': 'return_requests',  # V11.193 退库
             'inquiry_approval': 'inquiries'}[biz_type]  # V11.133: biz_id=询价单id
 
 # ============================================================
@@ -1985,6 +2033,7 @@ DT_BIZ = {  # biz_type -> 审批模板名称
     'payment':          '付款审批',
     'receiving':        '入库审批',
     'requisition':      '出库审批',
+    'return_request':   '退库审批',  # V11.193
     'inquiry_approval': '采购比价单审批',  # V11.142: 补全, 否则dt_send_todo抛KeyError
 }
 DT_FORM = [('单据编号', 'text'), ('内容摘要', 'text'), ('金额(元)', 'text'), ('申请人', 'text'), ('提交时间', 'text')]
@@ -9118,6 +9167,326 @@ def api_receiving_void(rid):
     log(session['user_name'], '作废入库单', f'{rn["receive_no"]} (未入库, 库存未变动)')
     return jsonify({'success': True, 'message': '入库单已作废（未入库，库存未变动）'})
 
+# ============================================================
+# V11.193 退库模块: 已领用物资退回仓库(非退供应商) — 领用剩余/未使用/错领/质量问题
+# 流程: 新建退库单(关联已出库的领用单, 带出物料与可退数量) → 草稿 → 提交钉钉审批
+#       → 审批通过=待仓库清点(库存不立即加) → 仓库确认退库入库(加库存+流水+回写源单累计已退)
+# ============================================================
+_RETURN_REASONS = ['领用剩余', '物料未使用', '错领物料', '质量问题', '其他']
+
+@app.route('/api/returns/source-requisitions')
+@login_required
+def api_return_source_requisitions():
+    """可选源单: 已出库且未全部退完的领用/出库单(仅库管员/领导视角可用列表查询给所有人用于选择?)。
+    约束: status='已出库' 且 累计已退<领用总量。返回单+明细(带可退数量/单价)。"""
+    c = db()
+    # 出库单表头: req_no/dept/receiver/quantity/unit/returned_qty; 明细: requisition_items
+    rows = c.execute("""SELECT r.id, r.req_no, r.dept, r.receiver, r.quantity, r.unit, r.returned_qty,
+                               r.created_at, r.purpose
+                        FROM requisitions r
+                        WHERE r.status='已出库'
+                          AND COALESCE(r.returned_qty,0) < r.quantity
+                        ORDER BY r.id DESC LIMIT 50""").fetchall()
+    out = []
+    for r in rows:
+        its = c.execute("SELECT * FROM requisition_items WHERE requisition_id=? ORDER BY id", (r['id'],)).fetchall()
+        d = dict(r)
+        d['items'] = [dict_row(x) for x in its]
+        # 每个明细: 该源明细累计已退(从return_items按source_item_id聚合) + 可退数量 + 单价(取库存档案价)
+        for it in d['items']:
+            agg = c.execute("SELECT COALESCE(SUM(return_qty),0) s FROM return_items WHERE source_item_id=?", (it['id'],)).fetchone()
+            it['returned_qty'] = float(agg['s'] or 0)
+            it['returnable_qty'] = float(it['quantity'] or 0) - it['returned_qty']
+            _invp = c.execute("SELECT price FROM inventory WHERE item_name=? AND spec=? AND price IS NOT NULL ORDER BY id LIMIT 1",
+                              (it['item_name'], it.get('spec', '') or '')).fetchone()
+            it['price'] = float(_invp['price'] or 0) if _invp else 0
+        out.append(d)
+    c.close()
+    return jsonify(out)
+
+@app.route('/api/returns', methods=['GET'])
+@login_required
+def api_returns():
+    """退库列表 — 支持状态/时间筛选; 权限: 库管员/部门负责人/领导/管理员/采购员(看自己提交的)"""
+    c = db()
+    rows = c.execute("SELECT * FROM return_requests ORDER BY id DESC").fetchall()
+    c.close()
+    # 行附带明细条数
+    out = []
+    c2 = db()
+    for r in rows:
+        d = dict_row(r)
+        d['item_count'] = c2.execute("SELECT COUNT(*) n FROM return_items WHERE return_id=?", (r['id'],)).fetchone()['n']
+        out.append(d)
+    c2.close()
+    return jsonify(out)
+
+@app.route('/api/returns/<int:rid>', methods=['GET'])
+@login_required
+def api_return_detail(rid):
+    c = db()
+    r = c.execute("SELECT * FROM return_requests WHERE id=?", (rid,)).fetchone()
+    if not r:
+        c.close(); return jsonify({'error': '退库单不存在'}), 404
+    d = dict_row(r)
+    d['items'] = [dict_row(x) for x in c.execute("SELECT * FROM return_items WHERE return_id=? ORDER BY id", (rid,)).fetchall()]
+    # 源单信息
+    src = c.execute("SELECT * FROM requisitions WHERE id=?", (d['source_req_id'],)).fetchone()
+    d['source'] = dict_row(src) if src else None
+    # 库存变动记录(退库确认入库流水)
+    d['flows'] = [dict_row(x) for x in c.execute("SELECT * FROM inventory_flows WHERE doc_type='return_request' AND doc_id=? ORDER BY id DESC", (rid,)).fetchall()]
+    c.close()
+    return jsonify(d)
+
+@app.route('/api/returns', methods=['POST'])
+@login_required
+def api_create_return():
+    """新建退库申请单 — body: {source_req_id, reason, reason_note, items:[{source_item_id,item_name,spec,unit,issued_qty,returned_qty,return_qty,price}], attachments}
+    保存状态=草稿(提交走审批); 权限: 出库相关角色(库管员/部门负责人/领导/管理员) + 源单领用人本人"""
+    d = request.json or {}
+    src_id = int(d.get('source_req_id') or 0)
+    items = d.get('items') or []
+    items = [it for it in items if it.get('item_name') and float(it.get('return_qty', 0) or 0) > 0]
+    if not src_id:
+        return jsonify({'error': '请选择源出库单（领用单）'}), 400
+    if not items:
+        return jsonify({'error': '请至少填写一项退库物资及数量'}), 400
+    c = db()
+    src = c.execute("SELECT * FROM requisitions WHERE id=? AND status='已出库'", (src_id,)).fetchone()
+    if not src:
+        c.close(); return jsonify({'error': '源出库单不存在或未完成领用出库'}), 400
+    # 数量校验: 0 < 本次退库数量 <= 可退数量(可退=领用-已确认入库的已退, 草稿/待审批不占额度)
+    for it in items:
+        q = float(it.get('return_qty', 0) or 0)
+        src_item_id = int(it.get('source_item_id') or 0)
+        src_it = c.execute("SELECT * FROM requisition_items WHERE id=? AND requisition_id=?", (src_item_id, src_id)).fetchone() if src_item_id else None
+        if not src_it:
+            c.close(); return jsonify({'error': f"物资「{it.get('item_name','')}」未匹配到源出库单明细"}), 400
+        issued = float(src_it['quantity'] or 0)
+        agg = c.execute("""SELECT COALESCE(SUM(t.return_qty),0) s FROM return_items t
+                           JOIN return_requests rr ON rr.id=t.return_id
+                           WHERE t.source_item_id=? AND rr.status='退库已完成'""", (src_item_id,)).fetchone()
+        returned = float(agg['s'] or 0)
+        can = issued - returned
+        if q <= 0 or q > can + 1e-9:
+            c.close(); return jsonify({'error': f"「{src_it['item_name']}」本次退库数量({q:g})须大于0且不超过可退数量({can:g})"}), 400
+        it['issued_qty'] = issued
+        it['returned_qty'] = returned
+    no = gen_no('TK', 'return_requests', 'return_no', c)
+    total_amt = sum(float(it.get('price', 0) or 0) * float(it.get('return_qty', 0) or 0) for it in items)
+    first = items[0]
+    reason = (d.get('reason') or '').strip()
+    if reason not in _RETURN_REASONS:
+        reason = '其他'
+    req_name = session.get('user_name', '')
+    cur = c.execute("""INSERT INTO return_requests(return_no,source_req_id,source_req_no,dept,receiver,warehouse,
+                       reason,reason_note,total_amount,status,requester,attachments,created_at,updated_at)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (no, src_id, src['req_no'], src['dept'] or '', src['receiver'] or '',
+                     '主库房', reason, (d.get('reason_note') or '').strip()[:200], total_amt,
+                     '草稿', req_name, json.dumps(d.get('attachments') or [], ensure_ascii=False), now(), now()))
+    rid = cur.lastrowid
+    for it in items:
+        amt = float(it.get('price', 0) or 0) * float(it.get('return_qty', 0) or 0)
+        c.execute("""INSERT INTO return_items(return_id,source_item_id,item_name,spec,unit,issued_qty,returned_qty,return_qty,price,amount,created_at)
+                     VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                  (rid, int(it.get('source_item_id') or 0), it['item_name'], it.get('spec', ''), it.get('unit', '个'),
+                   float(it.get('issued_qty', 0)), float(it.get('returned_qty', 0)), float(it.get('return_qty', 0)),
+                   float(it.get('price', 0) or 0), amt, now()))
+    c.commit(); c.close()
+    log(req_name, '新建退库单', f'{no} 源单:{src["req_no"]} {len(items)}项 ¥{total_amt:g} 已存草稿')
+    return jsonify({'success': True, 'return_no': no, 'id': rid, 'message': f'退库单 {no} 已保存（草稿），确认后请提交审批'})
+
+
+@app.route('/api/returns/<int:rid>/submit', methods=['POST'])
+@login_required
+def api_return_submit(rid):
+    """退库单提交审批 — 草稿/被驳回(已驳回回草稿) → 待审批 + 建审批实例 + 推钉钉"""
+    c = db()
+    r = c.execute("SELECT * FROM return_requests WHERE id=?", (rid,)).fetchone()
+    if not r:
+        c.close(); return jsonify({'error': '退库单不存在'}), 404
+    if r['status'] not in ('草稿', '已驳回'):
+        c.close(); return jsonify({'error': f'当前状态({r["status"]})不可提交审批'}), 400
+    # 提交人/管理员 校验
+    me = c.execute("SELECT * FROM users WHERE id=?", (session.get('user_id', 0),)).fetchone()
+    is_admin = me and me['role'] == '系统管理员'
+    if not is_admin and r['requester'] and me and me['name'] != r['requester']:
+        c.close(); return jsonify({'error': '仅退库单提交人本人或管理员可提交审批'}), 403
+    # 提交前校验明细数量仍有效(仅已完成退库占额度; 草稿/待审批不占)
+    its = c.execute("SELECT * FROM return_items WHERE return_id=?", (rid,)).fetchall()
+    for it in its:
+        agg = c.execute("""SELECT COALESCE(SUM(t.return_qty),0) s FROM return_items t
+                           JOIN return_requests rr ON rr.id=t.return_id
+                           WHERE t.source_item_id=? AND rr.status='退库已完成' AND t.return_id<>?""", (it['source_item_id'], rid)).fetchone()
+        src_it = c.execute("SELECT * FROM requisition_items WHERE id=?", (it['source_item_id'],)).fetchone() if it['source_item_id'] else None
+        if src_it:
+            can = float(src_it['quantity'] or 0) - float(agg['s'] or 0)
+            if float(it['return_qty']) > can + 1e-9:
+                c.close(); return jsonify({'error': f"「{it['item_name']}」可退数量已变化(现可退{can:g})，请修改后重试"}), 400
+    # 已驳回重提: 清驳回标记+累计
+    if r['status'] == '已驳回':
+        c.execute("UPDATE return_requests SET rejected_items='', rejected_reason='', resubmit_count=resubmit_count+1 WHERE id=?", (rid,))
+    else:
+        c.execute("UPDATE return_requests SET resubmit_count=COALESCE(resubmit_count,0) WHERE id=?", (rid,))
+    c.execute("UPDATE return_requests SET status='待审批', updated_at=? WHERE id=?", (now(), rid))
+    # 清旧审批实例(重提场景), 重建
+    c.execute("DELETE FROM approval_instances WHERE biz_type='return_request' AND biz_id=?", (rid,))
+    c.execute("DELETE FROM dingtalk_instances WHERE biz_type='return_request' AND biz_id=?", (rid,))
+    c.commit()
+    amount = float(r['total_amount'] or 0)
+    create_approvals('return_request', rid, amount, submitter=r['requester'] or session.get('user_name', ''))
+    c.close()
+    try:
+        start_instances('return_request', rid)
+    except Exception as e:
+        print('return submit start_instances err:', e)
+    log(session['user_name'], '提交退库审批', f'{r["return_no"]} 待审批 金额¥{amount:g}')
+    return jsonify({'success': True, 'message': f'退库单 {r["return_no"]} 已提交审批'})
+
+
+@app.route('/api/returns/<int:rid>/confirm-warehouse', methods=['POST'])
+@login_required
+def api_return_confirm_warehouse(rid):
+    """仓库实物清点确认 → 退库入库: 库存+数量+流水+回写源单累计已退; 仅 库管员/部门负责人/领导/管理员
+    状态机: 审批通过(待仓库清点) → 退库已完成。幂等: 已完成/已有流水跳过。"""
+    if session.get('user_role') not in ('库管员', '部门负责人', '分管领导', '总经理', '系统管理员'):
+        return jsonify({'error': '无权限：仓库确认入库仅限库管员/领导'}), 403
+    c = db()
+    r = c.execute("SELECT * FROM return_requests WHERE id=?", (rid,)).fetchone()
+    if not r:
+        c.close(); return jsonify({'error': '退库单不存在'}), 404
+    if r['status'] == '退库已完成':
+        c.close(); return jsonify({'error': '该退库单已完成入库'}), 400
+    if r['status'] != '审批通过':
+        c.close(); return jsonify({'error': f'仅审批通过的退库单可确认入库（当前:{r["status"]}）'}), 400
+    done = c.execute("SELECT 1 FROM inventory_flows WHERE doc_type='return_request' AND doc_id=? AND flow_type='退库' LIMIT 1", (rid,)).fetchone()
+    if done:
+        c.close(); return jsonify({'error': '该退库单已确认入库（防重复）'}), 400
+    its = c.execute("SELECT * FROM return_items WHERE return_id=?", (rid,)).fetchall()
+    if not its:
+        c.close(); return jsonify({'error': '退库单无明细，无法入库'}), 400
+    # 1) 库存增加(按名称+规格匹配行累加; 无则新建) + 2) 流水
+    its = [dict_row(x) for x in its]
+    for it in its:
+        q = float(it['return_qty'] or 0)
+        if q <= 0:
+            continue
+        inv = c.execute("SELECT * FROM inventory WHERE item_name=? AND spec=? AND (warehouse=? OR warehouse IS NULL OR warehouse='') ORDER BY quantity DESC LIMIT 1",
+                        (it['item_name'], it.get('spec', '') or '', r['warehouse'] or '主库房')).fetchone()
+        if inv:
+            new_q = float(inv['quantity'] or 0) + q
+            c.execute("UPDATE inventory SET quantity=?, updated_at=?, last_move_date=? WHERE id=?", (new_q, now(), now()[:10], inv['id']))
+            inv_id = inv['id']
+        else:
+            cur = c.execute("INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,price,updated_at) VALUES(?,?,?,?,?,?,?)",
+                            (it['item_name'], it.get('spec', '') or '', it.get('unit', '个') or '个', q,
+                             r['warehouse'] or '主库房', float(it.get('price', 0) or 0), now()))
+            inv_id = cur.lastrowid
+        c.execute("""INSERT INTO inventory_flows(flow_type,doc_type,doc_id,doc_no,item_name,spec,qty,balance_after,operator,remark,created_at)
+                     VALUES('退库','return_request',?,?,?,?,?,?,?,?,?)""",
+                  (rid, r['return_no'], it['item_name'], it.get('spec', '') or '', q,
+                   float(c.execute("SELECT quantity FROM inventory WHERE id=?", (inv_id,)).fetchone()['quantity'] or 0),
+                   session.get('user_name', ''), f'退库入库: {r["return_no"]}', now()))
+        # 回写源出库单明细累计已退: 源单表头 returned_qty += q (按明细对应的源单)
+        if it['source_item_id']:
+            c.execute("""UPDATE requisitions SET returned_qty=COALESCE(returned_qty,0)+?
+                         WHERE id=(SELECT requisition_id FROM requisition_items WHERE id=?)""", (q, it['source_item_id']))
+    c.execute("UPDATE return_requests SET status='退库已完成', warehouse_confirm_by=?, warehouse_confirm_at=?, finished_at=?, updated_at=? WHERE id=?",
+              (session.get('user_name', ''), now(), now(), now(), rid))
+    c.commit(); c.close()
+    log(session['user_name'], '退库确认入库', f'{r["return_no"]} 库存已增加, 源单{r["source_req_no"]}累计已退回写')
+    return jsonify({'success': True, 'message': f'退库单 {r["return_no"]} 确认入库完成，库存已增加'})
+
+
+@app.route('/api/returns/<int:rid>/update', methods=['POST'])
+@login_required
+def api_return_update(rid):
+    """V11.193: 修改退库单(草稿/被驳回回草稿状态) — 原因/说明/明细数量可改; 数量强校验同新建"""
+    d = request.json or {}
+    c = db()
+    r = c.execute("SELECT * FROM return_requests WHERE id=?", (rid,)).fetchone()
+    if not r:
+        c.close(); return jsonify({'error': '退库单不存在'}), 404
+    if r['status'] not in ('草稿', '已驳回'):
+        c.close(); return jsonify({'error': f'当前状态({r["status"]})不可修改（已完成/审批中单据不可改）'}), 400
+    me = c.execute("SELECT * FROM users WHERE id=?", (session.get('user_id', 0),)).fetchone()
+    is_admin = me and me['role'] == '系统管理员'
+    if not is_admin and r['requester'] and me and me['name'] != r['requester']:
+        c.close(); return jsonify({'error': '仅退库单提交人或管理员可修改'}), 403
+    items = d.get('items') or []
+    items = [it for it in items if it.get('item_name') and float(it.get('return_qty', 0) or 0) > 0]
+    if not items:
+        c.close(); return jsonify({'error': '请至少保留一项退库物资及数量'}), 400
+    # 数量校验: 已确认入库的占额度(本单自身未确认, 不算)
+    for it in items:
+        q = float(it.get('return_qty', 0) or 0)
+        src_item_id = int(it.get('source_item_id') or 0)
+        src_it = c.execute("SELECT * FROM requisition_items WHERE id=?", (src_item_id,)).fetchone() if src_item_id else None
+        if not src_it:
+            c.close(); return jsonify({'error': f"物资「{it.get('item_name','')}」未匹配到源出库单明细"}), 400
+        issued = float(src_it['quantity'] or 0)
+        agg = c.execute("""SELECT COALESCE(SUM(t.return_qty),0) s FROM return_items t
+                           JOIN return_requests rr ON rr.id=t.return_id
+                           WHERE t.source_item_id=? AND rr.status='退库已完成'""", (src_item_id,)).fetchone()
+        can = issued - float(agg['s'] or 0)
+        if q <= 0 or q > can + 1e-9:
+            c.close(); return jsonify({'error': f"「{src_it['item_name']}」本次退库数量({q:g})须大于0且不超过可退数量({can:g})"}), 400
+    reason = (d.get('reason') or '').strip()
+    if reason not in _RETURN_REASONS:
+        reason = r['reason'] or '其他'
+    total_amt = sum(float(it.get('price', 0) or 0) * float(it.get('return_qty', 0) or 0) for it in items)
+    c.execute("UPDATE return_requests SET reason=?, reason_note=?, total_amount=?, updated_at=? WHERE id=?",
+              (reason, (d.get('reason_note') or '').strip()[:200], total_amt, now(), rid))
+    c.execute("DELETE FROM return_items WHERE return_id=?", (rid,))
+    for it in items:
+        amt = float(it.get('price', 0) or 0) * float(it.get('return_qty', 0) or 0)
+        c.execute("""INSERT INTO return_items(return_id,source_item_id,item_name,spec,unit,issued_qty,returned_qty,return_qty,price,amount,created_at)
+                     VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                  (rid, int(it.get('source_item_id') or 0), it['item_name'], it.get('spec', ''), it.get('unit', '个'),
+                   float(it.get('issued_qty', 0) or 0), float(it.get('returned_qty', 0) or 0), float(it.get('return_qty', 0)),
+                   float(it.get('price', 0) or 0), amt, now()))
+    c.commit(); c.close()
+    log(session['user_name'], '修改退库单', f'{r["return_no"]} 明细已更新')
+    return jsonify({'success': True, 'message': f'退库单 {r["return_no"]} 已修改保存'})
+
+
+@app.route('/api/returns/<int:rid>/void', methods=['POST'])
+@login_required
+def api_return_void(rid):
+    """退库单作废(需求: 单据永久保存不允许物理删除, 仅作废) — 未确认入库的作废不影响库存;
+    已完成入库的单据不允许作废(有错误只能重新做单据冲抵)。留痕: log + 审批实例终止"""
+    c = db()
+    r = c.execute("SELECT * FROM return_requests WHERE id=?", (rid,)).fetchone()
+    if not r:
+        c.close(); return jsonify({'error': '退库单不存在'}), 404
+    if r['status'] == '退库已完成':
+        c.close(); return jsonify({'error': '该退库单已完成入库，不可作废（如有错误请重新做单据冲抵）'}), 400
+    if r['status'] == '已作废':
+        c.close(); return jsonify({'error': '该退库单已作废'}), 400
+    # 提交人本人/管理员 可作废
+    me = c.execute("SELECT * FROM users WHERE id=?", (session.get('user_id', 0),)).fetchone()
+    is_admin = me and (me['role'] == '系统管理员' or me['username'] in ('xingguo', 'admin', 'mujiao'))
+    if not is_admin and r['requester'] and me and me['name'] != r['requester']:
+        c.close(); return jsonify({'error': '仅退库单提交人或管理员可作废'}), 403
+    c.execute("UPDATE return_requests SET status='已作废', updated_at=? WHERE id=?", (now(), rid))
+    # 终止待审批实例(若有)
+    c.execute("UPDATE approval_instances SET status='rejected', comment='单据作废' WHERE biz_type='return_request' AND biz_id=? AND status IN ('pending','approved')", (rid,))
+    _insts = c.execute("SELECT instance_code FROM dingtalk_instances WHERE biz_type='return_request' AND biz_id=? AND status IN ('pending','synced')", (rid,)).fetchall()
+    for _ins in _insts:
+        try:
+            if _ins['instance_code'] and not str(_ins['instance_code']).startswith('ERR-'):
+                dt_terminate_instance(str(_ins['instance_code']), dt_first_bound_userid() or '')
+        except Exception:
+            pass
+    c.execute("DELETE FROM dingtalk_instances WHERE biz_type='return_request' AND biz_id=?", (rid,))
+    # 作废日志留痕(审批流转日志统一记录)
+    log_approval_action('return_request', rid, 'void', session.get('user_name', ''), session.get('user_id', 0),
+                        '退库单作废（不影响库存）', now(), None, 'system', '', conn=c)
+    c.commit(); c.close()
+    log(session['user_name'], '作废退库单', f'{r["return_no"]} 已作废(未入库, 库存未变动)')
+    return jsonify({'success': True, 'message': f'退库单 {r["return_no"]} 已作废（不影响库存，记录留痕）'})
+
 @app.route('/api/requisitions/<int:rid>/void', methods=['POST'])
 @login_required
 def api_requisition_void(rid):
@@ -9348,17 +9717,17 @@ _DELETE_TABLE = {
     'purchase_request': 'purchase_requests', 'purchase_order': 'purchase_orders',
     'contract': 'contracts', 'receiving': 'receivings',
     'requisition': 'requisitions', 'payment': 'payment_requests',
-    'inventory': 'inventory',
+    'inventory': 'inventory', 'return_request': 'return_requests',
 }
 _DELETE_NO_COL = {
     'purchase_request': 'req_no', 'purchase_order': 'order_no', 'contract': 'contract_no',
     'receiving': 'receive_no', 'requisition': 'req_no', 'payment': 'pay_no',
-    'inventory': 'item_name',
+    'inventory': 'item_name', 'return_request': 'return_no',
 }
 _DELETE_BIZTYPE = {
     'purchase_request': 'purchase_request', 'purchase_order': 'purchase_order', 'contract': 'contract',
     'receiving': 'receiving', 'requisition': 'requisition', 'payment': 'payment',
-    'inventory': 'inventory',
+    'inventory': 'inventory', 'return_request': 'return_request',
 }
 
 @app.route('/api/docs/<biz_type>/<int:bid>/delete', methods=['POST'])

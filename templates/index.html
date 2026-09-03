@@ -391,6 +391,20 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <div class="card"><div class="cb" id="reqListBox"><div class="loading">加载中...</div></div></div>
   </div>
 </div>
+<div class="page" id="preturns"><h2>↩️ 退库管理 <span style="font-size:10px;color:#999;font-weight:normal">(领用物资退回仓库)</span></h2>
+  <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap">
+    <span style="font-size:9px;color:#666">已领用的物资用不完/错领 → 关联原出库单做退库；审批通过后由仓库实物清点确认，确认后才增加库存。</span>
+    <button class="btn btn-p btn-sm" style="margin-left:auto" onclick="showReturnForm()">➕ 新建退库单</button>
+  </div>
+  <div style="margin-bottom:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:10px">
+    <span>状态:</span>
+    <select id="retStatusF" onchange="loadReturns()" style="font-size:10px;padding:2px 4px">
+      <option value="">全部</option><option>草稿</option><option>待审批</option><option>审批通过</option><option>退库已完成</option><option>已驳回</option><option>已作废</option>
+    </select>
+    <input id="retSearchF" placeholder="🔍 源出库单号/退库单号" style="font-size:10px;padding:2px 4px;width:160px" oninput="loadReturns()">
+  </div>
+  <div class="card"><div class="cb" id="returnsTable"><div class="loading">加载中...</div></div></div>
+</div>
 <div class="page" id="pcounts"><h2>📋 库存盘点</h2>
   <div class="card" id="countListCard" style="display:none"><div class="ch"><h3>盘点记录</h3></div>
     <div class="cb" id="countListBox"><div class="loading">加载中...</div></div></div>
@@ -931,7 +945,7 @@ function buildNav(){
   const groups=[
     ['工作台',[['dashboard','📊','工作台']]],
     ['采购管理',[['prequests','📝','采购申请'],['inquiries','🔍','三方询价'],['orders','📋','采购订单'],['contracts','📄','合同管理'],['suppliers','🏢','供应商']]],
-    ['仓储库存',[['receivings','📦','入库验收'],['requisitions','📤','出库管理'],['inventory','📦','库存查询'],['counts','📋','库存盘点']]],
+    ['仓储库存',[['receivings','📦','入库验收'],['requisitions','📤','出库管理'],['returns','↩️','退库管理'],['inventory','📦','库存查询'],['counts','📋','库存盘点']]],
     ['财务往来',[['payments','💰','付款申请'],['expenses','💸','费用登记'],['settlements','📊','月度对账'],['invoices','🧾','合并开票'],['ledger','🔍','往来台账']]],
     ['审批中心',[['approvals','✅','审批中心']]],
     ['报表中心',[['reports','📊','报表中心']]],
@@ -1052,6 +1066,7 @@ function sw(name){
     'payments':loadPayments,'inventory':loadInventory,'requisitions':()=>{reqTab(Array.from(document.querySelectorAll('#reqTabs button')).find(b=>b.classList.contains('act'))?.dataset?.z||'inv');loadReqInv();loadRequisitions()},'suppliers':loadSuppliers,'reports':loadReports,'feishu':loadFeishu,
     'dingtalk':loadDingTalk,
     'counts':()=>{loadAdjustments()},
+    'returns':loadReturns,
     'settlements':loadSettlements,'invoices':loadInvoicePage,'ledger':loadLedger,'system':loadSystem};
   // V11.66: 页面级权限拦截 — 无权限角色看到友好提示(数据级过滤已在后端兜底)
   if(!__pageAllowed(name)){
@@ -1092,6 +1107,7 @@ function __pageRoles(name){
     'contracts':'采购员、分管领导、总经理、系统管理员',
     'suppliers':'采购员、分管领导、总经理、系统管理员',
     'requisitions':'库管员、部门负责人、分管领导、总经理、系统管理员',
+    'returns':'库管员、部门负责人、分管领导、总经理、系统管理员',
     'counts':'库管员、分管领导、总经理、系统管理员',
     'payments':'财务、分管领导、总经理、系统管理员',
     'expenses':'财务、分管领导、总经理、系统管理员',
@@ -1110,6 +1126,7 @@ function __pageAllowed(name){
     'contracts':['采购员','分管领导','总经理','系统管理员'],
     'suppliers':['采购员','分管领导','总经理','系统管理员'],
     'requisitions':['库管员','部门负责人','分管领导','总经理','系统管理员'],
+    'returns':['库管员','部门负责人','分管领导','总经理','系统管理员'],
     'counts':['库管员','分管领导','总经理','系统管理员'],
     'payments':['财务','分管领导','总经理','系统管理员'],
     'expenses':['财务','分管领导','总经理','系统管理员'],
@@ -3191,6 +3208,243 @@ async function loadRequisitions(){
     ${rejCell(x)}
     <td><button class="lnk" style="color:#b08900" onclick="editDoc('requisition',${x.id},'出库单')">✏️修改</button> <button class="lnk" onclick="window.open('/api/requisitions/${x.id}/download','_blank')">⬇️下载</button> ${x.status=='已出库'||x.status=='待审批'?`<button class="lnk" style="color:var(--d)" onclick="voidReq(${x.id})">作废</button>`:''} ${(x.status=='待审批'||x.status=='已通过'||x.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('requisition',${x.id},'出库单')">↩️撤回</button>`:''}${(x.status=='待审批'||x.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('requisition',${x.id},'出库单')">🗑️删除</button>`:''}</td>`);
 }
+// ================= V11.193 退库管理 =================
+let RET_SRC_CACHE=[];
+async function loadReturns(){
+  try{
+    const r=await api('/returns',{noCache:true});
+    const st=id('retStatusF')?.value||'', kw=(id('retSearchF')?.value||'').trim();
+    let list=r;
+    if(st)list=list.filter(x=>x.status===st);
+    if(kw)list=list.filter(x=>(x.return_no||'').includes(kw)||(x.source_req_no||'').includes(kw));
+    id('returnsTable').innerHTML=groupRnder(list, x=>x.created_at,
+      ['退库单号','源出库单','部门/领用人','退库原因','金额','状态','驳回','操作'],
+      x=>`<td><b>${esc(x.return_no)}</b></td><td>${esc(x.source_req_no)}</td>
+        <td>${esc(x.dept||'')}/${esc(x.receiver||'')}</td><td style="font-size:9px">${esc(x.reason||'')}${x.reason_note?`<br><span style="color:#888">${esc(x.reason_note)}</span>`:''}</td>
+        <td>¥${(x.total_amount||0).toFixed(2)}</td><td>${tag(x.status)}${x.reject_count>0?` <span style="font-size:8px;color:#e74c3c">驳回${x.reject_count}次</span>`:''}</td>
+        ${rejCell(x)}
+        <td style="white-space:nowrap">
+          <button class="lnk" onclick="showReturnDetail(${x.id})">详情</button>
+          ${x.status=='草稿'&&!(x.reject_count>0)?`<button class="lnk" style="color:var(--s);font-weight:600" onclick="submitReturn(${x.id})">📤 提交审批</button> <button class="lnk" style="color:#b08900" onclick="editReturn(${x.id})">✏️修改</button>`:''}
+          ${((x.status=='草稿'&&(x.reject_count||0)>0)||x.status=='已驳回')?`<button class="lnk" style="color:#16a34a;font-weight:600" onclick="submitReturn(${x.id})">🔄 再次提交审批</button>`:''}
+          ${x.status=='审批通过'?`<button class="lnk" style="color:#16a34a;font-weight:700" onclick="confirmReturnWarehouse(${x.id})">✅ 确认退库入库</button>`:''}
+          ${(x.status=='待审批'||x.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('return_request',${x.id},'退库单')">↩️撤回</button>`:''}
+          ${(x.status=='待审批'||x.status=='草稿'||x.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="voidReturn(${x.id})">作废</button>`:''}
+        </td>`);
+  }catch(e){id('returnsTable').innerHTML='<div style="padding:16px;color:#e74c3c;font-size:10px">加载失败: '+esc(e.message)+'</div>'}
+}
+// 新建退库单弹窗: 先选源出库单(已出库未退完) → 自动带出物料行(可退数量)
+async function showReturnForm(){
+  if(__guardOpen('retform'))return;
+  let srcs=[];
+  try{srcs=await api('/returns/source-requisitions',{noCache:true})}catch(e){}
+  RET_SRC_CACHE=srcs;
+  const opts=srcs.length?srcs.map(s=>`<option value="${s.id}">${esc(s.req_no)}｜${esc(s.dept||'')} ${esc(s.receiver||'')}｜${s.quantity}${esc(s.unit||'个')}(可退${((s.quantity||0)-(s.returned_qty||0)).toFixed(1).replace(/\.0$/,'')})</option>`).join(''):'';
+  showDetail('↩️ 新建退库单',
+    `<div style="font-size:11px;line-height:1.8">
+      <p style="background:#fff8e1;border:1px solid #f0d675;padding:6px 8px;border-radius:4px;font-size:10px">📋 退库=把<b>已领用但没用完/错领</b>的物资退回仓库（不是退给供应商）。必须关联原「领用出库单」，审批通过后仓库清点确认才加库存。</p>
+      ${srcs.length==0?'<p style="color:#e74c3c;background:#fdecea;padding:6px 8px;border-radius:4px">⚠️ 当前没有可退库的源单：需存在<b>已出库</b>且<b>未全部退完</b>的领用出库单。</p>':''}
+      <div class="fg"><label class="fl2">源出库单(领用单) *</label><select class="fc" id="retSrc" onchange="retLoadSrcItems()"><option value="">-- 请选择已出库的领用单 --</option>${opts}</select></div>
+      <div class="fg"><label class="fl2">退库原因 *</label><select class="fc" id="retReason" onchange="retReasonTip()"><option value="领用剩余">领用剩余</option><option value="物料未使用">物料未使用</option><option value="错领物料">错领物料</option><option value="质量问题">质量问题</option><option value="其他">其他</option></select></div>
+      <div class="fg" id="retReasonNoteBox" style="display:none"><label class="fl2">原因说明</label><input class="fc" id="retReasonNote" placeholder="请说明退库原因"></div>
+      <div class="fg"><label class="fl2">归还仓库</label><input class="fc" value="主库房" id="retWarehouse" readonly></div>
+      <div style="margin-top:6px;font-weight:600;color:#16325c">📦 退库物资明细 <span style="font-weight:normal;color:#999;font-size:9px">(可退数量=领用数-已退数, 本次退库数量须≤可退数量)</span></div>
+      <div id="retItems" style="margin-top:4px"></div>
+      <div style="font-size:9px;color:#999;margin-top:2px">合计金额：<b id="retTotalAmt" style="color:#16325c">¥0.00</b></div>
+    </div>`,
+    `<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="saveReturn(false)">💾 存草稿</button><button class="btn btn-p" style="background:#16a34a;border-color:#16a34a" onclick="saveReturn(true)">📤 保存并提交审批</button>`);
+}
+function retReasonTip(){id('retReasonNoteBox').style.display=(id('retReason')?.value=='其他')?'flex':'none'}
+async function retLoadSrcItems(){
+  const sid=parseInt(id('retSrc')?.value||'0');
+  const box=id('retItems');box.innerHTML='';
+  if(!sid)return;
+  const src=RET_SRC_CACHE.find(s=>s.id===sid);
+  if(!src)return;
+  // 预填部门/领用人/仓库
+  const rows=(src.items||[]).filter(it=>it.returnable_qty>0);
+  if(!rows.length){box.innerHTML='<div style="color:#e74c3c;font-size:10px">⚠️ 该出库单所有物资均已退完</div>';return}
+  rows.forEach((it,i)=>{
+    const can=parseFloat(it.returnable_qty||0);
+    const price=parseFloat(it.price||src.price||0)||0;
+    box.insertAdjacentHTML('beforeend',`<div style="border:1px solid #e3e9f2;border-radius:4px;padding:4px 6px;margin:3px 0;font-size:10px;background:#fafcff">
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <b style="flex:1.4;min-width:110px">${esc(it.item_name)} ${it.spec?`<span style="color:#888">(${esc(it.spec)})</span>`:''}</b>
+        <span style="color:#888">领用<b>${it.quantity}</b>${esc(it.unit||'个')}</span>
+        <span style="color:#c0392b">已退<b>${parseFloat(it.returned_qty||0).toFixed(1).replace(/\.0$/,'')}</b></span>
+        <span style="color:#16a34a">可退<b>${can.toFixed(1).replace(/\.0$/,'')}</b></span>
+        <span style="color:#888">单价¥${price}</span>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;margin-top:3px">
+        <span style="color:#16325c">本次退库数量*</span>
+        <input type="number" min="0" step="any" style="width:80px;font-size:10px;padding:2px 4px" id="retq${i}" data-max="${can}" oninput="retCalc(${i})">
+        <span style="color:#888">${esc(it.unit||'个')}</span>
+        <span style="margin-left:auto;color:#16325c">退库金额 <b id="reta${i}">¥0.00</b></span>
+      </div>
+      <input type="hidden" id="retsrcit${i}" value="${it.id}">
+      <input type="hidden" id="retname${i}" value="${esc(it.item_name)}">
+      <input type="hidden" id="retspec${i}" value="${esc(it.spec||'')}">
+      <input type="hidden" id="retunit${i}" value="${esc(it.unit||'个')}">
+      <input type="hidden" id="retissued${i}" value="${it.quantity}">
+      <input type="hidden" id="retreturned${i}" value="${it.returned_qty||0}">
+      <input type="hidden" id="retprice${i}" value="${price}">
+    </div>`);
+  });
+  window._retItemCnt=rows.length;
+}
+function retCalc(i){
+  const q=parseFloat(id('retq'+i)?.value)||0, max=parseFloat(id('retq'+i)?.dataset?.max||'0');
+  if(q>max){id('retq'+i).value=max;id('retq'+i).style.borderColor='#e74c3c';setTimeout(()=>{if(id('retq'+i))id('retq'+i).style.borderColor=''},1500);}
+  const p=parseFloat(id('retprice'+i)?.value)||0;
+  if(id('reta'+i))id('reta'+i).textContent='¥'+(q*p).toFixed(2);
+  // 合计
+  let t=0;
+  if(window._retItemCnt){for(let k=0;k<window._retItemCnt;k++){const qq=parseFloat(id('retq'+k)?.value)||0,pp=parseFloat(id('retprice'+k)?.value)||0;t+=qq*pp}}
+  const el=id('retTotalAmt');if(el)el.textContent='¥'+t.toFixed(2);
+}
+async function saveReturn(submit){
+  const srcId=parseInt(id('retSrc')?.value||'0');
+  if(!srcId){alert('请选择源出库单');return}
+  const reason=id('retReason')?.value||'';
+  const reasonNote=(reason=='其他')?(id('retReasonNote')?.value||'').trim():'';
+  const items=[];
+  for(let i=0;i<(window._retItemCnt||0);i++){
+    const q=parseFloat(id('retq'+i)?.value)||0;
+    if(q<=0)continue;
+    const max=parseFloat(id('retq'+i)?.dataset?.max||'0');
+    if(q>max){alert('第'+(i+1)+'行退库数量超过可退数量('+max+')');return}
+    items.push({source_item_id:parseInt(id('retsrcit'+i).value),item_name:id('retname'+i).value,spec:id('retspec'+i).value,unit:id('retunit'+i).value,issued_qty:parseFloat(id('retissued'+i).value),returned_qty:parseFloat(id('retreturned'+i).value),return_qty:q,price:parseFloat(id('retprice'+i).value)});
+  }
+  if(!items.length){alert('请至少填写一项退库物资及数量');return}
+  const r=await api('/returns',{method:'POST',body:JSON.stringify({source_req_id:srcId,reason,reason_note:reasonNote,items})});
+  if(r.success){
+    if(submit){const r2=await api(`/returns/${r.id}/submit`,{method:'POST',body:'{}'});alert(r2.success?('✅ '+r2.message):('❌ '+(r2.error||'提交失败')))}
+    else toast('✅ '+r.message);
+    closeMod();loadReturns();
+  } else alert('❌ '+(r.error||'保存失败'));
+}
+async function editReturn(rid){
+  // V11.193: 修改退库单(草稿/驳回回草稿) — 弹窗同新建布局, 预填当前值
+  if(__guardOpen('rete:'+rid))return;
+  const d=await api(`/returns/${rid}`,{noCache:true});
+  RET_SRC_CACHE=[{id:d.source_req_id,req_no:d.source_req_no,dept:d.dept,receiver:d.receiver,quantity:0,returned_qty:0,items:(d.items||[]).map(it=>({id:it.source_item_id,item_name:it.item_name,spec:it.spec,unit:it.unit,quantity:it.issued_qty,returned_qty:0,returnable_qty:it.issued_qty,price:it.price}))}];
+  const rows=(d.items||[]).filter(it=>it.return_qty>0);
+  window._retItemCnt=rows.length;
+  showDetail(`✏️ 修改退库单 ${d.return_no}`,
+    `<div style="font-size:11px;line-height:1.8">
+      <p style="background:#fff8e1;border:1px solid #f0d675;padding:6px 8px;border-radius:4px;font-size:10px">📋 源出库单 ${esc(d.source_req_no)}（${esc(d.dept||'')}/${esc(d.receiver||'')}领用）。修改后保存仍为草稿，确认无误后点提交审批。${d.reject_count>0?'<b style="color:#c0392b">（已驳回'+d.reject_count+'次，请按驳回意见修改）</b>':''}</p>
+      <div class="fg"><label class="fl2">退库原因 *</label><select class="fc" id="retReason" onchange="retReasonTip()"><option value="领用剩余"${d.reason=='领用剩余'?' selected':''}>领用剩余</option><option value="物料未使用"${d.reason=='物料未使用'?' selected':''}>物料未使用</option><option value="错领物料"${d.reason=='错领物料'?' selected':''}>错领物料</option><option value="质量问题"${d.reason=='质量问题'?' selected':''}>质量问题</option><option value="其他"${d.reason=='其他'?' selected':''}>其他</option></select></div>
+      <div class="fg" id="retReasonNoteBox" style="display:${d.reason=='其他'?'flex':'none'}"><label class="fl2">原因说明</label><input class="fc" id="retReasonNote" value="${esc(d.reason_note||'')}"></div>
+      <div style="margin-top:6px;font-weight:600;color:#16325c">📦 退库物资明细</div>
+      <div id="retItems" style="margin-top:4px"></div>
+      <div style="font-size:9px;color:#999;margin-top:2px">合计金额：<b id="retTotalAmt" style="color:#16325c">¥${(d.total_amount||0).toFixed(2)}</b></div>
+    </div>`,
+    `<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="saveReturnEdit(${rid},false)">💾 存草稿</button><button class="btn btn-p" style="background:#16a34a;border-color:#16a34a" onclick="saveReturnEdit(${rid},true)">📤 保存并提交审批</button>`);
+  // 渲染行
+  const box=id('retItems');
+  rows.forEach((it,i)=>{
+    const price=parseFloat(it.price||0)||0;
+    box.insertAdjacentHTML('beforeend',`<div style="border:1px solid #e3e9f2;border-radius:4px;padding:4px 6px;margin:3px 0;font-size:10px;background:#fafcff">
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <b style="flex:1.4;min-width:110px">${esc(it.item_name)} ${it.spec?`<span style="color:#888">(${esc(it.spec)})</span>`:''}</b>
+        <span style="color:#888">领用<b>${it.issued_qty}</b>${esc(it.unit||'个')}</span>
+        <span style="color:#888">单价¥${price}</span>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;margin-top:3px">
+        <span style="color:#16325c">本次退库数量*</span>
+        <input type="number" min="0" step="any" style="width:80px;font-size:10px;padding:2px 4px" id="retq${i}" value="${it.return_qty}" data-max="${parseFloat(it.issued_qty||0)}" oninput="retCalc(${i})">
+        <span style="color:#888">${esc(it.unit||'个')}</span>
+        <span style="margin-left:auto;color:#16325c">退库金额 <b id="reta${i}">¥${(parseFloat(it.return_qty||0)*price).toFixed(2)}</b></span>
+      </div>
+      <input type="hidden" id="retsrcit${i}" value="${it.source_item_id}">
+      <input type="hidden" id="retname${i}" value="${esc(it.item_name)}">
+      <input type="hidden" id="retspec${i}" value="${esc(it.spec||'')}">
+      <input type="hidden" id="retunit${i}" value="${esc(it.unit||'个')}">
+      <input type="hidden" id="retissued${i}" value="${it.issued_qty}">
+      <input type="hidden" id="retreturned${i}" value="0">
+      <input type="hidden" id="retprice${i}" value="${price}">
+    </div>`);
+  });
+}
+async function saveReturnEdit(rid,submit){
+  const reason=id('retReason')?.value||'';
+  const reasonNote=(reason=='其他')?(id('retReasonNote')?.value||'').trim():'';
+  const items=[];
+  for(let i=0;i<(window._retItemCnt||0);i++){
+    const q=parseFloat(id('retq'+i)?.value)||0;
+    if(q<=0)continue;
+    const max=parseFloat(id('retq'+i)?.dataset?.max||'0');
+    if(q>max){alert('第'+(i+1)+'行退库数量超过可退数量('+max+')');return}
+    items.push({source_item_id:parseInt(id('retsrcit'+i).value),item_name:id('retname'+i).value,spec:id('retspec'+i).value,unit:id('retunit'+i).value,issued_qty:parseFloat(id('retissued'+i).value),returned_qty:0,return_qty:q,price:parseFloat(id('retprice'+i).value)});
+  }
+  if(!items.length){alert('请至少填写一项退库物资及数量');return}
+  const r=await api(`/returns/${rid}/update`,{method:'POST',body:JSON.stringify({reason,reason_note:reasonNote,items})});
+  if(r.success){
+    if(submit){const r2=await api(`/returns/${rid}/submit`,{method:'POST',body:'{}'});alert(r2.success?('✅ '+r2.message):('❌ '+(r2.error||'提交失败')))}
+    else toast('✅ '+r.message);
+    closeMod();loadReturns();
+  } else alert('❌ '+(r.error||'保存失败'));
+}
+async function showReturnDetail(rid){
+  if(__guardOpen('retd:'+rid))return;
+  const d=await api(`/returns/${rid}`,{noCache:true});
+  const r=d;
+  const itemsHtml=(r.items||[]).map((it,i)=>{
+    let rej=false;
+    try{
+      const ri=(r.rejected_items||'')=='__all__'?['*']:(JSON.parse(r.rejected_items||'[]')||[]).map(String);
+      rej=(r.rejected_reason||r.reject_count>0)&&(ri.includes('*')||ri.includes(String(it.id))||ri.includes(String(it.source_item_id)));
+    }catch(e){rej=!!r.rejected_reason}
+    return `<tr style="${rej?'background:#fdeaea':''}">
+    <td>${i+1}</td><td><b>${esc(it.item_name)}</b>${it.spec?`<br><span style="color:#888;font-size:9px">${esc(it.spec)}</span>`:''}${rej?' <span style="color:#c0392b;font-size:9px;font-weight:700">❌ 已驳回</span>':''}</td>
+    <td>${esc(it.unit||'个')}</td><td>${it.issued_qty}</td><td style="color:#c0392b">${parseFloat(it.returned_qty||0).toFixed(1).replace(/\.0$/,'')}</td>
+    <td style="color:#16a34a">${(it.issued_qty-it.returned_qty).toFixed(1).replace(/\.0$/,'')}</td>
+    <td><b>${it.return_qty}</b></td><td>¥${(it.price||0).toFixed(2)}</td><td><b>¥${(it.amount||0).toFixed(2)}</b></td></tr>`}).join('');
+  const flowsHtml=(r.flows||[]).map(f=>`<tr><td>${esc(f.created_at)}</td><td>${esc(f.operator)}</td><td>${esc(f.item_name)} ${f.spec||''}</td><td>+${f.qty}</td><td>余额${f.balance_after}</td></tr>`).join('');
+  const btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button>
+    ${r.status=='草稿'?`<button class="btn btn-p" onclick="submitReturn(${r.id})">📤 提交审批</button> <button class="btn btn-w" style="color:#16325c;border-color:#d9a514" onclick="doReturnVoid(${r.id})">作废</button>`:''}
+    ${r.status=='已驳回'?`<button class="btn btn-p" style="background:#16a34a;border-color:#16a34a" onclick="submitReturn(${r.id})">🔄 再次提交审批</button> <button class="btn btn-w" onclick="doReturnVoid(${r.id})">作废</button>`:''}
+    ${r.status=='审批通过'?`<button class="btn btn-p" style="background:#16a34a;border-color:#16a34a" onclick="confirmReturnWarehouse(${r.id})">✅ 确认退库入库</button>`:''}`;
+  showDetail(`↩️ 退库单 ${r.return_no}`,`
+    <div style="font-size:11px;line-height:1.9">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;font-size:10px;margin-bottom:6px">
+        <span class="tag" style="background:${r.status=='退库已完成'?'#e8f5e9':r.status=='审批通过'?'#e3f2fd':r.status=='已驳回'?'#fdecea':'#fff8e1'};color:${r.status=='退库已完成'?'#2e7d32':r.status=='审批通过'?'#1565c0':r.status=='已驳回'?'#c0392b':'#8a6d00'}">${r.status}</span>
+        <span style="color:#888">申请: ${esc(r.requester||'')} ${(r.created_at||'').slice(0,16)}</span>
+      </div>
+      <div class="fg"><label class="fl2">源出库单</label><div style="flex:3;padding:4px 0">${esc(r.source_req_no||'')}（${esc((r.source||{}).dept||r.dept||'')}/${esc((r.source||{}).receiver||r.receiver||'')}领用）</div></div>
+      <div class="fg"><label class="fl2">退库原因</label><div style="flex:3;padding:4px 0">${esc(r.reason||'')}${r.reason_note?`：${esc(r.reason_note)}`:''}</div></div>
+      <div class="fg"><label class="fl2">归还仓库</label><div style="flex:3;padding:4px 0">${esc(r.warehouse||'主库房')}</div></div>
+      <div class="fg"><label class="fl2">合计金额</label><div style="flex:3;padding:4px 0"><b>¥${(r.total_amount||0).toFixed(2)}</b> ${r.reject_count>0?`<span style="color:#e74c3c;font-size:9px">（累计驳回${r.reject_count}次）</span>`:''}</div></div>
+      ${r.warehouse_confirm_by?`<div class="fg"><label class="fl2">仓库确认</label><div style="flex:3;padding:4px 0;color:#2e7d32">✅ ${esc(r.warehouse_confirm_by)} ${(r.warehouse_confirm_at||'').slice(0,16)}</div></div>`:''}
+      <table style="width:100%;border-collapse:collapse;font-size:10px;margin-top:4px">
+        <tr style="background:#f0f4fa"><th style="border:1px solid #dfe6f0;padding:3px">#</th><th style="border:1px solid #dfe6f0;padding:3px">物资</th><th style="border:1px solid #dfe6f0;padding:3px">单位</th><th style="border:1px solid #dfe6f0;padding:3px">领用数</th><th style="border:1px solid #dfe6f0;padding:3px">已退</th><th style="border:1px solid #dfe6f0;padding:3px">可退</th><th style="border:1px solid #dfe6f0;padding:3px">本次退</th><th style="border:1px solid #dfe6f0;padding:3px">单价</th><th style="border:1px solid #dfe6f0;padding:3px">金额</th></tr>
+        ${itemsHtml||'<tr><td colspan="9" style="text-align:center;color:#999">无明细</td></tr>'}
+      </table>
+      ${flowsHtml?`<div style="margin-top:8px"><b>📈 库存变动记录</b><table style="width:100%;border-collapse:collapse;font-size:10px;margin-top:3px"><tr style="background:#f0f4fa"><th style="border:1px solid #dfe6f0;padding:3px">时间</th><th style="border:1px solid #dfe6f0;padding:3px">操作人</th><th style="border:1px solid #dfe6f0;padding:3px">物资</th><th style="border:1px solid #dfe6f0;padding:3px">变动</th><th style="border:1px solid #dfe6f0;padding:3px">结余</th></tr>${flowsHtml}</table></div>`:''}
+      <div id="retApprFlow"></div>
+    </div>`,btns);
+  // 审批流转日志(同意/驳回/附件)
+  if(typeof loadApprovalFlow==='function')loadApprovalFlow('return_request',rid,'retApprFlow');
+}
+async function submitReturn(rid){
+  if(!confirm('确认提交该退库单审批？将推送到钉钉审批。'))return;
+  const r=await api(`/returns/${rid}/submit`,{method:'POST',body:'{}'});
+  if(r.success){alert('✅ '+r.message);closeMod();loadReturns()}
+  else alert('❌ '+(r.error||'提交失败'));
+}
+async function confirmReturnWarehouse(rid){
+  if(!confirm('确认仓库已收到退回实物并清点入库？\n执行后库存将增加，源出库单累计已退数量同步更新，且单据不可再修改。'))return;
+  const r=await api(`/returns/${rid}/confirm-warehouse`,{method:'POST',body:'{}'});
+  if(r.success){alert('✅ '+r.message);closeMod();loadReturns();loadInventory&&loadInventory()}
+  else alert('❌ '+(r.error||'操作失败'));
+}
+async function doReturnVoid(rid){
+  if(!confirm('确认作废该退库单？作废不影响库存，记录留痕。'))return;
+  const r=await api(`/returns/${rid}/void`,{method:'POST',body:'{}'});
+  if(r.success){alert('✅ '+r.message);closeMod();loadReturns()}
+  else alert('❌ '+(r.error||'作废失败'));
+}
+async function voidReturn(rid){doReturnVoid(rid)}
 async function voidReq(id){
   if(!confirm('确认作废该出库单？已出库单据作废将回滚库存'))return;
   const r=await api(`/requisitions/${id}/void`,{method:'POST',body:'{}'});
