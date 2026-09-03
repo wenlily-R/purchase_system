@@ -587,6 +587,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
           <option value="receiving">📦入库</option>
           <option value="payment">💰付款</option>
           <option value="requisition">📤出库</option>
+          <option value="return_request">↩️退库</option>
         </select>
         <span style="color:#888">当前单据金额到达区间 → 依次经过该区间所有审批环节</span>
       </div>
@@ -1198,7 +1199,7 @@ async function loadOverdue(){
     const r=await api('/approvals/overdue');
     const box=id('overdueBox');
     if(!r.length){box.innerHTML='<div style="padding:6px;color:#27ae60;font-size:9px">✅ 无超期未审批单据</div>';return}
-    const BIZN={purchase_request:'采购申请',purchase_order:'采购订单',inquiry_approval:'比价单',contract:'合同',payment:'付款',receiving:'入库',requisition:'出库'};
+    const BIZN={purchase_request:'采购申请',purchase_order:'采购订单',inquiry_approval:'比价单',contract:'合同',payment:'付款',receiving:'入库',requisition:'出库',return_request:'退库'};
     box.innerHTML=rnder(r,['doc_no','biz_type','role','wait_hours','biz_id'],['单号','类型','待审角色','已停留','操作'],
       x=>`<td><b>${esc(x.doc_no||('#'+x.biz_id))}</b></td><td>${BIZN[x.biz_type]||x.biz_type}</td><td>${esc(x.role||'')}</td>
       <td><span style="color:${x.wait_hours>48?'#e74c3c':'#e67e22'};font-weight:700">${x.wait_hours??'-'}h</span></td>
@@ -2185,7 +2186,7 @@ function exportXls(type){window.open('/api/export?type='+type,'_blank')}
 
 // Approvals Center (需求44: 按流程类型分类分页展示, 类型彩色标签+数量徽标+发起时间)
 let APPR_FILTER='';
-const APPR_TM={purchase_request:['📝采购申请','#2f6fed'],purchase_order:['📋订单','#e8890c'],inquiry_approval:['🔍比价单','#8e44ad'],contract:['📄合同','#0aa574'],credit:['📑挂账','#b08900'],payment:['💰付款','#d64541'],receiving:['📦入库','#7b5bdb'],requisition:['📤出库','#00a896']};
+const APPR_TM={purchase_request:['📝采购申请','#2f6fed'],purchase_order:['📋订单','#e8890c'],inquiry_approval:['🔍比价单','#8e44ad'],contract:['📄合同','#0aa574'],credit:['📑挂账','#b08900'],payment:['💰付款','#d64541'],receiving:['📦入库','#7b5bdb'],requisition:['📤出库','#00a896'],return_request:['↩️退库','#e67e22']};
 function apprTab(t){
   APPR_FILTER=t;
   document.querySelectorAll('#apprTabs button').forEach(b=>{b.classList.toggle('act',b.dataset.t===t)});
@@ -2232,6 +2233,7 @@ function viewBiz(t,oid){
   else if(t=='contract')showContract(oid);
   else if(t=='receiving')showRcvDetail(oid);   // V11.172: 入库审批详情可点
   else if(t=='requisition')showRequisitionDetail(oid);  // V11.172: 出库审批详情可点
+  else if(t=='return_request')showReturnDetail(oid);  // V11.193: 退库审批详情可点
   else if(t=='credit'||t=='payment'){
     // V11.173: 挂账/付款详情弹窗(原为alert提示, 体验差)
     showFinDetail(t,oid);
@@ -4384,7 +4386,7 @@ async function loadApprConfigCheck(){
     // 审批链明细(按单据类型分组)
     const byBiz={};
     flows.forEach(f=>{(byBiz[f.biz_type]=byBiz[f.biz_type]||[]).push(f)});
-    const BIZ_N={purchase_request:'采购申请',inquiry_approval:'三方询价',purchase_order:'采购订单',contract:'合同',credit:'挂账',payment:'付款',receiving:'入库',requisition:'出库'};
+    const BIZ_N={purchase_request:'采购申请',inquiry_approval:'三方询价',purchase_order:'采购订单',contract:'合同',credit:'挂账',payment:'付款',receiving:'入库',requisition:'出库',return_request:'退库'};
     h+='<table class="tb" style="font-size:8px"><thead><tr><th>单据类型</th><th>金额区间</th><th>审批角色</th><th>配置审批人</th><th>钉钉绑定</th><th>飞书绑定</th><th>状态</th></tr></thead><tbody>';
     Object.keys(byBiz).forEach(bt=>{
       byBiz[bt].forEach(f=>{
