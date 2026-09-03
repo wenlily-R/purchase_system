@@ -1664,14 +1664,17 @@ async function showPRequest(id){
     <h4 style="font-size:10px;margin:6px 0 3px">📋 物资明细</h4><div style="font-size:9px">`;
   items.forEach(i=>{
     const isRej=window.__rejItems.includes(String(i.id));
-    h+=`<div style="padding:2px 0;border-bottom:1px solid var(--b);${isRej?'background:#fdeaea;border-radius:3px;padding:3px 6px;margin:2px -4px':''}">${isRej?'❌':''} ${esc(i.item_name)} ${esc(i.spec||'')} x${i.quantity}${esc(i.unit)}${isRej?`<span style="color:#c0392b;font-size:8px;margin-left:6px;font-weight:700">已驳回</span>`:''}</div>`});
+    h+=`<div style="padding:2px 0;border-bottom:1px solid var(--b);${isRej?'background:#fdeaea;border-radius:3px;padding:3px 6px;margin:2px -4px':''}">${isRej?'❌':''} ${esc(i.item_name)} ${esc(i.spec||'')} x${i.quantity}${esc(i.unit)}${isRej?`<span style="color:#c0392b;font-size:8px;margin-left:6px;font-weight:700">已驳回</span>`:''}${i.attach?` <a href="/uploads/${esc(i.attach)}" target="_blank" style="color:#3370ff;font-size:8px;margin-left:4px" title="查看该物资附图">📎附图</a> <img src="/uploads/${esc(i.attach)}" onerror="this.style.display='none'" onclick="window.open('/uploads/${esc(i.attach)}','_blank')" style="max-width:90px;max-height:60px;vertical-align:middle;border:1px solid #dfe6f0;border-radius:3px;margin:2px 0 2px 6px;cursor:zoom-in">`:''}</div>`});
   h+=`</div>`;
   // V11.184: 审批进度统一由 approvalFlowBox 的 loadApprovalFlow 渲染(含同意/驳回+附件), 不再内联
   if(r.urgent)h='<div style="background:#fff5f5;border:1px solid #f5c6c6;color:#e74c3c;font-weight:700;font-size:10px;padding:4px 8px;border-radius:4px;margin-bottom:6px">🚨 加急审批</div>'+h;
   if(r.attachments){
     try{
       const atts=JSON.parse(r.attachments||'[]');
-      if(atts.length)h+=`<h4 style="font-size:10px;margin:6px 0 3px">📎 附件</h4><div style="font-size:9px">${atts.map(a=>`<div><a href="/uploads/${esc(a)}" target="_blank" style="color:#3370ff">📄 ${esc(a.split('/').pop())}</a></div>`).join('')}</div>`;
+      if(atts.length)h+=`<h4 style="font-size:10px;margin:6px 0 3px">📎 附件</h4><div style="font-size:9px">${atts.map(a=>{
+        const _n=String(a).split('/').pop().toLowerCase();
+        const _img=_n.endsWith('.png')||_n.endsWith('.jpg')||_n.endsWith('.jpeg')||_n.endsWith('.gif')||_n.endsWith('.webp')||_n.endsWith('.bmp');
+        return `<div style="margin:2px 0">${_img?`<img src="/uploads/${esc(a)}" onclick="window.open('/uploads/${esc(a)}','_blank')" style="max-width:130px;max-height:90px;vertical-align:middle;border:1px solid #dfe6f0;border-radius:4px;cursor:zoom-in" title="点击查看大图"> `:''}<a href="/uploads/${esc(a)}" target="_blank" style="color:#3370ff">${_img?'查看原图':'📄 '+esc(String(a).split('/').pop())}</a></div>`}).join('')}</div>`;
     }catch(e){}
   }
   const btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button>
