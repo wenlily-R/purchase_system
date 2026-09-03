@@ -3018,11 +3018,26 @@ async function completeRcv(rid,defQty,orderId){
     // 从入库单接口取明细(兜底: 订单接口失败/无明细时)
     try{const rs=(await api('/receivings')).find(x=>x.id===rid);rcvItems=rs&&rs.items?rs.items:null}catch(e){}
     if(!rcvItems||rcvItems.length<=1){
-      const q=prompt(`验收合格数(回车默认全部 ${defQty||''}):`,defQty||'');
-      if(q===null)return;
-      const r=await api(`/receivings/${rid}/complete`,{method:'POST',body:JSON.stringify({qualified_qty:parseFloat(q)||0})});
-      if(r.success)alert('✅ 已提交验收入库审批，审批通过后自动增加库存');else alert(r.error||'入库失败');
-      loadReceivings();loadOrders();loadInventory();
+      // V11.198b: 手动选择入库类型(暂估/正式) + 验收数量 — 不预设默认
+      window._rcvSubmitting=0;
+      id('dmTitle').textContent='📦 提交验收入库';
+      id('dmBody').innerHTML=`
+        <div style="font-size:9px;color:#666;margin-bottom:8px">确认本批到货验收数量，并选择入库类型（货到发票未到选暂估，票货齐选正式）</div>
+        <div style="margin-bottom:8px"><label style="font-size:10px;color:#555;display:block;margin-bottom:3px">📄 入库类型 *（必选）</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <div style="flex:1;min-width:140px;border:2px solid var(--b);border-radius:6px;padding:8px;text-align:center;cursor:pointer;background:#fff;transition:all .15s" id="rcvTypeEst" onclick="rcvPickType('est')" title="货到发票未到，先入账，发票到了红冲转正式">
+            <div style="font-size:11px;font-weight:bold;color:#e65100">🟠 暂估入库 <span id="rcvEstChk" style="display:none">✓</span></div>
+            <div style="font-size:8px;color:#888;margin-top:2px">货到发票未到（先入账，发票到了红冲转正式）</div>
+          </div>
+          <div style="flex:1;min-width:140px;border:2px solid var(--b);border-radius:6px;padding:8px;text-align:center;cursor:pointer;background:#fff;transition:all .15s" id="rcvTypeFormal" onclick="rcvPickType('formal')" title="发票和货都齐了，直接正式入库">
+            <div style="font-size:11px;font-weight:bold;color:#2e7d32">🟢 正式入库 <span id="rcvFormalChk" style="display:none">✓</span></div>
+            <div style="font-size:8px;color:#888;margin-top:2px">发票和货都齐了（直接正式入库）</div>
+          </div>
+        </div>
+        <input type="hidden" id="rcvType" value=""></div>
+        <div class="fg"><label class="fl2">验收合格数量 *</label><input class="fc" id="rcvQty0" type="number" min="1" step="1" value="${defQty||''}" placeholder="实际验收数量"></div>`;
+      id('detailModal').classList.add('show');
+      id('dmFooter').innerHTML=`<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="submitSingleRcv(${rid})">✅ 确认提交审批</button>`;
       return;
     }
   }
@@ -3030,19 +3045,37 @@ async function completeRcv(rid,defQty,orderId){
   id('dmTitle').textContent='📦 批量验收入库';
   id('dmBody').innerHTML=`
     <div style="font-size:9px;color:#666;margin-bottom:4px">订单 ${od?esc(od.order.order_no):''} 共 ${items.length} 项商品，逐项确认验收数量（默认全部合格），确认后提交审批，审批通过自动转入库存</div>
+    <div style="margin-bottom:6px"><label style="font-size:10px;color:#555;display:block;margin-bottom:3px">📄 入库类型 *（必选：货到发票未到选暂估，票货齐选正式）</label>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <div style="flex:1;min-width:140px;border:2px solid var(--b);border-radius:6px;padding:6px;text-align:center;cursor:pointer;background:#fff" id="rcvTypeEst" onclick="rcvPickType('est')"><span style="font-size:10px;font-weight:bold;color:#e65100">🟠 暂估 <span id="rcvEstChk" style="display:none">✓</span></span><div style="font-size:7px;color:#888">货到票未到，先入账后红冲</div></div>
+      <div style="flex:1;min-width:140px;border:2px solid var(--b);border-radius:6px;padding:6px;text-align:center;cursor:pointer;background:#fff" id="rcvTypeFormal" onclick="rcvPickType('formal')"><span style="font-size:10px;font-weight:bold;color:#2e7d32">🟢 正式 <span id="rcvFormalChk" style="display:none">✓</span></span><div style="font-size:7px;color:#888">票货齐，直接入账</div></div>
+    </div><input type="hidden" id="rcvType" value=""></div>
     <table class="tb" style="font-size:9px"><thead><tr><th>物资名称</th><th>规格</th><th>订单数量</th><th>验收数量</th></tr></thead>
     <tbody>${items.map((it,i)=>`<tr><td>${esc(it.item_name)}</td><td>${esc(it.spec||'')}</td><td>${it.quantity}${esc(it.unit||'')}</td><td><input type="number" style="width:70px;padding:2px 4px;border:1px solid var(--b);border-radius:3px" id="rcvQ${i}" value="${it.quantity}"></td></tr>`).join('')}</tbody></table>`;
   id('detailModal').classList.add('show');
   id('dmFooter').innerHTML=`<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="submitBatchRcv(${rid},${items.length})">✅ 确认提交审批</button>`;
 }
+async function submitSingleRcv(rid){
+  const q=parseFloat(id('rcvQty0')?.value||'0');
+  const rcvType=(id('rcvType')?.value||'').trim();
+  if(!q||q<=0){alert('请填写验收合格数量');return}
+  if(!rcvType){alert('请选择入库类型（暂估或正式）');return}
+  const body={qualified_qty:q,is_est:rcvType=='est'?1:0};
+  const r=await api(`/receivings/${rid}/complete`,{method:'POST',body:JSON.stringify(body)});
+  if(r.success)alert(`✅ 已提交验收入库审批（${rcvType=='est'?'🟠暂估':'🟢正式'}），审批通过后自动增加库存`);else alert(r.error||'入库失败');
+  loadReceivings();loadOrders();loadInventory();
+}
 async function submitBatchRcv(rid,n){
+  const rcvType=(id('rcvType')?.value||'').trim();
+  if(!rcvType){alert('请选择入库类型（暂估或正式）');return}
   const items=[];
   for(let i=0;i<n;i++){
     const inp=id('rcvQ'+i);if(!inp)continue;
     items.push({quantity:parseFloat(inp.value)||0});
   }
-  const r=await api(`/receivings/${rid}/complete`,{method:'POST',body:JSON.stringify({items})});
-  if(r.success){alert('✅ '+(r.message||'批量入库完成'));closeMod();loadReceivings();loadDashboard()}
+  if(!items.length||items.every(x=>!x.quantity)){alert('请至少填写一项验收数量');return}
+  const r=await api(`/receivings/${rid}/complete`,{method:'POST',body:JSON.stringify({items,is_est:rcvType=='est'?1:0})});
+  if(r.success){alert(`✅ ${r.message||'批量入库完成'}（${rcvType=='est'?'🟠暂估':'🟢正式'}）`);closeMod();loadReceivings();loadDashboard()}
   else alert(r.error||'入库失败');
 }
 async function loadCredits(){const c=await api('/credits');id('creditsTable').innerHTML=groupRnder(c, r=>r.created_at,['编号','内容','金额','状态','驳回'],r=>`<td><b>${esc(r.credit_no)}</b></td><td>${esc(r.item_name)}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}</td>${rejCell(r)}`)}
