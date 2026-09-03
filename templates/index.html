@@ -4056,7 +4056,7 @@ async function showForm(type){
   } else if(type=='payment'){
     id('dmTitle').textContent='💰 付款申请';
     api('/contracts').then(cs=>{const el=id('fPayContract');if(el)el.innerHTML='<option value="">请选择执行中合同</option>'+cs.filter(x=>x.status=='执行中').map(x=>`<option value="${x.id}">${esc(x.contract_no)} · ${esc(x.supplier)}</option>`).join('')});
-    api('/orders').then(os=>{const el=id('fPayOrder');if(el)el.innerHTML='<option value="">请选择已入库订单</option>'+os.filter(x=>['已入库','已核销','已完成'].includes(x.status)).map(x=>`<option value="${x.id}">${esc(x.order_no)} · ${esc(x.item_name)} · ¥${(x.total_amount||0).toFixed(0)}</option>`).join('')});
+    api('/orders').then(os=>{const el=id('fPayOrder');if(el)el.innerHTML='<option value="">请选择已入库订单</option>'+os.filter(x=>['已入库','已核销','已完成','全部已验收'].includes(x.status)).map(x=>`<option value="${x.id}">${esc(x.order_no)} · ${esc(x.item_name)} · ¥${(x.total_amount||0).toFixed(0)}</option>`).join('')});
     id('dmBody').innerHTML=`
       <div style="font-size:9px;color:#e74c3c;margin-bottom:4px">* 为必填项</div>
       <div class="fr"><div class="fg"><label class="fl2">付款事由 *</label><input class="fc" id="fPayReason" placeholder="如: 结算5月办公用品采购款"></div>
@@ -4467,7 +4467,7 @@ async function loadInvoicePage(){
   const [inv,orders]=await Promise.all([api('/invoices'),api('/orders')]);
   id('invoiceTable').innerHTML=rnder(inv,['invoice_no','supplier','order_ids','total_amount','status'],['发票号','供应商','关联单数','金额','状态'],
     x=>`<td><b>${esc(x.invoice_no)}</b></td><td>${esc(x.supplier)}</td><td>${(x.order_ids||'').split(',').filter(Boolean).length}单</td><td>¥${(x.total_amount||0).toFixed(0)}</td><td>${tag(x.status)}</td>`);
-  const can=orders.filter(o=>o.trade_mode=='货到付款'&&['已入库','已挂账'].includes(o.status));
+  const can=orders.filter(o=>o.trade_mode=='货到付款'&&['已入库','已挂账','全部已验收'].includes(o.status));
   id('invoiceMergeBox').innerHTML=can.length?
     `<div style="padding:4px 0">勾选订单合并开票:</div><div id="invMergeList" style="max-height:180px;overflow-y:auto">${can.map(o=>`<div style="display:flex;gap:4px;align-items:center;padding:2px 0;border-bottom:1px solid var(--b)">
       <input type="checkbox" class="invChk" value="${o.id}"><span style="flex:1">${esc(o.order_no)} ${esc(o.item_name)}</span><span>${esc(o.supplier)}</span><span style="color:#999">¥${(o.total_amount||0).toFixed(0)}</span></div>`).join('')}</div>
