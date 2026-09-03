@@ -983,8 +983,8 @@ function initApp(){
 }
 function buildNav(){
   const role=ME.role;
-  // V11.66: 界面统一 — 业务菜单全部显示(权限靠后端数据过滤兜底), 仅系统配置按管理员显示
-  // 无权限页面: 由 sw() 拦截显示提示(见 sw 函数)
+  // V11.201: 菜单按岗位分界 — 只显示该角色有权限的板块(与 __pageAllowed 同一矩阵)
+  // 岗位矩阵: 采购员=采购+入库进度+库存查看; 财务=财务往来; 员工=申请(自己); 库管/部门负责人=仓储; 领导/管理员全见
   const groups=[
     ['工作台',[['dashboard','📊','工作台']]],
     ['采购管理',[['prequests','📝','采购申请'],['inquiries','🔍','三方询价'],['orders','📋','采购订单'],['contracts','📄','合同管理'],['suppliers','🏢','供应商']]],
@@ -993,8 +993,11 @@ function buildNav(){
     ['审批中心',[['approvals','✅','审批中心']]],
     ['报表中心',[['reports','📊','报表中心']]],
   ];
+  // V11.201: 过滤无权限的菜单项(空组不显示); 审批中心/工作台/报表全员可进(数据按角色过滤)
   let html=groups.map((g,gi)=>{
-    const items=g[1].map(i=>`<div class="si si-sub" onclick="sw('${i[0]}')">${i[1]}${i[2]}</div>`).join('');
+    const items=g[1].filter(i=>i[0]=='dashboard'||i[0]=='approvals'||i[0]=='reports'||__pageAllowed(i[0]))
+      .map(i=>`<div class="si si-sub" onclick="sw('${i[0]}')">${i[1]}${i[2]}</div>`).join('');
+    if(!items)return '';
     return `<div class="si-grp" onclick="toggleGrp(this,${gi})">${g[0]}<span class="arr" style="margin-left:auto">▶</span></div><div class="grp-body" id="grp${gi}">${items}</div>`;
   }).join('');
   if(ME.can_config){html+=`<div class="sl">系统配置</div><div class="si si-sub" onclick="sw('feishu')">✈️飞书</div><div class="si si-sub" onclick="sw('dingtalk')">💬钉钉</div><div class="si si-sub" onclick="sw('system')">⚙️系统设置</div>`}
@@ -1145,10 +1148,14 @@ function __pageRoles(name){
   const cfg={'feishu':'系统管理员','dingtalk':'系统管理员','system':'系统管理员'};
   if(cfg[name])return cfg[name];
   const m={
-    'inquiries':'采购员、分管领导、总经理、系统管理员',
-    'orders':'采购员、分管领导、总经理、系统管理员',
-    'contracts':'采购员、分管领导、总经理、系统管理员',
+    // V11.201 岗位矩阵: 采购员=采购链(申请/询价/订单/合同/供应商)+入库进度+库存查看
+    'prequests':'采购员、分管领导、总经理、系统管理员、员工、财务',
+    'inquiries':'采购员、分管领导、总经理、系统管理员、财务',
+    'orders':'采购员、分管领导、总经理、系统管理员、财务',
+    'contracts':'采购员、分管领导、总经理、系统管理员、财务',
     'suppliers':'采购员、分管领导、总经理、系统管理员',
+    'receivings':'采购员、库管员、部门负责人、财务、分管领导、总经理、系统管理员',
+    'inventory':'采购员、库管员、部门负责人、财务、分管领导、总经理、系统管理员',
     'requisitions':'库管员、部门负责人、分管领导、总经理、系统管理员',
     'returns':'库管员、部门负责人、分管领导、总经理、系统管理员',
     'counts':'库管员、分管领导、总经理、系统管理员',
@@ -1157,6 +1164,8 @@ function __pageRoles(name){
     'settlements':'财务、分管领导、总经理、系统管理员',
     'invoices':'财务、分管领导、总经理、系统管理员',
     'ledger':'财务、分管领导、总经理、系统管理员',
+    'approvals':'采购员、库管员、部门负责人、财务、分管领导、总经理、系统管理员、员工',
+    'reports':'采购员、库管员、部门负责人、财务、分管领导、总经理、系统管理员',
   };
   return m[name]||'';
 }
@@ -1164,10 +1173,14 @@ function __pageAllowed(name){
   const cfg={'feishu':1,'dingtalk':1,'system':1};
   if(cfg[name])return !!(ME.can_config);
   const m={
-    'inquiries':['采购员','分管领导','总经理','系统管理员'],
-    'orders':['采购员','分管领导','总经理','系统管理员'],
-    'contracts':['采购员','分管领导','总经理','系统管理员'],
+    // V11.201 岗位矩阵(与 __pageRoles 同步): 写操作按岗位, 审批中心/工作台/报表全员
+    'prequests':['采购员','分管领导','总经理','系统管理员','员工','财务'],
+    'inquiries':['采购员','分管领导','总经理','系统管理员','财务'],
+    'orders':['采购员','分管领导','总经理','系统管理员','财务'],
+    'contracts':['采购员','分管领导','总经理','系统管理员','财务'],
     'suppliers':['采购员','分管领导','总经理','系统管理员'],
+    'receivings':['采购员','库管员','部门负责人','财务','分管领导','总经理','系统管理员'],
+    'inventory':['采购员','库管员','部门负责人','财务','分管领导','总经理','系统管理员'],
     'requisitions':['库管员','部门负责人','分管领导','总经理','系统管理员'],
     'returns':['库管员','部门负责人','分管领导','总经理','系统管理员'],
     'counts':['库管员','分管领导','总经理','系统管理员'],
@@ -1176,6 +1189,8 @@ function __pageAllowed(name){
     'settlements':['财务','分管领导','总经理','系统管理员'],
     'invoices':['财务','分管领导','总经理','系统管理员'],
     'ledger':['财务','分管领导','总经理','系统管理员'],
+    'approvals':['采购员','库管员','部门负责人','财务','分管领导','总经理','系统管理员','员工'],
+    'reports':['采购员','库管员','部门负责人','财务','分管领导','总经理','系统管理员'],
   };
   const rl=m[name];
   if(!rl)return true;
@@ -2822,12 +2837,6 @@ async function loadReceivings(){
       const stTag = x.status=='待入库'&&isAuto?'<span class="tag" style="background:#e3f2fd;color:#1565c0">📦 到货提醒</span>'
                   : x.status=='入库中'?'<span class="tag" style="background:#fff8e1;color:#f57f17">🚚 入库中</span>'
                   : tag(x.status);
-      const ops=`<button class="lnk" onclick="showRcvDetail(${x.id})">查看详情</button>${x.is_est&&!x.invoice_no?` <button class="lnk" style="color:var(--o);font-weight:600" onclick="showInvMatch(${x.id},'${esc(x.receive_no)}')">🧾 发票核对</button>`:''}`;
-      const ops2= x.status=='待入库'&&isAuto?`<button class="lnk" style="color:var(--s);font-weight:600" onclick="confirmArrived(${x.id})">✅ 确认到货</button>`
-                : x.status=='待入库'?`<button class="lnk" style="color:var(--s);font-weight:600" onclick="completeRcv(${x.id},${x.total_qty||x.quantity},${x.order_id||0})">📤 提交审批</button>`
-                : x.status=='入库中'?`<button class="lnk" style="color:var(--s);font-weight:600" onclick="completeRcv(${x.id},${x.total_qty||x.quantity},${x.order_id||0})">📤 提交审批</button>`
-                : (x.status=='草稿'&&(x.reject_count||0)>0)?`<button class="lnk" style="color:var(--s);font-weight:600" onclick="resubmitDoc('receiving',${x.id},'入库单','${esc(x.receive_no)}')">🔄 再次提交审批</button>`
-                : x.status=='待审批'?'<span style="color:#b08900;font-size:8px">审批中</span>':'';
       // V11.54/V11.153: 暂估/红冲/正式标签(有发票号=已红冲优先; 无发票号且is_est=暂估; 都无=正式)
       const estTag = x.invoice_no?'<span class="tag" style="background:#e8f5e9;color:#2e7d32">已红冲</span>'
                    : x.is_est?'<span class="tag" style="background:#fff3e0;color:#e65100">暂估</span>'
@@ -2837,11 +2846,21 @@ async function loadReceivings(){
       const cntTag = x.item_count?` <span class="tag" style="background:#e8f0fe;color:#1a6bff">${x.item_count}项</span>`:'';
       const urgTag = x.urgent?' <span style="color:#e74c3c;font-weight:700">加急</span>':'';
       const qtyTxt = `${x.total_qty||x.quantity}${esc(x.unit||'')}`;
+      // V11.201 岗位分界: 库房操作(确认到货/提交审批/作废/修改/删除/撤回)仅 库管员/部门负责人/领导/管理员;
+      // 采购员/财务在入库页仅 查看详情/发票核对(暂估红冲)/下载
+      const isWarehouse=['系统管理员','库管员','部门负责人','分管领导','总经理'].includes(ME.role);
+      const isOwner=(ME.role=='系统管理员'||(x.inspector&&ME.name==x.inspector));
+      const ops=`<button class="lnk" onclick="showRcvDetail(${x.id})">查看详情</button>${x.is_est&&!x.invoice_no?` <button class="lnk" style="color:var(--o);font-weight:600" onclick="showInvMatch(${x.id},'${esc(x.receive_no)}')">🧾 发票核对</button>`:''}`;
+      const ops2= isWarehouse&&x.status=='待入库'&&isAuto?`<button class="lnk" style="color:var(--s);font-weight:600" onclick="confirmArrived(${x.id})">✅ 确认到货</button>`
+                : isWarehouse&&x.status=='待入库'?`<button class="lnk" style="color:var(--s);font-weight:600" onclick="completeRcv(${x.id},${x.total_qty||x.quantity},${x.order_id||0})">📤 提交审批</button>`
+                : isWarehouse&&x.status=='入库中'?`<button class="lnk" style="color:var(--s);font-weight:600" onclick="completeRcv(${x.id},${x.total_qty||x.quantity},${x.order_id||0})">📤 提交审批</button>`
+                : isWarehouse&&x.status=='草稿'&&(x.reject_count||0)>0?`<button class="lnk" style="color:var(--s);font-weight:600" onclick="resubmitDoc('receiving',${x.id},'入库单','${esc(x.receive_no)}')">🔄 再次提交审批</button>`
+                : x.status=='待审批'?'<span style="color:#b08900;font-size:8px">审批中</span>':'';
       return `<td><b>${esc(x.receive_no)}</b></td><td>${deptTag}</td><td>${esc(x.item_name)}${cntTag}${urgTag}</td><td>${qtyTxt}</td>
     <td><span class="tag ${x.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(x.trade_mode||'货到付款')}</span></td><td>${stTag}${estTag}</td>
     ${rejCell(x)}
     <td>${ops}${ops2}
-      <button class="lnk" style="color:#b08900" onclick="editDoc('receiving',${x.id},'入库单')">✏️修改</button> <button class="lnk" onclick="window.open('/api/receivings/${x.id}/download','_blank')">⬇️ 下载</button> ${x.status=='已入库'?`<button class="lnk" style="color:var(--d)" onclick="voidRcv(${x.id})">作废</button>`:''} ${(x.status=='待审批'||x.status=='已通过'||x.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('receiving',${x.id},'入库单')">↩️撤回</button>`:''}${(x.status=='待审批'||x.status=='待入库'||x.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('receiving',${x.id},'入库单')">🗑️删除</button>`:''}</td>`;
+      ${isWarehouse?`<button class="lnk" style="color:#b08900" onclick="editDoc('receiving',${x.id},'入库单')">✏️修改</button>`:''} <button class="lnk" onclick="window.open('/api/receivings/${x.id}/download','_blank')">⬇️ 下载</button> ${isWarehouse&&x.status=='已入库'?`<button class="lnk" style="color:var(--d)" onclick="voidRcv(${x.id})">作废</button>`:''} ${isWarehouse&&(x.status=='待审批'||x.status=='已通过'||x.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('receiving',${x.id},'入库单')">↩️撤回</button>`:''}${isWarehouse&&(x.status=='待审批'||x.status=='待入库'||x.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('receiving',${x.id},'入库单')">🗑️删除</button>`:''}</td>`;
     })}
 // V11.54: 发票核对红冲弹窗(采购对暂估入库单填发票号/金额 → 红冲转正式)
 async function showInvMatch(rid, rno){
@@ -3104,6 +3123,7 @@ async function loadInventory(cat){
   }
   const arr=[...i].sort((a,b)=>(a[invSortKey]??0)>(b[invSortKey]??0)?invSortDir:-invSortDir);
   const showP=canSeePrice();
+  const canEditInv=['系统管理员','分管领导','总经理'].includes(ME.role)||ME.can_config;  // V11.201: 库存修改仅管理员/领导, 采购员只读
   let h='<table><tr><th onclick="invSort(\'id\')" style="cursor:pointer">序号</th><th>供应商</th><th onclick="invSort(\'item_name\')" style="cursor:pointer">物料名称</th><th>规格型号</th><th>单位</th><th onclick="invSort(\'quantity\')" style="cursor:pointer" title="当前库存量(入库增加/出库扣减)">剩余库存量</th>';
   if(showP)h+='<th onclick="invSort(\'price\')" style="cursor:pointer">不含税单价</th><th>税率</th><th>含税单价</th><th onclick="invSort(\'total_taxed\')" style="cursor:pointer">合计</th>';
   h+='<th>备注</th><th>预警</th><th>溯源</th></tr>';
@@ -3114,7 +3134,7 @@ async function loadInventory(cat){
     if(showP)h+=`<td>¥${(r.price||0).toFixed(2)}</td><td>${r.tax_rate||13}%</td><td>¥${(r.price_taxed||0).toFixed(2)}</td><td>¥${(r.total_taxed||0).toFixed(2)}</td>`;
     h+=`<td>${esc(r.remark||'')}</td>
       <td>${low?'<span class="tag" style="background:#e74c3c;color:#fff">'+((r.quantity||0)<=0?'缺货':'预警')+'</span>':over?'<span class="tag" style="background:#f39c12;color:#fff">超储</span>':'<span class="tag" style="background:#27ae60;color:#fff">正常</span>'}</td>
-      <td>${low?`<button class="lnk" style="color:var(--p);font-weight:600" onclick="replenishInv(${r.id})">🛒 补货</button>`:''} <button class="lnk" style="color:#b08900" onclick="editDoc('inventory',${r.id},'库存物资')">✏️修改</button> <button class="lnk" style="color:var(--s)" onclick="traceInv(${r.id})">🔍 溯源</button></td></tr>`;
+      <td>${low?`<button class="lnk" style="color:var(--p);font-weight:600" onclick="replenishInv(${r.id})">🛒 补货</button>`:''} ${canEditInv?`<button class="lnk" style="color:#b08900" onclick="editDoc('inventory',${r.id},'库存物资')">✏️修改</button>`:''} <button class="lnk" style="color:var(--s)" onclick="traceInv(${r.id})">🔍 溯源</button></td></tr>`;
   });
   id('inventoryTable').innerHTML=h||'<div style="padding:8px;color:#999">暂无库存数据</div>';
 }

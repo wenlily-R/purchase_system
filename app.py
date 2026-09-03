@@ -222,8 +222,10 @@ def login_required(f):
     return wrap
 
 def can_manage_config():
-    """系统配置管理权限: 系统管理员 或 sys_config.config_users 里指定的用户名(逗号分隔)"""
-    if session.get('user_role') == '系统管理员':
+    """系统配置管理权限: 系统管理员 / 分管领导(敏感业务写操作如库存编辑/单据删除/撤回/系统设置)
+    或 sys_config.config_users 里指定的用户名(逗号分隔, 仅限非敏感的管理协作账号)。
+    V11.201 收紧: 采购员等业务角色不再因在 config_users 而获得管理员级写权限。"""
+    if session.get('user_role') in ('系统管理员', '分管领导'):
         return True
     extra = cfg_get('config_users', '')
     return session.get('username') in [x.strip() for x in extra.split(',') if x.strip()]
@@ -9791,6 +9793,10 @@ def api_doc_update(biz_type, bid):
     - 审批中/已通过单据: 编辑后回到待审批重新走流程(撤回原审批)"""
     if not can_manage_config():
         return jsonify({'error': '仅系统管理员可编辑单据'}), 403
+    # V11.201 权限收紧: 库存修改属敏感业务写操作 — 仅 系统管理员/分管领导/总经理 可改, 采购员/财务/员工只读
+    # (即使采购员被加进 config_users 也在此拦截, 库存只读是硬边界)
+    if biz_type == 'inventory' and session.get('user_role') not in ('系统管理员', '分管领导', '总经理'):
+        return jsonify({'error': '无权限：库存数据仅管理员/分管领导可修改，采购员只读'}), 403
     d = request.json or {}
     if biz_type not in _DELETE_TABLE:
         return jsonify({'error': f'不支持的编辑类型: {biz_type}'}), 400
@@ -9922,17 +9928,29 @@ def api_doc_delete(biz_type, bid):
     - 已审批通过且已影响库存(入库已入库/出库已出库)的单据: 需先作废回滚库存, 不可直接删
     - 有下游单据引用(订单引用申请/入库引用订单/合同引用订单)的: 禁止删除
     - 级联清理: 明细行/审批实例/钉钉实例/库存流水"""
+    conn = db()
     if not can_manage_config():
-        return jsonify({'error': '仅系统管理员可删除单据'}), 403
+        # V11.201: 单据提交人本人可删除自己的 草稿/已驳回 单据(未进审批流/无下游), 其余仅管理员
+        _me = conn.execute("SELECT * FROM users WHERE id=?", (session.get('user_id', 0),)).fetchone()
+        if _me:
+            _who = find_doc_submitter(biz_type, bid)
+            _tbl = _DELETE_TABLE.get(biz_type, '')
+            _st = ''
+            if _tbl:
+                _rw = conn.execute(f"SELECT status FROM {_tbl} WHERE id=?", (bid,)).fetchone()
+                if _rw: _st = _rw['status'] or ''
+            if not (_who and _who.get('name') == _me['name'] and _st in ('草稿', '已驳回')):
+                return jsonify({'error': '仅单据提交人本人（草稿/已驳回）或管理员可删除'}), 403
+        else:
+            return jsonify({'error': '仅系统管理员可删除单据'}), 403
     d = request.json or {}
     if not d.get('confirm'):
-        return jsonify({'error': '请确认删除(confirm=1)'}), 400
+        conn.close(); return jsonify({'error': '请确认删除(confirm=1)'}), 400
     if biz_type not in _DELETE_TABLE:
-        return jsonify({'error': f'不支持的删除类型: {biz_type}'}), 400
+        conn.close(); return jsonify({'error': f'不支持的删除类型: {biz_type}'}), 400
     table = _DELETE_TABLE[biz_type]
     no_col = _DELETE_NO_COL[biz_type]
     biz = _DELETE_BIZTYPE[biz_type]
-    conn = db()
     row = conn.execute(f"SELECT * FROM {table} WHERE id=?", (bid,)).fetchone()
     if not row:
         conn.close(); return jsonify({'error': '单据不存在'}), 404
