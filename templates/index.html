@@ -618,6 +618,20 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     </div>
     <div id="sigMsg" style="font-size:10px;color:#27ae60;margin-top:4px"></div>
   </div></div>
+  <div class="card" id="noticeMgrCard" style="display:none"><div class="ch"><h3>📢 公告管理（V11.196）</h3><button class="btn btn-p btn-sm" onclick="showNoticeForm(0)">➕ 新建公告</button></div>
+    <div class="cb" style="font-size:9px;line-height:1.7">
+      <div style="color:#666;margin-bottom:4px">公告发布后在工作台「📢 系统公告」展示（置顶优先）。可按发布范围限定可见员工、设置生效/失效时间（到期自动隐藏）。发布人：系统管理员 + 下方授权的用户。</div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px;background:#f6f8fb;padding:4px 8px;border-radius:4px">
+        <b style="color:#16325c">发布授权：</b>
+        <select id="ntPubUsers" multiple size="1" style="min-width:200px;font-size:10px" title="可授权用户(按住Ctrl多选)"></select>
+        <button class="btn btn-o btn-sm" onclick="saveNoticePublishers()">💾 保存授权</button>
+        <span style="color:#999;font-size:8px">（系统管理员始终可发布；勾选后该用户登录也见公告管理）</span>
+      </div>
+      <div id="noticeListBox"><div class="loading">加载中...</div></div>
+      <div style="margin-top:8px"><b>📋 操作日志</b>
+        <div id="noticeLogsBox" style="margin-top:4px;max-height:140px;overflow:auto;font-size:8px;color:#666"></div>
+      </div>
+    </div></div>
 </div>
 <div class="page" id="pfeishu">
   <h2>✈️ 飞书对接</h2>
@@ -812,6 +826,34 @@ function toast(msg){
     document.body.appendChild(t)}
   t.textContent=msg;t.style.opacity='1';
   clearTimeout(t._tm);t._tm=setTimeout(()=>{t.style.opacity='0'},2500);
+}
+// V11.196: 工作台公告展示(置顶优先+最新; 后端已按范围/有效期过滤; 空→占位)
+let _NT_CACHE=[];
+async function loadNotices(){
+  const dn=id('dashNotice');
+  if(!dn)return;
+  try{_NT_CACHE=await api('/notices',{noCache:true})}catch(e){_NT_CACHE=[]}
+  if(!_NT_CACHE.length){
+    dn.innerHTML=`<div class="notif-empty"><span class="ic">📢</span><span>暂无系统公告 — 系统运行正常，重要通知将在此发布</span></div>`;
+    return;
+  }
+  dn.innerHTML=_NT_CACHE.slice(0,6).map((n,i)=>`
+    <div style="display:flex;gap:8px;align-items:flex-start;padding:5px 2px;border-bottom:${i<Math.min(_NT_CACHE.length,6)-1?'1px dashed #e8edf4':'none'};cursor:pointer" onclick="showNoticeDetail(${n.id})" title="点击查看全文">
+      ${n.pinned?`<span style="background:#ff5b4d;color:#fff;font-size:8px;padding:1px 5px;border-radius:3px;flex-shrink:0;margin-top:2px">置顶</span>`:`<span style="color:#d9a514;font-size:10px;flex-shrink:0;margin-top:1px">📢</span>`}
+      <div style="flex:1;min-width:0">
+        <div style="font-size:11px;font-weight:600;color:#16325c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(n.title)}</div>
+        <div style="font-size:8px;color:#aab3c2;margin-top:1px">${esc(n.publisher||'')}${n.publish_at?' · '+(n.publish_at||'').slice(0,16):''}</div>
+      </div>
+    </div>`).join('');
+}
+function showNoticeDetail(id){
+  const n=_NT_CACHE.find(x=>x.id===id);
+  if(!n)return;
+  // 内容安全: 只渲染允许的富文本(去除script/iframe等); 图片放行 /uploads/
+  let safe=(n.content||'').replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<iframe[\s\S]*?<\/iframe>/gi,'').replace(/on\w+\s*=/gi,'');
+  showDetail('📢 '+n.title,`<div style="font-size:10px;color:#888;margin-bottom:6px">发布人：${esc(n.publisher||'')} ｜ 发布时间：${esc((n.publish_at||n.created_at||'').slice(0,16))}${n.expire_at?` ｜ 有效期至：${esc((n.expire_at||'').slice(0,10))}`:''}</div>
+    <div style="font-size:12px;line-height:1.8;color:#333;word-break:break-all">${safe||'（无正文）'}</div>`,
+    `<button class="btn btn-o" onclick="closeMod()">关闭</button>`);
 }
 // V11.159: 顶部消息通知(铃铛+未读角标+下拉列表) — 复用 /api/notifications
 async function loadNotif(){
@@ -1252,9 +1294,8 @@ async function loadDashboard(){
     }
     // 超期未审批(V7.0)
     loadOverdue();
-    // ⑥ 系统公告(如无公告数据 → 占位卡片)
-    const dn=id('dashNotice');
-    if(dn)dn.innerHTML=`<div class="notif-empty"><span class="ic">📢</span><span>暂无系统公告 — 系统运行正常，重要通知将在此发布</span></div>`;
+    // ⑥ 系统公告(V11.196: 从公告表读取, 置顶优先+最新; 按发布范围/有效期过滤在后端; 空→占位)
+    loadNotices();
     // ⑦ 消息通知角标
     loadNotif();
   }catch(e){}
@@ -4370,8 +4411,153 @@ async function loadSystem(){
     if(id('techPubUrl')){try{const pu=await api('/public-url',{noCache:true});id('techPubUrl').value=(pu&&pu.url)?pu.url:'(未获取到公网地址, 检查隧道)'}catch(e){id('techPubUrl').value='(未获取到公网地址)'}}
   }catch(e){}
   loadTpls();loadSysLogs();loadSecUsers();loadConfigUsers();loadApprConfigCheck();loadApprovalFlowEdit();
+  // V11.196: 公告管理(管理员/获授权用户可见)
+  loadNoticeMgmt();
   // V11.27: 预录签名板初始化+状态加载
   setTimeout(()=>{initSigPad2();loadSigInfo()},200);
+}
+// ================= V11.196 公告管理 =================
+async function loadNoticeMgmt(){
+  const card=id('noticeMgrCard');
+  if(!card)return;
+  // 权限: 后端/manage 403 拦截; 前端仅 管理员/获授权 显示卡片
+  const pubNow=await api('/settings').then(s=>s.notice_publishers||'').catch(()=>'');
+  const allowed=(ME.role=='系统管理员')||(pubNow.split(',').map(x=>x.trim()).includes(ME.name));
+  card.style.display=allowed?'':'none';
+  if(!allowed)return;
+  loadNoticeList();
+  loadNoticePubUsers(pubNow);
+  loadNoticeLogs();
+}
+async function loadNoticeList(){
+  const box=id('noticeListBox');if(!box)return;
+  try{
+    const rows=await api('/notices/manage',{noCache:true});
+    window._NT_MGMT=rows||[];
+    if(!rows.length){box.innerHTML='<div style="color:#999">暂无公告 — 点击右上角「➕ 新建公告」发布第一条</div>';return}
+    box.innerHTML='<table class="tb" style="font-size:9px"><thead><tr><th>ID</th><th>标题</th><th>状态</th><th>范围</th><th>置顶</th><th>生效</th><th>失效</th><th>发布人/时间</th><th>操作</th></tr></thead><tbody>'+rows.map(n=>{
+      const scopeTxt=n.scope=='all'?'全员':(n.scope||'').startsWith('roles:')?('角色:'+n.scope.split(':')[1]):(n.scope||'').startsWith('users:')?('指定:'+n.scope.split(':')[1]):n.scope;
+      const stColor=n.status=='已发布'?'#2e7d32':n.status=='草稿'?'#b7791f':'#999';
+      return `<tr>
+        <td>${n.id}</td>
+        <td style="max-width:180px"><b>${esc(n.title)}</b></td>
+        <td><span style="color:${stColor};font-weight:600">${n.status}</span></td>
+        <td>${esc(scopeTxt)}</td>
+        <td>${n.pinned?'<span style="color:#ff5b4d">📌</span>':''}</td>
+        <td>${esc((n.effective_at||'立即').slice(0,10))}</td>
+        <td>${esc(n.expire_at?(n.expire_at).slice(0,10):'永久')}</td>
+        <td>${esc(n.publisher||'')}<br><span style="color:#aaa;font-size:7px">${esc((n.publish_at||n.created_at||'').slice(0,16))}</span></td>
+        <td style="white-space:nowrap">
+          <button class="lnk" onclick="showNoticeForm(${n.id})">✏️编辑</button>
+          ${n.status=='已发布'?`<button class="lnk" style="color:#e67e22" onclick="noticeAct(${n.id},'revoke')">撤销</button>`:''}
+          ${n.status!='已发布'?`<button class="lnk" style="color:#16a34a" onclick="showNoticeForm(${n.id},true)">发布</button>`:''}
+          <button class="lnk" style="color:#b7791f" onclick="noticeAct(${n.id},'pin')">${n.pinned?'取消置顶':'置顶'}</button>
+          <button class="lnk" style="color:var(--d)" onclick="noticeAct(${n.id},'delete')">删除</button>
+        </td></tr>`}).join('')+'</tbody></table>';
+  }catch(e){box.innerHTML='<div style="color:#e74c3c">'+(e.error||e.message||'加载失败')+'</div>'}
+}
+async function loadNoticePubUsers(cur){
+  const sel=id('ntPubUsers');if(!sel)return;
+  try{
+    const us=await api('/users');
+    const curList=(cur||'').split(',').map(x=>x.trim()).filter(Boolean);
+    sel.innerHTML=us.filter(u=>u.is_active==1&&u.role!='系统管理员').map(u=>`<option value="${esc(u.name)}" ${curList.includes(u.name)?'selected':''}>${esc(u.name)}(${esc(u.role)})</option>`).join('')||'<option value="">无可授权用户</option>';
+  }catch(e){}
+}
+async function saveNoticePublishers(){
+  const sel=id('ntPubUsers');
+  const names=[...sel.selectedOptions].map(o=>o.value);
+  const r=await api('/settings/notice-publishers',{method:'POST',body:JSON.stringify({publishers:names.join(',')})});
+  if(r.success){toast('✅ 公告发布授权已保存');loadNoticeMgmt()}
+  else alert(r.error||'保存失败');
+}
+function showNoticeForm(id,doPublish){
+  if(__guardOpen('nf'+id))return;
+  const n=id?_NT_MGMT.find(x=>x.id===id):null;
+  window._ntEditId=id||0;window._ntDoPub=!!doPublish;
+  // 富文本编辑器: 内容区 + 图片上传按钮(插入 /uploads/ 图片标签)
+  showDetail((doPublish&&n)?`🚀 发布公告确认`:'📢 '+((n?'修改':'新建')+'公告'),
+    `<div style="font-size:11px;line-height:1.8">
+      ${doPublish&&n?`<p style="background:#fff8e1;border:1px solid #f0d675;padding:6px 8px;border-radius:4px;font-size:10px">确认发布「<b>${esc(n.title)}</b>」？发布后立即在工作台对所有可见员工展示。</p>`:''}
+      <div class="fg"><label class="fl2">标题 *</label><input class="fc" id="ntTitle" value="${esc(n?.title||'')}" placeholder="公告标题"></div>
+      <div class="fg"><label class="fl2">发布范围 *</label><select class="fc" id="ntScope" onchange="ntScopeTip()">
+        <option value="all" ${n?.scope=='all'||!n?'selected':''}>全员可见</option>
+        <option value="roles:分管领导,系统管理员" ${n?.scope=='roles:分管领导,系统管理员'?'selected':''}>仅领导层(分管领导/管理员)</option>
+        <option value="roles:采购员,财务" ${n?.scope=='roles:采购员,财务'?'selected':''}>仅采购员+财务</option>
+        <option value="users:" ${(n?.scope||'').startsWith('users:')?'selected':''}>指定员工(下方填名字,逗号分隔)</option>
+      </select></div>
+      <div class="fg" id="ntScopeUsersBox" style="display:${(n?.scope||'').startsWith('users:')?'flex':'none'}"><label class="fl2">指定员工</label><input class="fc" id="ntScopeUsers" value="${esc((n?.scope||'').startsWith('users:')?n.scope.split(':')[1]:'')}" placeholder="如: 温丽,穆娇,邢果"></div>
+      <div class="fr">
+        <div class="fg"><label class="fl2">生效时间</label><input class="fc" type="datetime-local" id="ntEff" value="${ntToLocal(n?.effective_at)}"></div>
+        <div class="fg"><label class="fl2">失效时间(空=永久)</label><input class="fc" type="datetime-local" id="ntExp" value="${ntToLocal(n?.expire_at)}"></div>
+      </div>
+      <div class="fg"><label class="fl2" style="align-self:flex-start">公告内容</label>
+        <div style="flex:3"><textarea id="ntContent" rows="6" style="width:100%;font-size:11px;padding:6px;border:1px solid var(--b);border-radius:4px;line-height:1.6" placeholder="公告正文（支持换行；图片请点下方按钮插入）">${esc(n?.content||'')}</textarea>
+        <div style="display:flex;gap:6px;align-items:center;margin-top:4px;font-size:9px;color:#666">
+          <label style="cursor:pointer;background:#f0f4fa;padding:3px 8px;border-radius:4px">🖼️ 插入图片<input type="file" accept="image/*" multiple style="display:none" onchange="ntUpImg(this)"></label>
+          <span id="ntImgHint"></span>
+          <span style="margin-left:auto"><label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="ntPinned" ${n?.pinned?'checked':''}> 📌 置顶展示</label></span>
+        </div></div>
+      </div>
+    </div>`,
+    `<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="ntSave(false)">💾 存草稿</button><button class="btn btn-p" style="background:#16a34a;border-color:#16a34a" onclick="ntSave(true)">${doPublish?'🚀 确认发布':'🚀 保存并发布'}</button>`);
+}
+function ntToLocal(s){
+  if(!s)return '';
+  let t=String(s).replace(' ','T');
+  if(t.length<=10)t+='T00:00';
+  return t.slice(0,16);
+}
+function ntScopeTip(){
+  const box=id('ntScopeUsersBox');if(box)box.style.display=(id('ntScope').value.startsWith('users:'))?'flex':'none';
+}
+async function ntUpImg(inp){
+  const files=[...inp.files];if(!files.length)return;
+  const ta=id('ntContent');
+  for(const f of files){
+    const fd=new FormData();fd.append('file',f);
+    try{
+      const up=await fetch('/api/upload',{method:'POST',body:fd,credentials:'include'}).then(r=>r.json());
+      if(up.file_path){
+        ta.value+=(ta.value?'\n':'')+`[图:${up.file_path}]`;
+        id('ntImgHint').textContent='✅ 已插入图片';
+      }else alert('上传失败: '+(up.error||''));
+    }catch(e){alert('上传失败: '+e.message)}
+  }
+  inp.value='';
+}
+async function ntSave(publish){
+  const title=(id('ntTitle')?.value||'').trim();
+  if(!title){alert('请填写公告标题');return}
+  let scope=id('ntScope').value;
+  if(scope.startsWith('users:')){
+    const us=(id('ntScopeUsers')?.value||'').trim();
+    if(!us){alert('请填写指定员工姓名(逗号分隔)');return}
+    scope='users:'+us;
+  }
+  const raw=id('ntContent')?.value||'';
+  // 把 [图:文件名] 占位符转成 <img> 标签(图片展示); 其余纯文本转段落
+  const content=raw.replace(/\[图:([^\]]+)\]/g,(m,f)=>`<img src="/uploads/${esc(f)}" style="max-width:100%;max-height:320px;border-radius:4px;margin:4px 0;display:block" onerror="this.outerHTML='<span style=color:#c0392b>⚠️ 图片缺失:${esc(f)}</span>'">`).split('\n').map(p=>p.trim()?`<p>${esc(p)}</p>`:'').join('');
+  const eff=(id('ntEff')?.value||'').replace('T',' ');
+  const exp=(id('ntExp')?.value||'').replace('T',' ');
+  const body={id:window._ntEditId||0,title,scope,pinned:id('ntPinned')?.checked?1:0,content,effective_at:eff,expire_at:exp,publish:publish||window._ntDoPub};
+  const r=await api('/notices/manage',{method:'POST',body:JSON.stringify(body)});
+  if(r.success){toast('✅ '+r.message);closeMod();loadNoticeList();loadNoticeLogs();loadNotices&&loadNotices()}
+  else alert(r.error||'保存失败');
+}
+async function noticeAct(id,act){
+  const cf=act=='delete'?confirm('确认删除该公告？操作不可恢复。'):act=='revoke'?confirm('确认撤销该公告？撤销后员工将看不到。'):true;
+  if(!cf)return;
+  const r=await api(`/notices/manage/${id}/${act}`,{method:'POST',body:'{}'});
+  if(r.success){toast('✅ '+r.message);loadNoticeList();loadNoticeLogs();loadNotices&&loadNotices()}
+  else alert(r.error||'操作失败');
+}
+async function loadNoticeLogs(){
+  const box=id('noticeLogsBox');if(!box)return;
+  try{
+    const rows=await api('/notices/logs',{noCache:true});
+    box.innerHTML=rows.length?rows.map(l=>`<div>${esc(l.created_at)} ｜ <b>${esc(l.operator)}</b> ${esc(l.action)}《${esc(l.title)}》 ${l.detail?('｜ '+esc(l.detail)):''}</div>`).join('')||'<div style="color:#999">暂无操作记录</div>':'<div style="color:#999">暂无操作记录</div>';
+  }catch(e){box.innerHTML=''}
 }
 async function loadApprConfigCheck(){
   // V5.0: 审批人配置检查 — 每级角色审批人是否有效/绑定通讯录

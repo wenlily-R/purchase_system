@@ -647,6 +647,28 @@ def init_db():
     # 退库审批流配置(首次建库时初始化; 幂等: 已有配置不覆盖)
     if conn.execute("SELECT COUNT(*) FROM approval_flow_config WHERE biz_type='return_request'").fetchone()[0] == 0:
         conn.execute("INSERT INTO approval_flow_config(biz_type,level_no,role,min_amount,max_amount,label) VALUES('return_request',1,'部门负责人',0,1000000,'退库审批-1级')")
+    # ---- V11.196 工作台公告 ----
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS notices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            content TEXT DEFAULT '',        -- 富文本HTML(含内嵌图片引用 /uploads/xxx)
+            scope TEXT DEFAULT 'all',       -- 'all'=全员 | 'roles:分管领导' 按角色 | 'users:温丽,穆娇' 按用户
+            pinned INTEGER DEFAULT 0,       -- 置顶
+            status TEXT DEFAULT '草稿',     -- 草稿/已发布/已撤销
+            publisher TEXT DEFAULT '',      -- 发布人
+            publish_at TEXT DEFAULT '',     -- 发布时间
+            effective_at TEXT DEFAULT '',   -- 生效时间(空=发布即生效)
+            expire_at TEXT DEFAULT '',      -- 失效时间(空=永不过期, 到期自动隐藏)
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            updated_at TEXT DEFAULT (datetime('now','localtime'))
+        );
+        CREATE TABLE IF NOT EXISTS notice_action_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            notice_id INTEGER, title TEXT, action TEXT, operator TEXT,
+            detail TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now','localtime'))
+        );
+    """)
     # ---- V5.1 安全加固: 登录审计/系统元数据(幂等) ----
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS login_attempts (
@@ -8638,6 +8660,147 @@ def api_save_contract_content(cid):
     log(session['user_name'], '编辑合同', f'#{cid} {ct["contract_no"]}')
     return jsonify({'success': True, 'file': fname})
 
+# ---- V11.196 工作台公告: 发布范围/置顶/生效失效/到期自动隐藏/操作留痕 ----
+def _notice_can_manage():
+    """公告管理权限: 系统管理员 或 被授权发布公告的用户(可给分管领导等)"""
+    me_name = session.get('user_name', '')
+    if session.get('user_role') == '系统管理员':
+        return True
+    pub = (cfg_get('notice_publishers') or '').strip()
+    return bool(pub) and me_name in [x.strip() for x in pub.split(',') if x.strip()]
+
+def _notice_visible_sql(conn, me_role, me_name):
+    """公告可见性: 状态=已发布 且 生效时间<=now 且 (失效时间为空 或 >now) 且 范围匹配当前用户"""
+    now_s = now()
+    rows = conn.execute("SELECT * FROM notices WHERE status='已发布' AND (effective_at='' OR effective_at<=?) AND (expire_at='' OR expire_at>?) ORDER BY pinned DESC, publish_at DESC, id DESC",
+                        (now_s, now_s)).fetchall()
+    out = []
+    for r in rows:
+        sc = r['scope'] or 'all'
+        ok = False
+        if sc == 'all':
+            ok = True
+        elif sc.startswith('roles:'):
+            roles = [x.strip() for x in sc.split(':', 1)[1].split(',') if x.strip()]
+            ok = me_role in roles
+        elif sc.startswith('users:'):
+            users = [x.strip() for x in sc.split(':', 1)[1].split(',') if x.strip()]
+            ok = me_name in users
+        else:
+            ok = True
+        if ok:
+            out.append(dict_row(r))
+    return out
+
+@app.route('/api/notices', methods=['GET'])
+@login_required
+def api_notices():
+    """工作台公告列表(仅返回当前用户可见且在有效期内的已发布公告)"""
+    conn = db()
+    me_role = session.get('user_role', '')
+    me_name = session.get('user_name', '')
+    rows = _notice_visible_sql(conn, me_role, me_name)
+    conn.close()
+    return jsonify(rows)
+
+@app.route('/api/notices/manage', methods=['GET'])
+@login_required
+def api_notices_manage():
+    """公告管理列表(全部状态含草稿/已撤销; 仅管理员/授权发布人可见)"""
+    if not _notice_can_manage():
+        return jsonify({'error': '无权限：仅系统管理员或公告发布授权用户可管理公告'}), 403
+    conn = db()
+    rows = conn.execute("SELECT * FROM notices ORDER BY pinned DESC, id DESC").fetchall()
+    conn.close()
+    return jsonify([dict_row(x) for x in rows])
+
+@app.route('/api/notices/manage', methods=['POST'])
+@login_required
+def api_notices_save():
+    """新建/修改公告: draft=True存草稿 | publish=True发布 | 支持富文本HTML+图片/范围/置顶/生效失效"""
+    if not _notice_can_manage():
+        return jsonify({'error': '无权限：仅系统管理员或公告发布授权用户可管理公告'}), 403
+    d = request.json or {}
+    nid = int(d.get('id') or 0)
+    title = (d.get('title') or '').strip()
+    if not title:
+        return jsonify({'error': '公告标题不能为空'}), 400
+    content = d.get('content') or ''
+    scope = d.get('scope') or 'all'
+    # 校验范围格式
+    if not scope.startswith(('all', 'roles:', 'users:')):
+        return jsonify({'error': '发布范围格式错误'}), 400
+    pinned = 1 if d.get('pinned') else 0
+    eff = (d.get('effective_at') or '').strip()
+    exp = (d.get('expire_at') or '').strip()
+    status = '草稿'
+    do_publish = bool(d.get('publish'))
+    if do_publish:
+        # 发布时若生效时间为空则立即生效; 校验失效>生效
+        eff = eff or now()[:10]
+        if exp and eff and exp < eff:
+            return jsonify({'error': '失效时间不能早于生效时间'}), 400
+        status = '已发布'
+    conn = db()
+    if nid:
+        conn.execute("UPDATE notices SET title=?, content=?, scope=?, pinned=?, effective_at=?, expire_at=?, status=?, updated_at=? WHERE id=?",
+                     (title, content, scope, pinned, eff, exp, status, now(), nid))
+    else:
+        cur = conn.execute("INSERT INTO notices(title,content,scope,pinned,status,publisher,effective_at,expire_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                           (title, content, scope, pinned, status, session.get('user_name', ''), eff, exp, now(), now()))
+        nid = cur.lastrowid
+    if do_publish:
+        conn.execute("UPDATE notices SET publish_at=?, status='已发布' WHERE id=?", (now(), nid))
+    conn.execute("INSERT INTO notice_action_logs(notice_id,title,action,operator,detail,created_at) VALUES(?,?,?,?,?,?)",
+                 (nid, title, '发布' if do_publish else ('新建' if not d.get('is_update') else '修改'),
+                  session.get('user_name', ''), f'范围:{scope} 置顶:{pinned} 生效:{eff or "立即"} 失效:{exp or "永久"}', now()))
+    conn.commit(); conn.close()
+    log(session['user_name'], '公告' + ('发布' if do_publish else '保存'), f'{title} ({"发布" if do_publish else "草稿"})')
+    return jsonify({'success': True, 'id': nid, 'message': ('公告已发布' if do_publish else '公告已保存（草稿）')})
+
+@app.route('/api/notices/manage/<int:nid>/<action>', methods=['POST'])
+@login_required
+def api_notices_action(nid, action):
+    """撤销/删除/置顶切换 — 操作留痕"""
+    if not _notice_can_manage():
+        return jsonify({'error': '无权限'}), 403
+    conn = db()
+    n = conn.execute("SELECT * FROM notices WHERE id=?", (nid,)).fetchone()
+    if not n:
+        conn.close(); return jsonify({'error': '公告不存在'}), 404
+    title = n['title']
+    detail = ''
+    if action == 'revoke':
+        conn.execute("UPDATE notices SET status='已撤销', updated_at=? WHERE id=?", (now(), nid))
+        detail = '公告已撤销（不再展示）'
+    elif action == 'pin':
+        conn.execute("UPDATE notices SET pinned=1-pinned, updated_at=? WHERE id=?", (now(), nid))
+        detail = '置顶' if not n['pinned'] else '取消置顶'
+    elif action == 'delete':
+        conn.execute("DELETE FROM notices WHERE id=?", (nid,))
+        conn.execute("DELETE FROM notice_action_logs WHERE notice_id=?", (nid,))
+        conn.commit(); conn.close()
+        log(session['user_name'], '删除公告', title)
+        return jsonify({'success': True, 'message': '公告已删除'})
+    else:
+        conn.close(); return jsonify({'error': '未知操作'}), 400
+    conn.execute("INSERT INTO notice_action_logs(notice_id,title,action,operator,detail,created_at) VALUES(?,?,?,?,?,?)",
+                 (nid, title, action, session.get('user_name', ''), detail, now()))
+    conn.commit(); conn.close()
+    log(session['user_name'], f'公告{action}', f'{title} {detail}')
+    return jsonify({'success': True, 'message': detail})
+
+@app.route('/api/notices/logs')
+@login_required
+def api_notices_logs():
+    """公告操作日志(管理页展示, 仅管理员/授权发布人)"""
+    if not _notice_can_manage():
+        return jsonify({'error': '无权限'}), 403
+    conn = db()
+    rows = conn.execute("SELECT * FROM notice_action_logs ORDER BY id DESC LIMIT 100").fetchall()
+    conn.close()
+    return jsonify([dict_row(x) for x in rows])
+
 # ---- 文件上传: 申请附件/付款附件/合同模板等 ----
 @app.route('/api/upload', methods=['POST'])
 @login_required
@@ -9870,8 +10033,29 @@ def api_settings():
         'version': 'V5.1 专业加固版',
         'last_backup': last_backup_name(),
         'db_status': 'ok',
+        'notice_publishers': cfg_get('notice_publishers', ''),  # V11.196 公告发布授权
     })
     return jsonify(info)
+
+@app.route('/api/settings/notice-publishers', methods=['POST'])
+@login_required
+def api_settings_notice_publishers():
+    """公告发布授权(V11.196): 仅系统管理员可设置; 授权后该用户登录系统设置可见公告管理并可发布"""
+    if session.get('user_role') != '系统管理员':
+        return jsonify({'error': '仅系统管理员可设置公告发布授权'}), 403
+    d = request.json or {}
+    pubs = (d.get('publishers') or '').strip()
+    # 校验用户都存在
+    if pubs:
+        names = [x.strip() for x in pubs.split(',') if x.strip()]
+        conn = db()
+        for nm in names:
+            if not conn.execute("SELECT 1 FROM users WHERE name=? AND is_active=1", (nm,)).fetchone():
+                conn.close(); return jsonify({'error': f'用户「{nm}」不存在或未启用'}), 400
+        conn.close()
+    cfg_set('notice_publishers', pubs)
+    log(session.get('user_name', ''), '修改公告发布授权', f'授权用户: {pubs or "(仅管理员)"}')
+    return jsonify({'success': True, 'message': '公告发布授权已保存'})
 
 # ============================================================
 # ── PAGES ──
