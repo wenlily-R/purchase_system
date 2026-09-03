@@ -342,6 +342,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <button data-t="contract" onclick="apprTab('contract')">📄合同审批</button>
     <button data-t="receiving" onclick="apprTab('receiving')">📦入库审批</button>
     <button data-t="requisition" onclick="apprTab('requisition')">📤出库审批</button>
+    <button data-t="return" onclick="apprTab('return')">↩️退库审批</button>
     <button data-t="payment" onclick="apprTab('payment')">💰付款审批</button>
     <button data-t="rejected" onclick="apprTab('rejected')" style="color:#ea4335">❌未通过</button>
   </div>
@@ -373,6 +374,13 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
   <div id="reqListPanel" style="display:none;margin-top:4px">
     <div class="card"><div class="cb" id="reqListBox"><div class="loading">加载中...</div></div></div>
   </div>
+</div>
+<div class="page" id="preturns"><h2>↩️ 退库管理</h2>
+  <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap">
+    <span style="font-size:9px;color:#666">领用物料归还仓库：①选已领用出库单 ②填退库数量 ③提交钉钉审批；审批通过后仓库确认实物入库，库存才增加</span>
+    <button class="btn btn-p btn-sm" style="margin-left:auto" onclick="showReturnForm()">➕ 新建退库单</button>
+  </div>
+  <div class="card"><div class="cb" id="returnsTable"><div class="loading">加载中...</div></div></div>
 </div>
 <div class="page" id="pcounts"><h2>📋 库存盘点</h2>
   <div class="card" id="countListCard" style="display:none"><div class="ch"><h3>盘点记录</h3></div>
@@ -784,7 +792,7 @@ function buildNav(){
   const groups=[
     ['工作台',[['dashboard','📊','工作台']]],
     ['采购管理',[['prequests','📝','采购申请'],['inquiries','🔍','三方询价'],['orders','📋','采购订单'],['contracts','📄','合同管理'],['suppliers','🏢','供应商']]],
-    ['仓储库存',[['receivings','📦','入库验收'],['requisitions','📤','出库管理'],['inventory','📦','库存查询'],['counts','📋','库存盘点']]],
+    ['仓储库存',[['receivings','📦','入库验收'],['requisitions','📤','出库管理'],['returns','↩️','退库管理'],['inventory','📦','库存查询'],['counts','📋','库存盘点']]],
     ['财务往来',[['payments','💰','付款申请'],['expenses','💸','费用登记'],['settlements','📊','月度对账'],['invoices','🧾','合并开票'],['ledger','🔍','往来台账']]],
     ['审批中心',[['approvals','✅','审批中心']]],
     ['报表中心',[['reports','📊','报表中心']]],
@@ -875,7 +883,7 @@ function sw(name){
   document.querySelectorAll('.topnav a').forEach(a=>{const m=a.getAttribute('onclick');if(m&&m.includes("'"+name+"'"))a.classList.add('act')});
   const fn={'dashboard':loadDashboard,'prequests':loadPRequests,'orders':loadOrders,'inquiries':loadInquiries,'approvals':loadApprovals,
     'contracts':loadContracts,'receivings':loadReceivings,
-    'payments':loadPayments,'inventory':loadInventory,'requisitions':()=>{reqTab(Array.from(document.querySelectorAll('#reqTabs button')).find(b=>b.classList.contains('act'))?.dataset?.z||'inv');loadReqInv();loadRequisitions()},'suppliers':loadSuppliers,'reports':loadReports,'feishu':loadFeishu,
+    'payments':loadPayments,'inventory':loadInventory,'requisitions':()=>{reqTab(Array.from(document.querySelectorAll('#reqTabs button')).find(b=>b.classList.contains('act'))?.dataset?.z||'inv');loadReqInv();loadRequisitions()},'returns':loadReturns,'suppliers':loadSuppliers,'reports':loadReports,'feishu':loadFeishu,
     'dingtalk':loadDingTalk,
     'counts':()=>{loadAdjustments()},
     'settlements':loadSettlements,'invoices':loadInvoicePage,'ledger':loadLedger,'system':loadSystem};
@@ -908,6 +916,7 @@ function __pageRoles(name){
     'contracts':'采购员、分管领导、总经理、系统管理员',
     'suppliers':'采购员、分管领导、总经理、系统管理员',
     'requisitions':'库管员、部门负责人、分管领导、总经理、系统管理员',
+    'returns':'库管员、部门负责人、分管领导、总经理、系统管理员',
     'counts':'库管员、分管领导、总经理、系统管理员',
     'payments':'财务、分管领导、总经理、系统管理员',
     'expenses':'财务、分管领导、总经理、系统管理员',
@@ -926,6 +935,7 @@ function __pageAllowed(name){
     'contracts':['采购员','分管领导','总经理','系统管理员'],
     'suppliers':['采购员','分管领导','总经理','系统管理员'],
     'requisitions':['库管员','部门负责人','分管领导','总经理','系统管理员'],
+    'returns':['库管员','部门负责人','分管领导','总经理','系统管理员'],
     'counts':['库管员','分管领导','总经理','系统管理员'],
     'payments':['财务','分管领导','总经理','系统管理员'],
     'expenses':['财务','分管领导','总经理','系统管理员'],
@@ -950,14 +960,14 @@ setInterval(()=>{
   if(id('loginPage')&&id('loginPage').style.display!=='none')return;
   const fn={'dashboard':loadDashboard,'prequests':loadPRequests,'orders':loadOrders,'inquiries':loadInquiries,'approvals':loadApprovals,
     'contracts':loadContracts,'receivings':loadReceivings,
-    'payments':loadPayments,'inventory':loadInventory,'requisitions':()=>{reqTab(Array.from(document.querySelectorAll('#reqTabs button')).find(b=>b.classList.contains('act'))?.dataset?.z||'inv');loadReqInv();loadRequisitions()},'suppliers':loadSuppliers,'reports':loadReports,'feishu':loadFeishu,
+    'payments':loadPayments,'inventory':loadInventory,'requisitions':()=>{reqTab(Array.from(document.querySelectorAll('#reqTabs button')).find(b=>b.classList.contains('act'))?.dataset?.z||'inv');loadReqInv();loadRequisitions()},'returns':loadReturns,'suppliers':loadSuppliers,'reports':loadReports,'feishu':loadFeishu,
     'dingtalk':loadDingTalk,
     'settlements':loadSettlements,'invoices':loadInvoicePage,'ledger':loadLedger,'system':loadSystem}[_curPage];
   if(fn)fn().catch(()=>{});
 },15000);
 function showDetail(t,h,f){id('dmTitle').textContent=t;id('dmBody').innerHTML=h;id('dmFooter').innerHTML=f||'<button class="btn btn-o" onclick="closeMod()">关闭</button>';id('detailModal').classList.add('show')}
 
-function tag(s){const m={'已完成':'tg-g','已付款':'tg-g','已通过':'tg-g','已入库':'tg-g','已签收':'tg-g','待审批':'tg-o','待签收':'tg-o','待检验':'tg-o','待入库':'tg-o','验收中':'tg-o','验收完成':'tg-g','审批通过':'tg-b','已签合同':'tg-b','已发货':'tg-b','已到货':'tg-b','已挂账':'tg-b','已驳回':'tg-r','已关闭':'tg-gy','执行中':'tg-b'};return `<span class="tag ${m[s]||'tg-gy'}">${esc(s)}</span>`}
+function tag(s){const m={'已完成':'tg-g','已付款':'tg-g','已通过':'tg-g','已入库':'tg-g','已签收':'tg-g','待审批':'tg-o','待确认入库':'tg-o','待签收':'tg-o','待检验':'tg-o','待入库':'tg-o','验收中':'tg-o','验收完成':'tg-g','审批通过':'tg-b','已签合同':'tg-b','已发货':'tg-b','已到货':'tg-b','已挂账':'tg-b','已驳回':'tg-r','已关闭':'tg-gy','已作废':'tg-gy','执行中':'tg-b'};return `<span class="tag ${m[s]||'tg-gy'}">${esc(s)}</span>`}
 function rnder(d,k,h,f){if(!d||!d.length)return'<div style="padding:8px;color:#999;font-size:10px;text-align:center">暂无数据</div>';return `<table><tr>${h.map(x=>`<th>${x}</th>`).join('')}</tr>${d.map(r=>`<tr>${f(r)}</tr>`).join('')}</table>`}
 
 // Dashboard (V55: 四板块 - 快捷导航/审批专区/预警中心/数据看板)
@@ -967,7 +977,7 @@ async function loadOverdue(){
     const r=await api('/approvals/overdue');
     const box=id('overdueBox');
     if(!r.length){box.innerHTML='<div style="padding:6px;color:#27ae60;font-size:9px">✅ 无超期未审批单据</div>';return}
-    const BIZN={purchase_request:'采购申请',purchase_order:'采购订单',inquiry_approval:'比价单',contract:'合同',payment:'付款',receiving:'入库',requisition:'出库'};
+    const BIZN={purchase_request:'采购申请',purchase_order:'采购订单',inquiry_approval:'比价单',contract:'合同',payment:'付款',receiving:'入库',requisition:'出库',return:'退库'};
     box.innerHTML=rnder(r,['doc_no','biz_type','role','wait_hours','biz_id'],['单号','类型','待审角色','已停留','操作'],
       x=>`<td><b>${esc(x.doc_no||('#'+x.biz_id))}</b></td><td>${BIZN[x.biz_type]||x.biz_type}</td><td>${esc(x.role||'')}</td>
       <td><span style="color:${x.wait_hours>48?'#e74c3c':'#e67e22'};font-weight:700">${x.wait_hours??'-'}h</span></td>
@@ -1702,7 +1712,7 @@ function exportXls(type){window.open('/api/export?type='+type,'_blank')}
 
 // Approvals Center (需求44: 按流程类型分类分页展示, 类型彩色标签+数量徽标+发起时间)
 let APPR_FILTER='';
-const APPR_TM={purchase_request:['📝采购申请','#2f6fed'],purchase_order:['📋订单','#e8890c'],inquiry_approval:['🔍比价单','#8e44ad'],contract:['📄合同','#0aa574'],credit:['📑挂账','#b08900'],payment:['💰付款','#d64541'],receiving:['📦入库','#7b5bdb'],requisition:['📤出库','#00a896']};
+const APPR_TM={purchase_request:['📝采购申请','#2f6fed'],purchase_order:['📋订单','#e8890c'],inquiry_approval:['🔍比价单','#8e44ad'],contract:['📄合同','#0aa574'],credit:['📑挂账','#b08900'],payment:['💰付款','#d64541'],receiving:['📦入库','#7b5bdb'],requisition:['📤出库','#00a896'],return:['↩️退库','#8e44ad']};
 function apprTab(t){
   APPR_FILTER=t;
   document.querySelectorAll('#apprTabs button').forEach(b=>{b.classList.toggle('act',b.dataset.t===t)});
@@ -1747,6 +1757,7 @@ function viewBiz(t,oid){
   else if(t=='purchase_order')showOrder(oid);
   else if(t=='inquiry_approval')showInquiry(oid);
   else if(t=='contract')showContract(oid);
+  else if(t=='return')showReturnDetail(oid);
   else if(t=='credit'||t=='payment'){
     const a=id('approvalsTable').innerHTML;
     alert('请打开对应单据页查看详情');
@@ -2397,6 +2408,104 @@ async function voidReq(id){
   if(!confirm('确认作废该出库单？已出库单据作废将回滚库存'))return;
   const r=await api(`/requisitions/${id}/void`,{method:'POST',body:'{}'});
   if(r.success){alert(r.message);loadRequisitions();loadDashboard()}else alert(r.error||'作废失败');
+}
+// ===== V11.13x 退库管理(领用归还, 不退供应商) =====
+let _retSel=null;
+async function loadReturns(){
+  const r=await api('/returns');
+  id('returnsTable').innerHTML=rnder(r,['return_no','req_no','receiver','item_count','total_qty','status','created_at','id'],['退库单号','关联出库单','退库人','品种数','数量','状态','时间','操作'],
+    x=>`<td><b>${esc(x.return_no)}</b></td><td>${esc(x.req_no||('#'+x.requisition_id))}</td><td>${esc(x.receiver||x.requester||'')}</td><td>${x.item_count||1}项</td><td>${x.total_qty||0}</td><td>${tag(x.status)}</td><td style="font-size:8px;color:#999">${esc((x.created_at||'').slice(0,16))}</td>
+    <td><button class="lnk" onclick="showReturnDetail(${x.id})">详情</button> <button class="lnk" onclick="window.open('/api/returns/${x.id}/download','_blank')">⬇️下载</button> ${x.status=='待确认入库'?`<button class="lnk" style="color:var(--s);font-weight:600" onclick="confirmReturn(${x.id})">✅仓库确认入库</button>`:''} ${x.status=='已驳回'?`<button class="lnk" style="color:#b08900" onclick="resubmitReturn(${x.id})">🔁修改重提</button>`:''} ${x.status!=='已作废'?`<button class="lnk" style="color:var(--d)" onclick="voidReturn(${x.id})">作废</button>`:''}</td>`);
+}
+async function showReturnForm(){
+  const no=prompt('请输入要退库的【领用出库单号】(如 CK-202609-0001):','');
+  if(no===null)return;
+  if(!no.trim()){alert('请输入出库单号');return}
+  const reqs=await api('/requisitions');
+  const rq=reqs.find(r=>r.req_no===no.trim());
+  if(!rq){alert('未找到该出库单号，请核对');return}
+  if(rq.status!=='已出库'){alert(`该出库单当前状态「${rq.status}」，仅已领用完成(已出库)的可退库`);return}
+  const data=await api(`/requisitions/${rq.id}/returnable`);
+  const items=data.items.filter(it=>it.returnable>0);
+  if(!items.length){alert('该出库单已无可退数量');return}
+  _retSel={requisition:rq,items:data.items};
+  let rows=items.map(it=>`<tr>
+    <td>${esc(it.item_name)}</td><td>${esc(it.spec||'')}</td><td>${esc(it.unit||'')}</td>
+    <td>${it.quantity}</td><td>${it.returned_qty}</td><td>${it.returnable}</td>
+    <td><input class="fc" style="width:80px" type="number" min="1" max="${it.returnable}" data-riid="${it.requisition_item_id}" placeholder="退库数量"></td></tr>`).join('');
+  showDetail(`↩️ 新建退库单 - 关联 ${esc(rq.req_no)}`,`
+    <div style="font-size:9px;color:#666;margin-bottom:6px">领用出库单 <b>${esc(rq.req_no)}</b> · 领取人 ${esc(rq.receiver||rq.requester||'')} · 部门 ${esc(rq.receive_dept||rq.dept||'')}</div>
+    <table class="tb"><thead><tr><th>物料</th><th>规格</th><th>单位</th><th>已出库</th><th>已退</th><th>可退</th><th>本次退库</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="fr" style="margin-top:6px"><div class="fg"><label class="fl2">退库仓库</label><input class="fc" id="retWarehouse" value="主库房"></div>
+    <div class="fg"><label class="fl2">退库原因</label><input class="fc" id="retPurpose" placeholder="如:多领归还/闲置退还"></div></div>
+    <div class="fg"><label class="fl2">备注</label><input class="fc" id="retRemark"></div>`,
+    `<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="createReturn()">✅ 提交退库审批</button>`);
+}
+async function createReturn(){
+  if(!_retSel){alert('请先选择出库单');return}
+  const items=[];
+  document.querySelectorAll('#dmBody input[data-riid]').forEach(inp=>{
+    const q=parseFloat(inp.value);
+    if(q&&q>0){
+      const riid=parseInt(inp.dataset.riid);
+      const it=_retSel.items.find(x=>x.requisition_item_id===riid);
+      if(it)items.push({requisition_item_id:riid,item_name:it.item_name,spec:it.spec,unit:it.unit,quantity:q});
+    }
+  });
+  if(!items.length){alert('请填写至少一条退库数量');return}
+  const r=await api('/returns',{method:'POST',body:JSON.stringify({requisition_id:_retSel.requisition.id,items,purpose:id('retPurpose')?.value||'',remark:id('retRemark')?.value||'',warehouse:id('retWarehouse')?.value||'主库房'})});
+  if(r.success){alert('✅ '+r.message);closeMod();loadReturns();loadDashboard()}
+  else alert(r.error||'提交失败');
+}
+async function showReturnDetail(rid){
+  const list=await api('/returns');
+  const r=list.find(x=>x.id===rid);
+  if(!r){alert('退库单不存在');return}
+  const its=(r.items||[]).map(it=>`<div style="padding:3px 0;border-bottom:1px dashed #eee">${esc(it.item_name)} ${esc(it.spec||'')} × <b>${it.quantity}</b>${esc(it.unit||'')}</div>`).join('');
+  showDetail(`↩️ 退库单 ${esc(r.return_no)}`,`<div class="c2">
+    <div><dt>退库单号</dt><dd><b>${esc(r.return_no)}</b></dd><dt>状态</dt><dd>${tag(r.status)}</dd><dt>关联出库单</dt><dd>${esc(r.req_no||('#'+r.requisition_id))}</dd><dt>退库人</dt><dd>${esc(r.receiver||r.requester||'')}</dd></div>
+    <div><dt>部门</dt><dd>${esc(r.dept||'')}</dd><dt>仓库</dt><dd>${esc(r.warehouse||'主库房')}</dd><dt>退库原因</dt><dd>${esc(r.purpose||'-')}</dd><dt>提交时间</dt><dd>${esc((r.created_at||'').slice(0,16))}</dd></div></div>
+    <div style="font-size:10px;margin-top:6px;color:#666">退库明细：</div>${its}
+    ${r.rejected_reason?`<div style="margin-top:6px;padding:6px;background:#fdecea;border-radius:4px;font-size:10px;color:#c0392b">驳回原因：${esc(r.rejected_reason)}</div>`:''}`,
+    `<button class="btn btn-o" onclick="closeMod()">关闭</button> ${r.status=='待确认入库'?`<button class="btn btn-p" onclick="closeMod();confirmReturn(${r.id})">✅ 仓库确认入库</button>`:''} ${r.status=='已驳回'?`<button class="btn btn-p" onclick="closeMod();resubmitReturn(${r.id})">🔁 修改重提</button>`:''}`);
+}
+async function confirmReturn(rid){
+  if(!confirm('确认退库实物已入库？确认后库存将增加并回写出库单累计已退库数量'))return;
+  const r=await api(`/returns/${rid}/confirm`,{method:'POST',body:'{}'});
+  if(r.success){alert('✅ '+r.message);loadReturns();loadDashboard();loadInventory()}else alert(r.error||'确认失败');
+}
+async function voidReturn(rid){
+  if(!confirm('确认作废该退库单？已入库的作废将回滚库存'))return;
+  const r=await api(`/returns/${rid}/void`,{method:'POST',body:'{}'});
+  if(r.success){alert(r.message);loadReturns();loadDashboard()}else alert(r.error||'作废失败');
+}
+async function resubmitReturn(rid){
+  const list=await api('/returns');
+  const rt=list.find(x=>x.id===rid);
+  if(!rt){alert('退库单不存在');return}
+  const data=await api(`/requisitions/${rt.requisition_id}/returnable`);
+  const items=data.items;
+  const cur={}; (rt.items||[]).forEach(it=>{cur[it.requisition_item_id]=it.quantity});
+  let rows=items.map(it=>{
+    const v=cur[it.requisition_item_id]||0;
+    const pre=v<=it.returnable?v:'';
+    return `<tr><td>${esc(it.item_name)}</td><td>${esc(it.spec||'')}</td><td>${esc(it.unit||'')}</td><td>${it.quantity}</td><td>${it.returned_qty}</td><td>${it.returnable}</td>
+    <td><input class="fc" style="width:80px" type="number" min="1" max="${it.returnable}" data-riid="${it.requisition_item_id}" value="${pre}"></td></tr>`;}).join('');
+  showDetail(`🔁 修改重提退库单 ${esc(rt.return_no)}`,`<div style="font-size:9px;color:#666;margin-bottom:6px">关联出库单 <b>${esc(rt.req_no||('#'+rt.requisition_id))}</b> · 修改退库数量后重新提交审批</div>
+    <table class="tb"><thead><tr><th>物料</th><th>规格</th><th>单位</th><th>已出库</th><th>已退</th><th>可退</th><th>本次退库</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="fr" style="margin-top:6px"><div class="fg"><label class="fl2">退库原因</label><input class="fc" id="retPurpose" value="${esc(rt.purpose||'')}"></div>
+    <div class="fg"><label class="fl2">备注</label><input class="fc" id="retRemark" value="${esc(rt.remark||'')}"></div></div>`,
+    `<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="doResubmitReturn(${rid})">✅ 重新提交审批</button>`);
+}
+async function doResubmitReturn(rid){
+  const items=[];
+  document.querySelectorAll('#dmBody input[data-riid]').forEach(inp=>{
+    const q=parseFloat(inp.value);
+    if(q&&q>0)items.push({requisition_item_id:parseInt(inp.dataset.riid),quantity:q});
+  });
+  if(!items.length){alert('请填写至少一条退库数量');return}
+  const r=await api(`/returns/${rid}/resubmit`,{method:'POST',body:JSON.stringify({items,purpose:id('retPurpose')?.value||'',remark:id('retRemark')?.value||''})});
+  if(r.success){alert('✅ '+r.message);closeMod();loadReturns();loadDashboard()}else alert(r.error||'重新提交失败');
 }
 async function loadExpenses(){
   const r=await api('/expenses');

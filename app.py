@@ -360,6 +360,21 @@ def init_db():
             quote_price REAL DEFAULT 0, quote_remark TEXT, quote_time TEXT,
             quote_delivery TEXT DEFAULT '', quote_warranty TEXT DEFAULT '',
             is_selected INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now','localtime')));
+        -- V11.13x 退库单(领用归还): 关联已领用出库单, 审批通过不增库存, 仓库确认实物入库后增库存
+        CREATE TABLE IF NOT EXISTS returns (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, return_no TEXT UNIQUE NOT NULL,
+            requisition_id INTEGER NOT NULL, req_no TEXT DEFAULT '',
+            dept TEXT DEFAULT '', requester TEXT DEFAULT '', receiver TEXT DEFAULT '',
+            purpose TEXT DEFAULT '', remark TEXT DEFAULT '',
+            status TEXT DEFAULT '待审批', warehouse TEXT DEFAULT '主库房',
+            confirmed_by TEXT DEFAULT '', confirmed_at TEXT, rejected_reason TEXT DEFAULT '',
+            attachments TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now','localtime')), updated_at TEXT DEFAULT (datetime('now','localtime')));
+        CREATE TABLE IF NOT EXISTS return_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            return_id INTEGER NOT NULL, requisition_item_id INTEGER,
+            item_name TEXT, spec TEXT, unit TEXT DEFAULT '个',
+            quantity REAL DEFAULT 0, created_at TEXT DEFAULT (datetime('now','localtime')));
     """)
     conn.commit()
 
@@ -495,11 +510,11 @@ def init_db():
                 ('{_biz}',3,'财务',20000,9999999,'大额-部门+财务+领导'),
                 ('{_biz}',4,'分管领导',20000,9999999,'大额-分管领导'),
                 ('{_biz}',5,'总经理',50000,9999999,'超大额-总经理终审'""")
-    # V5.0: 入库/出库审批流(1级部门负责人即可, 出库金额0)
-    for _biz in ('receiving','requisition'):
+    # V5.0: 入库/出库/退库审批流(1级部门负责人即可, 金额0)
+    for _biz in ('receiving','requisition','return'):
         if conn.execute("SELECT COUNT(*) FROM approval_flow_config WHERE biz_type=?", (_biz,)).fetchone()[0] == 0:
             conn.execute(f"""INSERT INTO approval_flow_config(biz_type,level_no,role,min_amount,max_amount,label) VALUES
-                ('{_biz}',1,'部门负责人',0,9999999,'入库/出库-部门审批')""")
+                ('{_biz}',1,'部门负责人',0,9999999,'入库/出库/退库-部门审批')""")
     # ---- V4.4 需求文档补充: 交易模式/对账/合并开票/强制关联(幂等迁移) ----
     for _tbl, _col, _ddl in [
         # ---- V55 需求变更列(全部幂等) ----
@@ -543,6 +558,9 @@ def init_db():
         ('contracts', 'updated_at', "ALTER TABLE contracts ADD COLUMN updated_at TEXT"),
         ('receivings', 'updated_at', "ALTER TABLE receivings ADD COLUMN updated_at TEXT"),
         ('requisitions', 'issued_at', "ALTER TABLE requisitions ADD COLUMN issued_at TEXT"),
+        # V11.13x 退库: 出库单累计已退库数量回写
+        ('requisitions', 'returned_qty', "ALTER TABLE requisitions ADD COLUMN returned_qty REAL DEFAULT 0"),
+        ('requisition_items', 'returned_qty', "ALTER TABLE requisition_items ADD COLUMN returned_qty REAL DEFAULT 0"),
         ('request_items', 'category', "ALTER TABLE request_items ADD COLUMN category TEXT DEFAULT ''"),
         ('request_items', 'brand_param', "ALTER TABLE request_items ADD COLUMN brand_param TEXT DEFAULT ''"),
         ('request_items', 'arrival_date', "ALTER TABLE request_items ADD COLUMN arrival_date TEXT DEFAULT ''"),
@@ -886,8 +904,9 @@ FS_BIZ = {  # biz_type -> (审批定义名称, 表单控件前缀)
     'payment':          ('付款审批', 'FK'),
     'receiving':        ('入库审批', 'RK'),
     'requisition':      ('出库审批', 'CK'),
+    'return':           ('退库审批', 'TH'),
 }
-FS_PRE = {'purchase_request': 'SQ', 'purchase_order': 'CG', 'contract': 'HT', 'credit': 'GZ', 'payment': 'FK', 'receiving': 'RK', 'requisition': 'CK'}
+FS_PRE = {'purchase_request': 'SQ', 'purchase_order': 'CG', 'contract': 'HT', 'credit': 'GZ', 'payment': 'FK', 'receiving': 'RK', 'requisition': 'CK', 'return': 'TH'}
 FS_NODE_MAX = 3  # 审批定义中的审批节点数(与系统链路最大级数一致)
 
 def cfg_get(key, default=''):
@@ -1060,15 +1079,7 @@ def fs_biz_info(biz_type, biz_id):
         c.close()
         if not r: return None
         return (r['inq_no'], r['title'] or r['inq_no'], 0, r['created_by'] or '', '')
-    r = c.execute("SELECT * FROM receivings WHERE id=?", (biz_id,)).fetchone()
-    c.close()
-    if not r: return None
-    return (r['receive_no'], r['item_name'] or r['receive_no'], r['quantity'] or 0, r['inspector'] or '系统', r['created_at'])
-    if biz_type == 'inquiry_approval':
-        r = c.execute("SELECT * FROM inquiries WHERE id=?", (biz_id,)).fetchone()
-        c.close()
-        if not r: return None
-        return (r['inq_no'], r['title'] or r['inq_no'], 0, r['created_by'] or '', '')
+    if biz_type == 'receiving':
         r = c.execute("SELECT * FROM receivings WHERE id=?", (biz_id,)).fetchone()
         c.close()
         if not r: return None
@@ -1078,6 +1089,11 @@ def fs_biz_info(biz_type, biz_id):
         c.close()
         if not r: return None
         return (r['req_no'], r['item_name'] or r['req_no'], r['quantity'] or 0, r['requester'] or '系统', r['created_at'])
+    if biz_type == 'return':
+        r = c.execute("SELECT * FROM returns WHERE id=?", (biz_id,)).fetchone()
+        c.close()
+        if not r: return None
+        return (r['return_no'], f"退库 {r['req_no'] or ''} {r['purpose'] or ''}".strip(), 0, r['requester'] or '系统', r['created_at'])
     c.close(); return None
 
 def fs_start_instance(biz_type, biz_id):
@@ -1170,6 +1186,7 @@ def biz_parent_status(biz_type, result):
         'purchase_request': ('已通过', '已驳回'), 'purchase_order': ('审批通过', '已驳回'),
         'contract': ('执行中', '已驳回'), 'credit': ('已通过', '已驳回'), 'payment': ('已通过', '已驳回'),
         'receiving': ('已入库', '已驳回'), 'requisition': ('已出库', '已驳回'),
+        'return': ('待确认入库', '已驳回'),
     }
     ok, no = m.get(biz_type, ('已通过', '已驳回'))
     return ok if result == 'ok' else no
@@ -1177,7 +1194,7 @@ def biz_parent_status(biz_type, result):
 def biz_table(biz_type):
     return {'purchase_request': 'purchase_requests', 'purchase_order': 'purchase_orders',
             'contract': 'contracts', 'credit': 'credit_notes', 'payment': 'payment_requests',
-            'receiving': 'receivings', 'requisition': 'requisitions'}[biz_type]
+            'receiving': 'receivings', 'requisition': 'requisitions', 'return': 'returns'}[biz_type]
 
 # ============================================================
 # V11.64: 数据级权限 — 按角色过滤列表数据(前端隐藏菜单+后端过滤数据, 双保险)
@@ -1593,6 +1610,7 @@ DT_BIZ = {  # biz_type -> 审批模板名称
     'payment':          '付款审批',
     'receiving':        '入库审批',
     'requisition':      '出库审批',
+    'return':           '退库审批',
 }
 DT_FORM = [('单据编号', 'text'), ('内容摘要', 'text'), ('金额(元)', 'text'), ('申请人', 'text'), ('提交时间', 'text')]
 
@@ -1788,7 +1806,7 @@ def dt_build_form(biz_type, biz_id, info):
       - 各单据类型全部表单字段结构化展示在"备注"(审批人钉钉端无需跳回系统)
     """
     today = datetime.date.today().strftime('%Y-%m-%d')
-    if biz_type in ('purchase_request', 'contract', 'purchase_order', 'receiving', 'requisition', 'payment'):
+    if biz_type in ('purchase_request', 'contract', 'purchase_order', 'receiving', 'requisition', 'payment', 'return'):
         c = db()
         r = c.execute(f"SELECT * FROM {biz_table(biz_type)} WHERE id=?", (biz_id,)).fetchone()
         if r:
@@ -1842,6 +1860,18 @@ def dt_build_form(biz_type, biz_id, info):
                 rdetail = dt_build_detail('requisition', r, c)
                 form = [
                     {'name': '出库日期', 'value': str(r['issued_at'] or today)[:10]},
+                    {'name': '备注', 'value': rdetail[:1900]},
+                ]
+                attach = dt_build_attachment(biz_type, r, c)
+                if attach:
+                    form.append({'name': '附件', 'value': json.dumps(attach, ensure_ascii=False)})
+                c.close()
+                return form
+            elif biz_type == 'return':
+                # V11.13x: 退库模板控件=退库日期/备注/附件(明细走备注文本)
+                rdetail = dt_build_detail('return', r, c)
+                form = [
+                    {'name': '退库日期', 'value': str(r['created_at'] or today)[:10]},
                     {'name': '备注', 'value': rdetail[:1900]},
                 ]
                 attach = dt_build_attachment(biz_type, r, c)
@@ -2002,6 +2032,19 @@ def dt_build_detail(biz_type, r, c):
             lines['商品明细'] = ''
             for i, it in enumerate(its, 1):
                 lines['商品明细'] += f"{i}. {it['item_name']} {it['spec'] or ''} x{it['quantity']}{it['unit'] or ''}\n"
+    elif biz_type == 'return':
+        lines['退库单号'] = r['return_no']; lines['单据类型'] = '退库单'
+        lines['关联出库单'] = r['req_no'] or ('#' + str(r['requisition_id']))
+        lines['领用部门'] = r['dept'] or '-'; lines['领用人'] = r['receiver'] or r['requester'] or '-'
+        lines['提交时间'] = str(r['created_at'] or '')[:16]
+        lines['退库仓库'] = r['warehouse'] or '主库房'
+        lines['用途'] = r['purpose'] or '-'
+        its = c.execute("SELECT * FROM return_items WHERE return_id=? ORDER BY id", (r['id'],)).fetchall()
+        if its:
+            lines['退库明细'] = ''
+            for i, it in enumerate(its, 1):
+                lines['退库明细'] += f"{i}. {it['item_name']} {it['spec'] or ''} x{it['quantity']}{it['unit'] or ''}\n"
+        if r['remark']: lines['备注'] = r['remark']
     elif biz_type == 'payment':
         lines['付款单号'] = r['payment_no']; lines['单据类型'] = '付款申请'
         lines['付款事由'] = r['payment_reason'] or '-'
@@ -2031,7 +2074,7 @@ def gen_doc_voucher(biz_type, biz_id, kind, title):
         c = db()
         r = c.execute(f"SELECT * FROM {biz_table(biz_type)} WHERE id=?", (biz_id,)).fetchone()
         if r:
-            no = r['order_no'] if kind == 'order' else (r['req_no'] if kind == 'prequest' else (r['receive_no'] if kind == 'receiving' else r['req_no']))
+            no = r['order_no'] if kind == 'order' else (r['req_no'] if kind == 'prequest' else (r['receive_no'] if kind == 'receiving' else (r['return_no'] if kind == 'return' else r['req_no'])))
         c.close()
         if not no:
             return None
@@ -2043,7 +2086,8 @@ def gen_doc_voucher(biz_type, biz_id, kind, title):
         url = {'prequest': f'/api/prequests/{biz_id}/download',
                'order': f'/api/orders/{biz_id}/download',
                'receiving': f'/api/receivings/{biz_id}/download',
-               'requisition': f'/api/requisitions/{biz_id}/download'}.get(kind)
+               'requisition': f'/api/requisitions/{biz_id}/download',
+               'return': f'/api/returns/{biz_id}/download'}.get(kind)
         if not url:
             return None
         client = app.test_client()
@@ -2075,7 +2119,8 @@ def dt_build_attachment(biz_type, r, c):
         gen_map = {'purchase_request': ('prequest', '采购申请单'),
                    'purchase_order': ('order', '采购订单'),
                    'receiving': ('receiving', '入库验收单'),
-                   'requisition': ('requisition', '出库单')}
+                   'requisition': ('requisition', '出库单'),
+                   'return': ('return', '退库单')}
         if biz_type in gen_map and r['id']:
             try:
                 fn = gen_doc_voucher(biz_type, r['id'], gen_map[biz_type][0], gen_map[biz_type][1])
@@ -3004,6 +3049,7 @@ def api_overdue_approvals():
                  WHEN ai.biz_type='payment' THEN (SELECT pp.payment_no FROM payment_requests pp WHERE pp.id=ai.biz_id)
                  WHEN ai.biz_type='receiving' THEN (SELECT rv.receive_no FROM receivings rv WHERE rv.id=ai.biz_id)
                  WHEN ai.biz_type='requisition' THEN (SELECT rq.req_no FROM requisitions rq WHERE rq.id=ai.biz_id)
+                 WHEN ai.biz_type='return' THEN (SELECT rt.return_no FROM returns rt WHERE rt.id=ai.biz_id)
             END as doc_no
         FROM approval_instances ai
         WHERE ai.status='pending' AND ai.created_at <= datetime('now','localtime', ?)
@@ -3341,18 +3387,21 @@ def api_approvals_pending():
                  WHEN ai.biz_type='credit' THEN (SELECT cn.credit_no FROM credit_notes cn WHERE cn.id=ai.biz_id)
                  WHEN ai.biz_type='payment' THEN (SELECT pp.payment_no FROM payment_requests pp WHERE pp.id=ai.biz_id)
                  WHEN ai.biz_type='receiving' THEN (SELECT rv.receive_no FROM receivings rv WHERE rv.id=ai.biz_id)
-                 WHEN ai.biz_type='requisition' THEN (SELECT rq.req_no FROM requisitions rq WHERE rq.id=ai.biz_id) END as biz_no,
+                 WHEN ai.biz_type='requisition' THEN (SELECT rq.req_no FROM requisitions rq WHERE rq.id=ai.biz_id)
+                 WHEN ai.biz_type='return' THEN (SELECT rt.return_no FROM returns rt WHERE rt.id=ai.biz_id) END as biz_no,
             CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.purpose FROM purchase_requests pr WHERE pr.id=ai.biz_id)
                  WHEN ai.biz_type='purchase_order' THEN (SELECT po.item_name FROM purchase_orders po WHERE po.id=ai.biz_id)
                  WHEN ai.biz_type='contract' THEN (SELECT ct.contract_name FROM contracts ct WHERE ct.id=ai.biz_id)
                  WHEN ai.biz_type='credit' THEN (SELECT cn.item_name FROM credit_notes cn WHERE cn.id=ai.biz_id)
                  WHEN ai.biz_type='payment' THEN (SELECT pp.payment_reason FROM payment_requests pp WHERE pp.id=ai.biz_id)
                  WHEN ai.biz_type='receiving' THEN (SELECT rv.item_name FROM receivings rv WHERE rv.id=ai.biz_id)
-                 WHEN ai.biz_type='requisition' THEN (SELECT rq.item_name FROM requisitions rq WHERE rq.id=ai.biz_id) END as biz_name,
+                 WHEN ai.biz_type='requisition' THEN (SELECT rq.item_name FROM requisitions rq WHERE rq.id=ai.biz_id)
+                 WHEN ai.biz_type='return' THEN (SELECT rt.req_no FROM returns rt WHERE rt.id=ai.biz_id) END as biz_name,
             CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.total_estimated FROM purchase_requests pr WHERE pr.id=ai.biz_id)
                  WHEN ai.biz_type='contract' THEN (SELECT ct.amount FROM contracts ct WHERE ct.id=ai.biz_id)
                  WHEN ai.biz_type='receiving' THEN (SELECT rv.quantity FROM receivings rv WHERE rv.id=ai.biz_id)
-                 WHEN ai.biz_type='requisition' THEN (SELECT rq.quantity FROM requisitions rq WHERE rq.id=ai.biz_id) END as biz_amount
+                 WHEN ai.biz_type='requisition' THEN (SELECT rq.quantity FROM requisitions rq WHERE rq.id=ai.biz_id)
+                 WHEN ai.biz_type='return' THEN (SELECT COALESCE((SELECT SUM(ri.quantity) FROM return_items ri WHERE ri.return_id=ai.biz_id),0)) END as biz_amount
         FROM approval_instances ai WHERE ai.status='pending'
         AND (ai.role=? OR ai.role='部门负责人' AND ? IN ('部门负责人','系统管理员'))
         ORDER BY ai.id DESC LIMIT 50
@@ -3372,7 +3421,8 @@ def api_approvals_rejected():
              WHEN ai.biz_type='credit' THEN (SELECT cn.credit_no FROM credit_notes cn WHERE cn.id=ai.biz_id)
              WHEN ai.biz_type='payment' THEN (SELECT pp.payment_no FROM payment_requests pp WHERE pp.id=ai.biz_id)
              WHEN ai.biz_type='receiving' THEN (SELECT rv.receive_no FROM receivings rv WHERE rv.id=ai.biz_id)
-             WHEN ai.biz_type='requisition' THEN (SELECT rq.req_no FROM requisitions rq WHERE rq.id=ai.biz_id) END as biz_no,
+             WHEN ai.biz_type='requisition' THEN (SELECT rq.req_no FROM requisitions rq WHERE rq.id=ai.biz_id)
+             WHEN ai.biz_type='return' THEN (SELECT rt.return_no FROM returns rt WHERE rt.id=ai.biz_id) END as biz_no,
              MAX(ai.comment) last_comment, COUNT(*) cnt, MAX(ai.processed_at) processed_at
         FROM approval_instances ai WHERE ai.status='rejected'
         GROUP BY ai.biz_type, ai.biz_id ORDER BY ai.biz_type, cnt DESC""").fetchall()
@@ -3393,6 +3443,7 @@ def api_all_pending():
                  WHEN ai.biz_type='receiving' THEN (SELECT rv.receive_no FROM receivings rv WHERE rv.id=ai.biz_id)
                  WHEN ai.biz_type='requisition' THEN (SELECT rq.req_no FROM requisitions rq WHERE rq.id=ai.biz_id)
                  WHEN ai.biz_type='inquiry_approval' THEN (SELECT iq.inq_no FROM inquiries iq WHERE iq.id=ai.biz_id)
+                 WHEN ai.biz_type='return' THEN (SELECT rt.return_no FROM returns rt WHERE rt.id=ai.biz_id)
             END as biz_no,
             CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.purpose FROM purchase_requests pr WHERE pr.id=ai.biz_id)
                  WHEN ai.biz_type='purchase_order' THEN (SELECT po.item_name FROM purchase_orders po WHERE po.id=ai.biz_id)
@@ -3401,12 +3452,14 @@ def api_all_pending():
                  WHEN ai.biz_type='credit' THEN (SELECT cn.item_name FROM credit_notes cn WHERE cn.id=ai.biz_id)
                  WHEN ai.biz_type='receiving' THEN (SELECT rv.item_name FROM receivings rv WHERE rv.id=ai.biz_id)
                  WHEN ai.biz_type='requisition' THEN (SELECT rq.item_name FROM requisitions rq WHERE rq.id=ai.biz_id)
+                 WHEN ai.biz_type='return' THEN (SELECT rt.req_no FROM returns rt WHERE rt.id=ai.biz_id)
             END as biz_name,
             CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.total_estimated FROM purchase_requests pr WHERE pr.id=ai.biz_id)
                  WHEN ai.biz_type='purchase_order' THEN (SELECT po.total_amount FROM purchase_orders po WHERE po.id=ai.biz_id)
                  WHEN ai.biz_type='contract' THEN (SELECT ct.amount FROM contracts ct WHERE ct.id=ai.biz_id)
                  WHEN ai.biz_type='credit' THEN (SELECT cn.amount FROM credit_notes cn WHERE cn.id=ai.biz_id)
                  WHEN ai.biz_type='payment' THEN (SELECT pr.amount FROM payment_requests pr WHERE pr.id=ai.biz_id)
+                 WHEN ai.biz_type='return' THEN (SELECT COALESCE((SELECT SUM(ri.quantity) FROM return_items ri WHERE ri.return_id=ai.biz_id),0))
             END as biz_amount
         FROM approval_instances ai WHERE ai.status='pending'
         ORDER BY ai.id DESC LIMIT 50
@@ -3996,9 +4049,9 @@ def api_dashboard():
     }
     # ── ② 审批消息专区 ──
     def biz_no_expr():
-        return "CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.req_no FROM purchase_requests pr WHERE pr.id=ai.biz_id) WHEN ai.biz_type='purchase_order' THEN (SELECT po.order_no FROM purchase_orders po WHERE po.id=ai.biz_id) WHEN ai.biz_type='contract' THEN (SELECT ct.contract_no FROM contracts ct WHERE ct.id=ai.biz_id) WHEN ai.biz_type='credit' THEN (SELECT cn.credit_no FROM credit_notes cn WHERE cn.id=ai.biz_id) WHEN ai.biz_type='payment' THEN (SELECT pp.payment_no FROM payment_requests pp WHERE pp.id=ai.biz_id) WHEN ai.biz_type='receiving' THEN (SELECT rv.receive_no FROM receivings rv WHERE rv.id=ai.biz_id) WHEN ai.biz_type='requisition' THEN (SELECT rq.req_no FROM requisitions rq WHERE rq.id=ai.biz_id) END"
+        return "CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.req_no FROM purchase_requests pr WHERE pr.id=ai.biz_id) WHEN ai.biz_type='purchase_order' THEN (SELECT po.order_no FROM purchase_orders po WHERE po.id=ai.biz_id) WHEN ai.biz_type='contract' THEN (SELECT ct.contract_no FROM contracts ct WHERE ct.id=ai.biz_id) WHEN ai.biz_type='credit' THEN (SELECT cn.credit_no FROM credit_notes cn WHERE cn.id=ai.biz_id) WHEN ai.biz_type='payment' THEN (SELECT pp.payment_no FROM payment_requests pp WHERE pp.id=ai.biz_id) WHEN ai.biz_type='receiving' THEN (SELECT rv.receive_no FROM receivings rv WHERE rv.id=ai.biz_id) WHEN ai.biz_type='requisition' THEN (SELECT rq.req_no FROM requisitions rq WHERE rq.id=ai.biz_id) WHEN ai.biz_type='return' THEN (SELECT rt.return_no FROM returns rt WHERE rt.id=ai.biz_id) END"
     def biz_name_expr():
-        return "CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.purpose FROM purchase_requests pr WHERE pr.id=ai.biz_id) WHEN ai.biz_type='purchase_order' THEN (SELECT po.item_name FROM purchase_orders po WHERE po.id=ai.biz_id) WHEN ai.biz_type='contract' THEN (SELECT ct.contract_name FROM contracts ct WHERE ct.id=ai.biz_id) WHEN ai.biz_type='credit' THEN (SELECT cn.item_name FROM credit_notes cn WHERE cn.id=ai.biz_id) WHEN ai.biz_type='payment' THEN (SELECT pp.payment_reason FROM payment_requests pp WHERE pp.id=ai.biz_id) WHEN ai.biz_type='receiving' THEN (SELECT rv.item_name FROM receivings rv WHERE rv.id=ai.biz_id) WHEN ai.biz_type='requisition' THEN (SELECT rq.item_name FROM requisitions rq WHERE rq.id=ai.biz_id) END"
+        return "CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.purpose FROM purchase_requests pr WHERE pr.id=ai.biz_id) WHEN ai.biz_type='purchase_order' THEN (SELECT po.item_name FROM purchase_orders po WHERE po.id=ai.biz_id) WHEN ai.biz_type='contract' THEN (SELECT ct.contract_name FROM contracts ct WHERE ct.id=ai.biz_id) WHEN ai.biz_type='credit' THEN (SELECT cn.item_name FROM credit_notes cn WHERE cn.id=ai.biz_id) WHEN ai.biz_type='payment' THEN (SELECT pp.payment_reason FROM payment_requests pp WHERE pp.id=ai.biz_id) WHEN ai.biz_type='receiving' THEN (SELECT rv.item_name FROM receivings rv WHERE rv.id=ai.biz_id) WHEN ai.biz_type='requisition' THEN (SELECT rq.item_name FROM requisitions rq WHERE rq.id=ai.biz_id) WHEN ai.biz_type='return' THEN (SELECT rt.req_no FROM returns rt WHERE rt.id=ai.biz_id) END"
     def urgent_expr():
         return "(CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.urgent FROM purchase_requests pr WHERE pr.id=ai.biz_id) WHEN ai.biz_type='purchase_order' THEN (SELECT po.urgent FROM purchase_orders po WHERE po.id=ai.biz_id) WHEN ai.biz_type='contract' THEN (SELECT ct.urgent FROM contracts ct WHERE ct.id=ai.biz_id) WHEN ai.biz_type='payment' THEN (SELECT pp.urgent FROM payment_requests pp WHERE pp.id=ai.biz_id) ELSE 0 END)"
     my_pending = c.execute("""SELECT ai.*, %s as biz_no, %s as biz_name, %s as urgent
@@ -5265,6 +5318,50 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
             c.execute("UPDATE purchase_orders SET status='已核销',updated_at=? WHERE id=?", (now(), rn['order_id']))
         else:
             c.execute("UPDATE purchase_orders SET status='已入库',updated_at=? WHERE id=?", (now(), rn['order_id']))
+    return total_q
+
+def do_return_stock(c, rid, warehouse='主库房', operator='系统'):
+    """V11.13x: 退库仓库确认 — 实物入库后增加库存 + 写流水 + 回写原出库单累计已退库数量
+    审批通过不增库存(仅置'待确认入库'), 由仓库确认本函数才真正入库(幂等: 已有入库流水则跳过)"""
+    rt = c.execute("SELECT * FROM returns WHERE id=?", (rid,)).fetchone()
+    if not rt:
+        return 0
+    done = c.execute("SELECT 1 FROM inventory_flows WHERE doc_type='return' AND doc_id=? AND flow_type='入库' LIMIT 1", (rid,)).fetchone()
+    if done:
+        return 0
+    its = c.execute("SELECT * FROM return_items WHERE return_id=? ORDER BY id", (rid,)).fetchall()
+    if not its:
+        return 0
+    total_q = 0.0
+    for it in its:
+        q = float(it['quantity'] or 0)
+        if q <= 0:
+            continue
+        total_q += q
+        inv = c.execute("SELECT * FROM inventory WHERE item_name=? AND spec=? AND (warehouse=? OR warehouse IS NULL OR warehouse='') ORDER BY quantity DESC LIMIT 1",
+                        (it['item_name'], it['spec'] or '', warehouse)).fetchone()
+        if inv is None:
+            inv = c.execute("SELECT * FROM inventory WHERE item_name=? AND spec=? ORDER BY quantity DESC LIMIT 1",
+                            (it['item_name'], it['spec'] or '')).fetchone()
+        if inv:
+            new_q = (inv['quantity'] or 0) + q
+            c.execute("UPDATE inventory SET quantity=?, last_move_date=?, updated_at=? WHERE id=?", (new_q, now(), now(), inv['id']))
+        else:
+            new_q = q
+            c.execute("INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,last_move_date,updated_at) VALUES(?,?,?,?,?,?,?)",
+                      (it['item_name'], it['spec'] or '', it['unit'] or '个', new_q, warehouse, now(), now()))
+        c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                  (it['item_name'], it['spec'] or '', it['unit'] or '个', '入库', 'return', rid, rt['return_no'],
+                   q, new_q, operator or '系统', f'退库单{rt["return_no"]}仓库确认入库', now()))
+        # 回写原出库单明细累计已退库数量
+        if it['requisition_item_id']:
+            c.execute("UPDATE requisition_items SET returned_qty=COALESCE(returned_qty,0)+? WHERE id=?", (q, it['requisition_item_id']))
+    # 回写原出库单累计退库数量(汇总明细)
+    if rt['requisition_id']:
+        c.execute("UPDATE requisitions SET returned_qty=(SELECT COALESCE(SUM(returned_qty),0) FROM requisition_items WHERE requisition_id=?), updated_at=? WHERE id=?",
+                  (rt['requisition_id'], now(), rt['requisition_id']))
+    c.execute("UPDATE returns SET status='已入库', confirmed_by=?, confirmed_at=?, warehouse=?, updated_at=? WHERE id=?",
+              (operator or '系统', now(), warehouse, now(), rid))
     return total_q
 
 # ---- V6: 入库单下载(生成标准入库单 xlsx) ----
@@ -7517,6 +7614,269 @@ def api_requisition_void(rid):
     c.commit(); c.close()
     log(session['user_name'], '作废出库单', f'{rq["req_no"]} (未出库, 库存未变动)')
     return jsonify({'success': True, 'message': '出库单已作废（未出库，库存未变动）'})
+
+# ---- V11.13x 退库模块(领用归还, 不退供应商) ----
+def _req_returnable(conn, req_id):
+    """出库单可退明细: 每行 = 出库数量 - 已退(已入库) - 在途(待审批/待确认入库), 防超额退库"""
+    its = conn.execute("SELECT * FROM requisition_items WHERE requisition_id=? ORDER BY id", (req_id,)).fetchall()
+    out = []
+    for it in its:
+        confirmed = conn.execute("SELECT COALESCE(SUM(ri.quantity),0) FROM return_items ri JOIN returns rt ON rt.id=ri.return_id WHERE ri.requisition_item_id=? AND rt.status='已入库'", (it['id'],)).fetchone()[0]
+        inflight = conn.execute("SELECT COALESCE(SUM(ri.quantity),0) FROM return_items ri JOIN returns rt ON rt.id=ri.return_id WHERE ri.requisition_item_id=? AND rt.status IN ('待审批','待确认入库')", (it['id'],)).fetchone()[0]
+        qty = float(it['quantity'] or 0)
+        out.append({
+            'requisition_item_id': it['id'], 'item_name': it['item_name'], 'spec': it['spec'] or '',
+            'unit': it['unit'] or '个', 'quantity': qty,
+            'returned_qty': confirmed, 'in_flight': inflight,
+            'returnable': max(0.0, qty - confirmed - inflight),
+        })
+    return out
+
+@app.route('/api/returns')
+@login_required
+def api_returns():
+    """退库单列表 — 库管员/部门负责人/领导可见; 员工看自己; 采购员/财务不看(库房的事)"""
+    role = session.get('user_role')
+    if role in ('采购员', '财务'):
+        return jsonify([])
+    conn = db()
+    if role in ('员工',):
+        rows = conn.execute("SELECT * FROM returns WHERE requester=? ORDER BY id DESC LIMIT 100", (session.get('user_name', ''),)).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM returns ORDER BY id DESC LIMIT 100").fetchall()
+    out = []
+    for r in rows:
+        d = dict_row(r)
+        its = [dict_row(x) for x in conn.execute("SELECT * FROM return_items WHERE return_id=? ORDER BY id", (r['id'],)).fetchall()]
+        d['items'] = its
+        d['item_count'] = len(its) or 1
+        d['total_qty'] = sum(float(x['quantity'] or 0) for x in its)
+        out.append(d)
+    conn.close()
+    return jsonify(out)
+
+@app.route('/api/requisitions/<int:rid>/returnable')
+@login_required
+def api_requisition_returnable(rid):
+    """退库前自动带出: 出库单 + 可退明细(可退数量)"""
+    conn = db()
+    rq = conn.execute("SELECT * FROM requisitions WHERE id=?", (rid,)).fetchone()
+    if not rq:
+        conn.close(); return jsonify({'error': '出库单不存在'}), 404
+    items = _req_returnable(conn, rid)
+    conn.close()
+    return jsonify({'requisition': dict_row(rq), 'items': items})
+
+@app.route('/api/returns', methods=['POST'])
+@login_required
+def api_create_return():
+    """新建退库单: 必须关联已领用完成(已出库)的出库单, 自动带出物料+可退数量, 校验不超可退, 提交走钉钉审批"""
+    d = request.json; conn = db()
+    req_id = d.get('requisition_id')
+    if not req_id:
+        conn.close(); return jsonify({'error': '请选择要退库的领用出库单'}), 400
+    rq = conn.execute("SELECT * FROM requisitions WHERE id=?", (req_id,)).fetchone()
+    if not rq:
+        conn.close(); return jsonify({'error': '关联出库单不存在'}), 404
+    if rq['status'] != '已出库':
+        conn.close(); return jsonify({'error': f'该出库单当前状态({rq["status"]})不可退库，仅已领用完成(已出库)可退'}), 400
+    items = [it for it in (d.get('items') or []) if it.get('requisition_item_id') and float(it.get('quantity', 0) or 0) > 0]
+    if not items:
+        conn.close(); return jsonify({'error': '请至少填写一条退库明细及数量'}), 400
+    avail = {x['requisition_item_id']: x for x in _req_returnable(conn, req_id)}
+    for it in items:
+        a = avail.get(int(it['requisition_item_id']))
+        if not a:
+            conn.close(); return jsonify({'error': '退库明细不在该出库单内'}), 400
+        q = float(it['quantity'])
+        if q > a['returnable'] + 1e-9:
+            conn.close(); return jsonify({'error': f'退库数量超可退数量: {a["item_name"]}({a["spec"]}) 可退{a["returnable"]}{a["unit"]}'}), 400
+    no = gen_no('TH', 'returns', 'return_no', conn)
+    receiver = rq['receiver'] or rq['requester'] or ''
+    _dept = rq['receive_dept'] or rq['dept'] or ''
+    warehouse = (d.get('warehouse') or '主库房').strip() or '主库房'
+    # 附件图片(退库实物照片等) → 同步钉钉审批(与入库单一致)
+    _atts = d.get('attachments') or []
+    _atts_json = json.dumps([str(a) for a in _atts if a], ensure_ascii=False) if _atts else ''
+    conn.execute("INSERT INTO returns(return_no,requisition_id,req_no,dept,requester,receiver,purpose,remark,status,warehouse,attachments,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                 (no, req_id, rq['req_no'], _dept, session['user_name'], receiver,
+                  (d.get('purpose') or '').strip(), (d.get('remark') or '').strip(), '待审批', warehouse, _atts_json, now()))
+    rid = conn.execute("SELECT id FROM returns WHERE return_no=?", (no,)).fetchone()[0]
+    for it in items:
+        conn.execute("INSERT INTO return_items(return_id,requisition_item_id,item_name,spec,unit,quantity,created_at) VALUES(?,?,?,?,?,?,?)",
+                     (rid, int(it['requisition_item_id']), it.get('item_name', ''), it.get('spec', '') or '', it.get('unit', '个') or '个', float(it['quantity']), now()))
+    conn.commit()
+    create_approvals('return', rid, 0)
+    conn.close()
+    try: start_instances('return', rid)
+    except Exception as e: print('return start_instances err:', e)
+    log(session['user_name'], '新建退库单', f'{no} 关联{rq["req_no"]} {len(items)}项 待审批')
+    return jsonify({'success': True, 'return_no': no, 'id': rid, 'message': f'退库单 {no} 已提交审批，审批通过后待仓库确认入库'})
+
+@app.route('/api/returns/<int:rid>/confirm', methods=['POST'])
+@login_required
+def api_return_confirm(rid):
+    """仓库确认实物入库 — 此时才增加库存 + 生成库存流水 + 回写原出库单累计已退库数量"""
+    conn = db()
+    rt = conn.execute("SELECT * FROM returns WHERE id=?", (rid,)).fetchone()
+    if not rt:
+        conn.close(); return jsonify({'error': '退库单不存在'}), 404
+    if rt['status'] != '待确认入库':
+        conn.close(); return jsonify({'error': f'当前状态({rt["status"]})不可确认入库(审批通过后方可确认)'}), 400
+    warehouse = (request.json or {}).get('warehouse') or rt['warehouse'] or '主库房'
+    total = do_return_stock(conn, rid, warehouse, session['user_name'])
+    conn.commit(); conn.close()
+    log(session['user_name'], '退库仓库确认入库', f'{rt["return_no"]} 共{total}件 已入库并回写出库单')
+    return jsonify({'success': True, 'message': f'退库单 {rt["return_no"]} 已确认入库，库存已增加并生成流水'})
+
+@app.route('/api/returns/<int:rid>/void', methods=['POST'])
+@login_required
+def api_return_void(rid):
+    """退库单作废(软删除, 不物理删除) — 已入库则回滚库存+删流水+回写减回; 未入库直接作废"""
+    conn = db()
+    rt = conn.execute("SELECT * FROM returns WHERE id=?", (rid,)).fetchone()
+    if not rt:
+        conn.close(); return jsonify({'error': '退库单不存在'}), 404
+    if rt['status'] == '已作废':
+        conn.close(); return jsonify({'error': '该退库单已作废'}), 400
+    if rt['status'] == '已入库':
+        flows = conn.execute("SELECT * FROM inventory_flows WHERE doc_type='return' AND doc_id=? AND flow_type='入库'", (rid,)).fetchall()
+        for f in flows:
+            inv = conn.execute("SELECT * FROM inventory WHERE item_name=? AND spec=? ORDER BY quantity DESC", (f['item_name'], f['spec'] or '')).fetchone()
+            if inv:
+                new_q = (inv['quantity'] or 0) - f['qty']
+                conn.execute("UPDATE inventory SET quantity=?, updated_at=? WHERE id=?", (new_q, now(), inv['id']))
+        conn.execute("DELETE FROM inventory_flows WHERE doc_type='return' AND doc_id=?", (rid,))
+        its = conn.execute("SELECT * FROM return_items WHERE return_id=?", (rid,)).fetchall()
+        for it in its:
+            if it['requisition_item_id']:
+                conn.execute("UPDATE requisition_items SET returned_qty=MAX(0,COALESCE(returned_qty,0)-?) WHERE id=?", (float(it['quantity'] or 0), it['requisition_item_id']))
+        if rt['requisition_id']:
+            conn.execute("UPDATE requisitions SET returned_qty=(SELECT COALESCE(SUM(returned_qty),0) FROM requisition_items WHERE requisition_id=?), updated_at=? WHERE id=?", (rt['requisition_id'], now(), rt['requisition_id']))
+        conn.execute("UPDATE returns SET status='已作废', updated_at=? WHERE id=?", (now(), rid))
+        conn.execute("UPDATE approval_instances SET status='rejected', comment='单据作废' WHERE biz_type='return' AND biz_id=? AND status='pending'", (rid,))
+        conn.commit(); conn.close()
+        log(session['user_name'], '作废退库单', f'{rt["return_no"]} (已入库, 库存已回滚)')
+        return jsonify({'success': True, 'message': '退库单已作废，库存已回滚'})
+    conn.execute("UPDATE returns SET status='已作废', updated_at=? WHERE id=?", (now(), rid))
+    conn.execute("UPDATE approval_instances SET status='rejected', comment='单据作废' WHERE biz_type='return' AND biz_id=? AND status='pending'", (rid,))
+    conn.commit(); conn.close()
+    log(session['user_name'], '作废退库单', f'{rt["return_no"]} (未入库, 库存未变动)')
+    return jsonify({'success': True, 'message': '退库单已作废（未入库，库存未变动）'})
+
+@app.route('/api/returns/<int:rid>/resubmit', methods=['POST'])
+@login_required
+def api_return_resubmit(rid):
+    """钉钉驳回后退库单修改并重新提交: 重校验可退数量, 状态回待审批, 重新走钉钉审批"""
+    d = request.json or {}; conn = db()
+    rt = conn.execute("SELECT * FROM returns WHERE id=?", (rid,)).fetchone()
+    if not rt:
+        conn.close(); return jsonify({'error': '退库单不存在'}), 404
+    if rt['status'] != '已驳回':
+        conn.close(); return jsonify({'error': f'当前状态({rt["status"]})无需重新提交(仅已驳回可重提)'}), 400
+    if d.get('items'):
+        items = [it for it in d['items'] if it.get('requisition_item_id') and float(it.get('quantity', 0) or 0) > 0]
+        if not items:
+            conn.close(); return jsonify({'error': '退库明细无效'}), 400
+        avail = {x['requisition_item_id']: x for x in _req_returnable(conn, rt['requisition_id'])}
+        for it in items:
+            a = avail.get(int(it['requisition_item_id']))
+            if not a:
+                conn.close(); return jsonify({'error': '退库明细不在该出库单内'}), 400
+            if float(it['quantity']) > a['returnable'] + 1e-9:
+                conn.close(); return jsonify({'error': f'退库数量超可退数量: {a["item_name"]}({a["spec"]}) 可退{a["returnable"]}{a["unit"]}'}), 400
+        conn.execute("DELETE FROM return_items WHERE return_id=?", (rid,))
+        for it in items:
+            conn.execute("INSERT INTO return_items(return_id,requisition_item_id,item_name,spec,unit,quantity,created_at) VALUES(?,?,?,?,?,?,?)",
+                         (rid, int(it['requisition_item_id']), it.get('item_name', ''), it.get('spec', '') or '', it.get('unit', '个') or '个', float(it['quantity']), now()))
+    else:
+        avail = {x['requisition_item_id']: x for x in _req_returnable(conn, rt['requisition_id'])}
+        its = conn.execute("SELECT * FROM return_items WHERE return_id=?", (rid,)).fetchall()
+        for it in its:
+            a = avail.get(it['requisition_item_id'])
+            if not a or float(it['quantity'] or 0) > a['returnable'] + 1e-9:
+                conn.close(); return jsonify({'error': '退库数量超可退数量，请调整明细后重提'}), 400
+    if d.get('purpose') is not None:
+        conn.execute("UPDATE returns SET purpose=?, updated_at=? WHERE id=?", (str(d.get('purpose') or '').strip(), now(), rid))
+    if d.get('remark') is not None:
+        conn.execute("UPDATE returns SET remark=?, updated_at=? WHERE id=?", (str(d.get('remark') or '').strip(), now(), rid))
+    conn.execute("UPDATE returns SET status='待审批', rejected_reason='', updated_at=? WHERE id=?", (now(), rid))
+    conn.execute("DELETE FROM dingtalk_instances WHERE biz_type='return' AND biz_id=?", (rid,))
+    conn.commit()
+    create_approvals('return', rid, 0)
+    conn.close()
+    try: start_instances('return', rid)
+    except Exception as e: print('return resubmit start_instances err:', e)
+    log(session['user_name'], '退库单重新提交', f'{rt["return_no"]} 待审批')
+    return jsonify({'success': True, 'message': f'退库单 {rt["return_no"]} 已重新提交审批'})
+
+@app.route('/api/returns/<int:rid>/download')
+@login_required
+def api_return_download(rid):
+    """退库单下载(打印/导出 xlsx)"""
+    conn = db()
+    rt = conn.execute("SELECT * FROM returns WHERE id=?", (rid,)).fetchone()
+    if not rt:
+        conn.close(); return jsonify({'error': '退库单不存在'}), 404
+    its = conn.execute("SELECT * FROM return_items WHERE return_id=? ORDER BY id", (rid,)).fetchall()
+    conn.close()
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, Border, Side
+    wb = Workbook(); ws = wb.active; ws.title = '退库单'
+    thin = Side(style='thin', color='000000')
+    bd = Border(left=thin, right=thin, top=thin, bottom=thin)
+    CN = lambda bold=False, size=10: Font(name='宋体', bold=bold, size=size)
+    ws.merge_cells('A1:E1')
+    c = ws['A1']; c.value = '河曲县洗选煤有限责任公司部门退库单'
+    c.font = CN(bold=True, size=14); c.alignment = Alignment(horizontal='center', vertical='center')
+    ws.row_dimensions[1].height = 26
+    ws['A2'] = '日期：'; ws['B2'] = (rt['created_at'] or '')[:10]
+    ws['C2'] = '票号：'; ws['D2'] = rt['return_no']
+    for cc in ('A2','B2','C2','D2'):
+        ws[cc].font = CN()
+    ws.merge_cells('A3:C3')
+    ws['A3'] = '关联出库单：' + (rt['req_no'] or ('#' + str(rt['requisition_id'])))
+    ws['A3'].font = CN()
+    ws['D3'] = '部门：' + (rt['dept'] or ''); ws['D3'].font = CN()
+    ws['E3'] = '仓库：' + (rt['warehouse'] or '主库房'); ws['E3'].font = CN()
+    headers = ['No.', '品名', '规格', '单位', '退库数量']
+    for j, h in enumerate(headers, 1):
+        cc = ws.cell(row=4, column=j, value=h)
+        cc.font = CN(bold=True); cc.border = bd
+        cc.alignment = Alignment(horizontal='center', vertical='center')
+    ws.row_dimensions[4].height = 18
+    r = 5; t_qty = 0.0
+    for idx, it in enumerate(its, 1):
+        q = float(it['quantity'] or 0); t_qty += q
+        vals = [idx, it['item_name'], it['spec'] or '', it['unit'] or '个', q]
+        for j, v in enumerate(vals, 1):
+            cc = ws.cell(row=r, column=j, value=v)
+            cc.font = CN(); cc.border = bd
+            cc.alignment = Alignment(vertical='center', horizontal='left' if j == 2 else 'center')
+        r += 1
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=4)
+    ws.cell(row=r, column=1, value='合计：').font = CN(bold=True)
+    ws.cell(row=r, column=5, value=t_qty).font = CN(bold=True)
+    for j in range(1, 6):
+        ws.cell(row=r, column=j).border = bd
+    r += 1
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=5)
+    ws.cell(row=r, column=1, value='库管员签字：____________    退库人签字：____________    操作员：____________').font = CN()
+    for j in range(1, 6):
+        ws.cell(row=r, column=j).border = bd
+    ws.row_dimensions[r].height = 22
+    for j, w in enumerate([6, 22, 20, 8, 12], 1):
+        ws.column_dimensions[chr(64 + j)].width = w
+    stamp_leader_sign(ws, r, 'return', rt['id'])
+    ws.page_setup.orientation = 'landscape'
+    ws.page_setup.fitToWidth = 1
+    bio = io.BytesIO(); wb.save(bio); bio.seek(0)
+    from flask import send_file
+    resp = send_file(bio, as_attachment=True, download_name=f'{rt["return_no"]}退库单.xlsx',
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    resp.headers['Pragma'] = 'no-cache'
+    return resp
 
 @app.route('/api/docs/<biz_type>/<int:bid>/withdraw', methods=['POST'])
 @login_required
