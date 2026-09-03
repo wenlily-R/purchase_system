@@ -22,6 +22,7 @@ data/dingtalk_config_backup*.json
 
 # 公网隧道地址(每台机器不同)
 data/public_url.txt
+data/固定公网地址.txt
 
 # Windows 遗留/运行产物
 data/cloudflared.exe

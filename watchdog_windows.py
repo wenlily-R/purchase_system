@@ -76,7 +76,9 @@ def start_app():
     log('启动/重启 app.py ...')
     app_proc = subprocess.Popen([VENV_PY, APP], cwd=BASE,
         stdout=open(os.path.join(LOGDIR, 'app_watchdog.log'), 'a', encoding='utf-8'),
-        stderr=subprocess.STDOUT)
+        stderr=subprocess.STDOUT,
+        stdin=subprocess.DEVNULL,
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
     return True
 
 # ---------- 隧道 ----------
@@ -110,7 +112,7 @@ def start_tunnel():
     ts = time.strftime('%H%M%S')
     tf = open(os.path.join(LOGDIR, 'tunnel_%s.log' % ts), 'w', encoding='utf-8', errors='ignore')
     tun_proc = subprocess.Popen(
-        [CF, 'tunnel', '--protocol', 'quic', '--url', 'http://127.0.0.1:%d' % PORT, '--no-autoupdate'],
+        [CF, 'tunnel', '--protocol', 'http2', '--url', 'http://127.0.0.1:%d' % PORT, '--no-autoupdate'],
         cwd=os.path.join(BASE, 'data'), stdout=tf, stderr=subprocess.STDOUT)
     url = None
     for _ in range(45):
@@ -163,12 +165,15 @@ def main():
             changed = [p for p in cur if cur.get(p) != last.get(p)] + [p for p in last if last.get(p) != cur.get(p)]
             log('代码变化: %s → 重启' % '; '.join(os.path.relpath(p, BASE) for p in changed[:4]))
             start_app(); last = snapshot(); time.sleep(1); continue
-        # 隧道进程死了 → 5分钟后重建
+        # 隧道进程死了 → 退避重建(失败递增, 防持续触发限流)
         if tun_proc and tun_proc.poll() is not None:
             log('隧道进程退出, %d 秒后重建...' % backoff)
             time.sleep(backoff)
             url = start_tunnel()
-            backoff = max(backoff, 300)
+            if url:
+                backoff = 300
+            else:
+                backoff = min(backoff * 2, 3600)
             fail_cnt = 0
             continue
         # 隧道健康检查
@@ -185,7 +190,10 @@ def main():
                     except Exception: pass
                     time.sleep(backoff)
                     url = start_tunnel()
-                    backoff = max(backoff, 300)
+                    if url:
+                        backoff = 300
+                    else:
+                        backoff = min(backoff * 2, 3600)
                     fail_cnt = 0
         time.sleep(30)
 
