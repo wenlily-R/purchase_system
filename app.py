@@ -1799,8 +1799,8 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
                           'unit': x['unit'] or '个', 'price': x['price'] or 0} for x in _oi],
                         ensure_ascii=False) if _oi else ''
                     _name = (_oi[0]['item_name'] + ' 等%d项' % len(_oi)) if len(_oi) > 1 else (_oi[0]['item_name'] if _oi else _po['item_name'])
-                    # V11.164: 自动生成的入库单=正式(is_est=0, 合同链路已有正式单据, 票货齐直入账); 手动入库才默认暂估(货到票未到)
-                    c.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,dept,items_json,is_est) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,0)",
+                    # V11.198: 自动生成的入库单默认暂估(is_est=1, 货到票未到先暂估入账, 收到发票后发票核对红冲转正式; 需正式的可在提交时/手动入库选正式)
+                    c.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,dept,items_json,is_est) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,1)",
                               (_rno, None, _po['id'], _name, '', _qty, '个', 0, '待入库', now(), '合同生效后自动进入入库板块(整批%d项)' % (len(_oi) if _oi else 1), _dept, _items_json))
     c.execute("UPDATE feishu_instances SET status='synced', updated_at=? WHERE biz_type=? AND biz_id=? AND status='pending'", (now(), biz_type, biz_id))
     c.execute("UPDATE dingtalk_instances SET status='synced', updated_at=? WHERE biz_type=? AND biz_id=? AND status='pending'", (now(), biz_type, biz_id))
@@ -5032,8 +5032,8 @@ def api_create_order():
                 [{'item_name': r[0], 'spec': r[1] or '', 'quantity': r[3], 'unit': r[2] or '个', 'price': r[4] or 0} for r in rows],
                 ensure_ascii=False)
             _name = (first[0] + ' 等%d项' % len(rows)) if len(rows) > 1 else first[0]
-            # V11.164: 自动生成的入库单=正式(is_est=0, 货到付款下单已有正式订单, 票货齐直入账); 手动入库才默认暂估(货到票未到)
-            conn.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,dept,items_json,is_est) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,0)",
+            # V11.198: 自动生成的入库单默认暂估(is_est=1, 货到票未到先暂估入账, 收到发票后发票核对红冲转正式)
+            conn.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,dept,items_json,is_est) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,1)",
                 (rno, None, oid, _name, '', total_qty, first[2], 0, '待入库', now(), '货到付款: 下单后自动进入入库板块(整批%d项)' % len(rows), _dept, _items_json))
     conn.commit()
     create_approvals('purchase_order', oid, grand_total, submitter=session['user_name'])   # 一张订单一次审批
@@ -5950,7 +5950,7 @@ def api_inquiry_split_select(iid):
                 [{'item_name': r[0], 'spec': r[1] or '', 'quantity': r[3], 'unit': r[2] or '个', 'price': r[4] or 0} for r in rows],
                 ensure_ascii=False)
             _rname = (rows[0][0] + ' 等%d项' % len(rows)) if len(rows) > 1 else rows[0][0]
-            conn.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,dept,items_json,is_est) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,0)",
+            conn.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,dept,items_json,is_est) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,1)",
                 (_rno, None, oid, _rname, '', _rqty, rows[0][2] or '个', 0, '待入库', now(),
                  '分项定标: 订单%s自动进入入库板块(整批%d项)' % (no, len(rows)), pr['dept'] or '', _rjson))
         except Exception as _re:
@@ -6470,8 +6470,8 @@ def api_sign_delivery(did):
         except Exception:
             pass
         rno = gen_no('RK','receivings','receive_no')
-        # V11.164: 送货签收自动生成的入库单=正式(is_est=0, 已有送货单正式单据)
-        conn.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,dept,is_est) VALUES(?,?,?,?,?,?,?,?,?,?,?,0)",
+        # V11.198: 送货签收自动生成的入库单默认暂估(is_est=1, 货到票未到先暂估入账, 收票后红冲转正式)
+        conn.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,dept,is_est) VALUES(?,?,?,?,?,?,?,?,?,?,?,1)",
             (rno,did,dn['order_id'],dn['item_name'],dn['spec'],dn['quantity'],dn['unit'],dn['quantity'],'待检验',now(),_dept))
     if dn['order_id']: conn.execute("UPDATE purchase_orders SET status='已到货',updated_at=? WHERE id=?", (now(),dn['order_id']))
     conn.commit(); conn.close()
@@ -6507,7 +6507,10 @@ def api_receivings():
             items = [dict_row(x) for x in conn.execute("SELECT * FROM order_items WHERE order_id=? ORDER BY id", (r['order_id'],)).fetchall()]
             cnt = conn.execute("SELECT COUNT(*), COALESCE(SUM(quantity),0) FROM order_items WHERE order_id=?", (r['order_id'],)).fetchone()
             if cnt and cnt[0]:
-                d['item_count'] = cnt[0]; d['total_qty'] = cnt[1]
+                d['item_count'] = cnt[0]
+                # V11.198: 数量列显示本单实际验收量(qualified_qty优先, 分批入库时不再是订单整批总量)
+                d['total_qty'] = r['qualified_qty'] if (r['qualified_qty'] or 0) > 0 else (r['quantity'] or cnt[1])
+                d['order_total_qty'] = cnt[1]  # 订单总量(详情可对比剩余)
         if not items and r['items_json']:
             try:
                 items = json.loads(r['items_json'])
@@ -6556,7 +6559,7 @@ def api_complete_receiving(rid):
     pend = conn.execute("SELECT 1 FROM approval_instances WHERE biz_type='receiving' AND biz_id=? AND status='pending' LIMIT 1", (rid,)).fetchone()
     if rn['status'] == '待审批' and pend:
         conn.close(); return jsonify({'error': '该入库单已在审批中，请勿重复提交（如需修改请先撤回）'}), 400
-    warehouse = d.get('warehouse', '主库房'); inspector = d.get('inspector', '管理员')
+    warehouse = d.get('warehouse', '主库房'); inspector = (d.get('inspector') or '').strip() or session.get('user_name', '') or '系统'
     qty_override = d.get('items') or {}
     try: conn.execute("ALTER TABLE receivings ADD COLUMN completed_at TEXT")
     except Exception: pass
@@ -6752,7 +6755,7 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
                   (rn['item_name'], rn['spec'] or '', rn['unit'] or '个', '入库', 'receiving', rid, rn['receive_no'], q, new_bal,
                    _op_name(), f'入库单{rn["receive_no"]}审批通过', now()))
     c.execute("UPDATE receivings SET status='已入库',completed_at=?,warehouse=?,inspector=? WHERE id=?",
-              (now(), warehouse, inspector or '管理员', rid))
+              (now(), warehouse, inspector or rn['inspector'] or '系统', rid))
     if rn['order_id']:
         po = c.execute("SELECT * FROM purchase_orders WHERE id=?", (rn['order_id'],)).fetchone()
         if po and po['trade_mode'] == '先款后货':
@@ -7810,8 +7813,8 @@ def api_orders_from_requests():
                 [{'item_name': it[0], 'spec': it[1] or '', 'quantity': it[3], 'unit': it[2] or '个', 'price': it[4] or 0} for it in rows],
                 ensure_ascii=False)
             _name = (first[0] + ' 等%d项' % len(rows)) if len(rows) > 1 else first[0]
-            # V11.164: 自动生成的入库单=正式(is_est=0, 货到付款下单已有正式订单, 票货齐直入账); 手动入库才默认暂估(货到票未到)
-            conn.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,items_json,is_est) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,0)",
+            # V11.198: 自动生成的入库单默认暂估(is_est=1, 货到票未到先暂估入账, 收到发票后发票核对红冲转正式)
+            conn.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,items_json,is_est) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1)",
             (rno, None, oid, _name, '', total_qty, first[2], 0, '待入库', now(), '货到付款: 下单后自动进入入库板块(整批%d项)' % len(rows), _items_json))
     for rid in used_reqs:
         conn.execute("UPDATE purchase_requests SET status='已下单', updated_at=? WHERE id=?", (now(), rid))
