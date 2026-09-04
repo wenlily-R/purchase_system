@@ -4997,7 +4997,8 @@ function afUserOptions(selName){
   return h;
 }
 function afRowHtml(l){
-  const roles=['部门负责人','财务','分管领导','总经理'];
+  // V11.207: 角色列表扩展(库管员/采购员等) — 库管审核节点配'库管员'角色, 审批人可指定到人
+  const roles=['部门负责人','库管员','采购员','财务','分管领导','总经理'];
   return `<div class="af-row" style="display:flex;gap:6px;align-items:center;margin-bottom:4px;flex-wrap:wrap">
     <input class="fc" style="width:80px" type="number" placeholder="金额≥" value="${l.min_amount}" onchange="afCheckRows()">
     <span style="color:#888">元 ~</span>

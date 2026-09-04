@@ -4169,7 +4169,7 @@ def api_save_approval_flow():
     levels = d.get('levels') or []
     if biz_type not in ('purchase_request', 'purchase_order', 'contract', 'credit', 'payment', 'receiving', 'requisition', 'return_request', 'inquiry_approval', 'collect_accept'):
         return jsonify({'error': '未知单据类型'}), 400
-    valid_roles = ('部门负责人', '财务', '分管领导', '总经理')
+    valid_roles = ('部门负责人', '库管员', '采购员', '财务', '分管领导', '总经理')
     parsed = []
     for lv in levels:
         role = str(lv.get('role', '')).strip()
