@@ -1418,7 +1418,7 @@ function apprZone(z){
       <span style="color:var(--v9-t2);font-size:10px">待审:${esc(x.role||'')}</span>
       <span style="white-space:nowrap">
         <button class="btn btn-o btn-sm" onclick="viewBiz('${x.biz_type}',${x.biz_id})">查看详情</button>
-        ${canApprove(x)?`<button class="btn btn-p btn-sm" onclick="doApprove('${x.biz_type}',${x.biz_id})">✓同意</button> <button class="btn btn-d btn-sm" onclick="doReject('${x.biz_type}',${x.biz_id})">✕驳回</button>`:'<span style="color:#bbb;font-size:10px" title="仅当前节点指定审批人可操作">🔒无权</span>'}
+        ${canApprove(x)?`<button class="btn btn-p btn-sm" onclick="doApprove('${x.biz_type}',${x.biz_id},'${x.role||''}')">✓同意</button> <button class="btn btn-d btn-sm" onclick="doReject('${x.biz_type}',${x.biz_id},'${x.role||''}')">✕驳回</button>`:'<span style="color:#bbb;font-size:10px" title="仅当前节点指定审批人可操作">🔒无权</span>'}
         <button class="btn btn-sm" style="background:#fff3ea;border:1px solid #f8c69a;color:#c05e0a" onclick="urgentRemind('${x.biz_type}',${x.biz_id})" title="向当前审批人钉钉加急提醒">⏰钉钉加急</button>
       </span></div>`).join(''):'<div style="color:#999;font-size:11px;padding:10px;text-align:center">📭 暂无待办</div>';
   }else if(z=='urgent'){
@@ -1429,7 +1429,7 @@ function apprZone(z){
       <span style="flex:1">${esc(x.biz_name||'')}</span>
       <span style="white-space:nowrap">
         <button class="btn btn-o btn-sm" onclick="viewBiz('${x.biz_type}',${x.biz_id})">查看详情</button>
-        ${canApprove(x)?`<button class="btn btn-p btn-sm" onclick="doApprove('${x.biz_type}',${x.biz_id})">✓同意</button> <button class="btn btn-d btn-sm" onclick="doReject('${x.biz_type}',${x.biz_id})">✕驳回</button>`:''}
+        ${canApprove(x)?`<button class="btn btn-p btn-sm" onclick="doApprove('${x.biz_type}',${x.biz_id},'${x.role||''}')">✓同意</button> <button class="btn btn-d btn-sm" onclick="doReject('${x.biz_type}',${x.biz_id},'${x.role||''}')">✕驳回</button>`:''}
         <button class="btn btn-sm" style="background:#fff3ea;border:1px solid #f8c69a;color:#c05e0a" onclick="urgentRemind('${x.biz_type}',${x.biz_id})">⏰钉钉加急</button>
       </span></div>`).join(''):'<div style="color:#27ae60;font-size:11px;padding:10px;text-align:center">✅ 暂无加急审批</div>';
   }else if(z=='started'){
@@ -1808,8 +1808,8 @@ async function loadInquiries(){
       else if(r.approval_status=='已通过'||r.approval_status=='已批准') approvalHtml='<span style="color:#27ae60;font-size:9px">✅已通过</span>';
       else if(r.approval_status=='已驳回') approvalHtml='<span style="color:#e74c3c;font-size:9px">❌已驳回</span>';
       return `<td><b>${esc(r.inq_no)}</b></td><td>${esc(r.req_no||('#'+r.req_id))}</td><td>${esc(r.purpose||'')}</td>
-      <td>${r.sup_count||0}家</td><td style="color:${(r.quoted_count||0)>0?'#27ae60':'#999'}">${r.quoted_count||0}/${r.sup_count||0}</td>
-      <td>${r.min_price?('¥'+(r.min_price||0).toFixed(0)):'—'}</td><td>${tag(r.status)}</td><td>${approvalHtml}</td>
+      <td>${r.sup_count||0}家</td><td style="color:${(r.quoted_count||0)>0?'#27ae60':'#999'}">${r.quoted_count||0}/${r.sup_count||0} 已报价</td>
+      <td>${r.min_price?('¥'+(r.min_price||0).toFixed(0)):'<span style="color:#999">🔒待开标</span>'}</td><td>${tag(r.status)}</td><td>${approvalHtml}</td>
       <td><button class="lnk" onclick="showInquiry(${r.id})">详情/比价</button></td>`;
     });
 }
@@ -1889,7 +1889,9 @@ async function showInquiry(qid){
   // V11.205: 统一开标 — 截止前锁定期提示(内部不可看报价; 供应商正常报价); 主管级可延长
   const canExtend = ME && ['系统管理员','分管领导','总经理'].includes(ME.role) && d.status=='询价中';
   if(d.locked){
-    h+=`<div style="margin:8px 0;padding:10px 12px;background:#fff3cd;border:1px solid #ffe08a;border-radius:6px;font-size:11px;color:#7d6608">🔒 <b>报价未开标，暂不可查看</b>：报价截止 <b>${esc(d.deadline||'')}</b> 后自动解锁，届时按价格从低到高统一展示各家报价。供应商在截止前仍可正常提交/修改报价。${canExtend?` <button class="btn btn-o btn-sm" style="margin-left:6px" onclick="showExtendDl(${d.id},'${esc(d.deadline||'')}')">⏰ 延长截止时间</button>`:''}</div>`;
+    h+=`<div style="margin:8px 0;padding:10px 12px;background:#fff3cd;border:1px solid #ffe08a;border-radius:6px;font-size:11px;color:#7d6608">🔒 <b>报价未开标，暂不可查看</b>：报价截止 <b>${esc(d.deadline||'')}</b> 后自动解锁（若三家全部提前报完价也会提前解锁），届时按价格从低到高统一展示各家报价。供应商在截止前仍可正常提交/修改报价。${canExtend?` <button class="btn btn-o btn-sm" style="margin-left:6px" onclick="showExtendDl(${d.id},'${esc(d.deadline||'')}')">⏰ 延长截止时间</button>`:''}</div>`;
+  }else if(d.all_quoted){
+    h+=`<div style="margin:8px 0;padding:8px 10px;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:6px;font-size:11px;color:#2e7d32">🔓 <b>全部供应商已提前报完价 — 已提前开标</b>，报价按价格从低到高展示，可正常比价/提交定标审批</div>`;
   }else if(d.deadline_passed){
     h+=`<div style="margin:8px 0;padding:8px 10px;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:6px;font-size:11px;color:#2e7d32">🔓 已统一开标 — 报价按价格从低到高展示，可正常比价/定标/导出</div>`;
   }
@@ -2435,7 +2437,7 @@ async function loadApprovals(){
     return `<td><span class="tag" style="background:${tm[1]}">${tm[0]}</span></td><td><b>${esc(r.biz_no||'')}</b></td><td style="max-width:200px">${esc(r.biz_name||'')}</td>
       <td>${r.biz_type=='purchase_request'?'<span style="color:#999">-</span>':'¥'+(r.biz_amount||0).toFixed(0)}</td><td>${esc(r.role)}</td>
       <td>${r.approver?`<b style="color:var(--s)">${esc(r.approver)}</b>`:'<span style="color:#999">按角色</span>'}</td><td style="font-size:8px;color:#999">${esc((r.created_at||'').slice(5,16))}</td>
-      <td style="white-space:nowrap"><button class="btn btn-s btn-sm" onclick="doApprove('${r.biz_type}',${r.biz_id})" ${canApprove(r)?'':'disabled style="opacity:.4" title="当前用户:'+ME.name+'('+ME.username+') ID:'+ME.id+', 审批人:'+r.approver+' ID:'+r.approver_id+'"'}>✓同意</button>
+      <td style="white-space:nowrap"><button class="btn btn-s btn-sm" onclick="doApprove('${r.biz_type}',${r.biz_id},'${r.role||''}')" ${canApprove(r)?'':'disabled style="opacity:.4" title="当前用户:'+ME.name+'('+ME.username+') ID:'+ME.id+', 审批人:'+r.approver+' ID:'+r.approver_id+'"'}>✓同意</button>
       <button class="btn btn-d btn-sm" onclick="doReject('${r.biz_type}',${r.biz_id})" ${canApprove(r)?'':'disabled style="opacity:.4"'}>✕驳回</button>
       <button class="lnk" onclick="viewBiz('${r.biz_type}',${r.biz_id})">详情</button>
       <button class="lnk" style="color:#e67e22" onclick="urgentRemind('${r.biz_type}',${r.biz_id})">⏰加急</button></td>`});
@@ -2665,10 +2667,16 @@ async function urgentRemind(bt,bid){
   if(r.success){alert('✅ '+r.message);loadDashboard();loadApprovals()}
   else alert(r.error||'发送失败');
 }
-async function doApprove(bt,bid){
+async function doApprove(bt,bid,role){
   // V11.2: 电子签名 — 弹出手写签名板, 领导在线签字后同意
+  // V11.217: 库管员节点(采购申请) — 先核对实物库存+填采购意见, 再签名同意
+  let _invHtml='';
+  if(bt=='purchase_request' && role=='库管员'){
+    _invHtml='<div style="font-size:11px;margin-bottom:8px">📦 <b>库管库存核对</b>（逐项核对现有库存，可判断是否可减少采购数量）<div id="rpInvCheck" style="font-size:10px;color:#666;margin-top:4px">加载库存中...</div></div>';
+  }
   showDetail('✍️ 审批签字',`
     <div style="font-size:11px;margin-bottom:6px">请在下方签名区<span style="color:var(--d)">手写签名</span>（鼠标或手指书写），签字后点击「同意并签字」完成审批：</div>
+    ${_invHtml}
     <div style="position:relative;border:2px dashed #c9d4e8;border-radius:6px;background:#fafcff;touch-action:none">
       <canvas id="signPad" width="560" height="200" style="width:100%;height:200px;display:block;cursor:crosshair"></canvas>
       <div id="signHint" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:#c3cfdf;font-size:12px;pointer-events:none">✍️ 请在此处签名</div>
@@ -2678,6 +2686,33 @@ async function doApprove(bt,bid){
      <button class="btn btn-w btn-sm" onclick="clearSign()">🗑 清除重写</button>
      <button class="btn btn-p" onclick="submitSign('${bt}',${bid})">✅ 同意并签字</button>`);
   initSignPad();
+  if(bt=='purchase_request' && role=='库管员'){
+    loadKeeperStockCheck(bid);
+  }
+}
+// V11.217: 库管员库存核对 — 拉申请物品+现库存, 每项可填建议采购数量/意见
+async function loadKeeperStockCheck(rid){
+  try{
+    const d=await api(`/prequests/${rid}`);
+    const items=(d&&d.items)||[];
+    if(!items.length){const b=id('rpInvCheck');if(b)b.innerHTML='<span style="color:#999">该申请无物资明细</span>';return}
+    const rows=[];
+    for(const it of items){
+      let st='<span style="color:#999">无库存记录</span>';
+      try{const r=await api(`/inventory/stock-check?name=${encodeURIComponent(it.item_name||'')}`);
+        if(r&&r.total_qty>0){st=`<b style="color:${r.total_qty>=(it.quantity||0)?'#27ae60':'#e67e22'}">现库存 ${r.total_qty}${esc(it.unit||'')}</b>${r.total_qty>=(it.quantity||0)?' <span style="color:#27ae60">(库存充足)</span>':' <span style="color:#e67e22">(库存不足)</span>'}`}
+        else st='<span style="color:#e74c3c">⚠️ 无库存</span>';
+      }catch(e){}
+      rows.push(`<div style="display:flex;gap:6px;align-items:center;padding:3px 0;border-bottom:1px solid #f0f2f5">
+        <span style="flex:2">${esc(it.item_name)}${it.spec?` <span style="color:#999;font-size:9px">${esc(it.spec)}</span>`:''}</span>
+        <span style="flex:1">申请 ${it.quantity||0}${esc(it.unit||'')}</span>
+        <span style="flex:2">${st}</span>
+        <input id="kpr${it.id||''}${it.item_name}" placeholder="建议采购量(可空)" style="width:86px;font-size:10px;padding:3px 4px;border:1px solid #d0d7e2;border-radius:4px">
+      </div>`);
+    }
+    rows.push(`<div style="margin-top:5px"><label style="font-size:10px;color:#555">📝 采购意见（库管员）：</label><textarea id="kpOpinion" style="width:100%;height:44px;font-size:11px;border:1px solid #d0d7e2;border-radius:4px;padding:4px" placeholder="如：X项库存充足建议核减，Y项建议按申请量采购…"></textarea></div>`);
+    const b=id('rpInvCheck');if(b)b.innerHTML=rows.join('');
+  }catch(e){const b=id('rpInvCheck');if(b)b.innerHTML='<span style="color:#e74c3c">库存加载失败，可忽略直接审批</span>'}
 }
 let SIGN_CTX=null,SIGN_DRAWING=false;
 function initSignPad(){
@@ -2756,7 +2791,15 @@ async function submitSign(bt,bid){
   let ink=0;for(let i=3;i<d.length;i+=4){if(d[i]>0)ink++}
   if(ink<50){alert('请先在签名区手写签名');return}
   const sig=cv.toDataURL('image/png');
-  const r=await api(`/approvals/${bt}/${bid}/approve`,{method:'POST',body:JSON.stringify({action:'approved',comment:'同意',signature:sig})});
+  // V11.217: 库管员节点 — 收集库存核对意见/建议采购量并入审批意见(留痕给后续环节/提交人看)
+  let _cmt='同意';
+  const _op=id('kpOpinion');
+  if(_op){
+    const _sug=[];document.querySelectorAll('[id^=kpr]').forEach(inp=>{if(inp.value&&inp.value.trim())_sug.push((inp.id.slice(3)||'')+'→建议购'+inp.value.trim())});
+    const _txt=_op.value.trim();
+    if(_sug.length||_txt){_cmt='同意。'+( _txt?('库管意见：'+_txt+'。'):'')+(_sug.length?('建议采购量：'+_sug.join('；')+'。'):'')}
+  }
+  const r=await api(`/approvals/${bt}/${bid}/approve`,{method:'POST',body:JSON.stringify({action:'approved',comment:_cmt,signature:sig})});
   if(r.success){alert('✅ 已签字并同意');closeMod();loadApprovals();loadDashboard()}
   else alert(r.error||'审批失败');
 }
@@ -3753,8 +3796,10 @@ async function rpUpload(){
   const inp=id('rpAttInp');if(!inp||!inp.files.length)return;
   const fd=new FormData();fd.append('file',inp.files[0]);
   const r=await fetch('/api/upload',{method:'POST',body:fd,credentials:'include'}).then(x=>x.json()).catch(()=>({}));
-  if(r.path){window._rpAtts=window._rpAtts||[];window._rpAtts.push(r.path);id('rpAttBox').innerHTML=window._rpAtts.map(p=>`<span style="font-size:9px;background:#eef;padding:2px 6px;border-radius:3px;margin-right:4px">📎 ${esc(p.split('/').pop())}</span>`).join('')}
-  else alert('上传失败');inp.value='';
+  // V11.217: 后端返回 file_path(此前读 r.path 字段不存在 → 上传成功却永远弹'上传失败')
+  const _p=r.file_path||r.path;
+  if(_p){window._rpAtts=window._rpAtts||[];window._rpAtts.push(_p);id('rpAttBox').innerHTML=window._rpAtts.map(p=>`<span style="font-size:9px;background:#eef;padding:2px 6px;border-radius:3px;margin-right:4px">📎 ${esc(p.split('/').pop())}</span>`).join('')}
+  else alert(r.error||'上传失败');inp.value='';
 }
 async function saveRepair(asDraft){
   const items=[];
@@ -4052,7 +4097,10 @@ async function rpAccUp(){
   const inp=id('rpAccInp');if(!inp||!inp.files.length)return;
   const fd=new FormData();fd.append('file',inp.files[0]);
   const r=await fetch('/api/upload',{method:'POST',body:fd,credentials:'include'}).then(x=>x.json()).catch(()=>({}));
-  if(r.path){window._rpAccFiles=window._rpAccFiles||[];window._rpAccFiles.push(r.path);id('rpAccBox').innerHTML=window._rpAccFiles.map(p=>`<span style="font-size:9px;background:#eef;padding:2px 6px;border-radius:3px;margin-right:4px">📎 ${esc(p.split('/').pop())}</span>`).join('')}
+  // V11.217: 同维修附件bug — 后端返回file_path, 读r.path字段不存在
+  const _p=r.file_path||r.path;
+  if(_p){window._rpAccFiles=window._rpAccFiles||[];window._rpAccFiles.push(_p);id('rpAccBox').innerHTML=window._rpAccFiles.map(p=>`<span style="font-size:9px;background:#eef;padding:2px 6px;border-radius:3px;margin-right:4px">📎 ${esc(p.split('/').pop())}</span>`).join('')}
+  else alert(r.error||'上传失败');
   inp.value='';
 }
 async function rpAcceptDo(rid){
