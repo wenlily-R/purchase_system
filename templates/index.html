@@ -2327,8 +2327,8 @@ async function genContractInv(oid,settle){
     <div style="margin-bottom:8px"><label style="font-size:10px;color:#555">📋 发票回收节点说明（开票时间节点/顺序/比例）</label>
       <textarea id="gcInvClause" style="width:100%;height:58px;border:1px solid #ccc;border-radius:4px;padding:6px;font-size:11px" placeholder="例：货到验收后30日内开具全额增值税专用发票；分两期开票，首期50%随货，尾期50%验收合格后开具"></textarea></div>
     <div style="display:flex;gap:8px;margin-bottom:4px">
-      <div style="flex:1"><label style="font-size:10px;color:#555">📅 预计首次开票时间</label><input type="date" id="gcInvFirst" style="width:100%;border:1px solid #ccc;border-radius:4px;padding:4px;font-size:11px"></div>
-      <div style="flex:1"><label style="font-size:10px;color:#555">📅 预计全部开票完成时间</label><input type="date" id="gcInvDone" style="width:100%;border:1px solid #ccc;border-radius:4px;padding:4px;font-size:11px"></div>
+      <div style="flex:1"><label style="font-size:10px;color:#555">📅 预计首次开票时间(精确到时分)</label><input type="datetime-local" id="gcInvFirst" style="width:100%;border:1px solid #ccc;border-radius:4px;padding:4px;font-size:11px"></div>
+      <div style="flex:1"><label style="font-size:10px;color:#555">📅 预计全部开票完成时间(精确到时分)</label><input type="datetime-local" id="gcInvDone" style="width:100%;border:1px solid #ccc;border-radius:4px;padding:4px;font-size:11px"></div>
     </div>
     <div style="font-size:9px;color:#999">填写开票时间后，系统将按节点自动提醒采购专员催收发票（系统内预警+钉钉提醒）</div>`,
     `<button class="btn btn-o" onclick="genContract(${oid})">← 返回</button><button class="btn btn-p" onclick="doGenContract(${oid},'${settle}')">📄 生成合同并提交审批</button>`);
@@ -2339,8 +2339,8 @@ async function doGenContract(oid,settle){
   closeMod();
   if(!confirm('调用默认合同模板生成采购合同并进入合同审批？（结算方式：'+settle+'）'))return;
   const _ic=(id('gcInvClause')&&id('gcInvClause').value||'').trim();
-  const _f=(id('gcInvFirst')&&id('gcInvFirst').value||'').trim();
-  const _dn=(id('gcInvDone')&&id('gcInvDone').value||'').trim();
+  const _f=(id('gcInvFirst')&&id('gcInvFirst').value||'').replace('T',' ').trim();
+  const _dn=(id('gcInvDone')&&id('gcInvDone').value||'').replace('T',' ').trim();
   const _body={order_id:oid,settle_type:settle};
   if(_ic||_f||_dn){_body.invoice_clause=_ic;_body.invoice_est_first=_f;_body.invoice_est_done=_dn}
   const r=await api('/contracts/generate',{method:'POST',body:JSON.stringify(_body)});

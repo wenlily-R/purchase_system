@@ -9813,9 +9813,9 @@ def check_invoice_node_reminders():
             pend = float(r['amount'] or 0) - st['received_amount']
             kinds = []
             if r['invoice_est_first'] and _today >= r['invoice_est_first'][:10] and st['received_count'] == 0:
-                kinds.append(('due', '预计首次开票日%s已到, 尚未收到任何发票' % r['invoice_est_first'][:10]))
+                kinds.append(('due', '预计首次开票时间%s已到, 尚未收到任何发票' % r['invoice_est_first'][:16]))
             if r['invoice_est_done'] and _today > r['invoice_est_done'][:10] and pend > 0.01:
-                kinds.append(('overdue', '超过约定开票完成日%s, 仍未收票¥%.2f' % (r['invoice_est_done'][:10], pend)))
+                kinds.append(('overdue', '超过约定开票完成时间%s, 仍未收票¥%.2f' % (r['invoice_est_done'][:16], pend)))
             for kind, _why in kinds:
                 _ex = c.execute("SELECT 1 FROM contract_inv_reminds WHERE contract_id=? AND remind_date=? AND kind=?",
                                 (r['id'], _today, kind)).fetchone()
