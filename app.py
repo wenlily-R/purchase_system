@@ -7666,6 +7666,42 @@ def api_inventory():
         out.append(d)
     return jsonify(out)
 
+@app.route('/api/inventory/recon')
+@login_required
+def api_inventory_recon():
+    """V11.206b 库存对账勾稽(模块四4.3) — 财务/领导/库房核对
+    勾稽公式: 当前库存 = 正式入库+暂估入库(分批标注) - 出库 - 退供应商 + 领用退回 + 报溢 - 报损
+    按 物资名称+规格(不同规格分开统计, 不合并) 汇总流水, 与库存表当前量比对, 差额标红提示
+    """
+    if session.get('user_role') not in ('系统管理员', '分管领导', '总经理', '财务', '库管员', '部门负责人'):
+        return jsonify({'error': '无权限'}), 403
+    conn = db()
+    inv_rows = conn.execute("SELECT id,item_name,spec,unit,quantity,warehouse FROM inventory ORDER BY item_name,spec").fetchall()
+    fl_rows = conn.execute("SELECT item_name,spec,flow_type,qty FROM inventory_flows").fetchall()
+    conn.close()
+    from collections import defaultdict
+    flow = defaultdict(float)
+    for f in fl_rows:
+        key = (f['item_name'] or '', f['spec'] or '')
+        flow[key] += float(f['qty'] or 0)  # 入库+ / 出库-(负数已存)
+    out = []
+    total_cur = total_flow = total_diff = 0
+    for r in inv_rows:
+        key = (r['item_name'] or '', r['spec'] or '')
+        cur = float(r['quantity'] or 0)
+        fl = flow.get(key, 0.0)
+        diff = round(cur - fl, 4)
+        total_cur += cur; total_flow += fl
+        if abs(diff) > 0.001: total_diff += 1
+        out.append({'item_name': key[0], 'spec': key[1], 'unit': r['unit'] or '个',
+                    'cur_qty': cur, 'flow_qty': fl, 'diff': diff, 'ok': abs(diff) <= 0.001,
+                    'warehouse': r['warehouse'] or '主库房'})
+    orphan = [{'item_name': k[0], 'spec': k[1], 'flow_qty': round(v, 2)} for k, v in flow.items()
+              if not any(x['item_name'] == k[0] and x['spec'] == k[1] for x in out) and abs(v) > 0.001]
+    return jsonify({'items': out, 'orphans': orphan[:20], 'summary': {
+        'cur_total': round(total_cur, 2), 'flow_total': round(total_flow, 2),
+        'diff_items': total_diff, 'item_count': len(out), 'orphan_count': len(orphan)}})
+
 @app.route('/api/inventory/stock-check')
 @login_required
 def api_inventory_stock_check():

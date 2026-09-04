@@ -428,6 +428,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <select class="fc" id="invCatFilter" style="width:130px" onchange="invFilterCat()"><option value="">全部分类</option></select>
     <button class="btn btn-p btn-sm" onclick="startCount()">📋 开始盘点</button>
     <button class="btn btn-o btn-sm" onclick="loadCounts()">盘点记录</button>
+    <button class="btn btn-w btn-sm" onclick="showRecon()">📊 对账勾稽</button>
     <button class="btn btn-p btn-sm" style="margin-left:auto" onclick="exportInventory()">⬇️ 导出库存报表</button>
   </div>
   <div id="invAlertBar" style="margin-bottom:4px"></div>
@@ -3381,6 +3382,33 @@ async function loadInventory(cat){
       <td>${low?`<button class="lnk" style="color:var(--p);font-weight:600" onclick="replenishInv(${r.id})">🛒 补货</button>`:''} ${canEditInv?`<button class="lnk" style="color:#b08900" onclick="editDoc('inventory',${r.id},'库存物资')">✏️修改</button>`:''} <button class="lnk" style="color:var(--s)" onclick="traceInv(${r.id})">🔍 溯源</button></td></tr>`;
   });
   id('inventoryTable').innerHTML=h||'<div style="padding:8px;color:#999">暂无库存数据</div>';
+}
+// V11.206b 库存对账勾稽弹窗(模块四4.3) — 库存账面 vs 流水勾稽, 差额标红
+async function showRecon(){
+  if(__guardOpen('recon'))return;
+  const r=await api('/inventory/recon').catch(()=>({error:'无权限或请求失败'}));
+  if(r.error){alert(r.error);return}
+  const s=r.summary||{};
+  const okAll=(s.diff_items||0)===0&&(s.orphan_count||0)===0;
+  id('dmTitle').textContent='📊 库存对账勾稽';
+  id('dmBody').innerHTML=`
+    <div style="font-size:10px;line-height:1.7">
+      <div style="background:${okAll?'#f0fdf4':'#fef2f2'};border:1px solid ${okAll?'#bbf7d0':'#fecaca'};border-radius:8px;padding:10px;margin-bottom:8px">
+        <b style="font-size:12px">${okAll?'✅ 账实一致':'⚠️ 存在差异'}</b>
+        <div style="margin-top:4px">库存账面合计: <b>${s.cur_total}</b> ｜ 流水合计: <b>${s.flow_total}</b>
+         ｜ 物资数: ${s.item_count} ｜ 差异项: <b style="color:${(s.diff_items||0)>0?'#dc2626':'#16a34a'}">${s.diff_items||0}</b>
+         ｜ 孤儿流水: ${s.orphan_count||0}</div>
+        <div style="font-size:9px;color:#666;margin-top:4px">勾稽公式: 当前库存 = 分批入库暂估 + 分批入库正式 + 入库 − 出库 − 退库归还供应商 + 领用退回 + 报溢 − 报损（按物资+规格分开统计）</div>
+      </div>
+      ${(s.diff_items||0)>0||(s.orphan_count||0)>0?`<p style="color:#b45309;background:#fef3c7;padding:6px 8px;border-radius:4px;font-size:9px">差异通常是历史数据未走流水/手工改库存所致，不影响当前业务；新单据全部走流水可对账。</p>`:''}
+      <table class="tb" style="font-size:9px"><thead><tr><th>物资名称</th><th>规格</th><th>单位</th><th>库存账面</th><th>流水合计</th><th>差异</th><th>仓库</th></tr></thead><tbody>
+      ${(r.items||[]).map(x=>`<tr style="${x.ok?'':'background:#fef2f2'}"><td><b>${esc(x.item_name)}</b></td><td>${esc(x.spec||'—')}</td><td>${esc(x.unit)}</td><td>${x.cur_qty}</td><td>${x.flow_qty}</td>
+        <td style="color:${x.ok?'#16a34a':'#dc2626'};font-weight:600">${x.ok?'✓':'✗ '+x.diff}</td><td>${esc(x.warehouse)}</td></tr>`).join('')}
+      </tbody></table>
+      ${(r.orphans||[]).length?`<div style="margin-top:6px"><b style="color:#b45309">⚠️ 有流水无库存记录的物资（${s.orphan_count}项, 显示前20）:</b><div style="font-size:9px;color:#666">${r.orphans.map(o=>`${esc(o.item_name)}(${esc(o.spec||'—')}) 流水${o.flow_qty}`).join('、')}</div></div>`:''}
+    </div>`;
+  id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">关闭</button>';
+  id('detailModal').classList.add('show');
 }
 async function traceInv(iid){
   // V5.0: 库存溯源 — 查看影响该商品库存的全部出入库单据
