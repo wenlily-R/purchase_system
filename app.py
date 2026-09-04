@@ -10890,6 +10890,17 @@ def api_reports2():
     # 供应商账本: 每家供应商往来汇总
     sup_ledger = c.execute("""SELECT supplier, COUNT(*) cnt, SUM(total_amount) s FROM purchase_orders
         WHERE supplier!='' GROUP BY supplier""").fetchall()
+    # V11.206c 模块七: 入库统计(按类型: 正式/暂估/分批) + 出库统计(按部门)
+    rcv_stats = c.execute("""SELECT
+            CASE WHEN batch_no!='' AND is_est=1 THEN '分批入库-暂估'
+                 WHEN batch_no!='' THEN '分批入库-正式'
+                 WHEN is_est=1 AND invoice_no!='' THEN '暂估已红冲'
+                 WHEN is_est=1 THEN '暂估入库'
+                 ELSE '正式入库' END typ,
+            COUNT(*) cnt, COALESCE(SUM(qualified_qty),0) qty
+        FROM receivings WHERE status='已入库' GROUP BY typ ORDER BY qty DESC""").fetchall()
+    req_stats = c.execute("""SELECT dept, COUNT(*) cnt, COALESCE(SUM(quantity),0) qty
+        FROM requisitions WHERE status IN ('已出库','已通过') AND dept!='' GROUP BY dept ORDER BY qty DESC LIMIT 15""").fetchall()
     c.close()
     return jsonify({
         'exec': [dict_row(r) for r in exec_rows],
@@ -10899,6 +10910,8 @@ def api_reports2():
         'stock_low': [dict_row(r) for r in stock_low],
         'inout': [dict_row(r) for r in inout],
         'in_sum': in_sum, 'out_sum': out_sum,
+        'rcv_stats': [dict_row(r) for r in rcv_stats],
+        'req_stats': [dict_row(r) for r in req_stats],
         'pay_sum': pay_sum,
         'overdue_pay': [dict_row(r) for r in overdue_pay],
         'sup_ledger': [dict_row(r) for r in sup_ledger],

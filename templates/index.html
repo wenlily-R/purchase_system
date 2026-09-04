@@ -530,6 +530,11 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
       <div class="card"><div class="ch"><h3>🚨 缺货预警</h3></div><div class="cb" id="rStockLow"><div class="loading">加载中...</div></div></div>
     </div>
     <div class="card"><div class="ch"><h3>🔁 出入库流水（近100条）</h3></div><div class="cb" id="rInOut"><div class="loading">加载中...</div></div></div>
+    <!-- V11.206c 模块七: 入库统计(按类型)/出库统计(按部门) -->
+    <div class="c2">
+      <div class="card"><div class="ch"><h3>📥 入库统计（按类型）</h3></div><div class="cb" id="rRcvStats"><div class="loading">加载中...</div></div></div>
+      <div class="card"><div class="ch"><h3>📤 出库统计（按领用部门）</h3></div><div class="cb" id="rReqStats"><div class="loading">加载中...</div></div></div>
+    </div>
   </div>
   <div id="reportTraffic" style="display:none">
     <div class="kpi" id="trafficKpi"><div class="loading">加载中...</div></div>
@@ -5400,6 +5405,13 @@ async function loadReports2(){
       x=>`<td><b>${esc(x.item_name)}</b></td><td style="color:${x.quantity<=0?'var(--d)':'var(--w)'};font-weight:600">${x.quantity}</td><td>${x.safe_stock}</td>`);
     id('rInOut').innerHTML=rnder((d.inout||[]).slice(0,50),['type','no','item_name','qty','t'],['类型','单号','物资','数量','时间'],
       x=>`<td><span class="tag ${x.type=='入库'?'tg-g':'tg-o'}">${esc(x.type)}</span></td><td>${esc(x.no)}</td><td>${esc(x.item_name)}</td><td>${x.qty}</td><td style="font-size:8px">${esc((x.t||'').slice(0,16))}</td>`);
+    // V11.206c 模块七: 入库/出库统计卡
+    id('rRcvStats').innerHTML=rnder((d.rcv_stats||[]),['typ','cnt','qty'],['类型','单数','数量'],
+      x=>`<td><span class="tag" style="background:${x.typ.includes('暂估')?'#fff3e0':'#e8f5e9'};color:${x.typ.includes('暂估')?'#e65100':'#2e7d32'}">${esc(x.typ)}</span></td><td>${x.cnt}</td><td><b>${x.qty}</b></td>`);
+    id('rReqStats').innerHTML=rnder((d.req_stats||[]),['dept','cnt','qty'],['部门','单数','数量'],
+      x=>`<td><b>${esc(x.dept)}</b></td><td>${x.cnt}</td><td>${x.qty}</td>`);
+    if(!(d.rcv_stats||[]).length)id('rRcvStats').innerHTML='<div style="padding:8px;color:#999;font-size:10px">暂无已入库数据</div>';
+    if(!(d.req_stats||[]).length)id('rReqStats').innerHTML='<div style="padding:8px;color:#999;font-size:10px">暂无出库数据</div>';
     // 往来报表
     id('trafficKpi').innerHTML=`<div class="kc"><div class="kl">累计已付款</div><div class="kv cp">¥${((d.pay_sum||0)/10000).toFixed(1)}万</div></div>
       <div class="kc"><div class="kl">超期应付款</div><div class="kv cd">${(d.overdue_pay||[]).length}笔</div></div>`;
