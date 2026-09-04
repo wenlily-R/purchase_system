@@ -482,6 +482,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <button class="act" onclick="reportTab('buy')">采购报表</button>
     <button onclick="reportTab('stock')">库存报表</button>
     <button onclick="reportTab('traffic')">往来报表</button>
+    <button class="btn btn-w btn-sm" style="margin-left:auto" onclick="showTraceSearch()">🔍 全链路溯源检索</button>
   </div>
   <div id="reportBuy">
     <div class="card" style="margin-bottom:6px"><div class="ch"><h3>🧾 发票台账（按合同/供应商统计已开票·未开票·欠票预警）</h3><button class="btn btn-p btn-sm" onclick="loadInvReport()" style="margin-left:auto">🔄 查询</button></div>
@@ -554,7 +555,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
   </div>
 </div>
 <div class="page" id="psystem">
-  <h2>⚙️ 系统设置</h2>
+  <h2>⚙️ 系统设置 <button class="btn btn-w btn-sm" style="float:right" onclick="showTraceSearch()">🔍 全链路溯源检索</button></h2>
   <div class="card"><div class="ch"><h3>① 企业信息（合同甲方预设）</h3><button class="btn btn-p btn-sm" onclick="saveCompany()">保存</button></div>
     <div class="cb"><div class="fr">
       <div class="fg"><label class="fl2">公司名称</label><input class="fc" id="fCompName"></div>
@@ -4881,16 +4882,16 @@ function globalSearch(q){
     fetch('/api/search?q='+encodeURIComponent(q),{credentials:'include'}).then(r=>r.json()).then(d=>{
       let h='';
       if(menus.length)h+='<div style="padding:4px 8px;color:#999;font-weight:600">菜单</div>'+menus.map(m=>`<div class="gsItem" style="padding:4px 8px;cursor:pointer" onclick="sw('${m[1]}');window.id('globalSearch').value=''">${esc(m[0])}</div>`).join('');
-      if(d.orders&&d.orders.length)h+='<div style="padding:4px 8px;color:#999;font-weight:600">采购订单</div>'+d.orders.map(o=>`<div class="gsItem" style="padding:4px 8px;cursor:pointer" onclick="sw('orders');window.id('globalSearch').value=''">${esc(o.order_no)} ${esc(o.item_name)} ${esc(o.supplier)}</div>`).join('');
-      if(d.requests&&d.requests.length)h+='<div style="padding:4px 8px;color:#999;font-weight:600">采购申请</div>'+d.requests.map(r=>`<div class="gsItem" style="padding:4px 8px;cursor:pointer" onclick="sw('prequests');window.id('globalSearch').value=''">${esc(r.req_no)} ${esc(r.purpose)}</div>`).join('');
-      if(d.contracts&&d.contracts.length)h+='<div style="padding:4px 8px;color:#999;font-weight:600">合同</div>'+d.contracts.map(c=>`<div class="gsItem" style="padding:4px 8px;cursor:pointer" onclick="sw('contracts');window.id('globalSearch').value=''">${esc(c.contract_no)} ${esc(c.contract_name)}</div>`).join('');
+      if(d.orders&&d.orders.length)h+='<div style="padding:4px 8px;color:#999;font-weight:600">采购订单</div>'+d.orders.map(o=>`<div class="gsItem" style="padding:4px 8px;cursor:pointer;display:flex;justify-content:space-between;gap:6px" onclick="sw('orders');window.id('globalSearch').value=''"><span>${esc(o.order_no)} ${esc(o.item_name)} ${esc(o.supplier)}</span><span style="color:#f5821f;font-size:9px" onclick="event.stopPropagation();showTrace('order',${o.id},'订单 ${esc(o.order_no)}')">🔍溯源</span></div>`).join('');
+      if(d.requests&&d.requests.length)h+='<div style="padding:4px 8px;color:#999;font-weight:600">采购申请</div>'+d.requests.map(r=>`<div class="gsItem" style="padding:4px 8px;cursor:pointer;display:flex;justify-content:space-between;gap:6px" onclick="sw('prequests');window.id('globalSearch').value=''"><span>${esc(r.req_no)} ${esc(r.purpose)}</span><span style="color:#f5821f;font-size:9px" onclick="event.stopPropagation();showTrace('request',${r.id},'申请 ${esc(r.req_no)}')">🔍溯源</span></div>`).join('');
+      if(d.contracts&&d.contracts.length)h+='<div style="padding:4px 8px;color:#999;font-weight:600">合同</div>'+d.contracts.map(c=>`<div class="gsItem" style="padding:4px 8px;cursor:pointer;display:flex;justify-content:space-between;gap:6px" onclick="sw('contracts');window.id('globalSearch').value=''"><span>${esc(c.contract_no)} ${esc(c.contract_name)}</span><span style="color:#f5821f;font-size:9px" onclick="event.stopPropagation();showTrace('contract',${c.id},'合同 ${esc(c.contract_no)}')">🔍溯源</span></div>`).join('');
       if(d.deliveries&&d.deliveries.length)h+='<div style="padding:4px 8px;color:#999;font-weight:600">送货单</div>'+d.deliveries.map(x=>`<div class="gsItem" style="padding:4px 8px;cursor:pointer" onclick="sw('orders');window.id('globalSearch').value=''">${esc(x.delivery_no)} ${esc(x.item_name)} ${esc(x.supplier)}</div>`).join('');
-      if(d.receivings&&d.receivings.length)h+='<div style="padding:4px 8px;color:#999;font-weight:600">入库单</div>'+d.receivings.map(x=>`<div class="gsItem" style="padding:4px 8px;cursor:pointer" onclick="sw('receivings');window.id('globalSearch').value=''">${esc(x.receive_no)} ${esc(x.item_name)} ${esc(x.supplier)}</div>`).join('');
-      if(d.credits&&d.credits.length)h+='<div style="padding:4px 8px;color:#999;font-weight:600">挂账</div>'+d.credits.map(x=>`<div class="gsItem" style="padding:4px 8px;cursor:pointer" onclick="sw('payments');window.id('globalSearch').value=''">${esc(x.credit_no)} ${esc(x.supplier)}</div>`).join('');
-      if(d.payments&&d.payments.length)h+='<div style="padding:4px 8px;color:#999;font-weight:600">付款</div>'+d.payments.map(x=>`<div class="gsItem" style="padding:4px 8px;cursor:pointer" onclick="sw('payments');window.id('globalSearch').value=''">${esc(x.payment_no)} ${esc(x.supplier)}</div>`).join('');
-      if(d.inventory&&d.inventory.length)h+='<div style="padding:4px 8px;color:#999;font-weight:600">库存</div>'+d.inventory.map(x=>`<div class="gsItem" style="padding:4px 8px;cursor:pointer" onclick="sw('inventory');window.id('globalSearch').value=''">${esc(x.item_name)} ${esc(x.warehouse)} ${esc(x.quantity)}${esc(x.unit||'')}</div>`).join('');
-      if(d.invoices&&d.invoices.length)h+='<div style="padding:4px 8px;color:#999;font-weight:600">发票</div>'+d.invoices.map(x=>`<div class="gsItem" style="padding:4px 8px;cursor:pointer" onclick="sw('invoices');window.id('globalSearch').value=''">${esc(x.invoice_no)} ${esc(x.supplier)}</div>`).join('');
-      if(d.settlements&&d.settlements.length)h+='<div style="padding:4px 8px;color:#999;font-weight:600">对账</div>'+d.settlements.map(x=>`<div class="gsItem" style="padding:4px 8px;cursor:pointer" onclick="sw('settlements');window.id('globalSearch').value=''">${esc(x.settlement_no||x.settle_no)} ${esc(x.supplier)}</div>`).join('');
+      if(d.receivings&&d.receivings.length)h+='<div style="padding:4px 8px;color:#999;font-weight:600">入库单</div>'+d.receivings.map(x=>`<div class="gsItem" style="padding:4px 8px;cursor:pointer;display:flex;justify-content:space-between;gap:6px" onclick="sw('receivings');window.id('globalSearch').value=''"><span>${esc(x.receive_no)} ${esc(x.item_name)} ${esc(x.supplier||'')}</span><span style="color:#f5821f;font-size:9px" onclick="event.stopPropagation();showTrace('receiving',${x.id},'入库 ${esc(x.receive_no)}')">🔍溯源</span></div>`).join('');
+      if(d.credits&&d.credits.length)h+='<div style="padding:4px 8px;color:#999;font-weight:600">挂账</div>'+d.credits.map(x=>`<div class="gsItem" style="padding:4px 8px;cursor:pointer;display:flex;justify-content:space-between;gap:6px" onclick="sw('payments');window.id('globalSearch').value=''"><span>${esc(x.credit_no)} ${esc(x.supplier)}</span><span style="color:#f5821f;font-size:9px" onclick="event.stopPropagation();showTrace('credit',${x.id},'挂账 ${esc(x.credit_no)}')">🔍溯源</span></div>`).join('');
+      if(d.payments&&d.payments.length)h+='<div style="padding:4px 8px;color:#999;font-weight:600">付款</div>'+d.payments.map(x=>`<div class="gsItem" style="padding:4px 8px;cursor:pointer;display:flex;justify-content:space-between;gap:6px" onclick="sw('payments');window.id('globalSearch').value=''"><span>${esc(x.payment_no)} ${esc(x.supplier)}</span><span style="color:#f5821f;font-size:9px" onclick="event.stopPropagation();showTrace('payment',${x.id},'付款 ${esc(x.payment_no)}')">🔍溯源</span></div>`).join('');
+      if(d.inventory&&d.inventory.length)h+='<div style="padding:4px 8px;color:#999;font-weight:600">库存</div>'+d.inventory.map(x=>`<div class="gsItem" style="padding:4px 8px;cursor:pointer;display:flex;justify-content:space-between;gap:6px" onclick="sw('inventory');window.id('globalSearch').value=''"><span>${esc(x.item_name)} ${esc(x.warehouse)} ${esc(x.quantity)}${esc(x.unit||'')}</span><span style="color:#f5821f;font-size:9px" onclick="event.stopPropagation();showTrace('inventory',${x.id},'库存 ${esc(x.item_name)}')">🔍溯源</span></div>`).join('');
+      if(d.invoices&&d.invoices.length)h+='<div style="padding:4px 8px;color:#999;font-weight:600">发票</div>'+d.invoices.map(x=>`<div class="gsItem" style="padding:4px 8px;cursor:pointer;display:flex;justify-content:space-between;gap:6px" onclick="sw('invoices');window.id('globalSearch').value=''"><span>${esc(x.invoice_no)} ${esc(x.supplier)}</span><span style="color:#f5821f;font-size:9px" onclick="event.stopPropagation();showTrace('invoice',${x.id},'发票 ${esc(x.invoice_no)}')">🔍溯源</span></div>`).join('');
+      if(d.settlements&&d.settlements.length)h+='<div style="padding:4px 8px;color:#999;font-weight:600">对账</div>'+d.settlements.map(x=>`<div class="gsItem" style="padding:4px 8px;cursor:pointer;display:flex;justify-content:space-between;gap:6px" onclick="sw('settlements');window.id('globalSearch').value=''"><span>${esc(x.settlement_no||x.settle_no)} ${esc(x.supplier)}</span><span style="color:#f5821f;font-size:9px" onclick="event.stopPropagation();showTrace('settlement',${x.id},'对账 ${esc(x.settlement_no||x.settle_no)}')">🔍溯源</span></div>`).join('');
       if(d.approvals&&d.approvals.length)h+='<div style="padding:4px 8px;color:#999;font-weight:600">审批</div>'+d.approvals.map(x=>`<div class="gsItem" style="padding:4px 8px;cursor:pointer" onclick="sw('approvals');window.id('globalSearch').value=''">${esc(x.biz_type)}#${esc(x.biz_id)} ${esc(x.role)} ${esc(x.status)}</div>`).join('');
       if(d.suppliers&&d.suppliers.length)h+='<div style="padding:4px 8px;color:#999;font-weight:600">供应商</div>'+d.suppliers.map(s=>`<div class="gsItem" style="padding:4px 8px;cursor:pointer" onclick="sw('suppliers');window.id('globalSearch').value=''">${esc(s.name)} ${esc(s.contact||'')}</div>`).join('');
       if(d.items&&d.items.length)h+='<div style="padding:4px 8px;color:#999;font-weight:600">物资档案</div>'+d.items.map(i=>`<div class="gsItem" style="padding:4px 8px;cursor:pointer">${esc(i.name)} ${esc(i.spec||'')}</div>`).join('');
@@ -4898,6 +4899,108 @@ function globalSearch(q){
       box.innerHTML=h||'<div style="padding:8px;color:#999">未找到相关结果</div>';
     }).catch(()=>{});
   },250);
+}
+async function showTrace(bt,bid,label){
+  // V11.209 补充二: 全链路溯源档案弹窗 — 聚合基础信息/时间轴/审批/上下游/库存流水/附件
+  if(__guardOpen('trace:'+bt+':'+bid))return;
+  id('dmTitle').textContent='🔍 溯源档案 · '+(label||bt+'#'+bid);
+  id('dmBody').innerHTML='<div class="loading">聚合全链路数据...</div>';
+  id('dmFooter').innerHTML='';
+  id('detailModal').classList.add('show');
+  let d;
+  try{d=await api(`/trace?t=${bt}&id=${bid}`)}catch(e){id('dmBody').innerHTML='<div style="color:#e74c3c">加载失败</div>';return}
+  const s=d.self?.data||{};
+  const fmt=v=>v==null||v===''?'—':esc(String(v));
+  // 单号/物资/供应商 提取
+  const _no=d.self?.no||s.order_no||s.req_no||s.contract_no||s.receive_no||s.req_no||s.plan_no||'';
+  const _it=s.item_name||s.device_name||s.contract_name||s.purpose||'';
+  const _sup=s.supplier||s.warehouse||'';
+  const _timeline=(d.timeline||[]).sort((a,b)=>(a.t||'').localeCompare(b.t||''));
+  const ap=d.approvals||[], fl=d.flows||[], logs=d.logs||[];
+  const up=d.upstream||{}, dn=d.downstream||{};
+  const _sec=t=>`<div style="font-size:10px;font-weight:700;color:#1a3a6b;margin:8px 0 3px;border-bottom:1px solid #e3ebf7;padding-bottom:2px">${t}</div>`;
+  const _tbl=(heads,rows)=>rows&&rows.length?`<table class="tb" style="font-size:8.5px"><thead><tr>${heads.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`:'<div style="color:#aaa;font-size:8.5px">无</div>';
+  let h=`<div style="font-size:9.5px;line-height:1.65;max-height:60vh;overflow:auto;padding-right:4px">`;
+  // 1. 基础信息
+  h+=_sec('① 基础信息');
+  h+=`<div style="background:#f7fafd;border:1px solid #e3ebf7;border-radius:6px;padding:6px 8px">
+    <div><b>${fmt(_it||_no||'—')}</b> ${_no?`<span class="tag" style="background:#1a3a6b;color:#fff">${fmt(_no)}</span>`:''}</div>
+    <div style="color:#666;font-size:8.5px;margin-top:3px">${fmt(s.status||s.warehouse||'')} ｜ ${fmt(s.supplier||s.dept||'')} ｜ 创建: ${fmt(s.created_at||s.received_at||s.invoice_date||'')}${s.amount!==undefined?` ｜ 金额: ¥${fmt(s.amount)}`:''}${s.total_amount!==undefined?` ｜ 金额: ¥${fmt(s.total_amount)}`:''}</div></div>`;
+  // 2. 时间轴
+  h+=_sec('② 完整时间轴');
+  h+=_timeline.length?_timeline.map(t=>`<div style="display:flex;gap:6px;font-size:8.5px;margin-bottom:2px"><span style="color:#888;min-width:110px">${fmt(t.t)}</span><span>${fmt(t.event)}</span></div>`).join(''):'<div style="color:#aaa;font-size:8.5px">无流转记录</div>';
+  // 3. 审批记录
+  h+=_sec('③ 审批记录');
+  h+=_tbl(['级别','角色','审批人','状态','意见'],ap.map(a=>`<tr><td>${a.level_no||''}</td><td>${fmt(a.role)}</td><td>${fmt(a.approver||a.role)}</td><td>${a.status=='approved'?'<span style="color:#16a34a">✔ 通过</span>':a.status=='rejected'?'<span style="color:#dc2626">✘ 驳回</span>':fmt(a.status)}</td><td style="max-width:160px">${fmt(a.last_comment||a.comment||'')}</td></tr>`));
+  // 4. 上下游
+  h+=_sec('④ 上下游关联单据');
+  if((up.requests||[]).length)h+=`<div style="font-size:8.5px;color:#2f6fed;margin-top:2px">▲ 上游-采购申请</div>`+_tbl(['单号','用途','状态'],up.requests.map(r=>`<tr><td>${fmt(r.req_no)}</td><td>${fmt(r.purpose)}</td><td>${fmt(r.status)}</td></tr>`));
+  if((up.inquiries||[]).length)h+=`<div style="font-size:8.5px;color:#2f6fed">▲ 上游-三方询价</div>`+_tbl(['询价单','物料','状态'],up.inquiries.map(r=>`<tr><td>${fmt(r.inq_no)}</td><td>${fmt(r.item_name)}</td><td>${fmt(r.status)}</td></tr>`));
+  if((up.contracts||[]).length)h+=`<div style="font-size:8.5px;color:#2f6fed">▲ 上游-合同</div>`+_tbl(['合同号','名称','金额','状态'],up.contracts.map(r=>`<tr><td>${fmt(r.contract_no)}</td><td>${fmt(r.contract_name)}</td><td>¥${fmt(r.amount)}</td><td>${fmt(r.status)}</td></tr>`));
+  if((up.orders||[]).length)h+=`<div style="font-size:8.5px;color:#2f6fed">▲ 上游-采购订单</div>`+_tbl(['订单号','物料','供应商','金额','状态'],up.orders.map(r=>`<tr><td>${fmt(r.order_no)}</td><td>${fmt(r.item_name)}</td><td>${fmt(r.supplier)}</td><td>¥${fmt(r.total_amount)}</td><td>${fmt(r.status)}</td></tr>`));
+  if((dn.receivings||[]).length)h+=`<div style="font-size:8.5px;color:#b45309">▼ 下游-入库单</div>`+_tbl(['入库单号','物料','数量','状态','时间'],dn.receivings.map(r=>`<tr><td>${fmt(r.receive_no)}</td><td>${fmt(r.item_name)}</td><td>${fmt(r.qualified_qty)}</td><td>${fmt(r.status)}</td><td>${fmt(r.received_at)}</td></tr>`));
+  if((dn.requisitions||[]).length)h+=`<div style="font-size:8.5px;color:#b45309">▼ 下游-出库单</div>`+_tbl(['出库单号','物料','数量','部门','状态'],dn.requisitions.map(r=>`<tr><td>${fmt(r.req_no)}</td><td>${fmt(r.item_name)}</td><td>${fmt(r.quantity)}</td><td>${fmt(r.dept)}</td><td>${fmt(r.status)}</td></tr>`));
+  if((dn.returns||[]).length)h+=`<div style="font-size:8.5px;color:#b45309">▼ 下游-退库单</div>`+_tbl(['退库单号','物料','数量','状态'],dn.returns.map(r=>`<tr><td>${fmt(r.return_no)}</td><td>${fmt(r.item_name)}</td><td>${fmt(r.quantity)}</td><td>${fmt(r.status)}</td></tr>`));
+  if((dn.payments||[]).length)h+=`<div style="font-size:8.5px;color:#b45309">▼ 下游-付款</div>`+_tbl(['付款单','供应商','金额','状态'],dn.payments.map(r=>`<tr><td>${fmt(r.payment_no)}</td><td>${fmt(r.supplier)}</td><td>¥${fmt(r.amount)}</td><td>${fmt(r.status)}</td></tr>`));
+  if((dn.invoices||[]).length)h+=`<div style="font-size:8.5px;color:#b45309">▼ 下游-发票</div>`+_tbl(['发票号','供应商','金额','状态','日期'],dn.invoices.map(r=>`<tr><td>${fmt(r.invoice_no)}</td><td>${fmt(r.supplier)}</td><td>¥${fmt(r.amount)}</td><td>${fmt(r.status)}</td><td>${fmt(r.invoice_date)}</td></tr>`));
+  if((dn.repairs||[]).length)h+=`<div style="font-size:8.5px;color:#b45309">▼ 下游-维修采购</div>`+_tbl(['计划号','设备','状态'],dn.repairs.map(r=>`<tr><td>${fmt(r.plan_no)}</td><td>${fmt(r.device_name)}</td><td>${fmt(r.status)}</td></tr>`));
+  if(!(up.requests||[]).length&&!(up.inquiries||[]).length&&!(up.contracts||[]).length&&!(up.orders||[]).length&&!(dn.receivings||[]).length&&!(dn.requisitions||[]).length&&!(dn.returns||[]).length&&!(dn.payments||[]).length&&!(dn.invoices||[]).length&&!(dn.repairs||[]).length)h+='<div style="color:#aaa;font-size:8.5px">无关联单据</div>';
+  // 5. 库存流水
+  h+=_sec('⑤ 库存变动流水');
+  h+=_tbl(['类型','单号','数量','结存','操作人','时间'],fl.map(f=>`<tr><td>${fmt(f.flow_type)}</td><td>${fmt(f.doc_no)}</td><td style="color:${(f.qty||0)>=0?'#16a34a':'#dc2626'}">${f.qty>0?'+':''}${fmt(f.qty)}</td><td>${fmt(f.balance_after)}</td><td>${fmt(f.operator)}</td><td>${fmt(f.created_at)}</td></tr>`));
+  // 6. 附件
+  if((d.attachments||[]).length){h+=_sec('⑥ 附件');h+=(d.attachments||[]).map(a=>`<a href="${a}" target="_blank" style="font-size:8.5px;color:#2f6fed;margin-right:6px">📎 附件</a>`).join('')}
+  h+='</div>';
+  id('dmBody').innerHTML=h;
+  id('dmFooter').innerHTML=`<button class="btn btn-o" onclick="closeMod()">关闭</button>
+    <button class="btn btn-p btn-sm" onclick="traceExport('${bt}',${bid})">⬇️ 导出溯源档案</button>`;
+}
+function traceExport(bt,bid){
+  // 导出溯源档案: 打印友好格式(浏览器打印→PDF)
+  const box=id('dmBody');
+  const w=window.open('','_blank');
+  if(!w){alert('请允许弹窗以导出');return}
+  const src=box.innerHTML;
+  w.document.write(`<html><head><title>溯源档案</title><style>body{font-family:system-ui;font-size:12px;padding:20px;line-height:1.6}table{border-collapse:collapse;width:100%;margin:4px 0}td,th{border:1px solid #ccc;padding:3px 6px;font-size:11px}th{background:#f0f4fa}.tag{background:#1a3a6b;color:#fff;padding:1px 6px;border-radius:3px;font-size:10px}</style></head><body>${src}</body></html>`);
+  w.document.close();
+  w.focus(); w.print();
+}
+// V11.209 补充二: 溯源检索弹窗(报表中心/系统中心入口共用; 输入关键词→结果列表→点🔍开溯源档案)
+async function showTraceSearch(){
+  if(__guardOpen('trace:search'))return;
+  id('dmTitle').textContent='🔍 全链路溯源检索';
+  id('dmBody').innerHTML=`
+    <div style="font-size:9px;color:#666;margin-bottom:6px">模糊检索 物料名称/规格/供应商/单号/发票号/部门/提报人，命中后点「🔍溯源」查看该对象完整全链路档案（时间轴+审批+上下游+库存流水），可导出 Excel/PDF。</div>
+    <div style="display:flex;gap:4px"><input class="fc" id="traceKw" placeholder="输入关键词，如: 彩钢板 / CG-2026 / 恒健 / 轴承" style="flex:1" onkeydown="if(event.key==='Enter')doTraceSearch()">
+    <button class="btn btn-p btn-sm" onclick="doTraceSearch()">🔍 检索</button></div>
+    <div id="traceRes" style="margin-top:8px;font-size:9.5px"></div>`;
+  id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">关闭</button>';
+  id('detailModal').classList.add('show');
+  setTimeout(()=>{const i=id('traceKw');i&&i.focus()},200);
+}
+async function doTraceSearch(){
+  const q=id('traceKw').value.trim();
+  const box=id('traceRes');
+  if(!q){box.innerHTML='<div style="color:#999">请输入关键词</div>';return}
+  box.innerHTML='<div class="loading">检索中...</div>';
+  const d=await api('/search?q='+encodeURIComponent(q)).catch(()=>({}));
+  const rows=(bt,list,label,noFn)=>list.map(x=>{const no=noFn(x);return `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 6px;border-bottom:1px solid #f0f4fa">
+    <span>${label} <b>${esc(no)}</b> ${esc(x.item_name||x.purpose||x.contract_name||x.supplier||x.warehouse||x.name||x.role||'')}</span>
+    <button class="lnk" style="color:#f5821f" onclick="showTrace('${bt}',${x.id},'${label} ${esc(no).replace(/'/g,'')}')">🔍溯源</button></div>`}).join('');
+  let h='';
+  if((d.orders||[]).length)h+=`<div style="font-weight:600;color:#1a3a6b;margin-top:4px">📋 采购订单</div>`+rows('order',d.orders,'',o=>o.order_no);
+  if((d.requests||[]).length)h+=`<div style="font-weight:600;color:#1a3a6b;margin-top:4px">📝 采购申请</div>`+rows('request',d.requests,'',r=>r.req_no);
+  if((d.contracts||[]).length)h+=`<div style="font-weight:600;color:#1a3a6b;margin-top:4px">📄 合同</div>`+rows('contract',d.contracts,'',c=>c.contract_no);
+  if((d.deliveries||[]).length)h+=`<div style="font-weight:600;color:#1a3a6b;margin-top:4px">🚚 送货单</div>`+rows('receiving',d.deliveries,'',x=>x.delivery_no);
+  if((d.receivings||[]).length)h+=`<div style="font-weight:600;color:#1a3a6b;margin-top:4px">📦 入库单</div>`+rows('receiving',d.receivings,'',x=>x.receive_no);
+  if((d.credits||[]).length)h+=`<div style="font-weight:600;color:#1a3a6b;margin-top:4px">📑 挂账</div>`+rows('credit',d.credits,'',x=>x.credit_no);
+  if((d.payments||[]).length)h+=`<div style="font-weight:600;color:#1a3a6b;margin-top:4px">💰 付款</div>`+rows('payment',d.payments,'',x=>x.payment_no);
+  if((d.inventory||[]).length)h+=`<div style="font-weight:600;color:#1a3a6b;margin-top:4px">📦 库存</div>`+rows('inventory',d.inventory,'',x=>x.item_name);
+  if((d.invoices||[]).length)h+=`<div style="font-weight:600;color:#1a3a6b;margin-top:4px">🧾 发票</div>`+rows('invoice',d.invoices,'',x=>x.invoice_no);
+  if((d.settlements||[]).length)h+=`<div style="font-weight:600;color:#1a3a6b;margin-top:4px">📊 对账</div>`+rows('settlement',d.settlements,'',x=>x.settlement_no||x.settle_no);
+  if((d.suppliers||[]).length)h+=`<div style="font-weight:600;color:#1a3a6b;margin-top:4px">🏢 供应商</div>`+rows('inventory',d.suppliers,'',x=>x.name);
+  if(!h)h='<div style="color:#999;padding:8px">未找到相关单据，换个关键词试试（支持单号片段/物料名/供应商名）</div>';
+  box.innerHTML=`<div style="color:#666;font-size:8.5px;margin-bottom:4px">命中: ${q}</div>`+h;
 }
 async function loadSystem(){
   try{

@@ -9007,6 +9007,151 @@ def api_search():
                     'invoices': [dict_row(r) for r in fins], 'settlements': [dict_row(r) for r in setls],
                     'approvals': [dict_row(r) for r in apps], 'users': [dict_row(r) for r in usrs]})
 
+# ============================================================
+# V11.209 补充二: 全链路溯源档案 — 命中单据 → 聚合上下游/审批/发票/库存流水/时间轴
+# 检索入口(首页全局搜索/报表中心/系统中心)共用 /api/search, 溯源共用本接口
+# ============================================================
+@app.route('/api/trace')
+@login_required
+def api_trace():
+    """溯源档案: 按 biz_type+biz_id 聚合全链路。
+    返回: self基础信息 / timeline时间轴 / approvals审批记录 / logs操作日志
+          / upstream上游(申请/询价/合同) / downstream下游(入库/出库/退库/付款/发票)
+          / flows库存流水 / attachments附件
+    """
+    biz_type = request.args.get('t', '')
+    biz_id = request.args.get('id', '')
+    kw = request.args.get('q', '').strip()  # 也支持纯关键词溯源(自动找主命中)
+    c = db(); c.row_factory = sqlite3.Row
+    TBL = {'order': ('purchase_orders', 'order_no'), 'request': ('purchase_requests', 'req_no'),
+           'contract': ('contracts', 'contract_no'), 'receiving': ('receivings', 'receive_no'),
+           'requisition': ('requisitions', 'req_no'), 'return_request': ('return_requests', 'return_no'),
+           'payment': ('payment_requests', 'payment_no'), 'credit': ('credit_notes', 'credit_no'),
+           'invoice': ('invoices', 'invoice_no'), 'repair': ('repair_plans', 'plan_no'),
+           'inventory': ('inventory', 'item_name'), 'settlement': ('settlements', 'settlement_no')}
+    out = {'self': None, 'timeline': [], 'approvals': [], 'logs': [],
+           'upstream': {'requests': [], 'inquiries': [], 'contracts': [], 'orders': []},
+           'downstream': {'receivings': [], 'requisitions': [], 'returns': [], 'payments': [], 'invoices': [], 'repairs': []},
+           'flows': [], 'attachments': [], 'links': []}
+    def _push(row): return {k: row[k] for k in row.keys()}
+    if biz_type in TBL and biz_id:
+        tbl, no_col = TBL[biz_type]
+        try:
+            r = c.execute(f"SELECT * FROM {tbl} WHERE id=?", (biz_id,)).fetchone()
+        except Exception:
+            r = None
+        if not r: c.close(); return jsonify(out)
+        row = dict(r)
+        out['self'] = {'biz_type': biz_type, 'id': r['id'], 'no': row.get(no_col, ''), 'data': row}
+        # 时间轴: 单据创建
+        _ct = row.get('created_at') or row.get('received_at') or row.get('issued_at') or ''
+        if _ct: out['timeline'].append({'t': _ct, 'event': f'单据创建({no_col}={row.get(no_col, "")})'})
+        # 审批记录(该单据的全部审批实例+动作日志)
+        try:
+            for a in c.execute("SELECT ai.*, (SELECT comment FROM approval_action_logs al WHERE al.biz_type=ai.biz_type AND al.biz_id=ai.biz_id AND al.action IN ('approved','rejected') ORDER BY al.id DESC LIMIT 1) last_comment FROM approval_instances ai WHERE ai.biz_type=? AND ai.biz_id=? ORDER BY ai.level_no",
+                               (biz_type if biz_type != 'receiving' else 'receiving', biz_id)).fetchall():
+                d = dict(a)
+                if biz_type == 'order': d['biz_type'] = 'purchase_order'
+                out['approvals'].append(d)
+                if d.get('status') == 'approved': out['timeline'].append({'t': d.get('approved_at') or d.get('updated_at') or '', 'event': f'审批通过({d.get("role") or ""})'})
+                elif d.get('status') == 'rejected': out['timeline'].append({'t': d.get('updated_at') or '', 'event': f'驳回({d.get("role") or ""})'})
+        except Exception:
+            pass
+        # 操作日志
+        try:
+            for l in c.execute("SELECT * FROM logs WHERE detail LIKE ? ORDER BY id DESC LIMIT 20", (f'%{row.get(no_col, "")}%',)).fetchall():
+                out['logs'].append(dict(l))
+        except Exception:
+            pass
+        # ── 上下游聚合 ──
+        _item = row.get('item_name') or ''
+        _sup = row.get('supplier') or ''
+        _cid = row.get('contract_id') or row.get('credit_id')
+        _oid = row.get('order_id')
+        _rcv_no = row.get('receive_no') or ''
+        # 申请(同一物料名/单号引用)
+        if _item:
+            for t2 in c.execute("SELECT id,req_no,purpose,status FROM purchase_requests WHERE id IN (SELECT req_id FROM request_items WHERE item_name=? OR spec=?) OR purpose LIKE ? LIMIT 5", (_item, _item, f'%{_item}%')).fetchall():
+                out['upstream']['requests'].append(dict(t2))
+        # 询价(物料名)
+        if _item:
+            try:
+                for t2 in c.execute("SELECT id,inq_no,item_name,status FROM inquiries WHERE item_name=? OR purpose LIKE ? LIMIT 5", (_item, f'%{_item}%')).fetchall():
+                    out['upstream']['inquiries'].append(dict(t2))
+            except Exception:
+                pass
+        # 订单(通过合同/物料/供应商)
+        if biz_type == 'request' or biz_type == 'contract':
+            pass
+        if _item or _sup:
+            try:
+                for t2 in c.execute("SELECT id,order_no,item_name,supplier,total_amount,status FROM purchase_orders WHERE (item_name=? OR supplier=?) AND id!=? LIMIT 5", (_item, _sup, biz_id if biz_type == 'order' else -1)).fetchall():
+                    out['upstream']['orders'].append(dict(t2))
+            except Exception:
+                pass
+        # 合同(供应商/物料)
+        if _sup or _cid:
+            try:
+                for t2 in c.execute("SELECT id,contract_no,contract_name,supplier,amount,status FROM contracts WHERE supplier=? OR id=? LIMIT 5", (_sup, _cid)).fetchall():
+                    out['upstream']['contracts'].append(dict(t2))
+            except Exception:
+                pass
+        # 入库单(订单/合同/物料)
+        try:
+            for t2 in c.execute("SELECT id,receive_no,item_name,qualified_qty,status,received_at FROM receivings WHERE (order_id=? OR item_name=? OR id=?) LIMIT 8", (_oid or -1, _item, biz_id if biz_type == 'receiving' else -1)).fetchall():
+                out['downstream']['receivings'].append(dict(t2))
+                if biz_type == 'order' and t2['id'] == (biz_id if biz_type == 'receiving' else -1):
+                    pass
+        except Exception:
+            pass
+        # 出库(物料)
+        if _item:
+            try:
+                for t2 in c.execute("SELECT id,req_no,item_name,quantity,dept,status FROM requisitions WHERE item_name=? LIMIT 5", (_item,)).fetchall():
+                    out['downstream']['requisitions'].append(dict(t2))
+            except Exception:
+                pass
+            try:
+                for t2 in c.execute("SELECT id,return_no,item_name,quantity,status FROM return_requests WHERE item_name=? LIMIT 5", (_item,)).fetchall():
+                    out['downstream']['returns'].append(dict(t2))
+            except Exception:
+                pass
+        # 付款(credit关联/供应商)
+        if _cid:
+            try:
+                for t2 in c.execute("SELECT id,payment_no,supplier,amount,status FROM payment_requests WHERE credit_id=? LIMIT 5", (_cid,)).fetchall():
+                    out['downstream']['payments'].append(dict(t2))
+            except Exception:
+                pass
+        # 发票(合同/供应商/单号)
+        try:
+            for t2 in c.execute("SELECT id,invoice_no,supplier,amount,status,invoice_date FROM invoices WHERE (contract_id=? OR supplier=? OR contract_no=?) LIMIT 5", (_cid or -1, _sup, row.get('contract_no') or '')).fetchall():
+                out['downstream']['invoices'].append(dict(t2))
+        except Exception:
+            pass
+        # 维修计划(设备名/物料)
+        if _item:
+            try:
+                for t2 in c.execute("SELECT id,plan_no,device_name,status FROM repair_plans WHERE device_name=? LIMIT 5", (_item,)).fetchall():
+                    out['downstream']['repairs'].append(dict(t2))
+            except Exception:
+                pass
+        # 库存流水(物料+规格)
+        _spec = row.get('spec') or ''
+        if _item:
+            for t2 in c.execute("SELECT item_name,spec,flow_type,doc_type,doc_no,qty,balance_after,operator,created_at FROM inventory_flows WHERE item_name=? ORDER BY id DESC LIMIT 20", (_item,)).fetchall():
+                out['flows'].append(dict(t2))
+        # 附件: 附件字段若有(/uploads/路径) → attachments
+        _atts = row.get('attachments') or ''
+        if _atts:
+            import re as _re
+            out['attachments'] = _re.findall(r'/uploads/[^\s",]+', str(_atts))
+    elif kw and not biz_id:
+        # 纯关键词溯源: 前端已先经 /api/search 命中得类型+id, 此处兜底返回空(提示前端走search)
+        pass
+    c.close()
+    return jsonify(out)
+
 # ---- 合同模板管理 ----
 @app.route('/api/contract-templates')
 @login_required
