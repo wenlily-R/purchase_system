@@ -3719,11 +3719,11 @@ async function loadRepairs(){
     <td>${_rt}</td><td>¥${(x.quote_total||0).toFixed(0)}</td><td>${tag(x.status)}</td>${rejCell(x)}
     <td style="white-space:nowrap"><button class="lnk" onclick="showRepairDetail(${x.id})">详情</button>
     <button class="lnk" style="color:var(--s)" onclick="window.open('/api/repairs/${x.id}/download','_blank')">⬇️下载</button>
-    ${canOps&&(x.status=='草稿'||x.status=='定损驳回')?` <button class="lnk" style="color:#b45309" onclick="showRepairForm(${x.id})">✏️ 修改</button>`:''}
+    <button class="lnk" style="color:#b08900" onclick="editRepairDraft(${x.id})">✏️修改</button>
     ${canOps&&x.status=='草稿'?` <button class="lnk" style="color:var(--s);font-weight:600" onclick="submitRepair(${x.id})">📤 提交报修</button>`:''}
-    ${canOps&&(x.status=='定损驳回'&&x.reject_count>0)?` <button class="lnk" style="color:var(--s);font-weight:600" onclick="submitRepair(${x.id})">📤 重新提交</button>`:''}
+    ${canOps&&x.status=='定损驳回'?` <button class="lnk" style="color:var(--s);font-weight:600" onclick="submitRepair(${x.id})">📤 重新提交</button>`:''}
     ${canOps&&(x.status=='待定损'||x.status=='定损完成待审批'||x.status=='审批驳回')?` <button class="lnk" style="color:var(--o)" onclick="withdrawRepair(${x.id})">↩️撤回</button>`:''}
-    ${(x.status=='草稿'||x.status=='定损驳回')&&canOps?` <button class="lnk" style="color:var(--d)" onclick="voidRepair(${x.id})">作废</button>`:''}</td>`});
+    ${canOps&&x.status!='已作废'?` <button class="lnk" style="color:var(--d)" onclick="voidRepair(${x.id})">🗑️删除</button>`:''}</td>`});
 }
 async function loadRepairs2(){
   // prepairs 兼容页(入口: 菜单🔧维修采购), 共用同一列表渲染到容器2
@@ -3741,11 +3741,22 @@ async function loadRepairs2(){
     <td>${_rt}</td><td>¥${(x.quote_total||0).toFixed(0)}</td><td>${tag(x.status)}</td>${rejCell(x)}
     <td style="white-space:nowrap"><button class="lnk" onclick="showRepairDetail(${x.id})">详情</button>
     <button class="lnk" style="color:var(--s)" onclick="window.open('/api/repairs/${x.id}/download','_blank')">⬇️下载</button>
-    ${canOps&&(x.status=='草稿'||x.status=='定损驳回')?` <button class="lnk" style="color:#b45309" onclick="showRepairForm(${x.id})">✏️ 修改</button>`:''}
+    <button class="lnk" style="color:#b08900" onclick="editRepairDraft(${x.id})">✏️修改</button>
     ${canOps&&x.status=='草稿'?` <button class="lnk" style="color:var(--s);font-weight:600" onclick="submitRepair(${x.id})">📤 提交报修</button>`:''}
-    ${canOps&&(x.status=='定损驳回'&&x.reject_count>0)?` <button class="lnk" style="color:var(--s);font-weight:600" onclick="submitRepair(${x.id})">📤 重新提交</button>`:''}
+    ${canOps&&x.status=='定损驳回'?` <button class="lnk" style="color:var(--s);font-weight:600" onclick="submitRepair(${x.id})">📤 重新提交</button>`:''}
     ${canOps&&(x.status=='待定损'||x.status=='定损完成待审批'||x.status=='审批驳回')?` <button class="lnk" style="color:var(--o)" onclick="withdrawRepair(${x.id})">↩️撤回</button>`:''}
-    ${(x.status=='草稿'||x.status=='定损驳回')&&canOps?` <button class="lnk" style="color:var(--d)" onclick="voidRepair(${x.id})">作废</button>`:''}</td>`});
+    ${canOps&&x.status!='已作废'?` <button class="lnk" style="color:var(--d)" onclick="voidRepair(${x.id})">🗑️删除</button>`:''}</td>`});
+}
+// V11.218: 列表✏️修改入口(全状态显示, 后端校验可编辑状态) — 与物资采购申请同构: 按钮恒在, 非法状态给友好提示
+async function editRepairDraft(rid){
+  try{
+    const d=await api(`/repairs/${rid}/detail`);
+    const st=(d&&d.plan&&d.plan.status)||'';
+    if(st!=='草稿'&&st!=='定损驳回'){
+      alert(`当前状态(${st})不可直接修改：\n- 草稿：可直接修改\n- 定损驳回：修改后重新提交\n- 待定损/审批中：请先「撤回」退回草稿再修改`);return
+    }
+    showRepairForm(rid);
+  }catch(e){alert('加载失败，请重试')}
 }
 async function showRepairForm(rid){
   // V11.214: 支持编辑模式 — rid存在时从详情接口回填(草稿/被驳回单据'修改'入口)

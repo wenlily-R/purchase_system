@@ -11335,6 +11335,10 @@ def api_repair_void(rid):
     if not r: c.close(); return jsonify({'error': '维修计划不存在'}), 404
     if r['status'] in ('已完成', '待返库'):
         c.close(); return jsonify({'error': '该计划已进入返库/完成, 不可作废'}), 400
+    # V11.218: 删除按钮全状态显示(与物资采购同构), 但仅 草稿/定损驳回/终态前 可作废;
+    # 审批中/流程中(待定损/审批中/委外/验收等)必须先撤回或走完流程 — 防误删真实在办单&产生幽灵审批
+    if r['status'] not in ('草稿', '定损驳回', '已归档', '验收通过', '待发票登记', '已选服务商'):
+        c.close(); return jsonify({'error': f'当前状态({r["status"]})不可删除。请在「详情」操作或先撤回后再删除'}), 400
     me = c.execute("SELECT * FROM users WHERE id=?", (session.get('user_id', 0),)).fetchone()
     is_admin = me and (me['role'] == '系统管理员' or session.get('user_role') == '分管领导')
     if not is_admin and r['requester'] and me and me['name'] != r['requester']:
