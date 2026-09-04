@@ -210,6 +210,20 @@ def log(op, action, detail, c=None):
     if c: c.execute("INSERT INTO logs(operator,action,detail,created_at) VALUES(?,?,?,?)", (op,action,detail,now()))
     else: cc=db();cc.execute("INSERT INTO logs(operator,action,detail,created_at) VALUES(?,?,?,?)",(op,action,detail,now()));cc.commit();cc.close()
 
+def add_notif(user_ids, title, content, biz_type='', biz_id=0, conn=None):
+    """V11.214: 写系统站内信(铃铛🔔) — user_ids: 用户id列表; 供审批/报修/定损等环节推送待办提醒
+    独立连接调用(不传conn); 若调用方已持有写连接须传conn避免锁冲突(调用方commit)"""
+    if not user_ids: return
+    _c = conn or db()
+    for uid in user_ids:
+        try:
+            _c.execute("INSERT INTO notifications(user_id,type,title,content,biz_type,biz_id) VALUES(?,?,?,?,?,?)",
+                       (uid, 'approval', title, content, biz_type, biz_id))
+        except Exception:
+            pass
+    if not conn:
+        _c.commit(); _c.close()
+
 def dict_row(r): return dict(r) if r else None
 
 # ── Auth decorator ──
@@ -10873,7 +10887,23 @@ def api_repair_submit(rid):
     if r['status'] not in ('草稿', '定损驳回'):
         c.close(); return jsonify({'error': f'当前状态({r["status"]})不可提交报修'}), 400
     c.execute("UPDATE repair_plans SET status='待定损', updated_at=? WHERE id=?", (now(), rid))
-    c.commit(); c.close()
+    c.commit()
+    # V11.214: 通知定损角色(分管领导/总经理/管理员) — 铃铛+钉钉; 排除提交人自己
+    try:
+        _leaders = c.execute("SELECT id,dingtalk_userid,name FROM users WHERE role IN ('分管领导','总经理') AND is_active=1").fetchall()
+        _admin = c.execute("SELECT id,dingtalk_userid,name FROM users WHERE role='系统管理员' AND is_active=1").fetchone()
+        if _admin: _leaders = list(_leaders) + [_admin]
+        _notify_ids = [u['id'] for u in _leaders if u['id'] != session.get('user_id')]
+        add_notif(_notify_ids, f'🔧 新设备报修待定损：{r["plan_no"]}',
+                  f'{r["device_name"]}（{r["dept"] or ""}提报，紧急度:{r["urgency"] or "普通"}）请进入 采购申请-设备维修 做技术定损', 'repair_plan', rid, conn=c)
+        c.commit()  # V11.214: add_notif(conn=c) 不自动commit, 须在关闭前提交
+        for u in _leaders:
+            if u.get('dingtalk_userid') and u['id'] != session.get('user_id'):
+                try: dt_send_todo([u['dingtalk_userid']], f'🔧 新设备报修待定损 {r["plan_no"]}', f'{r["device_name"]} 请做技术定损', '', 'repair_plan', rid)
+                except Exception: pass
+    except Exception:
+        pass
+    c.close()
     log(session['user_name'], '提交维修报修', f'{r["plan_no"]} → 待定损')
     return jsonify({'success': True})
 
@@ -11268,6 +11298,57 @@ def api_repair_void(rid):
     c.execute("UPDATE approval_instances SET status='rejected', comment='计划作废' WHERE biz_type='repair_plan' AND biz_id=? AND status IN ('pending','approved')", (rid,))
     c.commit(); c.close()
     log(session['user_name'], '作废维修计划', f'{r["plan_no"]}')
+    return jsonify({'success': True})
+
+@app.route('/api/repairs/<int:rid>', methods=['PUT'])
+@login_required
+def api_repair_update(rid):
+    """V11.214: 编辑维修报修单(限 草稿/定损驳回) — 对齐采购申请'修改'能力; 保存后保持原状态可重新提交"""
+    d = request.json or {}
+    c = db()
+    r = c.execute("SELECT * FROM repair_plans WHERE id=?", (rid,)).fetchone()
+    if not r: c.close(); return jsonify({'error': '维修单不存在'}), 404
+    if r['status'] not in ('草稿', '定损驳回'):
+        c.close(); return jsonify({'error': f'当前状态({r["status"]})不可修改(仅草稿/被驳回可编辑)'}), 400
+    me = c.execute("SELECT * FROM users WHERE id=?", (session.get('user_id', 0),)).fetchone()
+    is_leader = session.get('user_role') in ('系统管理员', '分管领导', '总经理')
+    if not is_leader and r['requester_id'] != session.get('user_id'):
+        c.close(); return jsonify({'error': '仅提交人本人可修改'}), 403
+    device = str(d.get('device_name') or '').strip()
+    if not device: c.close(); return jsonify({'error': '请填写故障设备名称'}), 400
+    # 更新主表(保留 plan_no/requester/status)
+    c.execute("""UPDATE repair_plans SET device_name=?, device_no=?, fault_desc=?, fault_time=?, urgency=?,
+                 init_judge=?, est_cost=?, dept=?, attachments=?, remark=?, updated_at=? WHERE id=?""",
+              (device, str(d.get('device_no') or '').strip(), str(d.get('fault_desc') or '').strip(),
+               str(d.get('fault_time') or ''), d.get('urgency') or '普通', d.get('init_judge') or '',
+               float(d.get('est_cost') or 0), d.get('dept') or r['dept'], json.dumps(d.get('attachments') or [], ensure_ascii=False),
+               str(d.get('remark') or ''), now(), rid))
+    # 重建部件明细
+    c.execute("DELETE FROM repair_items WHERE plan_id=?", (rid,))
+    for it in (d.get('items') or []):
+        if str(it.get('part_name') or '').strip():
+            c.execute("INSERT INTO repair_items(plan_id,part_name,fault_note) VALUES(?,?,?)", (rid, it['part_name'], it.get('fault_note', '')))
+    c.commit(); c.close()
+    log(session['user_name'], '修改维修报修单', f'{r["plan_no"]} {device}')
+    return jsonify({'success': True})
+
+@app.route('/api/repairs/<int:rid>/withdraw', methods=['POST'])
+@login_required
+def api_repair_withdraw(rid):
+    """V11.214: 撤回已提交报修(待定损/定损完成待审批/审批驳回时) → 回草稿可修改; 对齐采购申请'撤回'能力"""
+    c = db()
+    r = c.execute("SELECT * FROM repair_plans WHERE id=?", (rid,)).fetchone()
+    if not r: c.close(); return jsonify({'error': '维修单不存在'}), 404
+    if r['status'] not in ('待定损', '定损完成待审批', '审批驳回'):
+        c.close(); return jsonify({'error': f'当前状态({r["status"]})不可撤回'}), 400
+    me = c.execute("SELECT * FROM users WHERE id=?", (session.get('user_id', 0),)).fetchone()
+    is_leader = session.get('user_role') in ('系统管理员', '分管领导', '总经理')
+    if not is_leader and r['requester_id'] != session.get('user_id'):
+        c.close(); return jsonify({'error': '仅提交人本人可撤回'}), 403
+    c.execute("UPDATE repair_plans SET status='草稿', updated_at=? WHERE id=?", (now(), rid))
+    c.execute("UPDATE approval_instances SET status='rejected', comment='提交人撤回' WHERE biz_type='repair_plan' AND biz_id=? AND status IN ('pending','approved')", (rid,))
+    c.commit(); c.close()
+    log(session['user_name'], '撤回维修报修', f'{r["plan_no"]} → 草稿')
     return jsonify({'success': True})
 
 @app.route('/api/requisitions/<int:rid>/void', methods=['POST'])
