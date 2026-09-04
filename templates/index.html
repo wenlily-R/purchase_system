@@ -2229,29 +2229,49 @@ async function downloadOrder(oid){
   setTimeout(()=>URL.revokeObjectURL(a.href),3000);
 }
 // 需求44: 自动生成采购合同 — V11.144: 生成前由采购员选择结算方式(现结/月结)
+// V11.203 模块一1.1: 选定结算方式后进入发票条款填写(每份合同独立发票回收节点, 可留空=模板默认, 也可稍后在合同详情补录)
 async function genContract(oid){
   // V11.150: 防连点(连点会叠两个结算方式弹窗)
   if(__guardOpen('gc:'+oid))return;
   showDetail('📄 生成采购合同',`
     <div style="font-size:11px;margin-bottom:10px">请选择本次合同的结算方式：</div>
     <div style="display:flex;gap:8px">
-      <div style="flex:1;border:2px solid var(--s);border-radius:8px;padding:14px;text-align:center;cursor:pointer;background:#f0faf5" onclick="doGenContract(${oid},'现结')">
+      <div style="flex:1;border:2px solid var(--s);border-radius:8px;padding:14px;text-align:center;cursor:pointer;background:#f0faf5" onclick="genContractInv(${oid},'现结')">
         <div style="font-size:16px">⚡</div><div style="font-size:12px;font-weight:bold;color:var(--s)">现结</div>
         <div style="font-size:9px;color:#888;margin-top:4px">一单一结<br>生成合同后立即付款</div>
       </div>
-      <div style="flex:1;border:2px solid #e67e22;border-radius:8px;padding:14px;text-align:center;cursor:pointer;background:#fef9f0" onclick="doGenContract(${oid},'月结')">
+      <div style="flex:1;border:2px solid #e67e22;border-radius:8px;padding:14px;text-align:center;cursor:pointer;background:#fef9f0" onclick="genContractInv(${oid},'月结')">
         <div style="font-size:16px">📅</div><div style="font-size:12px;font-weight:bold;color:#e67e22">月结</div>
         <div style="font-size:9px;color:#888;margin-top:4px">月底按厂家汇总<br>统一生成月度合同</div>
       </div>
-    </div>`,
+    </div>
+    <div style="font-size:9px;color:#999;margin-top:8px">选择后下一步可填写本合同的发票回收节点条款（可留空，生成后也可在合同详情补录）</div>`,
     `<button class="btn btn-o" onclick="closeMod()">取消</button>`);
+}
+async function genContractInv(oid,settle){
+  // V11.203 模块一1.1: 发票条款编辑(合同表单新增字段: 发票回收节点说明/预计首次开票/预计全部开票完成)
+  showDetail('📄 生成采购合同 — 发票条款',`
+    <div style="font-size:10px;color:#666;margin-bottom:8px">结算方式：<b>${settle}</b>。发票节点可每份合同单独约定（如：预付30%开票/按付款进度开票/小金额先票后款等）；不填则按合同模板默认“验收合格后开具全额发票”。</div>
+    <div style="margin-bottom:8px"><label style="font-size:10px;color:#555">📋 发票回收节点说明（开票时间节点/顺序/比例）</label>
+      <textarea id="gcInvClause" style="width:100%;height:58px;border:1px solid #ccc;border-radius:4px;padding:6px;font-size:11px" placeholder="例：货到验收后30日内开具全额增值税专用发票；分两期开票，首期50%随货，尾期50%验收合格后开具"></textarea></div>
+    <div style="display:flex;gap:8px;margin-bottom:4px">
+      <div style="flex:1"><label style="font-size:10px;color:#555">📅 预计首次开票时间</label><input type="date" id="gcInvFirst" style="width:100%;border:1px solid #ccc;border-radius:4px;padding:4px;font-size:11px"></div>
+      <div style="flex:1"><label style="font-size:10px;color:#555">📅 预计全部开票完成时间</label><input type="date" id="gcInvDone" style="width:100%;border:1px solid #ccc;border-radius:4px;padding:4px;font-size:11px"></div>
+    </div>
+    <div style="font-size:9px;color:#999">填写开票时间后，系统将按节点自动提醒采购专员催收发票（系统内预警+钉钉提醒）</div>`,
+    `<button class="btn btn-o" onclick="genContract(${oid})">← 返回</button><button class="btn btn-p" onclick="doGenContract(${oid},'${settle}')">📄 生成合同并提交审批</button>`);
 }
 async function doGenContract(oid,settle){
   // V11.150: 防连点(连点会叠确认框/重复生成合同)
   if(__guardOpen('dgc:'+oid+':'+settle))return;
   closeMod();
   if(!confirm('调用默认合同模板生成采购合同并进入合同审批？（结算方式：'+settle+'）'))return;
-  const r=await api('/contracts/generate',{method:'POST',body:JSON.stringify({order_id:oid,settle_type:settle})});
+  const _ic=(id('gcInvClause')&&id('gcInvClause').value||'').trim();
+  const _f=(id('gcInvFirst')&&id('gcInvFirst').value||'').trim();
+  const _dn=(id('gcInvDone')&&id('gcInvDone').value||'').trim();
+  const _body={order_id:oid,settle_type:settle};
+  if(_ic||_f||_dn){_body.invoice_clause=_ic;_body.invoice_est_first=_f;_body.invoice_est_done=_dn}
+  const r=await api('/contracts/generate',{method:'POST',body:JSON.stringify(_body)});
   if(r.success){alert(`✅ 合同 ${r.contract_no} 已生成（${settle}），可在 合同管理 查看并审批`);loadOrders();loadContracts()}
   else alert(r.error||'生成失败');
 }
@@ -2762,9 +2782,89 @@ async function showContract(id){
   h+=`<div style="margin-top:6px"><button class="btn btn-o btn-sm" style="color:#b08900;border-color:#b08900" onclick="editDoc('contract',${id},'合同')">✏️ 修改合同信息</button>
     ${((c.status=='已驳回'||(c.status=='草稿'&&(c.reject_count||0)>0))&&ME.role=='系统管理员')?`<button class="btn btn-p btn-sm" style="background:#16a34a;border-color:#16a34a" onclick="resubmitDoc('contract',${id},'合同','${esc(c.contract_no)}')">🔄 再次提交审批</button>`:''}</div>`;
   if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
+  // V11.203 模块一: 发票台账区块(条款/开票计划/催收状态/登记发票列表)
+  h+=`<div id="invBox${c.id}" style="margin-top:10px;border-top:1px dashed #e8e8e8;padding-top:8px"><div style="font-size:10px;color:#999">🧾 发票台账加载中...</div></div>`;
   showDetail(`合同 ${c.contract_no}`,h+'<div id="approvalFlowBox"></div><div id="rejectLogsBox"></div>');
   loadApprovalFlow('contract',id,'approvalFlowBox');
   loadRejectLogs('contract',id,'rejectLogsBox');
+  loadInvBox(id);
+}
+// ── V11.203 模块一: 合同发票台账/节点提醒/催收登记(采购专员线下取票, 系统内登记留痕; 钉钉自动提醒见后端) ──
+function canInvOps(){return ['采购员','系统管理员','分管领导','总经理'].includes((window.ME&&ME.role)||'')}
+function invStTag(s){
+  if(s=='已收到发票')return '<span style="font-size:9px;color:#fff;background:#16a34a;border-radius:3px;padding:1px 6px">✅ 已收到发票</span>';
+  if(s=='已催收待回')return '<span style="font-size:9px;color:#fff;background:#e67e22;border-radius:3px;padding:1px 6px">📬 已催收待回</span>';
+  return '<span style="font-size:9px;color:#888;background:#eee;border-radius:3px;padding:1px 6px">未催收</span>';
+}
+async function loadInvBox(cid){
+  const box=id('invBox'+cid); if(!box)return;
+  let c=null; try{c=await api(`/contracts/${cid}/invoices`)}catch(e){}
+  if(!c){box.innerHTML='<div style="font-size:10px;color:#c0392b">🧾 发票台账加载失败</div>';return}
+  const p=c.plan||{}; const st=c.stats||{}; const recv=st.received_amount||0;
+  const pend=Math.max((c.contract_amount||0)-recv,0);
+  const rows=(c.list||[]).map(x=>`<tr><td><b>${esc(x.invoice_no)}</b></td><td>¥${(x.amount||0).toFixed(2)}</td><td>${esc(x.invoice_type||'-')}</td><td>${esc(x.received_date||'-')}</td><td>${esc(x.operator||'-')}</td><td>${esc(x.remark||'')}</td>${canInvOps()?`<td><button class="lnk" style="color:#c0392b" onclick="delInvRecord(${cid},${x.id})">删</button></td>`:''}</tr>`).join('');
+  let h=`<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:6px">
+    <b style="font-size:11px">🧾 发票台账</b>${invStTag(p.inv_collect_status)}
+    <span style="font-size:10px;color:#666">合同额 <b>¥${(c.contract_amount||0).toFixed(2)}</b></span>
+    <span style="font-size:10px;color:#16a34a">已收 ${st.received_count||0}张 ¥${recv.toFixed(2)}</span>
+    <span style="font-size:10px;color:${pend>0.01?'#c0392b':'#888'}">待收 ¥${pend.toFixed(2)}</span>
+    ${canInvOps()?`<button class="lnk" style="color:#b08900" onclick="showInvPlanModal(${cid})">📝 发票计划/催收状态</button><button class="lnk" style="color:var(--s)" onclick="showInvRegModal(${cid})">📥 登记发票</button>`:''}
+  </div>`;
+  if(p.invoice_clause)h+=`<div style="font-size:10px;background:#f8f6ef;border-radius:4px;padding:5px 8px;margin-bottom:4px"><b>发票条款：</b>${esc(p.invoice_clause)}</div>`;
+  if(p.invoice_est_first||p.invoice_est_done)h+=`<div style="font-size:10px;color:#666;margin-bottom:4px">📅 预计首次开票：${esc(p.invoice_est_first||'未填')} ｜ 预计全部开票完成：${esc(p.invoice_est_done||'未填')}</div>`;
+  if(rows)h+=`<table style="width:100%;font-size:10px"><tr style="background:#f7f9fc"><th>发票号码</th><th>金额</th><th>类型</th><th>收票日期</th><th>登记人</th><th>备注</th>${canInvOps()?'<th></th>':''}</tr>${rows}</table>`;
+  if(!(c.list||[]).length&&!p.invoice_clause&&!p.invoice_est_first&&!p.invoice_est_done&&!p.inv_collect_status)h+=`<div style="font-size:9px;color:#bbb">未设置发票计划、暂无发票登记（生成合同时可填发票条款，或点右侧按钮补录）</div>`;
+  box.innerHTML=h;
+}
+async function showInvPlanModal(cid){
+  let p={invoice_clause:'',invoice_est_first:'',invoice_est_done:'',inv_collect_status:''};
+  try{const g=await api(`/contracts/${cid}/invoices`);if(g.plan)p=g.plan}catch(e){}
+  const opts=['未催收','已催收待回','已收到发票'].map(s=>`<option value="${s}" ${(p.inv_collect_status||'')==s?'selected':''}>${s=='已收到发票'?'✅ 已收到发票（登记发票时自动置为此状态）':s=='已催收待回'?'📬 已催收待回':'未催收'}</option>`).join('');
+  showDetail('📝 发票计划/催收状态',`<div style="font-size:10px;color:#666;margin-bottom:6px">发票条款按每份合同单独填写；填写预计开票时间后，系统到节点自动提醒采购专员催票（工作台预警+钉钉提醒）。</div>
+    <div style="margin-bottom:8px"><label style="font-size:10px;color:#555">📋 发票回收节点说明</label>
+    <textarea id="ipClause" style="width:100%;height:64px;border:1px solid #ccc;border-radius:4px;padding:6px;font-size:11px">${esc(p.invoice_clause||'')}</textarea></div>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <div style="flex:1"><label style="font-size:10px;color:#555">预计首次开票时间</label><input type="date" id="ipFirst" value="${esc(p.invoice_est_first||'')}" style="width:100%;border:1px solid #ccc;border-radius:4px;padding:4px;font-size:11px"></div>
+      <div style="flex:1"><label style="font-size:10px;color:#555">预计全部开票完成时间</label><input type="date" id="ipDone" value="${esc(p.invoice_est_done||'')}" style="width:100%;border:1px solid #ccc;border-radius:4px;padding:4px;font-size:11px"></div>
+    </div>
+    <div style="margin-bottom:4px"><label style="font-size:10px;color:#555">催收状态</label><select id="ipStatus" style="width:100%;border:1px solid #ccc;border-radius:4px;padding:4px;font-size:11px">${opts}</select></div>`,
+    `<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="saveInvPlan(${cid})">💾 保存</button>`);
+}
+async function saveInvPlan(cid){
+  if(__guardOpen('sip:'+cid))return;
+  const body={invoice_clause:(id('ipClause').value||'').trim(),invoice_est_first:(id('ipFirst').value||''),invoice_est_done:(id('ipDone').value||''),inv_collect_status:(id('ipStatus').value||'')};
+  if(!confirm('保存本合同发票计划与催收状态？'))return;
+  const r=await api(`/contracts/${cid}/invoice-plan`,{method:'POST',body:JSON.stringify(body)});
+  if(r.success){alert('✅ 已保存');closeMod();loadInvBox(cid);loadContracts()}else alert(r.error||'保存失败');
+}
+async function showInvRegModal(cid){
+  const td=new Date().toISOString().slice(0,10);
+  showDetail('📥 登记收到发票',`<div style="font-size:10px;color:#666;margin-bottom:6px">供应商开票后线下交付，采购专员登记后系统自动更新发票台账（已收金额/待收金额/超期预警自动重算）。</div>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <div style="flex:1"><label style="font-size:10px;color:#555">发票号码 *</label><input id="riNo" style="width:100%;border:1px solid #ccc;border-radius:4px;padding:4px;font-size:11px" placeholder="如 04512658"></div>
+      <div style="flex:1"><label style="font-size:10px;color:#555">开票金额 *</label><input type="number" step="0.01" min="0.01" id="riAmount" style="width:100%;border:1px solid #ccc;border-radius:4px;padding:4px;font-size:11px" placeholder="0.00"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <div style="flex:1"><label style="font-size:10px;color:#555">发票类型</label><select id="riType" style="width:100%;border:1px solid #ccc;border-radius:4px;padding:4px;font-size:11px"><option value="专票">增值税专用发票（可抵税）</option><option value="普票">增值税普通发票</option><option value="其他">其他</option></select></div>
+      <div style="flex:1"><label style="font-size:10px;color:#555">收票日期</label><input type="date" id="riDate" value="${td}" style="width:100%;border:1px solid #ccc;border-radius:4px;padding:4px;font-size:11px"></div>
+    </div>
+    <div><label style="font-size:10px;color:#555">备注</label><input id="riRemark" style="width:100%;border:1px solid #ccc;border-radius:4px;padding:4px;font-size:11px" placeholder="选填"></div>`,
+    `<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="doRegInvoice(${cid})">💾 登记</button>`);
+}
+async function doRegInvoice(cid){
+  if(__guardOpen('regi:'+cid))return;
+  const no=(id('riNo').value||'').trim();
+  const amt=parseFloat(id('riAmount').value);
+  if(!no){alert('请填写发票号码');return}
+  if(!(amt>0)){alert('请填写正确的开票金额');return}
+  if(!confirm(`确认登记发票 ${no} ¥${amt.toFixed(2)}？`))return;
+  const r=await api(`/contracts/${cid}/invoices`,{method:'POST',body:JSON.stringify({invoice_no:no,amount:amt,invoice_type:id('riType').value,received_date:id('riDate').value,remark:(id('riRemark').value||'').trim()})});
+  if(r.success){alert('✅ 发票已登记，台账已更新');closeMod();loadInvBox(cid);loadContracts()}else alert(r.error||'登记失败');
+}
+async function delInvRecord(cid,iid){
+  if(!confirm('确认删除该发票登记记录？删除后合同收回状态将退回“已催收待回”'))return;
+  const r=await api(`/contracts/${cid}/invoices/${iid}/delete`,{method:'POST',body:'{}'});
+  if(r.success){alert('✅ 已删除');loadInvBox(cid);loadContracts()}else alert(r.error||'删除失败');
 }
 // 合同在线编辑: 修改文本/补充条款 → 保存自动重建Word归档
 async function editContract(oid){
