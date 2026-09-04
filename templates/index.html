@@ -473,6 +473,19 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <button onclick="reportTab('traffic')">往来报表</button>
   </div>
   <div id="reportBuy">
+    <div class="card" style="margin-bottom:6px"><div class="ch"><h3>🧾 发票台账（按合同/供应商统计已开票·未开票·欠票预警）</h3><button class="btn btn-p btn-sm" onclick="loadInvReport()" style="margin-left:auto">🔄 查询</button></div>
+      <div class="cb">
+        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
+          <select id="invRepDim" class="fc" style="width:115px" onchange="loadInvReport()"><option value="contract">合同维度</option><option value="supplier">供应商维度</option></select>
+          <select id="invRepGroup" class="fc" style="width:135px" onchange="loadInvReport()"><option value="">按合同/供应商明细</option><option value="year">按年汇总</option><option value="month">按月汇总</option><option value="week">按周汇总</option><option value="day">按日汇总</option></select>
+          <input type="date" id="invRepFrom" class="fc" style="width:125px"> ~ <input type="date" id="invRepTo" class="fc" style="width:125px">
+          <input id="invRepSup" class="fc" style="width:115px" placeholder="供应商(模糊)">
+          <select id="invRepStatus" class="fc" style="width:105px"><option value="">全部状态</option><option value="待审批">待审批</option><option value="已通过">已通过</option><option value="审批通过">审批通过</option><option value="执行中">执行中</option><option value="已驳回">已驳回</option></select>
+          <button class="btn btn-o btn-sm" onclick="invRepExport()">⬇️ 导出Excel</button>
+        </div>
+        <div id="invRepSum"></div>
+        <div id="invRepWrap"><div style="color:#999;font-size:10px">加载中...</div></div>
+      </div></div>
     <div class="card" style="margin-bottom:6px"><div class="ch"><h3>📋 月底三表（暂估/红冲/白入 + 自动核对）</h3><button class="btn btn-p btn-sm" onclick="loadEstView()" style="margin-left:auto">🔄 刷新核对</button></div>
       <div class="cb">
         <div id="estChecks" style="font-size:11px;margin-bottom:6px"><span style="color:#999">加载中...</span></div>
@@ -1291,7 +1304,7 @@ async function loadDashboard(){
     apprZone('todo');
     // ⑤ 业务预警(V9: 按类型分组 + 红黄绿分级; 数据源与优化前一致)
     const al=d.alerts||[];
-    const ALERT_GROUPS=[['库存预警',['库存','缺货','超储']],['询价跟进',['询价超时']],['订单交货预警',['订单','交货','到货']],['合同到期预警',['合同']],['付款逾期预警',['付款','应付']],['审批超时预警',['审批']]];
+    const ALERT_GROUPS=[['库存预警',['库存','缺货','超储']],['询价跟进',['询价超时']],['订单交货预警',['订单','交货','到货']],['合同到期预警',['合同']],['发票催收',['发票']],['付款逾期预警',['付款','应付']],['审批超时预警',['审批']]];
     const groupOf=a=>ALERT_GROUPS.find(g=>g[1].some(k=>(a.alert_type||'').includes(k)))?.[0]||'其他预警';
     // 预警摘要chips(库存预警/审批超时/订单交期/合同到期)
     const sumBox=id('dashAlertSum');
@@ -3379,7 +3392,7 @@ async function doSupSave(oid){
   const r=await api(oid?'/suppliers/'+oid:'/suppliers',{method:'POST',body:JSON.stringify(d)});
   if(r.success){alert(oid?'✅ 已保存':'✅ 已新增');closeMod();loadSuppliers()}else alert(r.error||'失败');
 }
-async function loadReports(){loadReports2();loadEstView();
+async function loadReports(){loadReports2();loadEstView();loadInvReport&&loadInvReport();
   try{
     const r=await api('/reports');
     const t=r.todo||{};
@@ -5214,6 +5227,46 @@ async function loadApprTodo(){
 }
 // V11.56: 月底三表 — 系统内展示 + 自动核对(不直接下载)
 let __estData=null;
+// ── V11.203 模块一1.3: 发票台账报表(合同/供应商维度+年/月/周/日分组+超期预警+导出) ──
+function _invRepQs(){
+  const p=new URLSearchParams();
+  p.set('dim',id('invRepDim').value);
+  const g=id('invRepGroup').value; if(g)p.set('group',g);
+  const f=id('invRepFrom').value,t=id('invRepTo').value,s=id('invRepSup').value,st=id('invRepStatus').value;
+  if(f)p.set('from',f); if(t)p.set('to',t); if(s)p.set('supplier',s); if(st)p.set('status',st);
+  return p.toString();
+}
+async function loadInvReport(){
+  const wrap=id('invRepWrap'); if(!wrap)return;
+  wrap.innerHTML='<div class="loading">加载中...</div>';
+  try{
+    const qs=_invRepQs();
+    const d=await api('/reports/invoice-stats'+(qs?'?'+qs:''));
+    if(d.error){wrap.innerHTML='<div style="color:var(--d);font-size:11px">'+esc(d.error)+'</div>';return}
+    const s=d.summary||{};
+    id('invRepSum').innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:14px;font-size:11px;margin-bottom:6px">
+      <span>📄 合同数 <b>${s.contracts||0}</b></span><span>💰 合同总额 <b>¥${(s.amount||0).toFixed(2)}</b></span>
+      <span style="color:#16a34a">✅ 已收发票金额 <b>¥${(s.inv_amount||0).toFixed(2)}</b></span>
+      <span style="color:${(s.pending||0)>0.01?'var(--o)':'#888'}">⏳ 待收(欠票) <b>¥${(s.pending||0).toFixed(2)}</b></span>
+      <span style="color:${(s.overdue_cnt||0)>0?'var(--d)':'#888'}">🚨 超期未收合同 <b>${s.overdue_cnt||0}</b>${(s.overdue_cnt||0)>0?' 请采购专员及时催收':''}</span></div>`;
+    const groups=d.groups;
+    let h='';
+    if(groups){
+      h='<table class="tb" style="font-size:10px"><tr style="background:#f0f4ff"><th>期间</th><th>合同数</th><th>合同金额</th><th>已收金额</th><th>待收金额</th></tr>'+
+        groups.map(g=>`<tr><td><b>${esc(g.period)}</b></td><td>${g.contracts}</td><td>¥${(g.amount||0).toFixed(2)}</td><td style="color:#16a34a">¥${(g.inv_amount||0).toFixed(2)}</td><td style="color:${g.pending>0.01?'var(--o)':'#888'}">¥${(g.pending||0).toFixed(2)}</td></tr>`).join('')+'</table>';
+    }else if(d.dim=='contract'){
+      h='<table class="tb" style="font-size:10px"><tr style="background:#f0f4ff"><th>合同编号</th><th>供应商</th><th>金额</th><th>状态</th><th>预计首次开票</th><th>预计开票完成</th><th>已收发票</th><th>待收金额</th><th>预警</th></tr>'+
+        (d.rows||[]).map(x=>`<tr${x.overdue?' style="background:#fdeaea"':''}><td><b>${esc(x.contract_no)}</b></td><td>${esc(x.supplier||'-')}</td><td>¥${(x.amount||0).toFixed(2)}</td><td>${tag(x.status)}</td><td>${esc(x.invoice_est_first||'-')}</td><td>${esc(x.invoice_est_done||'-')}</td><td style="color:#16a34a">${x.inv_count||0}张 ¥${(x.inv_amount||0).toFixed(2)}</td><td style="color:${x.pending>0.01?'var(--o)':'#888'}">¥${(x.pending||0).toFixed(2)}</td><td>${x.overdue?'<span style="color:#fff;background:var(--d);border-radius:3px;padding:0 5px;font-size:9px">⚠️超期</span>':''}</td></tr>`).join('')+'</table>';
+    }else{
+      h='<table class="tb" style="font-size:10px"><tr style="background:#f0f4ff"><th>供应商</th><th>合同数</th><th>合同总额</th><th>已收张数</th><th>已收金额</th><th>待收金额</th><th>超期合同</th></tr>'+
+        (d.rows||[]).map(x=>`<tr><td><b>${esc(x.supplier)}</b></td><td>${x.contracts}</td><td>¥${(x.amount||0).toFixed(2)}</td><td>${x.inv_count||0}</td><td style="color:#16a34a">¥${(x.inv_amount||0).toFixed(2)}</td><td style="color:${x.pending>0.01?'var(--o)':'#888'}">¥${(x.pending||0).toFixed(2)}</td><td style="color:${(x.overdue_cnt||0)>0?'var(--d)':''}">${x.overdue_cnt||0}</td></tr>`).join('')+'</table>';
+    }
+    const empty=!(d.rows&&d.rows.length)&&!groups;
+    wrap.innerHTML=empty?'<div style="color:#999;font-size:10px;padding:4px 0">（无符合条件的合同记录）</div>':h;
+  }catch(e){wrap.innerHTML='<div style="color:var(--d);font-size:11px">加载失败, 请稍后重试</div>'}
+}
+function invRepExport(){const qs=_invRepQs();window.open('/api/reports/invoice-stats/export'+(qs?'?'+qs:''),'_blank')}
+
 async function loadEstView(){
   try{
     const d=await api('/reports/est-view');

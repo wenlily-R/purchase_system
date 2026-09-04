@@ -8384,6 +8384,158 @@ def api_est_export():
     return send_file(bio, as_attachment=True, download_name=f'{title}.xlsx',
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
+# ---- V11.203 模块一1.3: 发票台账统计(合同/供应商维度, 年/月/周/日分组, 欠票超期预警) ----
+def _inv_stats_rows(args):
+    """发票台账取数: 返回 {'dim','rows'(每行带已收/待收/超期标记),'summary'} 供JSON与Excel导出共用"""
+    frm = (args.get('from') or '').strip()[:10]
+    to = (args.get('to') or '').strip()[:10]
+    sup = (args.get('supplier') or '').strip()
+    status = (args.get('status') or '').strip()
+    dim = args.get('dim') or 'contract'
+    q = "SELECT c.*, po.order_no FROM contracts c LEFT JOIN purchase_orders po ON c.order_id=po.id WHERE c.status NOT IN ('已作废','已撤回','撤回','草稿')"
+    p = []
+    if frm:
+        q += " AND c.created_at>=?"
+        p.append(frm + ' 00:00:00')
+    if to:
+        q += " AND c.created_at<=?"
+        p.append(to + ' 23:59:59')
+    if sup:
+        q += " AND c.supplier LIKE ?"
+        p.append('%' + sup + '%')
+    if status:
+        q += " AND c.status=?"
+        p.append(status)
+    q += " ORDER BY c.created_at DESC, c.id DESC LIMIT 1200"
+    conn = db()
+    rows = conn.execute(q, p).fetchall()
+    inv_map = {}
+    for r in conn.execute("SELECT contract_id, COUNT(*) n, COALESCE(SUM(amount),0) amt FROM contract_invoices GROUP BY contract_id"):
+        inv_map[r['contract_id']] = {'n': r['n'], 'amt': float(r['amt'] or 0)}
+    conn.close()
+    today = datetime.date.today().strftime('%Y-%m-%d')
+    detail = []
+    for r in rows:
+        d = dict_row(r)
+        st = inv_map.get(d['id'], {'n': 0, 'amt': 0.0})
+        amt = float(d['amount'] or 0)
+        pend = max(round(amt - st['amt'], 2), 0)
+        over = bool(d.get('invoice_est_done')) and today > str(d['invoice_est_done'])[:10] and pend > 0.01
+        d['inv_count'] = st['n']
+        d['inv_amount'] = round(st['amt'], 2)
+        d['pending'] = pend
+        d['overdue'] = over
+        detail.append(d)
+    summary = {'contracts': len(detail),
+               'amount': round(sum(float(x['amount'] or 0) for x in detail), 2),
+               'inv_amount': round(sum(x['inv_amount'] for x in detail), 2),
+               'pending': round(sum(x['pending'] for x in detail), 2),
+               'overdue_cnt': sum(1 for x in detail if x['overdue'])}
+    return {'dim': dim, 'rows': detail, 'summary': summary}
+
+
+@app.route('/api/reports/invoice-stats')
+@login_required
+def api_invoice_stats():
+    """发票台账: ?dim=contract|supplier & from/to/supplier/status 筛选 & group=year|month|week|day 时间分组
+    金额敏感 → can_see_price 权限(库管/员工等不可见)"""
+    if not can_see_price():
+        return jsonify({'error': '无权限查看发票台账(金额敏感数据)'}), 403
+    data = _inv_stats_rows(request.args)
+    rows = data['rows']
+    dim = data['dim']
+    if dim == 'supplier':
+        agg = {}
+        for x in rows:
+            s = x['supplier'] or '(未填)'
+            a = agg.setdefault(s, {'supplier': s, 'contracts': 0, 'amount': 0.0, 'inv_count': 0, 'inv_amount': 0.0, 'pending': 0.0, 'overdue_cnt': 0})
+            a['contracts'] += 1
+            a['amount'] += float(x['amount'] or 0)
+            a['inv_count'] += x['inv_count']
+            a['inv_amount'] += x['inv_amount']
+            a['pending'] += x['pending']
+            a['overdue_cnt'] += 1 if x['overdue'] else 0
+        data['rows'] = sorted((dict(v) for v in agg.values()), key=lambda z: -z['amount'])
+    # 时间粒度分组(年/月/周/日) — 按合同维度计算
+    gp = (request.args.get('group') or '').strip()
+    if gp in ('year', 'month', 'week', 'day'):
+        from collections import OrderedDict
+        grp = OrderedDict()
+        _base = data['rows'] if dim == 'contract' else rows
+        for x in _base:
+            try:
+                dt0 = datetime.datetime.strptime((x.get('created_at') or '')[:10], '%Y-%m-%d').date()
+            except Exception:
+                continue
+            if gp == 'year':
+                lab = str(dt0.year)
+            elif gp == 'month':
+                lab = dt0.strftime('%Y-%m')
+            elif gp == 'week':
+                _iso = dt0.isocalendar()
+                lab = '%d-W%02d' % (_iso[0], _iso[1])
+            else:
+                lab = dt0.strftime('%Y-%m-%d')
+            g = grp.setdefault(lab, {'period': lab, 'contracts': 0, 'amount': 0.0, 'inv_amount': 0.0, 'pending': 0.0})
+            g['contracts'] += 1
+            g['amount'] += float(x['amount'] or 0)
+            g['inv_amount'] += x['inv_amount']
+            g['pending'] += x['pending']
+        data['groups'] = list(grp.values())
+    return jsonify(data)
+
+
+@app.route('/api/reports/invoice-stats/export')
+@login_required
+def api_invoice_stats_export():
+    """发票台账导出Excel(当前维度全明细行, 含汇总表头)"""
+    if not can_see_price():
+        return jsonify({'error': '无权限导出发票台账'}), 403
+    data = _inv_stats_rows(request.args)
+    dim = data['dim']
+    rows = data['rows']
+    s = data['summary']
+    import io
+    from openpyxl import Workbook
+    from flask import send_file
+    wb = Workbook()
+    ws = wb.active
+    ws.title = '发票台账'
+    from openpyxl.styles import Font
+    ws.append([('合同' if dim == 'contract' else '供应商') + '维度发票台账'])
+    ws.merge_cells('A1:H1')
+    ws['A1'].font = Font(bold=True, size=13)
+    ws.append(['时间范围: 全部' if not request.args.get('from') else ('%s ~ %s' % (request.args.get('from'), request.args.get('to') or '至今')),
+               '合同数: %d' % s['contracts'], '合同总额: ¥%.2f' % s['amount'],
+               '已收发票金额: ¥%.2f' % s['inv_amount'], '待收(欠票): ¥%.2f' % s['pending'],
+               '超期合同: %d' % s['overdue_cnt']])
+    if dim == 'contract':
+        head = ['合同编号', '供应商', '合同金额', '状态', '签订日期', '预计首次开票', '预计开票完成', '已收张数', '已收金额', '待收金额', '超期预警']
+        ws.append(head)
+        for x in rows:
+            ws.append([x['contract_no'], x['supplier'] or '', round(float(x['amount'] or 0), 2), x['status'],
+                       (x.get('created_at') or '')[:10], x.get('invoice_est_first') or '', x.get('invoice_est_done') or '',
+                       x['inv_count'], round(x['inv_amount'], 2), round(x['pending'], 2), '⚠️超期' if x['overdue'] else ''])
+    else:
+        head = ['供应商', '合同数', '合同总金额', '已收发票张数', '已收发票金额', '待收(欠票)金额', '超期合同数']
+        ws.append(head)
+        for x in rows:
+            ws.append([x['supplier'], x['contracts'], round(x['amount'], 2), x['inv_count'], round(x['inv_amount'], 2), round(x['pending'], 2), x['overdue_cnt']])
+    from openpyxl.cell.cell import MergedCell
+    for col in ws.columns:
+        _vals = [c for c in col if c.value is not None and not isinstance(c, MergedCell)]
+        if not _vals:
+            continue
+        _w = min(max(len(str(c.value)) for c in _vals) * 2 + 4, 40)
+        ws.column_dimensions[_vals[0].column_letter].width = _w
+    bio = io.BytesIO()
+    wb.save(bio)
+    bio.seek(0)
+    fn = '发票台账_%s维度_%s.xlsx' % (dim, datetime.date.today().strftime('%Y%m%d'))
+    return send_file(bio, as_attachment=True, download_name=fn,
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
 @app.route('/api/receivings/<int:rid>/invoice-match', methods=['POST'])
 @login_required
 def api_receiving_invoice_match(rid):
