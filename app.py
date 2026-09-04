@@ -1515,6 +1515,41 @@ def fs_send(target, text, color='blue', id_type='open_id'):
         return False
 
 # ---- 审批结果同步(幂等) ----
+# V11.213: 集中式单据号/名称/金额 CASE 片段(待办/审批中心/工作台/超时预警共用)
+# 覆盖全部审批类型, 新增业务类型必须在此登记, 防止待办列表 biz_no/biz_name 为 NULL 显示空
+def _ap_case(field):
+    """field: 'no' | 'name' | 'amount' — 返回按 biz_type 映射到各业务表的 CASE WHEN 片段(别名 ai)"""
+    no = ("CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.req_no FROM purchase_requests pr WHERE pr.id=ai.biz_id)"
+          " WHEN ai.biz_type='purchase_order' THEN (SELECT po.order_no FROM purchase_orders po WHERE po.id=ai.biz_id)"
+          " WHEN ai.biz_type='contract' THEN (SELECT ct.contract_no FROM contracts ct WHERE ct.id=ai.biz_id)"
+          " WHEN ai.biz_type='credit' THEN (SELECT cn.credit_no FROM credit_notes cn WHERE cn.id=ai.biz_id)"
+          " WHEN ai.biz_type='payment' THEN (SELECT pp.payment_no FROM payment_requests pp WHERE pp.id=ai.biz_id)"
+          " WHEN ai.biz_type='receiving' THEN (SELECT rv.receive_no FROM receivings rv WHERE rv.id=ai.biz_id)"
+          " WHEN ai.biz_type='requisition' THEN (SELECT rq.req_no FROM requisitions rq WHERE rq.id=ai.biz_id)"
+          " WHEN ai.biz_type='return_request' THEN (SELECT rt.return_no FROM return_requests rt WHERE rt.id=ai.biz_id)"
+          " WHEN ai.biz_type='repair_plan' THEN (SELECT rp.plan_no FROM repair_plans rp WHERE rp.id=ai.biz_id)"
+          " WHEN ai.biz_type='collect_accept' THEN (SELECT rv.receive_no FROM receivings rv WHERE rv.id=ai.biz_id)"
+          " WHEN ai.biz_type='inquiry_approval' THEN (SELECT iq.inq_no FROM inquiries iq WHERE iq.id=ai.biz_id)"
+          " ELSE '' END")
+    name = ("CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.purpose FROM purchase_requests pr WHERE pr.id=ai.biz_id)"
+            " WHEN ai.biz_type='purchase_order' THEN (SELECT po.item_name FROM purchase_orders po WHERE po.id=ai.biz_id)"
+            " WHEN ai.biz_type='contract' THEN (SELECT ct.contract_name FROM contracts ct WHERE ct.id=ai.biz_id)"
+            " WHEN ai.biz_type='credit' THEN (SELECT cn.item_name FROM credit_notes cn WHERE cn.id=ai.biz_id)"
+            " WHEN ai.biz_type='payment' THEN (SELECT pp.payment_reason FROM payment_requests pp WHERE pp.id=ai.biz_id)"
+            " WHEN ai.biz_type='receiving' THEN (SELECT rv.item_name FROM receivings rv WHERE rv.id=ai.biz_id)"
+            " WHEN ai.biz_type='requisition' THEN (SELECT rq.item_name FROM requisitions rq WHERE rq.id=ai.biz_id)"
+            " WHEN ai.biz_type='return_request' THEN (SELECT rt.reason FROM return_requests rt WHERE rt.id=ai.biz_id)"
+            " WHEN ai.biz_type='repair_plan' THEN (SELECT rp.device_name FROM repair_plans rp WHERE rp.id=ai.biz_id)"
+            " WHEN ai.biz_type='collect_accept' THEN (SELECT rv.item_name FROM receivings rv WHERE rv.id=ai.biz_id)"
+            " WHEN ai.biz_type='inquiry_approval' THEN (SELECT iq.purpose FROM inquiries iq WHERE iq.id=ai.biz_id)"
+            " ELSE '' END")
+    amount = ("CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.total_estimated FROM purchase_requests pr WHERE pr.id=ai.biz_id)"
+              " WHEN ai.biz_type='contract' THEN (SELECT ct.amount FROM contracts ct WHERE ct.id=ai.biz_id)"
+              " WHEN ai.biz_type='receiving' THEN (SELECT rv.quantity FROM receivings rv WHERE rv.id=ai.biz_id)"
+              " WHEN ai.biz_type='requisition' THEN (SELECT rq.quantity FROM requisitions rq WHERE rq.id=ai.biz_id)"
+              " WHEN ai.biz_type='repair_plan' THEN (SELECT rp.est_cost FROM repair_plans rp WHERE rp.id=ai.biz_id)"
+              " ELSE 0 END")
+    return {'no': no, 'name': name, 'amount': amount}[field]
 def biz_parent_status(biz_type, result):
     m = {
         'purchase_request': ('已通过', '已驳回'), 'purchase_order': ('审批通过', '已驳回'),
@@ -3973,16 +4008,10 @@ def api_overdue_approvals():
     conn = db()
     rows = conn.execute("""
         SELECT ai.*,
-            CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.req_no FROM purchase_requests pr WHERE pr.id=ai.biz_id)
-                 WHEN ai.biz_type='purchase_order' THEN (SELECT po.order_no FROM purchase_orders po WHERE po.id=ai.biz_id)
-                 WHEN ai.biz_type='contract' THEN (SELECT ct.contract_no FROM contracts ct WHERE ct.id=ai.biz_id)
-                 WHEN ai.biz_type='payment' THEN (SELECT pp.payment_no FROM payment_requests pp WHERE pp.id=ai.biz_id)
-                 WHEN ai.biz_type='receiving' THEN (SELECT rv.receive_no FROM receivings rv WHERE rv.id=ai.biz_id)
-                 WHEN ai.biz_type='requisition' THEN (SELECT rq.req_no FROM requisitions rq WHERE rq.id=ai.biz_id)
-            END as doc_no
+            %s as doc_no
         FROM approval_instances ai
         WHERE ai.status='pending' AND ai.created_at <= datetime('now','localtime', ?)
-        ORDER BY ai.created_at ASC""", (f'-{int(hours)} hours',)).fetchall()
+        ORDER BY ai.created_at ASC""" % _ap_case('no'), (f'-{int(hours)} hours',)).fetchall()
     out = []
     for r in rows:
         d = dict_row(r)
@@ -4388,29 +4417,11 @@ def api_approvals_pending():
     conn = db()
     role = session['user_role']
     rows = conn.execute("""
-        SELECT ai.*, 
-            CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.req_no FROM purchase_requests pr WHERE pr.id=ai.biz_id)
-                 WHEN ai.biz_type='purchase_order' THEN (SELECT po.order_no FROM purchase_orders po WHERE po.id=ai.biz_id)
-                 WHEN ai.biz_type='contract' THEN (SELECT ct.contract_no FROM contracts ct WHERE ct.id=ai.biz_id)
-                 WHEN ai.biz_type='credit' THEN (SELECT cn.credit_no FROM credit_notes cn WHERE cn.id=ai.biz_id)
-                 WHEN ai.biz_type='payment' THEN (SELECT pp.payment_no FROM payment_requests pp WHERE pp.id=ai.biz_id)
-                 WHEN ai.biz_type='receiving' THEN (SELECT rv.receive_no FROM receivings rv WHERE rv.id=ai.biz_id)
-                 WHEN ai.biz_type='requisition' THEN (SELECT rq.req_no FROM requisitions rq WHERE rq.id=ai.biz_id) END as biz_no,
-            CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.purpose FROM purchase_requests pr WHERE pr.id=ai.biz_id)
-                 WHEN ai.biz_type='purchase_order' THEN (SELECT po.item_name FROM purchase_orders po WHERE po.id=ai.biz_id)
-                 WHEN ai.biz_type='contract' THEN (SELECT ct.contract_name FROM contracts ct WHERE ct.id=ai.biz_id)
-                 WHEN ai.biz_type='credit' THEN (SELECT cn.item_name FROM credit_notes cn WHERE cn.id=ai.biz_id)
-                 WHEN ai.biz_type='payment' THEN (SELECT pp.payment_reason FROM payment_requests pp WHERE pp.id=ai.biz_id)
-                 WHEN ai.biz_type='receiving' THEN (SELECT rv.item_name FROM receivings rv WHERE rv.id=ai.biz_id)
-                 WHEN ai.biz_type='requisition' THEN (SELECT rq.item_name FROM requisitions rq WHERE rq.id=ai.biz_id) END as biz_name,
-            CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.total_estimated FROM purchase_requests pr WHERE pr.id=ai.biz_id)
-                 WHEN ai.biz_type='contract' THEN (SELECT ct.amount FROM contracts ct WHERE ct.id=ai.biz_id)
-                 WHEN ai.biz_type='receiving' THEN (SELECT rv.quantity FROM receivings rv WHERE rv.id=ai.biz_id)
-                 WHEN ai.biz_type='requisition' THEN (SELECT rq.quantity FROM requisitions rq WHERE rq.id=ai.biz_id) END as biz_amount
+        SELECT ai.*, %s as biz_no, %s as biz_name, %s as biz_amount
         FROM approval_instances ai WHERE ai.status='pending'
         AND (ai.role=? OR ai.role='部门负责人' AND ? IN ('部门负责人','系统管理员') OR ai.approver_id=?)
         ORDER BY ai.id DESC LIMIT 50
-    """, (role, role, session.get('user_id', 0))).fetchall()
+    """ % (_ap_case('no'), _ap_case('name'), _ap_case('amount')), (role, role, session.get('user_id', 0))).fetchall()
     conn.close()
     return jsonify([dict_row(r) for r in rows])
 
@@ -4420,16 +4431,10 @@ def api_approvals_rejected():
     """55.docx需求4: 审批未通过数据独立板块(按业务类别分组汇总)"""
     conn = db()
     rows = conn.execute("""SELECT ai.biz_type,
-        CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.req_no FROM purchase_requests pr WHERE pr.id=ai.biz_id)
-             WHEN ai.biz_type='purchase_order' THEN (SELECT po.order_no FROM purchase_orders po WHERE po.id=ai.biz_id)
-             WHEN ai.biz_type='contract' THEN (SELECT ct.contract_no FROM contracts ct WHERE ct.id=ai.biz_id)
-             WHEN ai.biz_type='credit' THEN (SELECT cn.credit_no FROM credit_notes cn WHERE cn.id=ai.biz_id)
-             WHEN ai.biz_type='payment' THEN (SELECT pp.payment_no FROM payment_requests pp WHERE pp.id=ai.biz_id)
-             WHEN ai.biz_type='receiving' THEN (SELECT rv.receive_no FROM receivings rv WHERE rv.id=ai.biz_id)
-             WHEN ai.biz_type='requisition' THEN (SELECT rq.req_no FROM requisitions rq WHERE rq.id=ai.biz_id) END as biz_no,
+        %s as biz_no,
              MAX(ai.comment) last_comment, COUNT(*) cnt, MAX(ai.processed_at) processed_at
         FROM approval_instances ai WHERE ai.status='rejected'
-        GROUP BY ai.biz_type, ai.biz_id ORDER BY ai.biz_type, cnt DESC""").fetchall()
+        GROUP BY ai.biz_type, ai.biz_id ORDER BY ai.biz_type, cnt DESC""" % _ap_case('no')).fetchall()
     conn.close()
     return jsonify([dict_row(r) for r in rows])
 
@@ -4438,37 +4443,10 @@ def api_approvals_rejected():
 def api_all_pending():
     conn = db()
     rows = conn.execute("""
-        SELECT ai.*, 
-            CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.req_no FROM purchase_requests pr WHERE pr.id=ai.biz_id) 
-                 WHEN ai.biz_type='purchase_order' THEN (SELECT po.order_no FROM purchase_orders po WHERE po.id=ai.biz_id)
-                 WHEN ai.biz_type='contract' THEN (SELECT ct.contract_no FROM contracts ct WHERE ct.id=ai.biz_id)
-                 WHEN ai.biz_type='credit' THEN (SELECT cn.credit_no FROM credit_notes cn WHERE cn.id=ai.biz_id)
-                 WHEN ai.biz_type='payment' THEN (SELECT pr.payment_no FROM payment_requests pr WHERE pr.id=ai.biz_id)
-                 WHEN ai.biz_type='receiving' THEN (SELECT rv.receive_no FROM receivings rv WHERE rv.id=ai.biz_id)
-                 WHEN ai.biz_type='requisition' THEN (SELECT rq.req_no FROM requisitions rq WHERE rq.id=ai.biz_id)
-                 WHEN ai.biz_type='inquiry_approval' THEN (SELECT iq.inq_no FROM inquiries iq WHERE iq.id=ai.biz_id)
-                 WHEN ai.biz_type='collect_accept' THEN (SELECT rv.receive_no FROM receivings rv WHERE rv.id=ai.biz_id)
-                 WHEN ai.biz_type='repair_plan' THEN (SELECT rp.plan_no FROM repair_plans rp WHERE rp.id=ai.biz_id)
-            END as biz_no,
-            CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.purpose FROM purchase_requests pr WHERE pr.id=ai.biz_id)
-                 WHEN ai.biz_type='purchase_order' THEN (SELECT po.item_name FROM purchase_orders po WHERE po.id=ai.biz_id)
-                 WHEN ai.biz_type='inquiry_approval' THEN (SELECT iq.title FROM inquiries iq WHERE iq.id=ai.biz_id)
-                 WHEN ai.biz_type='contract' THEN (SELECT ct.contract_name FROM contracts ct WHERE ct.id=ai.biz_id)
-                 WHEN ai.biz_type='credit' THEN (SELECT cn.item_name FROM credit_notes cn WHERE cn.id=ai.biz_id)
-                 WHEN ai.biz_type='receiving' THEN (SELECT rv.item_name FROM receivings rv WHERE rv.id=ai.biz_id)
-                 WHEN ai.biz_type='requisition' THEN (SELECT rq.item_name FROM requisitions rq WHERE rq.id=ai.biz_id)
-                 WHEN ai.biz_type='collect_accept' THEN (SELECT rv.item_name FROM receivings rv WHERE rv.id=ai.biz_id)
-                 WHEN ai.biz_type='repair_plan' THEN (SELECT rp.device_name FROM repair_plans rp WHERE rp.id=ai.biz_id)
-            END as biz_name,
-            CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.total_estimated FROM purchase_requests pr WHERE pr.id=ai.biz_id)
-                 WHEN ai.biz_type='purchase_order' THEN (SELECT po.total_amount FROM purchase_orders po WHERE po.id=ai.biz_id)
-                 WHEN ai.biz_type='contract' THEN (SELECT ct.amount FROM contracts ct WHERE ct.id=ai.biz_id)
-                 WHEN ai.biz_type='credit' THEN (SELECT cn.amount FROM credit_notes cn WHERE cn.id=ai.biz_id)
-                 WHEN ai.biz_type='payment' THEN (SELECT pr.amount FROM payment_requests pr WHERE pr.id=ai.biz_id)
-            END as biz_amount
+        SELECT ai.*, %s as biz_no, %s as biz_name, %s as biz_amount
         FROM approval_instances ai WHERE ai.status='pending'
         ORDER BY ai.id DESC LIMIT 50
-    """).fetchall()
+    """ % (_ap_case('no'), _ap_case('name'), _ap_case('amount'))).fetchall()
     conn.close()
     return jsonify([dict_row(r) for r in rows])
 
@@ -5543,9 +5521,9 @@ def api_dashboard():
     }
     # ── ② 审批消息专区 ──
     def biz_no_expr():
-        return "CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.req_no FROM purchase_requests pr WHERE pr.id=ai.biz_id) WHEN ai.biz_type='purchase_order' THEN (SELECT po.order_no FROM purchase_orders po WHERE po.id=ai.biz_id) WHEN ai.biz_type='contract' THEN (SELECT ct.contract_no FROM contracts ct WHERE ct.id=ai.biz_id) WHEN ai.biz_type='credit' THEN (SELECT cn.credit_no FROM credit_notes cn WHERE cn.id=ai.biz_id) WHEN ai.biz_type='payment' THEN (SELECT pp.payment_no FROM payment_requests pp WHERE pp.id=ai.biz_id) WHEN ai.biz_type='receiving' THEN (SELECT rv.receive_no FROM receivings rv WHERE rv.id=ai.biz_id) WHEN ai.biz_type='requisition' THEN (SELECT rq.req_no FROM requisitions rq WHERE rq.id=ai.biz_id) END"
+        return _ap_case('no')  # V11.213 集中CASE(含维修/退库/集体验收/询价审批)
     def biz_name_expr():
-        return "CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.purpose FROM purchase_requests pr WHERE pr.id=ai.biz_id) WHEN ai.biz_type='purchase_order' THEN (SELECT po.item_name FROM purchase_orders po WHERE po.id=ai.biz_id) WHEN ai.biz_type='contract' THEN (SELECT ct.contract_name FROM contracts ct WHERE ct.id=ai.biz_id) WHEN ai.biz_type='credit' THEN (SELECT cn.item_name FROM credit_notes cn WHERE cn.id=ai.biz_id) WHEN ai.biz_type='payment' THEN (SELECT pp.payment_reason FROM payment_requests pp WHERE pp.id=ai.biz_id) WHEN ai.biz_type='receiving' THEN (SELECT rv.item_name FROM receivings rv WHERE rv.id=ai.biz_id) WHEN ai.biz_type='requisition' THEN (SELECT rq.item_name FROM requisitions rq WHERE rq.id=ai.biz_id) END"
+        return _ap_case('name')  # V11.213 集中CASE
     def urgent_expr():
         return "(CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.urgent FROM purchase_requests pr WHERE pr.id=ai.biz_id) WHEN ai.biz_type='purchase_order' THEN (SELECT po.urgent FROM purchase_orders po WHERE po.id=ai.biz_id) WHEN ai.biz_type='contract' THEN (SELECT ct.urgent FROM contracts ct WHERE ct.id=ai.biz_id) WHEN ai.biz_type='payment' THEN (SELECT pp.urgent FROM payment_requests pp WHERE pp.id=ai.biz_id) ELSE 0 END)"
     my_pending = c.execute("""SELECT ai.*, %s as biz_no, %s as biz_name, %s as urgent
@@ -10838,6 +10816,14 @@ def _repair_no():
 def api_repairs():
     """维修计划列表(采购员/员工看自己, 领导/管理员全看)"""
     conn = db()
+    # V11.213 老状态批量迁移: 定损通过(老通过态)+审批approved → 审批通过(新状态机), 一次修复历史卡死单
+    try:
+        stale = conn.execute("SELECT rp.id FROM repair_plans rp WHERE rp.status='定损通过' AND EXISTS (SELECT 1 FROM approval_instances ai WHERE ai.biz_type='repair_plan' AND ai.biz_id=rp.id AND ai.status='approved')").fetchall()
+        for (sid,) in stale:
+            conn.execute("UPDATE repair_plans SET status='审批通过', updated_at=? WHERE id=? AND status='定损通过'", (now(), sid))
+        if stale: conn.commit()
+    except Exception:
+        pass
     if session.get('user_role') in ('系统管理员', '分管领导', '总经理'):
         rows = conn.execute("SELECT * FROM repair_plans ORDER BY id DESC LIMIT 100").fetchall()
     else:
@@ -11251,6 +11237,14 @@ def api_repair_detail(rid):
     c = db(); c.row_factory = sqlite3.Row
     r = c.execute("SELECT * FROM repair_plans WHERE id=?", (rid,)).fetchone()
     if not r: c.close(); return jsonify({'error': '维修单不存在'}), 404
+    # V11.213 老状态迁移: V11.208时代的"定损通过"(当时审批通过态), 若其审批已approved且无报价 → 升为"审批通过"
+    # (V11.210新状态机通过态='审批通过', 老单不迁移则前端无按钮可点=卡死); 幂等只升不降, 不影响业务
+    if r['status'] == '定损通过':
+        ok_cnt = c.execute("SELECT COUNT(*) FROM approval_instances WHERE biz_type='repair_plan' AND biz_id=? AND status='approved'", (rid,)).fetchone()[0]
+        if ok_cnt > 0:
+            c.execute("UPDATE repair_plans SET status='审批通过', updated_at=? WHERE id=? AND status='定损通过'", (now(), rid))
+            c.commit()
+            r = c.execute("SELECT * FROM repair_plans WHERE id=?", (rid,)).fetchone()
     items = c.execute("SELECT * FROM repair_items WHERE plan_id=? ORDER BY id", (rid,)).fetchall()
     quotes = c.execute("SELECT * FROM repair_quotes WHERE plan_id=? ORDER BY id", (rid,)).fetchall()
     changes = c.execute("SELECT * FROM repair_changes WHERE plan_id=? ORDER BY id", (rid,)).fetchall()
