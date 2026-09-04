@@ -4439,6 +4439,7 @@ def api_approvals_pending():
     rows = conn.execute("""
         SELECT ai.*, %s as biz_no, %s as biz_name, %s as biz_amount
         FROM approval_instances ai WHERE ai.status='pending'
+        AND NOT EXISTS (SELECT 1 FROM approval_instances y WHERE y.biz_type=ai.biz_type AND y.biz_id=ai.biz_id AND y.status='pending' AND y.level_no < ai.level_no)
         AND (ai.role=? OR ai.role='部门负责人' AND ? IN ('部门负责人','系统管理员') OR ai.approver_id=?)
         ORDER BY ai.id DESC LIMIT 50
     """ % (_ap_case('no'), _ap_case('name'), _ap_case('amount')), (role, role, session.get('user_id', 0))).fetchall()
@@ -4465,6 +4466,7 @@ def api_all_pending():
     rows = conn.execute("""
         SELECT ai.*, %s as biz_no, %s as biz_name, %s as biz_amount
         FROM approval_instances ai WHERE ai.status='pending'
+        AND NOT EXISTS (SELECT 1 FROM approval_instances y WHERE y.biz_type=ai.biz_type AND y.biz_id=ai.biz_id AND y.status='pending' AND y.level_no < ai.level_no)
         ORDER BY ai.id DESC LIMIT 50
     """ % (_ap_case('no'), _ap_case('name'), _ap_case('amount'))).fetchall()
     conn.close()
@@ -5556,6 +5558,7 @@ def api_dashboard():
         return "(CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.urgent FROM purchase_requests pr WHERE pr.id=ai.biz_id) WHEN ai.biz_type='purchase_order' THEN (SELECT po.urgent FROM purchase_orders po WHERE po.id=ai.biz_id) WHEN ai.biz_type='contract' THEN (SELECT ct.urgent FROM contracts ct WHERE ct.id=ai.biz_id) WHEN ai.biz_type='payment' THEN (SELECT pp.urgent FROM payment_requests pp WHERE pp.id=ai.biz_id) ELSE 0 END)"
     my_pending = c.execute("""SELECT ai.*, %s as biz_no, %s as biz_name, %s as urgent
         FROM approval_instances ai WHERE ai.status='pending'
+        AND NOT EXISTS (SELECT 1 FROM approval_instances y WHERE y.biz_type=ai.biz_type AND y.biz_id=ai.biz_id AND y.status='pending' AND y.level_no < ai.level_no)
         AND (ai.role=? OR (ai.role='部门负责人' AND ? IN ('部门负责人','系统管理员')) OR ai.approver_id=?)
         ORDER BY %s DESC, ai.id DESC LIMIT 30""" % (biz_no_expr(), biz_name_expr(), urgent_expr(), urgent_expr()),
         (role, role, session.get('user_id', 0))).fetchall()

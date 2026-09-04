@@ -2562,42 +2562,34 @@ async function loadApprovalFlow(bt,bid,boxId){
   try{
     const list=await api(`/approvals/${bt}/${bid}/list`,{noCache:true});
     const box=id(boxId);if(!box)return;
-    // V11.184: 操作日志(同意/驳回+附件, 钉钉同步) — 覆盖审批节点展示
-    let acts=[];
-    try{acts=await api(`/approvals/${bt}/${bid}/action-logs`,{noCache:true})}catch(e){}
-    if(acts&&acts.length){
-      window.__curActLogs=acts;  // V11.184: 附件下载时取对应实例号
-      let h='<div style="margin-top:8px;border-top:1px solid var(--b);padding-top:6px">'+
-        '<div style="font-size:10px;font-weight:700;color:#1f6feb;margin-bottom:4px">📋 审批流转日志（'+acts.length+'条）</div>';
-      acts.forEach((a,ai)=>{
-        const ico=a.action=='agree'?'✅':'❌';
-        const stTxt=a.action=='agree'?'同意':'驳回';
-        const srcTag=a.source=='dingtalk'?'<span style="color:#1f6feb;font-size:8px;border:1px solid #1f6feb;border-radius:3px;padding:0 3px">钉钉</span>':'<span style="color:#666;font-size:8px;border:1px solid #bbb;border-radius:3px;padding:0 3px">系统</span>';
-        h+=`<div style="font-size:9px;padding:4px 0;border-bottom:1px dashed var(--b)">
-          ${ico} <b>${esc(a.approver||'审批人')}</b> ${stTxt} <span style="color:#999">${esc((a.processed_at||'').slice(0,16))}</span> ${srcTag}
-          ${(a.comment||'')?`<div style="color:${a.action=='reject'?'#c0392b':'#555'};background:${a.action=='reject'?'#fff5f5':'#f7faf7'};border-radius:3px;padding:2px 6px;margin-top:2px;white-space:pre-wrap">${a.action=='reject'?'理由：':''}${esc(a.comment)}</div>`:''}
-          ${renderAttHtml(a.attachments,a.instance_code||'')}
-          ${a.signature?`<img src="${a.signature}" alt="签名" loading="lazy" style="height:30px;vertical-align:middle;border:1px solid #e3e9f2;border-radius:3px;background:#fff;margin-top:2px">`:''}
-          </div>`;
-      });
-      h+='</div>';
-      box.innerHTML=h;
-      return;
-    }
-    // 兜底: 无操作日志时显示审批节点(旧数据/未走新记录逻辑的单据)
     if(!list||!list.length){box.innerHTML='';return}
+    // V11.219: 审批进度 = 节点流程链(完整展示 库管员→分管领导…, 每节点: 角色/审批人/状态/时间/意见)
+    // 已完成节点读意见留痕, 当前待审节点高亮, 未到节点置灰待审
     let h='<div style="margin-top:8px;border-top:1px solid var(--b);padding-top:6px">'+
-      '<div style="font-size:10px;font-weight:700;color:#1f6feb;margin-bottom:4px">📋 审批流程</div>';
+      '<div style="font-size:10px;font-weight:700;color:#1f6feb;margin-bottom:4px">📋 审批进度</div>'+
+      '<div style="display:flex;flex-direction:column;gap:0">';
+    let firstPending=true;
     list.forEach(a=>{
-      const apv=(a.approver=='钉钉')?'钉钉OA电子审批':(a.approver||'');
-      const ico=a.status=='approved'?'✅':a.status=='rejected'?'❌':'⏳';
-      const stTxt=a.status=='approved'?'已通过':a.status=='rejected'?'已驳回':'待审批';
-      h+=`<div style="font-size:9px;padding:3px 0;border-bottom:1px dashed var(--b)">${ico} <b>${esc(a.role||'')}</b> ${stTxt} ${esc((a.processed_at||'').slice(0,16)||'')}${apv?` <span style="color:var(--s)">${esc(apv)}</span>`:''}`;
-      if(a.status=='rejected') h+=`<div style="color:#c0392b;background:#fff5f5;border-radius:3px;padding:2px 6px;margin-top:2px">理由：${esc(a.comment||'-')}</div>`;
-      else if(a.comment) h+=` <span style="color:#888">｜${esc(a.comment)}</span>`;
-      h+=`${a.signature?` <img src="${a.signature}" alt="签名" loading="lazy" style="height:34px;vertical-align:middle;border:1px solid #e3e9f2;border-radius:3px;background:#fff;margin-left:4px">`:''}</div>`;
+      const isDone=a.status=='approved';
+      const isRej=a.status=='rejected';
+      const isWait=a.status=='pending';
+      const isCurrent=isWait&&firstPending;  // 第一个待审=当前节点
+      if(isWait)firstPending=false;
+      const dot=isDone?'✅':isRej?'❌':isCurrent?'⏳':'⭕';
+      const stTxt=isDone?'已通过':isRej?'已驳回':isCurrent?'⏳ 待当前审批':'待审批';
+      // 节点行: 角色 → 审批人/时间/状态
+      const who=a.approver&&a.approver!='钉钉'?esc(a.approver):'';
+      h+=`<div style="display:flex;gap:8px;align-items:flex-start;padding:5px 6px;border-radius:5px;margin-bottom:2px;${isCurrent?'background:#fffbe6;border:1px solid #ffe08a;':isDone?'background:#f6fbf6;':'background:#fafafa;'}">
+        <span style="font-size:13px;line-height:1.6">${dot}</span>
+        <div style="flex:1;font-size:10px">
+          <div><b>${esc(a.role||'审批')}</b> <span style="color:#666">(${stTxt})</span>${who?` <span style="color:var(--s)">${who}</span>`:''}</div>
+          <div style="color:#999;font-size:9px;margin-top:1px">${isDone||isRej?('审批时间：'+(esc((a.processed_at||'').slice(0,16))||'-')):''}</div>
+          ${a.comment?`<div style="color:${isRej?'#c0392b':'#555'};background:${isRej?'#fff5f5':'#f4f9f4'};border-radius:3px;padding:3px 7px;margin-top:2px;white-space:pre-wrap">${isRej?'驳回理由：':''}${esc(a.comment)}</div>`:''}
+          ${a.signature?`<img src="${a.signature}" alt="签名" loading="lazy" style="height:26px;vertical-align:middle;border:1px solid #e3e9f2;border-radius:3px;background:#fff;margin-top:2px">`:''}
+        </div>
+      </div>`;
     });
-    h+='</div>';
+    h+='</div></div>';
     box.innerHTML=h;
   }catch(e){}
 }
