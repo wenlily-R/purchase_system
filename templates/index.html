@@ -357,6 +357,8 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <button data-t="inquiry_approval" onclick="apprTab('inquiry_approval')">🔍比价单</button>
     <button data-t="contract" onclick="apprTab('contract')">📄合同审批</button>
     <button data-t="receiving" onclick="apprTab('receiving')">📦入库审批</button>
+    <!-- V11.206: 集体验收审批栏目(大型设备/关键物资/维修返回件专项验收) -->
+    <button data-t="collect_accept" onclick="apprTab('collect_accept')">👥集体验收</button>
     <button data-t="requisition" onclick="apprTab('requisition')">📤出库审批</button>
     <!-- V11.202: 审批中心删除采购订单栏目; 退库审批放 出库后、付款前 -->
     <button data-t="return_request" onclick="apprTab('return_request')">↩️退库审批</button>
@@ -603,6 +605,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
           <option value="payment">💰付款</option>
           <option value="requisition">📤出库</option>
           <option value="return_request">↩️退库</option>
+          <option value="collect_accept">👥集体验收</option>
         </select>
         <span style="color:#888">当前单据金额到达区间 → 依次经过该区间所有审批环节</span>
       </div>
@@ -2361,7 +2364,7 @@ function exportXls(type){window.open('/api/export?type='+type,'_blank')}
 
 // Approvals Center (需求44: 按流程类型分类分页展示, 类型彩色标签+数量徽标+发起时间)
 let APPR_FILTER='';
-const APPR_TM={purchase_request:['📝采购申请','#2f6fed'],purchase_order:['📋订单','#e8890c'],inquiry_approval:['🔍比价单','#8e44ad'],contract:['📄合同','#0aa574'],credit:['📑挂账','#b08900'],payment:['💰付款','#d64541'],receiving:['📦入库','#7b5bdb'],requisition:['📤出库','#00a896'],return_request:['↩️退库','#e67e22']};
+const APPR_TM={purchase_request:['📝采购申请','#2f6fed'],purchase_order:['📋订单','#e8890c'],inquiry_approval:['🔍比价单','#8e44ad'],contract:['📄合同','#0aa574'],credit:['📑挂账','#b08900'],payment:['💰付款','#d64541'],receiving:['📦入库','#7b5bdb'],collect_accept:['👥集体验收','#16a34a'],requisition:['📤出库','#00a896'],return_request:['↩️退库','#e67e22']};
 function apprTab(t){
   APPR_FILTER=t;
   document.querySelectorAll('#apprTabs button').forEach(b=>{b.classList.toggle('act',b.dataset.t===t)});
@@ -2408,6 +2411,7 @@ function viewBiz(t,oid){
   else if(t=='inquiry_approval')showInquiry(oid);
   else if(t=='contract')showContract(oid);
   else if(t=='receiving')showRcvDetail(oid);   // V11.172: 入库审批详情可点
+  else if(t=='collect_accept')showRcvDetail(oid);  // V11.206: 集体验收审批详情=入库单详情(含验收标记)
   else if(t=='requisition')showRequisitionDetail(oid);  // V11.172: 出库审批详情可点
   else if(t=='return_request')showReturnDetail(oid);  // V11.193: 退库审批详情可点
   else if(t=='credit'||t=='payment'){
@@ -3018,8 +3022,12 @@ async function loadReceivings(){
                 : x.status=='待审批'?'<span style="color:#b08900;font-size:8px">审批中</span>':'';
       // V11.202: 分批验收单显示批次标签(第N批)
       const batchTag = x.batch_no?` <span class="tag" style="background:#e8f0fe;color:#1a6bff">${esc(x.batch_no)}</span>`:'';
+      // V11.206: 集体验收标记(需集体验收/待验收/已通过)
+      const collectTag = (x.collect_accept&&x.collect_status=='待集体验收')?' <span class="tag" style="background:#fef3c7;color:#b45309">👥待集体验收</span>'
+                       : (x.collect_accept&&x.collect_status=='已集体验收')?' <span class="tag" style="background:#dcfce7;color:#16a34a">👥已集体验收</span>'
+                       : x.collect_accept?' <span class="tag" style="background:#fef3c7;color:#b45309">👥集体验收</span>':'';
       return `<td><b>${esc(x.receive_no)}</b>${batchTag}</td><td>${deptTag}</td><td>${esc(x.item_name)}${cntTag}${urgTag}</td><td>${qtyTxt}</td>
-    <td><span class="tag ${x.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(x.trade_mode||'货到付款')}</span></td><td>${stTag}${estTag}</td>
+    <td><span class="tag ${x.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(x.trade_mode||'货到付款')}</span></td><td>${stTag}${estTag}${collectTag}</td>
     ${rejCell(x)}
     <td>${ops}${ops2}
       ${isWarehouse?`<button class="lnk" style="color:#b08900" onclick="editDoc('receiving',${x.id},'入库单')">✏️修改</button>`:''} <button class="lnk" onclick="window.open('/api/receivings/${x.id}/download','_blank')">⬇️ 下载</button> ${isWarehouse&&x.status=='已入库'?`<button class="lnk" style="color:var(--d)" onclick="voidRcv(${x.id})">作废</button>`:''} ${isWarehouse&&(x.status=='待审批'||x.status=='已通过'||x.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('receiving',${x.id},'入库单')">↩️撤回</button>`:''}${isWarehouse&&(x.status=='待审批'||x.status=='待入库'||x.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('receiving',${x.id},'入库单')">🗑️删除</button>`:''}</td>`;
@@ -3185,10 +3193,38 @@ async function voidRcv(id){
 }
 async function confirmArrived(rid){
   // V11.37: 到货提醒单确认到货 → 状态待入库→入库中, 然后走验收
-  if(!confirm('确认这批货已到库房？确认后即可提交验收'))return;
-  const r=await api(`/receivings/${rid}/arrived`,{method:'POST',body:'{}'});
-  if(r.success){alert('✅ 已确认到货，可提交验收入库');loadReceivings()}
-  else alert(r.error||'操作失败');
+  // V11.206: 到货时询问是否需要集体验收(大型设备/关键物资/维修返回件 → 专项验收审批后才入库)
+  window._rcvSubmitting=0;
+  id('dmTitle').textContent='✅ 确认到货 · 是否集体验收';
+  id('dmBody').innerHTML=`
+    <div style="font-size:11px;line-height:1.8">
+      <p style="color:#666;margin-bottom:8px">货已到库房？确认后即可进入验收。此批物资是否需要<b>集体验收</b>？</p>
+      <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px;margin-bottom:8px">
+        <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer">
+          <input type="radio" name="rcvCollect" value="0" checked style="margin-top:2px">
+          <div><b>常规验收</b><div style="font-size:9px;color:#999">计划提报人/采购/库房确认后直接入库（普通物资）</div></div>
+        </label>
+        <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;margin-top:8px">
+          <input type="radio" name="rcvCollect" value="1">
+          <div><b>👥 集体验收</b><div style="font-size:9px;color:#999">大型设备/关键物资/维修返回件 → 推送相关领导（可在系统设置改审批人）专项验收签字，完成后才入库</div></div>
+        </label>
+      </div>
+      <p style="font-size:9px;color:#e65100;background:#fff3e0;padding:6px 8px;border-radius:4px">⚠️ 维修返回物件请重点做<b>性能验收</b>（不能只看外观），建议选择集体验收。</p>
+    </div>`;
+  id('dmFooter').innerHTML=`<button class="btn btn-o" onclick="closeMod()">取消</button>
+    <button class="btn btn-p" onclick="doConfirmArrived(${rid})">✅ 确认到货</button>`;
+  id('detailModal').classList.add('show');
+}
+async function doConfirmArrived(rid){
+  if(window._rcvSubmitting)return;window._rcvSubmitting=1;
+  const collect=document.querySelector('input[name="rcvCollect"]:checked')?.value==='1'?1:0;
+  const r=await api(`/receivings/${rid}/arrived`,{method:'POST',body:JSON.stringify({collect_accept:collect})});
+  if(r.success){
+    if(collect)alert('✅ 已确认到货并标记集体验收，已推送审批，通过后可提交入库验收');
+    else alert('✅ 已确认到货，可提交验收入库');
+    closeMod();loadReceivings();
+  }else alert(r.error||'操作失败');
+  window._rcvSubmitting=0;
 }
 async function completeRcv(rid,defQty,orderId){
   // V8.1: 批量验收 — 明细按行确认验收数量(支持同名不同规格), 逐行提交

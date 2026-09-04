@@ -678,6 +678,14 @@ def init_db():
     _rcvcols = [r[1] for r in conn.execute("PRAGMA table_info(receivings)").fetchall()]
     if 'batch_no' not in _rcvcols:
         conn.execute("ALTER TABLE receivings ADD COLUMN batch_no TEXT DEFAULT ''")
+    # ---- V11.206 集体验收: 标记是否需集体验收 + 验收状态(空=常规, 1=需集体验收; collect_status: 空/待集体验收/已集体验收) ----
+    if 'collect_accept' not in _rcvcols:
+        conn.execute("ALTER TABLE receivings ADD COLUMN collect_accept INTEGER DEFAULT 0")
+    if 'collect_status' not in _rcvcols:
+        conn.execute("ALTER TABLE receivings ADD COLUMN collect_status TEXT DEFAULT ''")
+    # 集体验收审批流配置(首次建库初始化, 幂等; 角色可后续在系统设置改)
+    if conn.execute("SELECT COUNT(*) FROM approval_flow_config WHERE biz_type='collect_accept'").fetchone()[0] == 0:
+        conn.execute("INSERT INTO approval_flow_config(biz_type,level_no,role,min_amount,max_amount,label) VALUES('collect_accept',1,'分管领导',0,1000000,'集体验收-1级')")
     # 退库审批流配置(首次建库时初始化; 幂等: 已有配置不覆盖)
     if conn.execute("SELECT COUNT(*) FROM approval_flow_config WHERE biz_type='return_request'").fetchone()[0] == 0:
         conn.execute("INSERT INTO approval_flow_config(biz_type,level_no,role,min_amount,max_amount,label) VALUES('return_request',1,'部门负责人',0,1000000,'退库审批-1级')")
@@ -1427,6 +1435,7 @@ def biz_table(biz_type):
             'contract': 'contracts', 'credit': 'credit_notes', 'payment': 'payment_requests',
             'receiving': 'receivings', 'requisition': 'requisitions',
             'return_request': 'return_requests',  # V11.193 退库
+            'collect_accept': 'receivings',  # V11.206 集体验收: 父单据=入库单
             'inquiry_approval': 'inquiries'}[biz_type]  # V11.133: biz_id=询价单id
 
 # ============================================================
@@ -1605,6 +1614,23 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
                             attachments or [], _src_of(approver, approver_id), instance_code, conn=c)
         # V11.186: 驳回后单据回到"草稿"(可编辑后重新提交) — 非终态'已驳回'
         st = '草稿'
+    # V11.206: 集体验收审批 — 独立处理: 父单据=receivings, 通过只置 collect_status(不动 status 状态机, 由常规入库审批继续流转)
+    if biz_type == 'collect_accept':
+        if result == 'ok':
+            c.execute("UPDATE receivings SET collect_status='已集体验收', updated_at=? WHERE id=?", (now(), biz_id))
+        else:
+            c.execute("UPDATE receivings SET collect_accept=0, collect_status='', updated_at=? WHERE id=?", (now(), biz_id))
+        # 集体验收通过/驳回均通知提交人(采购员) — 通过后可继续走入库审批
+        try:
+            _rn = c.execute("SELECT * FROM receivings WHERE id=?", (biz_id,)).fetchone()
+            _no = _rn['receive_no'] if _rn else ''
+            log_approval_action('collect_accept', biz_id, 'agree' if result == 'ok' else 'reject', approver, approver_id, comment or '', now(), attachments or [], _src_of(approver, approver_id), instance_code, conn=c)
+            if result == 'ok':
+                log(_op_name() or approver, '集体验收通过', f'{_no} 集体验收确认完成, 可提交入库审批')
+        except Exception:
+            pass
+        c.commit(); c.close()
+        return True
     # V11.126: 询价定标审批无通用 biz_table(父单据=inquiries), 单独处理; 其他走通用表
     if biz_type == 'inquiry_approval':
         # V11.185/186: 询价驳回 → 回"询价中"(采购可改报价/重新提交审批), 累计驳回次数留痕
@@ -2095,6 +2121,7 @@ DT_BIZ = {  # biz_type -> 审批模板名称
     'receiving':        '入库审批',
     'requisition':      '出库审批',
     'return_request':   '退库审批',  # V11.193
+    'collect_accept':   '集体验收审批',  # V11.206
     'inquiry_approval': '采购比价单审批',  # V11.142: 补全, 否则dt_send_todo抛KeyError
 }
 DT_FORM = [('单据编号', 'text'), ('内容摘要', 'text'), ('金额(元)', 'text'), ('申请人', 'text'), ('提交时间', 'text')]
@@ -2293,7 +2320,7 @@ def dt_build_form(biz_type, biz_id, info):
     today = datetime.date.today().strftime('%Y-%m-%d')
     # V11.133: inquiry_approval 必须加入分支判断, 否则询价审批永远走回退表单(钉钉不显示选商家)
     # V11.202: 加入 return_request(退库审批), 否则退库审批钉钉表单永远走回退字段(模板控件名对不上必失败)
-    if biz_type in ('purchase_request', 'contract', 'purchase_order', 'receiving', 'requisition', 'payment', 'inquiry_approval', 'return_request'):
+    if biz_type in ('purchase_request', 'contract', 'purchase_order', 'receiving', 'requisition', 'payment', 'inquiry_approval', 'return_request', 'collect_accept'):
         c = db()
         r = c.execute(f"SELECT * FROM {biz_table(biz_type)} WHERE id=?", (biz_id,)).fetchone()
         if r:
@@ -2355,6 +2382,18 @@ def dt_build_form(biz_type, biz_id, info):
                     {'name': '备注', 'value': rdetail[:1900]},
                 ]
                 attach = dt_build_attachment(biz_type, r, c)
+                if attach:
+                    form.append({'name': '附件', 'value': json.dumps(attach, ensure_ascii=False)})
+                c.close()
+                return form
+            elif biz_type == 'collect_accept':
+                # V11.206: 集体验收审批表单(与入库同控件: 入库日期/备注/附件; 明细走备注文本)
+                rdetail = dt_build_detail('receiving', r, c)
+                form = [
+                    {'name': '入库日期', 'value': str(r['received_at'] or today)[:10]},
+                    {'name': '备注', 'value': '👥 集体验收申请\n\n' + rdetail[:1850]},
+                ]
+                attach = dt_build_attachment('receiving', r, c)
                 if attach:
                     form.append({'name': '附件', 'value': json.dumps(attach, ensure_ascii=False)})
                 c.close()
@@ -2488,6 +2527,9 @@ def dt_build_detail(biz_type, r, c):
     from collections import OrderedDict
     lines = OrderedDict()
     f = lambda v: str(v) if v is not None else ''
+    # V11.206: 集体验收审批详情 = 入库单详情 + 验收标记说明
+    if biz_type == 'collect_accept':
+        biz_type = 'receiving'
     if biz_type == 'purchase_request':
         lines['单据编号'] = r['req_no']; lines['单据类型'] = '采购申请'
         lines['申请人'] = r['requester']; lines['申请部门'] = r['dept']
@@ -4125,7 +4167,7 @@ def api_save_approval_flow():
     d = request.json or {}
     biz_type = str(d.get('biz_type', '')).strip()
     levels = d.get('levels') or []
-    if biz_type not in ('purchase_request', 'purchase_order', 'contract', 'credit', 'payment', 'receiving', 'requisition', 'return_request', 'inquiry_approval'):
+    if biz_type not in ('purchase_request', 'purchase_order', 'contract', 'credit', 'payment', 'receiving', 'requisition', 'return_request', 'inquiry_approval', 'collect_accept'):
         return jsonify({'error': '未知单据类型'}), 400
     valid_roles = ('部门负责人', '财务', '分管领导', '总经理')
     parsed = []
@@ -4284,6 +4326,7 @@ def api_all_pending():
                  WHEN ai.biz_type='receiving' THEN (SELECT rv.receive_no FROM receivings rv WHERE rv.id=ai.biz_id)
                  WHEN ai.biz_type='requisition' THEN (SELECT rq.req_no FROM requisitions rq WHERE rq.id=ai.biz_id)
                  WHEN ai.biz_type='inquiry_approval' THEN (SELECT iq.inq_no FROM inquiries iq WHERE iq.id=ai.biz_id)
+                 WHEN ai.biz_type='collect_accept' THEN (SELECT rv.receive_no FROM receivings rv WHERE rv.id=ai.biz_id)
             END as biz_no,
             CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.purpose FROM purchase_requests pr WHERE pr.id=ai.biz_id)
                  WHEN ai.biz_type='purchase_order' THEN (SELECT po.item_name FROM purchase_orders po WHERE po.id=ai.biz_id)
@@ -4292,6 +4335,7 @@ def api_all_pending():
                  WHEN ai.biz_type='credit' THEN (SELECT cn.item_name FROM credit_notes cn WHERE cn.id=ai.biz_id)
                  WHEN ai.biz_type='receiving' THEN (SELECT rv.item_name FROM receivings rv WHERE rv.id=ai.biz_id)
                  WHEN ai.biz_type='requisition' THEN (SELECT rq.item_name FROM requisitions rq WHERE rq.id=ai.biz_id)
+                 WHEN ai.biz_type='collect_accept' THEN (SELECT rv.item_name FROM receivings rv WHERE rv.id=ai.biz_id)
             END as biz_name,
             CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.total_estimated FROM purchase_requests pr WHERE pr.id=ai.biz_id)
                  WHEN ai.biz_type='purchase_order' THEN (SELECT po.total_amount FROM purchase_orders po WHERE po.id=ai.biz_id)
@@ -6863,17 +6907,36 @@ def api_receivings():
 @app.route('/api/receivings/<int:rid>/arrived', methods=['POST'])
 @login_required
 def api_receiving_arrived(rid):
-    """V11.37: 到货提醒单确认到货 — 货实际到了, 状态 待入库→入库中(可提交验收)"""
+    """V11.37: 到货提醒单确认到货 — 货实际到了, 状态 待入库→入库中(可提交验收)
+    V11.206: 到货确认时可选'需集体验收'(大型设备/关键物资/维修返回件) → 建集体验收审批实例
+    """
+    d = request.json or {}
     conn = db()
     rn = conn.execute("SELECT * FROM receivings WHERE id=?", (rid,)).fetchone()
     if not rn:
         conn.close(); return jsonify({'error': '入库单不存在'}), 404
     if rn['status'] != '待入库':
         conn.close(); return jsonify({'error': f'当前状态({rn["status"]})无需确认到货'}), 400
-    conn.execute("UPDATE receivings SET status='入库中', received_at=? WHERE id=?", (now(), rid))
+    collect_flag = 1 if d.get('collect_accept') else 0
+    # 建集体验收审批(标记后): 走 approval_flow_config collect_accept 配置的角色
+    if collect_flag:
+        _exists = conn.execute("SELECT id FROM approval_instances WHERE biz_type='collect_accept' AND biz_id=? AND status='pending'", (rid,)).fetchone()
+        if not _exists:
+            try:
+                create_approvals('collect_accept', rid, float(rn['quantity'] or 0), submitter=session.get('user_name', ''))
+            except Exception as _e:
+                conn.close(); return jsonify({'error': f'集体验收审批创建失败: {_e}'}), 500
+        conn.execute("UPDATE receivings SET collect_accept=1, collect_status='待集体验收', status='入库中', received_at=? WHERE id=?",
+                     (now(), rid))
+    else:
+        conn.execute("UPDATE receivings SET collect_accept=0, collect_status='', status='入库中', received_at=? WHERE id=?",
+                     (now(), rid))
     conn.commit(); conn.close()
-    log(session['user_name'], '确认到货', f'#{rid} {rn["item_name"]} 合同自动生成单已确认到货')
-    return jsonify({'success': True})
+    if collect_flag:
+        log(session['user_name'], '确认到货(集体验收)', f'#{rid} {rn["item_name"]} 需集体验收, 已推送审批')
+    else:
+        log(session['user_name'], '确认到货', f'#{rid} {rn["item_name"]} 合同自动生成单已确认到货')
+    return jsonify({'success': True, 'collect_accept': collect_flag})
 
 @app.route('/api/receivings/<int:rid>/complete', methods=['POST'])
 @login_required
@@ -6887,6 +6950,14 @@ def api_complete_receiving(rid):
         conn.close(); return jsonify({'error': '入库单不存在'}), 404
     if rn['status'] in ('已入库', '已驳回', '已作废'):
         conn.close(); return jsonify({'error': f'当前状态({rn["status"]})不可提交审批'}), 400
+    # V11.206 集体验收: 标记需集体验收的单必须先完成集体验收审批, 才能走常规入库审批
+    _need_collect = int(rn['collect_accept'] or 0)
+    if _need_collect and (rn['collect_status'] or '') != '已集体验收':
+        _cpend = conn.execute("SELECT status FROM approval_instances WHERE biz_type='collect_accept' AND biz_id=? ORDER BY id DESC LIMIT 1", (rid,)).fetchone()
+        _cs = (_cpend['status'] if _cpend else '') or ''
+        if _cs == 'pending':
+            conn.close(); return jsonify({'error': '该物资需集体验收，集体验收审批中，通过后才能提交入库审批'}), 400
+        conn.close(); return jsonify({'error': '该物资需集体验收，请先完成集体验收（到货确认时勾选，审批通过后再提交入库）'}), 400
     # 防重复提交: 待审批且已有待审实例 → 提示撤回而不是重复建链
     pend = conn.execute("SELECT 1 FROM approval_instances WHERE biz_type='receiving' AND biz_id=? AND status='pending' LIMIT 1", (rid,)).fetchone()
     if rn['status'] == '待审批' and pend:
