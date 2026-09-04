@@ -10838,11 +10838,13 @@ def api_repairs():
         if stale: conn.commit()
     except Exception:
         pass
-    if session.get('user_role') in ('系统管理员', '分管领导', '总经理'):
-        rows = conn.execute("SELECT * FROM repair_plans ORDER BY id DESC LIMIT 100").fetchall()
-    else:
+    # V11.215: 数据权限对齐物资采购申请口径(filter_scope) — 采购员/财务/库管看全部历史, 仅员工/部门负责人看自己的
+    # (修复: 原硬编码仅领导看全部→采购员邢果看不到穆娇等提交的历史维修单)
+    if filter_scope(session.get('user_role')) == 'own':
         rows = conn.execute("SELECT * FROM repair_plans WHERE requester=? OR requester_id=? ORDER BY id DESC LIMIT 100",
                             (session.get('user_name', ''), session.get('user_id', 0))).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM repair_plans ORDER BY id DESC LIMIT 100").fetchall()
     conn.close()
     out = []
     for r in rows:
