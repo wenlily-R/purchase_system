@@ -1724,7 +1724,7 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
                             c.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,
                                 supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status,inquiry_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                                       (_no, _iq['req_id'], _iq['title'][:50], '', 1, '个', _total, _total, 0, 0, _total,
-                                       _sup['supplier_name'], _iq['created_by'], '后勤类', _iq['created_by'], 1, _iq['deadline'] or '', '货到付款',
+                                       _sup['supplier_name'], _iq['created_by'], '后勤类', _iq['created_by'], 1, (_iq['deadline'] or '')[:10], '货到付款',
                                        _remark, 0, json.dumps([], ensure_ascii=False), '已通过', _iq['id']))
                             _oid = c.execute("SELECT id FROM purchase_orders WHERE order_no=?", (_no,)).fetchone()[0]
                         # V11.170: 明细价格优先用商家报价(quote_details按全量物资顺序存unit_price),
@@ -5601,14 +5601,22 @@ def api_create_inquiry():
         conn.close(); return jsonify({'error': '该申请已下单，无需询价'}), 400
     no = gen_no('XJ', 'inquiries', 'inq_no', conn)
     title = (pr['purpose'] or '')[:80]
-    # V11.24: 报价截止时间 — 前端传 deadline(YYYY-MM-DD), 不传默认7天后
+    # V11.24: 报价截止时间 — V11.205 精确到分钟(统一开标): 传 deadline(YYYY-MM-DD 或 YYYY-MM-DD HH:MM), 不传默认7天后
     import datetime as _dt
     try:
-        dl = (d.get('deadline') or '').strip()
-        _dl = _dt.datetime.strptime(dl, '%Y-%m-%d') if dl else (_dt.date.today() + _dt.timedelta(days=7))
-        deadline = _dl.strftime('%Y-%m-%d')
+        dl = (d.get('deadline') or '').strip().replace('T', ' ')
+        if dl:
+            if len(dl) <= 10:
+                _dl = _dt.datetime.strptime(dl[:10], '%Y-%m-%d').replace(hour=23, minute=59)
+            else:
+                _dl = _dt.datetime.strptime(dl[:16], '%Y-%m-%d %H:%M')
+            if _dl < _dt.datetime.now():
+                _dl = _dt.datetime.now() + _dt.timedelta(minutes=30)  # 防填过去时间
+        else:
+            _dl = _dt.datetime.now() + _dt.timedelta(days=7)
+        deadline = _dl.strftime('%Y-%m-%d %H:%M')
     except Exception:
-        deadline = (_dt.date.today() + _dt.timedelta(days=7)).strftime('%Y-%m-%d')
+        deadline = (_dt.datetime.now() + _dt.timedelta(days=7)).strftime('%Y-%m-%d %H:%M')
     conn.execute("INSERT INTO inquiries(inq_no,req_id,title,purpose,status,deadline,created_by) VALUES(?,?,?,?,?,?,?)",
                  (no, req_id, title, pr['purpose'], '询价中', deadline, session['user_name']))
     iid = conn.execute("SELECT id FROM inquiries WHERE inq_no=?", (no,)).fetchone()[0]
@@ -5678,6 +5686,9 @@ def api_inquiry_adjust(iid):
         conn.close(); return jsonify({'error': '询价单不存在'}), 404
     if i['status'] not in ('询价中', '待定标'):
         conn.close(); return jsonify({'error': '当前状态不可议价（仅询价中/待定标可操作）'}), 400
+    # V11.205: 开标前禁止议价(报价不可见阶段不允许内部改价)
+    if _inq_locked(i['deadline']):
+        conn.close(); return jsonify({'error': '报价未开标（截止 %s），开标前不可议价' % (i['deadline'] or '')}), 400
     # 行明细调整(可选): [{unit_price, qty}] 按申请物资顺序
     adj_details = d.get('adj_details')
     adj_price = float(d.get('adj_price') or 0)
@@ -5694,27 +5705,62 @@ def api_inquiry_adjust(iid):
     return jsonify({'success': True, 'message': '议价已保存（厂家原始报价保留留痕）', 'adj_price': adj_price})
 
 
+# V11.205 询价统一开标: 报价截止时间解析/锁定期判断(老数据纯日期按当日23:59计)
+def _inq_deadline_dt(dl):
+    try:
+        dl = (dl or '').strip()
+        if not dl:
+            return None
+        if len(dl) <= 10:
+            return datetime.datetime.strptime(dl[:10], '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+        return datetime.datetime.strptime(dl[:16].replace('T', ' '), '%Y-%m-%d %H:%M')
+    except Exception:
+        return None
+
+
+def _inq_locked(deadline):
+    """截止前=锁定期(内部禁看报价/禁定标/禁提交审批/禁导出); 到点自动解锁"""
+    _ddt = _inq_deadline_dt(deadline)
+    return bool(_ddt) and datetime.datetime.now() < _ddt
+
+
 @app.route('/api/inquiries/<int:iid>')
 @login_required
 def api_inquiry_detail(iid):
-    """询价单详情: 申请信息 + 物品明细 + 供应商报价对比 + 品牌分析"""
+    """询价单详情: 申请信息 + 物品明细 + 供应商报价对比 + 品牌分析
+    V11.205 统一开标: 截止前 locked=True → 报价字段全部脱敏(0/空), 前端显示"报价未开标,暂不可查看";
+    截止后自动解锁, 按价格从低到高排序(既有 ORDER BY quote_price 即升序, 未报价排最后)"""
     conn = db()
     i = conn.execute("SELECT * FROM inquiries WHERE id=?", (iid,)).fetchone()
     if not i:
         conn.close(); return jsonify({'error': '询价单不存在'}), 404
     pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (i['req_id'],)).fetchone()
     items = conn.execute("SELECT * FROM request_items WHERE req_id=?", (i['req_id'],)).fetchall()
-    sups = conn.execute("SELECT * FROM inquiry_suppliers WHERE inquiry_id=? ORDER BY (quote_price=0), quote_price", (iid,)).fetchall()
+    sups = conn.execute("SELECT * FROM inquiry_suppliers WHERE inquiry_id=? ORDER BY (quote_price=0), quote_price, id", (iid,)).fetchall()
     conn.close()
     out = dict_row(i)
     out['request'] = dict_row(pr)
     out['items'] = [dict_row(r) for r in items]
+    # V11.205: 锁定期状态(截止时间精确到分钟; 纯日期老数据按当天23:59)
+    out['locked'] = _inq_locked(i['deadline'])
+    out['deadline_passed'] = (not out['locked']) and bool((i['deadline'] or '').strip())
     # 添加品牌分析
     supplier_list = []
     for s in sups:
         sd = dict_row(s)
-        brand_info = search_brand_info(sd.get('supplier_name', ''), '')
-        sd['brand_analysis'] = brand_info
+        if out['locked']:
+            # 开标前对内部账号脱敏报价字段(数值清0/文本清空), 不泄露任何报价信息
+            for _k in ('quote_price', 'quote_details', 'quote_remark', 'quote_delivery', 'quote_warranty',
+                       'quote_brand', 'brand', 'adj_price', 'adj_details', 'adj_remark'):
+                if _k in ('quote_price', 'adj_price'):
+                    sd[_k] = 0
+                else:
+                    sd[_k] = ''
+            sd['brand_analysis'] = None
+            sd['_locked'] = True
+        else:
+            brand_info = search_brand_info(sd.get('supplier_name', ''), '')
+            sd['brand_analysis'] = brand_info
         supplier_list.append(sd)
     out['suppliers'] = supplier_list
     return jsonify(out)
@@ -5749,9 +5795,11 @@ def inquiry_vendor_page(token):
         conn.close()
         return _msg_page('⏳', _st_txt, '本批次询价已结束，无法继续报价。感谢参与，欢迎下次合作。')
     _deadline = (i['deadline'] or '').strip()
-    if _deadline and _today_str > _deadline:
+    # V11.205: 截止精确到分钟 — 到点(含纯日期老数据按当日23:59)后商家页关闭
+    _ddt2 = _inq_deadline_dt(_deadline)
+    if _ddt2 and datetime.datetime.now() >= _ddt2:
         conn.close()
-        return _msg_page('⏰', '报价已截止', '该询价已于 %s 截止，无法继续报价。如有疑问请联系采购方。' % _deadline)
+        return _msg_page('⏰', '报价已截止', '该询价已于 %s 截止，无法继续报价/修改。如有疑问请联系采购方。' % _deadline)
     pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (i['req_id'],)).fetchone()
     items = conn.execute("SELECT * FROM request_items WHERE req_id=?", (i['req_id'],)).fetchall()
     conn.close()
@@ -5873,12 +5921,11 @@ def inquiry_vendor_quote(token):
     i = conn.execute("SELECT * FROM inquiries WHERE id=?", (s['inquiry_id'],)).fetchone()
     if not i or i['status'] != '询价中':
         conn.close(); return jsonify({'error': '该询价已结束，无法报价'}), 400
-    # V11.24: 报价截止时间检查 — 超过截止日期拒绝报价
+    # V11.24/V11.205: 报价截止时间检查 — 到点后拒绝商家报价/修改(精确到分钟)
     if i['deadline']:
-        import datetime as _dt
-        _today = _dt.date.today().strftime('%Y-%m-%d')
-        if _today > str(i['deadline']):
-            conn.close(); return jsonify({'error': '该询价已于 %s 截止，无法继续报价' % i['deadline']}), 400
+        _ddt3 = _inq_deadline_dt(i['deadline'])
+        if _ddt3 and datetime.datetime.now() >= _ddt3:
+            conn.close(); return jsonify({'error': '该询价已于 %s 截止，无法继续报价/修改报价' % i['deadline']}), 400
     # V11.41: 行明细报价(每行单价+备注), 合计=Σ单价×数量; 兼容旧版总价提交
     # V11.162: 含运总价=商家填的 quote_price(整单含运费), 明细合计只作参考不再覆盖
     _final_price = price
@@ -5925,6 +5972,9 @@ def api_inquiry_submit(iid):
     if i['status'] != '询价中':
         conn.close()
         return jsonify({'error': '该询价已结束'}), 400
+    # V11.205: 统一开标 — 截止前禁止提交定标审批(否则审批详情/钉钉会泄露报价)
+    if _inq_locked(i['deadline']):
+        conn.close(); return jsonify({'error': '报价未开标（截止 %s），请等待统一开标后再提交定标审批' % (i['deadline'] or '')}), 400
     # V11.155f: 防重复提交 — 已有审批中记录(定标审批中)则拒绝
     _pend = conn.execute("SELECT 1 FROM inquiry_approvals WHERE inquiry_id=? AND status='审批中' LIMIT 1", (iid,)).fetchone()
     if _pend:
@@ -5961,7 +6011,7 @@ def api_inquiry_submit(iid):
         conn.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,
             supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status,inquiry_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (gen_no('CG', 'purchase_orders', 'order_no', conn), i['req_id'], i['title'][:50], '', 1, '个', 0, total, 0, 0, total,
-             cheapest['supplier_name'] if cheapest else '待定', i['created_by'], '后勤类', i['created_by'], 1, i['deadline'] or '', '货到付款',
+             cheapest['supplier_name'] if cheapest else '待定', i['created_by'], '后勤类', i['created_by'], 1, (i['deadline'] or '')[:10], '货到付款',
              remark, 0, json.dumps([], ensure_ascii=False), '草稿', i['id']))
     # 创建询价审批记录 (biz_id 统一=询价单id)
     conn.execute("INSERT INTO inquiry_approvals(inquiry_id, status, created_at) VALUES(?, '审批中', ?)", (iid, now()))
@@ -5989,11 +6039,11 @@ def api_inquiry_select(iid):
         conn.close(); return jsonify({'error': '询价单不存在'}), 404
     if i['status'] != '询价中':
         conn.close(); return jsonify({'error': '该询价已结束'}), 400
-    # V11.24: 截止后不允许再选中下单(已截止的询价只能比价查看)
+    # V11.24/V11.205: 统一开标 — 报价截止前禁止提前定标(防人为泄露/串通); 到点开标后才允许选中下单
     if i['deadline']:
-        import datetime as _dt
-        if _dt.date.today().strftime('%Y-%m-%d') > str(i['deadline']):
-            conn.close(); return jsonify({'error': '该询价已于 %s 截止，如需下单请重新发起询价' % i['deadline']}), 400
+        _ddt4 = _inq_deadline_dt(i['deadline'])
+        if _ddt4 and datetime.datetime.now() < _ddt4:
+            conn.close(); return jsonify({'error': '报价尚未开标（截止 %s），请等待统一开标后再定标选择供应商' % i['deadline']}), 400
     s = conn.execute("SELECT * FROM inquiry_suppliers WHERE id=? AND inquiry_id=?", (sid, iid)).fetchone()
     if not s:
         conn.close(); return jsonify({'error': '供应商不在该询价单中'}), 400
@@ -6110,6 +6160,9 @@ def api_inquiry_split_select(iid):
     # 已生成订单/定标审批中 禁止再分项(防重复生成订单)
     if i['status'] not in ('询价中', '待定标'):
         conn.close(); return jsonify({'error': '当前状态不可分项定标（仅询价中/待定标可操作）'}), 400
+    # V11.205: 统一开标 — 截止前禁止分项定标(报价不可见阶段)
+    if _inq_locked(i['deadline']):
+        conn.close(); return jsonify({'error': '报价未开标（截止 %s），请等待统一开标后再分项定标' % (i['deadline'] or '')}), 400
     pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (i['req_id'],)).fetchone()
     if not pr:
         conn.close(); return jsonify({'error': '来源申请缺失'}), 400
@@ -6230,6 +6283,33 @@ def gen_inquiry_xlsx_file(iid):
         return None
 
 
+@app.route('/api/inquiries/<int:iid>/extend', methods=['POST'])
+@login_required
+def api_inquiry_extend(iid):
+    """V11.205: 延长报价截止时间 — 仅采购主管级(系统管理员/分管领导/总经理)可操作, 记录操作日志"""
+    if session.get('user_role') not in ('系统管理员', '分管领导', '总经理'):
+        return jsonify({'error': '仅采购主管及以上(分管领导/总经理/系统管理员)可延长报价截止时间'}), 403
+    d = request.json or {}
+    ndl = (d.get('deadline') or '').strip().replace('T', ' ')
+    conn = db()
+    i = conn.execute("SELECT * FROM inquiries WHERE id=?", (iid,)).fetchone()
+    if not i:
+        conn.close(); return jsonify({'error': '询价单不存在'}), 404
+    if i['status'] != '询价中':
+        conn.close(); return jsonify({'error': '当前状态(%s)不可延长截止时间' % i['status']}), 400
+    _ddt = _inq_deadline_dt(ndl)
+    if _ddt is None:
+        conn.close(); return jsonify({'error': '截止时间格式不正确（请用 YYYY-MM-DD HH:MM）'}), 400
+    if _ddt < datetime.datetime.now():
+        conn.close(); return jsonify({'error': '新的截止时间需晚于当前时间'}), 400
+    _old = (i['deadline'] or '')
+    _new = _ddt.strftime('%Y-%m-%d %H:%M')
+    conn.execute("UPDATE inquiries SET deadline=?, updated_at=? WHERE id=?", (_new, now(), iid))
+    conn.commit(); conn.close()
+    log(session['user_name'], '延长询价截止', '%s 报价截止 %s → %s' % (i['inq_no'], _old, _new))
+    return jsonify({'success': True, 'inq_no': i['inq_no'], 'deadline': _new})
+
+
 @app.route('/api/inquiries/<int:iid>/export')
 @login_required
 def api_inquiry_export(iid):
@@ -6241,6 +6321,9 @@ def api_inquiry_export(iid):
     i = conn.execute("SELECT * FROM inquiries WHERE id=?", (iid,)).fetchone()
     if not i:
         conn.close(); return jsonify({'error': '询价单不存在'}), 404
+    # V11.205: 统一开标 — 截止前禁止导出比价单(报价内容不外泄)
+    if _inq_locked(i['deadline']):
+        conn.close(); return jsonify({'error': '报价未开标（截止 %s），开标后方可导出比价单' % (i['deadline'] or '')}), 400
     pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (i['req_id'],)).fetchone()
     items = conn.execute("SELECT * FROM request_items WHERE req_id=? ORDER BY id", (i['req_id'],)).fetchall()
     sups = [dict(s) for s in conn.execute("SELECT * FROM inquiry_suppliers WHERE inquiry_id=? ORDER BY id", (iid,)).fetchall()]

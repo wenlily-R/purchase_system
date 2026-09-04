@@ -1780,14 +1780,14 @@ async function showInquiryForm(){
   if(!el.length){alert('暂无可询价的申请：需要「已通过审批且尚未下单」的采购申请');return}
   const opts=el.map(x=>`<option value="${x.id}">${esc(x.req_no)}｜${esc(x.purpose||'')}（${x.item_count||0}项，参考¥${(x.item_total||0).toFixed(0)}）</option>`).join('');
   IQ_SUPS=0;
-  // V11.24: 报价截止日期选项(默认7天) — V11.59: 加1天/2天
-  const dlOpts=(()=>{const d=new Date(),arr=[];const days=[1,2,3,7,15,30];const fmt=x=>x.toISOString().slice(0,10);
-    for(const n of days){const t=new Date(d);t.setDate(t.getDate()+n);arr.push(`<option value="${fmt(t)}"${n==7?' selected':''}>${n}天后（${fmt(t)}）</option>`)}return arr.join('')})();
+  // V11.24: 报价截止 — V11.205: 精确到分钟(统一开标, 截止前内部看不到报价), 默认7天后同一时刻
+  const defDl=(()=>{const d=new Date();d.setDate(d.getDate()+7);d.setSeconds(0,0);const p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`})();
   showDetail('🔍 发起三方询价',
     `<div style="font-size:11px;margin-bottom:8px">选择已通过审批的采购申请，添加 <b>2-3 家</b> 供应商，每家将生成专属免登录报价链接。</div>
     <div style="margin-bottom:8px"><select id="iqReq" style="width:100%;padding:6px;border:1px solid var(--b);border-radius:4px;font-size:11px">${opts}</select></div>
-    <div style="margin-bottom:8px"><label style="font-size:10px;color:#666;display:block;margin-bottom:3px">⏰ 报价截止日期（到期自动截止，商家无法再报价）</label>
-    <select id="iqDeadline" style="width:100%;padding:6px;border:1px solid var(--b);border-radius:4px;font-size:11px">${dlOpts}</select></div>
+    <div style="margin-bottom:8px"><label style="font-size:10px;color:#666;display:block;margin-bottom:3px">⏰ 报价截止时间（精确到分钟；截止后系统自动开标，统一展示各家报价）</label>
+    <input type="datetime-local" id="iqDeadline" value="${defDl}" style="width:100%;padding:6px;border:1px solid var(--b);border-radius:4px;font-size:11px"></div>
+    <div style="font-size:9px;color:#b08900;margin:-4px 0 8px">🔒 截止前所有内部账号看不到任何报价（防止泄露、串标），商家可正常提交/修改；有特殊原因可联系采购主管延长截止时间</div>
     <div id="iqSups"></div>
     <button class="btn btn-o btn-sm" onclick="addIqSup()">+ 添加供应商</button>
     <span style="font-size:10px;color:#999;margin-left:6px" id="iqSupTip">已添加 0/至少2 家</span>`,
@@ -1843,10 +1843,17 @@ async function showInquiry(id){
   try{d=await api(`/inquiries/${id}`)}catch(e){if(my!==__dmSeq)return;id('dmBody').innerHTML='<div style="padding:20px;text-align:center;color:#c0392b;font-size:11px">⚠️ 加载失败(网络较慢)，请点击重试 <button class="btn btn-p btn-sm" onclick="showInquiry('+id+')">重试</button></div>';return}
   window.__inqSup = d.suppliers||[];  // V11.180: 议价弹窗用(读厂家原始/调整数据)
   const r=d.request||{};
-  let h=`<div class="c2"><div><dt>询价单号</dt><dd><b>${esc(d.inq_no)}</b></dd><dt>申请单号</dt><dd>${esc(r.req_no||('#'+d.req_id))}</dd><dt>部门</dt><dd>${esc(r.dept||'')}</dd><dt>状态</dt><dd>${tag(d.status)}${d.deadline?` <span style="font-size:9px;color:${d.deadline<new Date().toISOString().slice(0,10)?'#c0392b':'#b08900'}">⏰截止${esc(d.deadline)}${d.deadline<new Date().toISOString().slice(0,10)?' 已截止':''}</span>`:''}</dd></div>
+  let h=`<div class="c2"><div><dt>询价单号</dt><dd><b>${esc(d.inq_no)}</b></dd><dt>申请单号</dt><dd>${esc(r.req_no||('#'+d.req_id))}</dd><dt>部门</dt><dd>${esc(r.dept||'')}</dd><dt>状态</dt><dd>${tag(d.status)}${d.deadline?` <span style="font-size:9px;color:${d.locked?'#b08900':'#16a34a'}">⏰截止${esc(d.deadline)}${d.locked?' 🔒未开标':' 已开标'}</span>`:''}</dd></div>
     <div><dt>采购事由</dt><dd>${esc(d.purpose||'')}</dd><dt>发起人</dt><dd>${esc(d.created_by||'')}</dd><dt>发起时间</dt><dd>${esc(d.created_at||'')}</dd></div></div>`;
   if(d.items&&d.items.length){
     h+=`<h4 style="font-size:10px;margin:6px 0 3px">📋 采购明细（${d.items.length}项）</h4><div style="font-size:9px">${d.items.map(i=>`<div style="padding:2px 0;border-bottom:1px solid var(--b)">${esc(i.item_name)} ${esc(i.spec||'')} x${i.quantity}${esc(i.unit||'')}（参考¥${(i.total_price||0).toFixed(0)}）</div>`).join('')}</div>`;
+  }
+  // V11.205: 统一开标 — 截止前锁定期提示(内部不可看报价; 供应商正常报价); 主管级可延长
+  const canExtend = ME && ['系统管理员','分管领导','总经理'].includes(ME.role) && d.status=='询价中';
+  if(d.locked){
+    h+=`<div style="margin:8px 0;padding:10px 12px;background:#fff3cd;border:1px solid #ffe08a;border-radius:6px;font-size:11px;color:#7d6608">🔒 <b>报价未开标，暂不可查看</b>：报价截止 <b>${esc(d.deadline||'')}</b> 后自动解锁，届时按价格从低到高统一展示各家报价。供应商在截止前仍可正常提交/修改报价。${canExtend?` <button class="btn btn-o btn-sm" style="margin-left:6px" onclick="showExtendDl(${d.id},'${esc(d.deadline||'')}')">⏰ 延长截止时间</button>`:''}</div>`;
+  }else if(d.deadline_passed){
+    h+=`<div style="margin:8px 0;padding:8px 10px;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:6px;font-size:11px;color:#2e7d32">🔓 已统一开标 — 报价按价格从低到高展示，可正常比价/定标/导出</div>`;
   }
   h+=`<h4 style="font-size:11px;margin:10px 0 5px;color:#2c3e50;font-weight:bold">🏢 供应商报价对比</h4>`;
   if(!d.suppliers||!d.suppliers.length)h+='<div style="font-size:11px;color:#999;padding:10px">无供应商</div>';
@@ -1910,12 +1917,25 @@ async function showInquiry(id){
   if(d.status=='定标审批中') lowestNote = `<div style="margin:8px 0;padding:8px 10px;background:#fff8e1;border:1px solid #f5c518;border-radius:6px;font-size:11px;color:#8a6d3b">⏳ 已提交领导审批，等待领导选择采购方式（通过后这里会出现【分项定标】指引）</div>`;
   else if(d.status=='待定标') lowestNote = `<div style="margin:8px 0;padding:8px 10px;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:6px;font-size:11px;color:#2e7d32">✅ 领导已同意按各物资最低价择优采购 — 请点击【🔀 分项定标】，系统已按每项最低价默认勾选，确认后生成采购订单</div>`;
   else if(d.status=='已生成订单') lowestNote = `<div style="margin:8px 0;padding:8px 10px;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:6px;font-size:11px;color:#2e7d32">✅ 已按领导审批结果生成采购订单，可在【采购订单】查看</div>`;
-  const btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button><button class="btn btn-p" onclick="exportInquiry(${d.id})">📥 导出Excel</button>${splitBtn}${submitBtn}`;
+  const btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button>${d.locked?'':`<button class="btn btn-p" onclick="exportInquiry(${d.id})">📥 导出Excel</button>`}${splitBtn}${submitBtn}`;
   if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
   // V11.179: 询价审批详情也显示审批流程+驳回记录
   showDetail(`询价单 ${d.inq_no}`,lowestNote+h+'<div id="approvalFlowBox"></div><div id="rejectLogsBox"></div>',btns);
   loadApprovalFlow('inquiry_approval',d.id,'approvalFlowBox');
   loadRejectLogs('inquiry_approval',d.id,'rejectLogsBox');
+}
+// V11.205: 延长报价截止时间(仅采购主管级) — 记录操作日志
+async function showExtendDl(iid,cur){
+  showDetail('⏰ 延长报价截止时间',`<div style="font-size:10px;color:#666;margin-bottom:8px">仅采购主管及以上（分管领导/总经理/管理员）可操作，操作将记录日志。原截止：<b>${esc(cur||'')}</b></div>
+    <div style="font-size:10px;color:#555;margin-bottom:3px">新截止时间（精确到分钟）</div>
+    <input type="datetime-local" id="extDl" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;font-size:12px">`,
+    `<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="doExtendDl(${iid})">💾 保存</button>`);
+}
+async function doExtendDl(iid){
+  const v=(id('extDl').value||'').trim();
+  if(!v){alert('请选择新的截止时间');return}
+  const r=await api(`/inquiries/${iid}/extend`,{method:'POST',body:JSON.stringify({deadline:v})});
+  if(r.success){alert(`✅ 已延长报价截止时间至 ${r.deadline}`);closeMod();showInquiry(iid)}else alert(r.error||'操作失败');
 }
 // V11.180: 采购议价弹窗 — 厂家原始报价只读留痕; 明细单价可改, 总价自动联动 (V11.198)
 function showAdjustModal(iid, sid, sname){
