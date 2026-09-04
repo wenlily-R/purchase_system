@@ -4629,11 +4629,9 @@ def find_doc_submitter(biz_type, biz_id):
 
 
 def notify_submitter_rejected(biz_type, biz_id, approver, comment, source='system'):
-    """V11.178: 单据被驳回后 → 钉钉工作通知提交人(含单据号/驳回人/理由/处理建议)
-    系统驳回 & 钉钉驳回 两个路径统一调用; 找不到提交人/钉钉未启用时静默跳过"""
+    """V11.178: 单据被驳回后 → 系统站内信(铃铛) + 钉钉工作通知提交人(含单据号/驳回人/理由/处理建议)
+    V11.216: 站内信不依赖钉钉启用/绑定(原逻辑dingtalk未启用或用户未绑钉钉直接return→用户收不到任何通知)"""
     try:
-        if not dingtalk_enabled():
-            return
         _b = biz_table(biz_type)
         _c = db()
         try:
@@ -4645,7 +4643,7 @@ def notify_submitter_rejected(biz_type, biz_id, approver, comment, source='syste
             return
         # 单据号
         _doc_no = ''
-        for _k in ('req_no', 'order_no', 'contract_no', 'receive_no', 'payment_no'):
+        for _k in ('req_no', 'order_no', 'contract_no', 'receive_no', 'payment_no', 'plan_no'):
             if _k in _row.keys() and _row[_k]:
                 _doc_no = str(_row[_k]); break
         if not _doc_no:
@@ -4692,15 +4690,25 @@ def notify_submitter_rejected(biz_type, biz_id, approver, comment, source='syste
         except Exception:
             _usr = None
         _u.close()
-        if not _usr or not _usr['dingtalk_userid']:
+        if not _usr:
             return
         _approver = approver or '审批人'
         _reason = (comment or '').strip() or '（未填写理由）'
         _src_txt = '【系统审批】' if source == 'system' else '【钉钉审批】'
         title = f'❌ 您的{_doc_no} 被驳回'
         text = f"您提交的 **{_doc_no}** 经{_src_txt}被驳回，请查看原因并及时修改后重新提交。\n\n驳回人：{_approver}\n驳回理由：{_reason}"
-        dt_send_todo([_usr['dingtalk_userid']], title, text,
-                     f"单据: {_doc_no}", biz_type, biz_id, push_type='result', operator='系统')
+        # V11.216: 站内信(铃铛) 不依赖钉钉 — 提交人登录必能看到
+        try:
+            add_notif([_usr['id']], title, f"您提交的{_doc_no}被驳回\n驳回人:{_approver}\n理由:{_reason}", biz_type, biz_id)
+        except Exception:
+            pass
+        # 钉钉工作通知(绑了钉钉才发)
+        try:
+            if _usr['dingtalk_userid'] and dingtalk_enabled():
+                dt_send_todo([_usr['dingtalk_userid']], title, text,
+                             f"单据: {_doc_no}", biz_type, biz_id, push_type='result', operator='系统')
+        except Exception:
+            pass
         log('系统', '驳回通知提交人', f"{biz_type}#{biz_id} → {_usr['name']} 理由:{_reason[:60]}")
     except Exception:
         pass

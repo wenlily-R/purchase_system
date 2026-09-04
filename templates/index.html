@@ -3855,8 +3855,8 @@ async function showRepairDetail(rid){
   if(p.status=='委外维修中')acts.push(['🔧 新增维修变更单','rpChangeOpen()'],['🕐 更新进度','rpProgress('+rid+')'],['🏁 维修完工报验','rpDone('+rid+')']);
   if(p.status=='变更待四方确认')acts.push(['🔧 查看变更并确认','showRepairDetail('+rid+')']);
   if(p.status=='验收不通过返修')acts.push(['🏁 返修完工再报验','rpDone('+rid+')']);
-  if(p.status=='待回厂验收'&&canLead)acts.push(['✅ 联合性能验收','rpAccept('+rid+')']);
-  if(p.status=='验收通过'&&canLead)acts.push(['📦 处理(归还/回收入库)','rpHandle('+rid+')']);
+  if(p.status=='待回厂验收'&&canBuyer)acts.push(['✅ 联合性能验收','rpAccept('+rid+')']);
+  if(p.status=='验收通过'&&canBuyer)acts.push(['📦 处理(归还/回收入库)','rpHandle('+rid+')']);
   if(p.status=='待发票登记'&&canBuyer)acts.push(['🧾 登记维修发票','rpInvoice('+rid+')']);
   foot=`<button class="btn btn-o" onclick="closeMod()">关闭</button>`+`<button class="btn btn-o btn-sm" onclick="window.open('/api/repairs/${rid}/download','_blank')">⬇️ 下载维修单</button>`+acts.map(a=>`<button class="btn btn-p btn-sm" onclick="${a[1]};closeMod()">${a[0]}</button>`).join('');
   id('dmFooter').innerHTML=foot;
@@ -4515,7 +4515,7 @@ async function syncInsts(){const r=await api('/feishu/sync-instances',{method:'P
 
 // DingTalk 钉钉对接
 // V11.202: 模板码输入框覆盖全部审批类型(含退库return_request — 修复退库审批推不到钉钉的配置入口)
-const DT_BIZ_DEFS={'purchase_request':'采购申请','inquiry_approval':'比价单','purchase_order':'采购订单','contract':'合同','receiving':'入库','requisition':'出库','return_request':'退库','credit':'挂账','payment':'付款'};
+const DT_BIZ_DEFS={'purchase_request':'采购申请','inquiry_approval':'比价单','purchase_order':'采购订单','contract':'合同','receiving':'入库','requisition':'出库','return_request':'退库','credit':'挂账','payment':'付款','repair_plan':'维修审批','collect_accept':'集体验收'};  // V11.216: 补维修审批/集体验收模板码入口
 async function loadDingTalk(){await loadDtConfig();loadDtUsers();loadDtStatus();loadDtInstances()}
 async function loadDtConfig(){
   try{
