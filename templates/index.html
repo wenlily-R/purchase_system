@@ -2058,15 +2058,15 @@ async function submitInquiryApproval(iid){
   }
 }
 async function copyInqLink(token){
-  // V11.18: 优先用公网地址生成链接(商家在外面才能打开); 拿不到公网地址才退回当前页面地址
+  // V11.202c: 强制实时获取最新公网地址生成链接(隧道守护换址后 public_url.txt 即时更新,
+  // 前端缓存 _dtCfg/_basePublicUrl 是登录/加载时的旧地址→复制出死链接, 这是商家打不开的反复根因)
   let base='';
-  try{
-    if(window._dtCfg&&window._dtCfg.public_url) base=window._dtCfg.public_url.replace(/\/+$/,'');
-  }catch(e){}
-  if(!base&&window._basePublicUrl) base=window._basePublicUrl.replace(/\/+$/,'');
+  try{const c=await fetch('/api/public-url',{credentials:'include'}).then(r=>r.json());if(c&&c.url)base=c.url.replace(/\/+$/,'')}catch(e){}
   if(!base){
     try{const c=await api('/dingtalk/status');base=(c.public_url||'').replace(/\/+$/,'')}catch(e){}
   }
+  // 兜底: 本页地址(可能非公网, 仅内网可用)
+  if(!base&&window._basePublicUrl) base=window._basePublicUrl.replace(/\/+$/,'');
   if(!base) base=location.origin;
   const url=base+'/inq/'+token;
   const okMsg='✅ 链接已复制到剪贴板，可直接粘贴发送给供应商'+(base!==location.origin?'\n(公网链接, 商家可直接打开)':'');
