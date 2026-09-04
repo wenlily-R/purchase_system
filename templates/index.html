@@ -3845,6 +3845,9 @@ async function showRepairDetail(rid){
   if(p.status=='定损驳回'&&canOp)acts.push(['🔄 修改后重新提交','submitRepair('+rid+')']);
   if(p.status=='待定损'&&canLead)acts.push(['🔍 技术定损(三选一)','rpDamageOpen('+rid+')']);
   if(p.status=='定损完成待审批'&&canBuyer)acts.push(['💰 录入服务商报价','rpQuoteOpen('+rid+')']);
+  // V11.216: 定损分级审批通过后(状态=审批通过) 必须可录报价 — 修复此状态无任何按钮的断链
+  if(p.status=='审批通过'&&canBuyer)acts.push(['💰 录入服务商报价','rpQuoteOpen('+rid+')']);
+  if(p.status=='定损完成待审批'&&canBuyer)acts.push(['↩️ 撤回','withdrawRepair('+rid+')']);
   if(p.status=='待比价'&&canBuyer)acts.push(['✅ 比价选定服务商','rpSelectVendor('+rid+')']);
   if(p.status=='已选服务商'&&canBuyer)acts.push(['📄 生成维修委托单','rpEntrust('+rid+')'],['🚚 发料委外维修','rpSendOut('+rid+')']);
   if(p.status=='委外维修中')acts.push(['🔧 新增维修变更单','rpChangeOpen()'],['🕐 更新进度','rpProgress('+rid+')'],['🏁 维修完工报验','rpDone('+rid+')']);
