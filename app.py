@@ -689,6 +689,50 @@ def init_db():
     # 退库审批流配置(首次建库时初始化; 幂等: 已有配置不覆盖)
     if conn.execute("SELECT COUNT(*) FROM approval_flow_config WHERE biz_type='return_request'").fetchone()[0] == 0:
         conn.execute("INSERT INTO approval_flow_config(biz_type,level_no,role,min_amount,max_amount,label) VALUES('return_request',1,'部门负责人',0,1000000,'退库审批-1级')")
+    # ---- V11.208 维修采购独立流程(模块五): 单表+阶段字段实现 提报→定损→报价→变更二次确认→返库验收 ----
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS repair_plans (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            plan_no TEXT UNIQUE NOT NULL,
+            device_name TEXT,            -- 损坏设备名称
+            fault_desc TEXT,             -- 故障描述
+            dept TEXT DEFAULT '',
+            requester TEXT DEFAULT '', requester_id INTEGER DEFAULT 0,
+            status TEXT DEFAULT '草稿',   -- 草稿/待定损/定损通过/待报价/报价完成/变更待确认/维修中/待返库/已完成/已驳回/已作废
+            stage TEXT DEFAULT '',        -- 当前环节标记(维修中=含变更次数)
+            change_count INTEGER DEFAULT 0,  -- 变更二次确认次数
+            quote_total REAL DEFAULT 0,   -- 厂家报价合计
+            repair_company TEXT DEFAULT '', -- 维修厂家
+            finish_date TEXT DEFAULT '',  -- 预计完工
+            attachments TEXT DEFAULT '',
+            reject_count INTEGER DEFAULT 0,
+            rejected_items TEXT DEFAULT '',
+            remark TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            updated_at TEXT DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS repair_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            plan_id INTEGER, part_name TEXT, fault_note TEXT DEFAULT '',
+            confirm_status TEXT DEFAULT '待定损',  -- 待定损/确认维修/确认不修
+            price REAL DEFAULT 0, unit TEXT DEFAULT '项'
+        );
+        CREATE TABLE IF NOT EXISTS repair_quotes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            plan_id INTEGER, company TEXT, item_name TEXT DEFAULT '',
+            price REAL DEFAULT 0, duration TEXT DEFAULT '',
+            status TEXT DEFAULT '报价', created_at TEXT DEFAULT (datetime('now','localtime'))
+        );
+        CREATE TABLE IF NOT EXISTS repair_changes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            plan_id INTEGER, add_item TEXT, add_price REAL DEFAULT 0,
+            status TEXT DEFAULT '待确认',   -- 待确认/已确认/已拒绝
+            created_by TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now','localtime'))
+        );
+    """)
+    # 维修采购审批流(定损审批)默认配置: 角色可后续在系统设置改(厂长账号接入后填)
+    if conn.execute("SELECT COUNT(*) FROM approval_flow_config WHERE biz_type='repair_plan'").fetchone()[0] == 0:
+        conn.execute("INSERT INTO approval_flow_config(biz_type,level_no,role,min_amount,max_amount,label) VALUES('repair_plan',1,'分管领导',0,1000000,'维修定损-1级')")
     # ---- V11.196 工作台公告 ----
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS notices (
@@ -1426,6 +1470,7 @@ def biz_parent_status(biz_type, result):
         'contract': ('执行中', '已驳回'), 'credit': ('已通过', '已驳回'), 'payment': ('已通过', '已驳回'),
         'receiving': ('已入库', '已驳回'), 'requisition': ('已出库', '已驳回'),
         'return_request': ('审批通过', '已驳回'),  # V11.193 退库: 审批通过=待仓库清点入库(库存不立即加)
+        'repair_plan': ('定损通过', '已驳回'),  # V11.208 维修采购定损
     }
     ok, no = m.get(biz_type, ('已通过', '已驳回'))
     return ok if result == 'ok' else no
@@ -1436,6 +1481,7 @@ def biz_table(biz_type):
             'receiving': 'receivings', 'requisition': 'requisitions',
             'return_request': 'return_requests',  # V11.193 退库
             'collect_accept': 'receivings',  # V11.206 集体验收: 父单据=入库单
+            'repair_plan': 'repair_plans',  # V11.208 维修采购
             'inquiry_approval': 'inquiries'}[biz_type]  # V11.133: biz_id=询价单id
 
 # ============================================================
@@ -2122,6 +2168,7 @@ DT_BIZ = {  # biz_type -> 审批模板名称
     'requisition':      '出库审批',
     'return_request':   '退库审批',  # V11.193
     'collect_accept':   '集体验收审批',  # V11.206
+    'repair_plan':      '维修采购审批',  # V11.208
     'inquiry_approval': '采购比价单审批',  # V11.142: 补全, 否则dt_send_todo抛KeyError
 }
 DT_FORM = [('单据编号', 'text'), ('内容摘要', 'text'), ('金额(元)', 'text'), ('申请人', 'text'), ('提交时间', 'text')]
@@ -2320,7 +2367,7 @@ def dt_build_form(biz_type, biz_id, info):
     today = datetime.date.today().strftime('%Y-%m-%d')
     # V11.133: inquiry_approval 必须加入分支判断, 否则询价审批永远走回退表单(钉钉不显示选商家)
     # V11.202: 加入 return_request(退库审批), 否则退库审批钉钉表单永远走回退字段(模板控件名对不上必失败)
-    if biz_type in ('purchase_request', 'contract', 'purchase_order', 'receiving', 'requisition', 'payment', 'inquiry_approval', 'return_request', 'collect_accept'):
+    if biz_type in ('purchase_request', 'contract', 'purchase_order', 'receiving', 'requisition', 'payment', 'inquiry_approval', 'return_request', 'collect_accept', 'repair_plan'):
         c = db()
         r = c.execute(f"SELECT * FROM {biz_table(biz_type)} WHERE id=?", (biz_id,)).fetchone()
         if r:
@@ -2370,6 +2417,18 @@ def dt_build_form(biz_type, biz_id, info):
                     {'name': '备注', 'value': rdetail[:1900]},
                 ]
                 attach = dt_build_attachment(biz_type, r, c)
+                if attach:
+                    form.append({'name': '附件', 'value': json.dumps(attach, ensure_ascii=False)})
+                c.close()
+                return form
+            elif biz_type == 'repair_plan':
+                # V11.208: 维修采购审批模板(备注控件展示完整详情, 附件控件带故障照片)
+                rdetail = dt_build_detail('repair_plan', r, c)
+                form = [
+                    {'name': '维修说明', 'value': str(r['device_name'] or '')[:100]},
+                    {'name': '备注', 'value': rdetail[:1900]},
+                ]
+                attach = dt_build_attachment('repair_plan', r, c)
                 if attach:
                     form.append({'name': '附件', 'value': json.dumps(attach, ensure_ascii=False)})
                 c.close()
@@ -2530,6 +2589,17 @@ def dt_build_detail(biz_type, r, c):
     # V11.206: 集体验收审批详情 = 入库单详情 + 验收标记说明
     if biz_type == 'collect_accept':
         biz_type = 'receiving'
+    # V11.208: 维修采购定损审批详情
+    if biz_type == 'repair_plan':
+        lines['单据编号'] = r['plan_no']; lines['单据类型'] = '维修采购'
+        lines['损坏设备'] = r['device_name']; lines['故障描述'] = str(r['fault_desc'] or '')[:200]
+        lines['所属部门'] = r['dept'] or '-'; lines['发起人'] = r['requester'] or '-'
+        its = c.execute("SELECT * FROM repair_items WHERE plan_id=? ORDER BY id", (r['id'],)).fetchall()
+        if its:
+            lines['更换部件'] = '、'.join(f"{x['part_name']}({x['fault_note'] or '待定损'})" for x in its)[:300]
+        lines['维修厂家'] = r['repair_company'] or '待报价'
+        lines['报价合计'] = f"¥{float(r['quote_total'] or 0):,.2f}"
+        return '\n'.join(f"{k}: {v}" for k, v in lines.items())
     if biz_type == 'purchase_request':
         lines['单据编号'] = r['req_no']; lines['单据类型'] = '采购申请'
         lines['申请人'] = r['requester']; lines['申请部门'] = r['dept']
@@ -4167,7 +4237,7 @@ def api_save_approval_flow():
     d = request.json or {}
     biz_type = str(d.get('biz_type', '')).strip()
     levels = d.get('levels') or []
-    if biz_type not in ('purchase_request', 'purchase_order', 'contract', 'credit', 'payment', 'receiving', 'requisition', 'return_request', 'inquiry_approval', 'collect_accept'):
+    if biz_type not in ('purchase_request', 'purchase_order', 'contract', 'credit', 'payment', 'receiving', 'requisition', 'return_request', 'inquiry_approval', 'collect_accept', 'repair_plan'):
         return jsonify({'error': '未知单据类型'}), 400
     valid_roles = ('部门负责人', '库管员', '采购员', '财务', '分管领导', '总经理')
     parsed = []
@@ -4327,6 +4397,7 @@ def api_all_pending():
                  WHEN ai.biz_type='requisition' THEN (SELECT rq.req_no FROM requisitions rq WHERE rq.id=ai.biz_id)
                  WHEN ai.biz_type='inquiry_approval' THEN (SELECT iq.inq_no FROM inquiries iq WHERE iq.id=ai.biz_id)
                  WHEN ai.biz_type='collect_accept' THEN (SELECT rv.receive_no FROM receivings rv WHERE rv.id=ai.biz_id)
+                 WHEN ai.biz_type='repair_plan' THEN (SELECT rp.plan_no FROM repair_plans rp WHERE rp.id=ai.biz_id)
             END as biz_no,
             CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.purpose FROM purchase_requests pr WHERE pr.id=ai.biz_id)
                  WHEN ai.biz_type='purchase_order' THEN (SELECT po.item_name FROM purchase_orders po WHERE po.id=ai.biz_id)
@@ -4336,6 +4407,7 @@ def api_all_pending():
                  WHEN ai.biz_type='receiving' THEN (SELECT rv.item_name FROM receivings rv WHERE rv.id=ai.biz_id)
                  WHEN ai.biz_type='requisition' THEN (SELECT rq.item_name FROM requisitions rq WHERE rq.id=ai.biz_id)
                  WHEN ai.biz_type='collect_accept' THEN (SELECT rv.item_name FROM receivings rv WHERE rv.id=ai.biz_id)
+                 WHEN ai.biz_type='repair_plan' THEN (SELECT rp.device_name FROM repair_plans rp WHERE rp.id=ai.biz_id)
             END as biz_name,
             CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.total_estimated FROM purchase_requests pr WHERE pr.id=ai.biz_id)
                  WHEN ai.biz_type='purchase_order' THEN (SELECT po.total_amount FROM purchase_orders po WHERE po.id=ai.biz_id)
@@ -10538,6 +10610,182 @@ def api_return_void(rid):
     c.commit(); c.close()
     log(session['user_name'], '作废退库单', f'{r["return_no"]} 已作废(未入库, 库存未变动)')
     return jsonify({'success': True, 'message': f'退库单 {r["return_no"]} 已作废（不影响库存，记录留痕）'})
+
+# ============================================================
+# V11.208 维修采购独立流程(模块五): 提报→定损→报价→变更二次确认→返库验收
+# 审批走 approval_flow_config repair_plan 配置(默认分管领导, 厂长账号接入后改)
+# ============================================================
+def _repair_no():
+    c = sqlite3.connect(DB); c.row_factory = sqlite3.Row
+    d = datetime.date.today().strftime('%Y%m%d')
+    r = c.execute("SELECT plan_no FROM repair_plans WHERE plan_no LIKE ? ORDER BY id DESC LIMIT 1", ('WP' + d + '%',)).fetchone()
+    c.close()
+    n = int(r['plan_no'][-2:]) + 1 if r else 1
+    return f'WP{d}{n:02d}'
+
+@app.route('/api/repairs')
+@login_required
+def api_repairs():
+    """维修计划列表(采购员/员工看自己, 领导/管理员全看)"""
+    conn = db()
+    if session.get('user_role') in ('系统管理员', '分管领导', '总经理'):
+        rows = conn.execute("SELECT * FROM repair_plans ORDER BY id DESC LIMIT 100").fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM repair_plans WHERE requester=? OR requester_id=? ORDER BY id DESC LIMIT 100",
+                            (session.get('user_name', ''), session.get('user_id', 0))).fetchall()
+    conn.close()
+    out = []
+    for r in rows:
+        d = dict_row(r)
+        d['item_count'] = sqlite3.connect(DB).execute("SELECT COUNT(*) FROM repair_items WHERE plan_id=?", (r['id'],)).fetchone()[0]
+        out.append(d)
+    return jsonify(out)
+
+@app.route('/api/repairs', methods=['POST'])
+@login_required
+def api_create_repair():
+    """第一步: 计划提报员提交维修计划(设备/故障/更换部件+故障照片附件)"""
+    d = request.json or {}
+    device = str(d.get('device_name') or '').strip()
+    fault = str(d.get('fault_desc') or '').strip()
+    if not device: return jsonify({'error': '请填写损坏设备名称'}), 400
+    if not fault: return jsonify({'error': '请填写故障描述'}), 400
+    no = _repair_no()
+    c = db()
+    c.execute("INSERT INTO repair_plans(plan_no,device_name,fault_desc,dept,requester,requester_id,status,attachments,remark) VALUES(?,?,?,?,?,?,?,?,?)",
+              (no, device, fault, d.get('dept', ''), session['user_name'], session['user_id'],
+               '草稿', json.dumps(d.get('attachments') or [], ensure_ascii=False), d.get('remark', '')))
+    pid = c.execute("SELECT id FROM repair_plans WHERE plan_no=?", (no,)).fetchone()[0]
+    for it in (d.get('items') or []):
+        if str(it.get('part_name') or '').strip():
+            c.execute("INSERT INTO repair_items(plan_id,part_name,fault_note) VALUES(?,?,?)", (pid, it['part_name'], it.get('fault_note', '')))
+    c.commit(); c.close()
+    log(session['user_name'], '新建维修计划', f'{no} {device}')
+    return jsonify({'success': True, 'id': pid, 'plan_no': no})
+
+@app.route('/api/repairs/<int:rid>/submit', methods=['POST'])
+@login_required
+def api_repair_submit(rid):
+    """提报后提交定损审批(建 repair_plan 审批实例)"""
+    c = db()
+    r = c.execute("SELECT * FROM repair_plans WHERE id=?", (rid,)).fetchone()
+    if not r: c.close(); return jsonify({'error': '维修计划不存在'}), 404
+    if r['status'] not in ('草稿', '已驳回'):
+        c.close(); return jsonify({'error': f'当前状态({r["status"]})不可提交定损'}), 400
+    c.execute("UPDATE repair_plans SET status='待定损', updated_at=? WHERE id=?", (now(), rid))
+    c.commit(); c.close()
+    create_approvals('repair_plan', rid, float(r['quote_total'] or 0), submitter=r['requester'] or session['user_name'])
+    try: start_instances('repair_plan', rid)
+    except Exception: pass
+    log(session['user_name'], '提交维修定损', f'{r["plan_no"]} 待定损审批')
+    return jsonify({'success': True})
+
+@app.route('/api/repairs/<int:rid>/quote', methods=['POST'])
+@login_required
+def api_repair_quote(rid):
+    """第三步: 采购录入厂家报价(维修项目/单价/金额/预计工期)"""
+    d = request.json or {}
+    c = db()
+    r = c.execute("SELECT * FROM repair_plans WHERE id=?", (rid,)).fetchone()
+    if not r: c.close(); return jsonify({'error': '维修计划不存在'}), 404
+    company = str(d.get('company') or '').strip()
+    if not company: c.close(); return jsonify({'error': '请填写维修厂家'}), 400
+    # 记录报价(覆盖式: 删除旧报价重录, 防重复)
+    c.execute("DELETE FROM repair_quotes WHERE plan_id=? AND company=?", (rid, company))
+    total = 0.0
+    for it in (d.get('quotes') or []):
+        p = float(it.get('price') or 0)
+        total += p
+        c.execute("INSERT INTO repair_quotes(plan_id,company,item_name,price,duration) VALUES(?,?,?,?,?)",
+                  (rid, company, it.get('item_name', ''), p, it.get('duration', '')))
+    c.execute("UPDATE repair_plans SET repair_company=?, quote_total=?, finish_date=?, status='报价完成', updated_at=? WHERE id=?", (company, total, d.get('finish_date', ''), now(), rid))
+    c.commit(); c.close()
+    log(session['user_name'], '录入维修报价', f'{r["plan_no"]} {company} ¥{total:.2f}')
+    return jsonify({'success': True, 'total': total})
+
+@app.route('/api/repairs/<int:rid>/change', methods=['POST'])
+@login_required
+def api_repair_change(rid):
+    """第四步: 维修中新增损坏项目 → 二次确认(记录待确认变更)"""
+    d = request.json or {}
+    c = db()
+    r = c.execute("SELECT * FROM repair_plans WHERE id=?", (rid,)).fetchone()
+    if not r: c.close(); return jsonify({'error': '维修计划不存在'}), 404
+    item = str(d.get('add_item') or '').strip()
+    if not item: c.close(); return jsonify({'error': '请填写新增损坏项目'}), 400
+    c.execute("INSERT INTO repair_changes(plan_id,add_item,add_price,status,created_by) VALUES(?,?,?,'待确认',?)",
+              (rid, item, float(d.get('add_price') or 0), session['user_name']))
+    c.execute("UPDATE repair_plans SET status='变更待确认', change_count=change_count+1, updated_at=? WHERE id=?", (now(), rid))
+    c.commit(); c.close()
+    log(session['user_name'], '维修变更二次确认', f'{r["plan_no"]} 新增:{item} ¥{float(d.get("add_price") or 0):.2f}')
+    return jsonify({'success': True})
+
+@app.route('/api/repairs/<int:rid>/change-confirm', methods=['POST'])
+@login_required
+def api_repair_change_confirm(rid):
+    """变更确认(管理员/分管领导): 确认后继续维修, 拒绝则标记"""
+    d = request.json or {}
+    cid = int(d.get('change_id') or 0)
+    act = d.get('action')  # confirm / reject
+    c = db()
+    r = c.execute("SELECT * FROM repair_plans WHERE id=?", (rid,)).fetchone()
+    if not r: c.close(); return jsonify({'error': '维修计划不存在'}), 404
+    if session.get('user_role') not in ('系统管理员', '分管领导', '总经理'):
+        c.close(); return jsonify({'error': '仅领导可确认变更'}), 403
+    if cid:
+        c.execute("UPDATE repair_changes SET status=? WHERE id=?", ('已确认' if act == 'confirm' else '已拒绝', cid))
+    # 有待确认变更未处理时不能推进; 全处理后回到维修中
+    pend = c.execute("SELECT COUNT(*) FROM repair_changes WHERE plan_id=? AND status='待确认'", (rid,)).fetchone()[0]
+    if pend == 0:
+        c.execute("UPDATE repair_plans SET status='维修中', updated_at=? WHERE id=?", (now(), rid))
+    c.commit(); c.close()
+    log(session['user_name'], '变更' + ('确认' if act == 'confirm' else '拒绝'), f'{r["plan_no"]} 变更#{cid}')
+    return jsonify({'success': True})
+
+@app.route('/api/repairs/<int:rid>/to-receive', methods=['POST'])
+@login_required
+def api_repair_to_receive(rid):
+    """第五步: 维修完成→标记待返库(走入库验收, 建议集体验收)"""
+    c = db()
+    r = c.execute("SELECT * FROM repair_plans WHERE id=?", (rid,)).fetchone()
+    if not r: c.close(); return jsonify({'error': '维修计划不存在'}), 404
+    if r['status'] not in ('维修中', '报价完成'):
+        c.close(); return jsonify({'error': f'当前状态({r["status"]})不可返库'}), 400
+    c.execute("UPDATE repair_plans SET status='待返库', updated_at=? WHERE id=?", (now(), rid))
+    c.commit(); c.close()
+    log(session['user_name'], '维修完成返库', f'{r["plan_no"]} 待返库验收(建议集体验收)')
+    return jsonify({'success': True})
+
+@app.route('/api/repairs/<int:rid>/detail')
+@login_required
+def api_repair_detail(rid):
+    c = db(); c.row_factory = sqlite3.Row
+    r = c.execute("SELECT * FROM repair_plans WHERE id=?", (rid,)).fetchone()
+    if not r: c.close(); return jsonify({'error': '维修计划不存在'}), 404
+    items = c.execute("SELECT * FROM repair_items WHERE plan_id=? ORDER BY id", (rid,)).fetchall()
+    quotes = c.execute("SELECT * FROM repair_quotes WHERE plan_id=? ORDER BY id", (rid,)).fetchall()
+    changes = c.execute("SELECT * FROM repair_changes WHERE plan_id=? ORDER BY id", (rid,)).fetchall()
+    c.close()
+    return jsonify({'plan': dict_row(r), 'items': [dict_row(i) for i in items],
+                    'quotes': [dict_row(q) for q in quotes], 'changes': [dict_row(ch) for ch in changes]})
+
+@app.route('/api/repairs/<int:rid>/void', methods=['POST'])
+@login_required
+def api_repair_void(rid):
+    c = db()
+    r = c.execute("SELECT * FROM repair_plans WHERE id=?", (rid,)).fetchone()
+    if not r: c.close(); return jsonify({'error': '维修计划不存在'}), 404
+    if r['status'] in ('已完成', '待返库'):
+        c.close(); return jsonify({'error': '该计划已进入返库/完成, 不可作废'}), 400
+    me = c.execute("SELECT * FROM users WHERE id=?", (session.get('user_id', 0),)).fetchone()
+    is_admin = me and (me['role'] == '系统管理员' or session.get('user_role') == '分管领导')
+    if not is_admin and r['requester'] and me and me['name'] != r['requester']:
+        c.close(); return jsonify({'error': '仅提交人或领导可作废'}), 403
+    c.execute("UPDATE repair_plans SET status='已作废', updated_at=? WHERE id=?", (now(), rid))
+    c.execute("UPDATE approval_instances SET status='rejected', comment='计划作废' WHERE biz_type='repair_plan' AND biz_id=? AND status IN ('pending','approved')", (rid,))
+    c.commit(); c.close()
+    log(session['user_name'], '作废维修计划', f'{r["plan_no"]}')
+    return jsonify({'success': True})
 
 @app.route('/api/requisitions/<int:rid>/void', methods=['POST'])
 @login_required
