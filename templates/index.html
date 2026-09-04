@@ -3675,6 +3675,7 @@ async function loadRepairs(){
     <td><b>${esc(x.device_name||'')}</b>${x.device_no?` <span style="font-size:8px;color:#888">编号:${esc(x.device_no)}</span>`:''}<div style="font-size:8px;color:#888;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.fault_desc||'')}</div></td>
     <td>${_rt}</td><td>¥${(x.quote_total||0).toFixed(0)}</td><td>${tag(x.status)}</td>${rejCell(x)}
     <td style="white-space:nowrap"><button class="lnk" onclick="showRepairDetail(${x.id})">详情</button>
+    <button class="lnk" style="color:var(--s)" onclick="window.open('/api/repairs/${x.id}/download','_blank')">⬇️下载</button>
     ${canOps&&(x.status=='草稿'||x.status=='定损驳回')?` <button class="lnk" style="color:#b45309" onclick="showRepairForm(${x.id})">✏️ 修改</button>`:''}
     ${canOps&&x.status=='草稿'?` <button class="lnk" style="color:var(--s);font-weight:600" onclick="submitRepair(${x.id})">📤 提交报修</button>`:''}
     ${canOps&&(x.status=='定损驳回'&&x.reject_count>0)?` <button class="lnk" style="color:var(--s);font-weight:600" onclick="submitRepair(${x.id})">📤 重新提交</button>`:''}
@@ -3696,6 +3697,7 @@ async function loadRepairs2(){
     <td><b>${esc(x.device_name||'')}</b><div style="font-size:8px;color:#888;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.fault_desc||'')}</div></td>
     <td>${_rt}</td><td>¥${(x.quote_total||0).toFixed(0)}</td><td>${tag(x.status)}</td>${rejCell(x)}
     <td style="white-space:nowrap"><button class="lnk" onclick="showRepairDetail(${x.id})">详情</button>
+    <button class="lnk" style="color:var(--s)" onclick="window.open('/api/repairs/${x.id}/download','_blank')">⬇️下载</button>
     ${canOps&&(x.status=='草稿'||x.status=='定损驳回')?` <button class="lnk" style="color:#b45309" onclick="showRepairForm(${x.id})">✏️ 修改</button>`:''}
     ${canOps&&x.status=='草稿'?` <button class="lnk" style="color:var(--s);font-weight:600" onclick="submitRepair(${x.id})">📤 提交报修</button>`:''}
     ${canOps&&(x.status=='定损驳回'&&x.reject_count>0)?` <button class="lnk" style="color:var(--s);font-weight:600" onclick="submitRepair(${x.id})">📤 重新提交</button>`:''}
@@ -3856,7 +3858,7 @@ async function showRepairDetail(rid){
   if(p.status=='待回厂验收'&&canLead)acts.push(['✅ 联合性能验收','rpAccept('+rid+')']);
   if(p.status=='验收通过'&&canLead)acts.push(['📦 处理(归还/回收入库)','rpHandle('+rid+')']);
   if(p.status=='待发票登记'&&canBuyer)acts.push(['🧾 登记维修发票','rpInvoice('+rid+')']);
-  foot=`<button class="btn btn-o" onclick="closeMod()">关闭</button>`+acts.map(a=>`<button class="btn btn-p btn-sm" onclick="${a[1]};closeMod()">${a[0]}</button>`).join('');
+  foot=`<button class="btn btn-o" onclick="closeMod()">关闭</button>`+`<button class="btn btn-o btn-sm" onclick="window.open('/api/repairs/${rid}/download','_blank')">⬇️ 下载维修单</button>`+acts.map(a=>`<button class="btn btn-p btn-sm" onclick="${a[1]};closeMod()">${a[0]}</button>`).join('');
   id('dmFooter').innerHTML=foot;
   id('detailModal').classList.add('show');
   window._rpChangeId=rid;

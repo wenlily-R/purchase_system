@@ -798,6 +798,12 @@ def init_db():
             ALTER TABLE repair_changes ADD COLUMN add_part TEXT DEFAULT '';      -- 新增配件
             ALTER TABLE repair_changes ADD COLUMN add_labor REAL DEFAULT 0;      -- 新增工时费
         """)
+    # V11.216 报价表补 配件费/工时费/质保/预计完工 列(幂等)
+    _rq = [r[1] for r in conn.execute("PRAGMA table_info(repair_quotes)").fetchall()]
+    for _col, _ddl in (('part_cost', 'REAL DEFAULT 0'), ('labor_cost', 'REAL DEFAULT 0'),
+                       ('warranty', "TEXT DEFAULT ''"), ('finish_date', "TEXT DEFAULT ''")):
+        if _col not in _rq:
+            conn.execute(f"ALTER TABLE repair_quotes ADD COLUMN {_col} {_ddl}")
     # ---- V11.196 工作台公告 ----
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS notices (
@@ -11002,12 +11008,14 @@ def api_repair_quote(rid):
         labor = float(it.get('labor_cost') or 0)  # 工时费
         p = float(it.get('price') or (part + labor))
         total += p
-        c.execute("INSERT INTO repair_quotes(plan_id,company,item_name,price,duration,status) VALUES(?,?,?,?,?,?)",
-                  (rid, company, it.get('item_name', '维修'), p, it.get('duration', ''), '报价'))
-    # 质保期限存 remark 拼接
-    _wf = json.dumps({'warranty': d.get('warranty', ''), 'finish': d.get('finish_date', '')}, ensure_ascii=False)
-    c.execute("UPDATE repair_plans SET repair_company=?, quote_total=?, finish_date=?, status='待比价', updated_at=? WHERE id=?",
-              (company, total, d.get('finish_date', ''), now(), rid))
+        # V11.216: 报价明细带 配件费/工时费/质保/完工期 落库
+        c.execute("INSERT INTO repair_quotes(plan_id,company,item_name,price,duration,status,part_cost,labor_cost,warranty,finish_date) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                  (rid, company, it.get('item_name', '维修'), p, it.get('duration', ''),
+                   '报价', part, labor, d.get('warranty', ''), d.get('finish_date', '')))
+    # V11.216: 报价阶段不改 quote_total(那是选中服务商后的落定金额, 多家报价会互相覆盖误导);
+    # 各家报价存 repair_quotes.price, 选商时才把选中家总价写入 quote_total
+    c.execute("UPDATE repair_plans SET repair_company=?, finish_date=?, status='待比价', updated_at=? WHERE id=?",
+              (company, d.get('finish_date', ''), now(), rid))
     # 累计所有服务商总价供选商比较
     c.commit(); c.close()
     log(session['user_name'], '录入维修服务商报价', f'{r["plan_no"]} {company} ¥{total:.2f}')
@@ -11027,10 +11035,13 @@ def api_repair_select_vendor(rid):
     if not company: c.close(); return jsonify({'error': '请选择服务商'}), 400
     q = c.execute("SELECT * FROM repair_quotes WHERE plan_id=? AND company=? ORDER BY id LIMIT 1", (rid, company)).fetchone()
     if not q: c.close(); return jsonify({'error': '该服务商尚无报价, 先录报价'}), 400
-    c.execute("UPDATE repair_plans SET vendor_selected=?, repair_company=?, status='已选服务商', updated_at=? WHERE id=?", (company, company, now(), rid))
+    # V11.216: 选商落定金额 = 选中服务商报价总价(该家可能多条明细)
+    _tot = c.execute("SELECT SUM(price) s FROM repair_quotes WHERE plan_id=? AND company=?", (rid, company)).fetchone()[0] or 0
+    c.execute("UPDATE repair_plans SET vendor_selected=?, repair_company=?, quote_total=?, status='已选服务商', updated_at=? WHERE id=?",
+              (company, company, float(_tot), now(), rid))
     c.commit(); c.close()
-    log(session['user_name'], '比价选定服务商', f'{r["plan_no"]} 选定:{company}')
-    return jsonify({'success': True})
+    log(session['user_name'], '比价选定服务商', f'{r["plan_no"]} 选定:{company} ¥{float(_tot):.0f}')
+    return jsonify({'success': True, 'total': float(_tot)})
 
 @app.route('/api/repairs/<int:rid>/entrust', methods=['POST'])
 @login_required
@@ -11333,6 +11344,108 @@ def api_repair_update(rid):
     c.commit(); c.close()
     log(session['user_name'], '修改维修报修单', f'{r["plan_no"]} {device}')
     return jsonify({'success': True})
+
+@app.route('/api/repairs/<int:rid>/download')
+@login_required
+def api_repair_download(rid):
+    """V11.216: 设备维修单导出 xlsx(报修信息/定损清单/报价/变更/验收/处理全记录) — 对齐采购申请下载能力"""
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+    conn = db()
+    rp = conn.execute("SELECT * FROM repair_plans WHERE id=?", (rid,)).fetchone()
+    if not rp:
+        conn.close(); return jsonify({'error': '维修单不存在'}), 404
+    rp = dict(rp)  # V11.216: Row无.get, 转dict
+    items = [dict(x) for x in conn.execute("SELECT * FROM repair_items WHERE plan_id=? ORDER BY id", (rid,)).fetchall()]
+    quotes = [dict(x) for x in conn.execute("SELECT * FROM repair_quotes WHERE plan_id=? ORDER BY id", (rid,)).fetchall()]
+    changes = [dict(x) for x in conn.execute("SELECT * FROM repair_changes WHERE plan_id=? ORDER BY id", (rid,)).fetchall()]
+    conn.close()
+    wb = Workbook(); ws = wb.active; ws.title = '设备维修单'
+    thin = Side(style='thin', color='999999')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    title_f = Font(bold=True, size=14)
+    head_f = Font(bold=True, size=10)
+    wrap = Alignment(vertical='center', wrap_text=True)
+    ws.merge_cells('A1:F1')
+    ws['A1'] = '设备维修单'
+    ws['A1'].font = title_f; ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
+    ws.row_dimensions[1].height = 28
+    ws.merge_cells('A2:F2')
+    ws['A2'] = f'编号: {rp["plan_no"]}    申请部门: {rp["dept"] or ""}    提报人: {rp["requester"] or ""}    提报时间: {str(rp["created_at"] or "")[:16]}    状态: {rp["status"]}'
+    ws['A2'].font = Font(size=9)
+    rows = []
+    rows.append(['故障设备名称', rp['device_name'] or '', '设备编号', rp['device_no'] or ''])
+    rows.append(['故障发生时间', str(rp['fault_time'] or '')[:16], '紧急等级', rp['urgency'] or ''])
+    rows.append(['初步故障判断', rp['init_judge'] or '', '预估维修费用', f"¥{float(rp['est_cost'] or 0):.0f}"])
+    rows.append(['故障现象描述', rp['fault_desc'] or '', '', ''])
+    rows.append(['定损意见', rp['damage_opinion'] or '', '定损类型', rp['repair_type'] or ''])
+    rows.append(['验收结果', f"{rp['accept_result'] or ''} {rp['accept_opinion'] or ''}", '验收后处理', rp['handle_type'] or ''])
+    rows.append(['发票号码', rp['invoice_no'] or '', '发票金额', f"¥{float(rp['invoice_amount'] or 0):.2f}" if 'invoice_amount' in rp.keys() and rp['invoice_amount'] else ''])
+    if rp.get('entrust_no'): rows.append(['维修委托单', rp['entrust_no'], '维修服务商', rp['vendor_selected'] or rp['repair_company'] or ''])
+    row_i = 4
+    for row in rows:
+        for c_i, v in enumerate(row):
+            cell = ws.cell(row=row_i, column=c_i + 1, value=v)
+            cell.border = border; cell.alignment = wrap
+            if c_i % 2 == 0: cell.font = head_f
+        ws.row_dimensions[row_i].height = 20
+        row_i += 1
+    # 定损清单表
+    row_i += 1
+    ws.merge_cells(start_row=row_i, start_column=1, end_row=row_i, end_column=6)
+    ws.cell(row=row_i, column=1, value='定损清单').font = head_f; row_i += 1
+    for c_i, h in enumerate(['部件/部位', '损坏说明', '单位', '单价', '', '']):
+        cell = ws.cell(row=row_i, column=c_i + 1, value=h); cell.font = head_f; cell.border = border
+    row_i += 1
+    if items:
+        for it in items:
+            vals = [it['part_name'], it.get('fault_note') or '', it.get('unit') or '', it.get('price') or '', '', '']
+            for c_i, v in enumerate(vals):
+                ws.cell(row=row_i, column=c_i + 1, value=v).border = border
+            row_i += 1
+    else:
+        ws.merge_cells(start_row=row_i, start_column=1, end_row=row_i, end_column=6)
+        ws.cell(row=row_i, column=1, value='（无）'); row_i += 1
+    # 服务商报价表
+    row_i += 1
+    ws.merge_cells(start_row=row_i, start_column=1, end_row=row_i, end_column=6)
+    ws.cell(row=row_i, column=1, value='服务商报价').font = head_f; row_i += 1
+    for c_i, h in enumerate(['服务商', '维修项目', '配件费', '工时费', '工期', '质保']):
+        cell = ws.cell(row=row_i, column=c_i + 1, value=h); cell.font = head_f; cell.border = border
+    row_i += 1
+    if quotes:
+        for q in quotes:
+            vals = [q['company'], q.get('item_name') or '维修', q.get('part_cost') or '', q.get('labor_cost') or '', q.get('duration') or '', q.get('warranty') or '']
+            for c_i, v in enumerate(vals):
+                ws.cell(row=row_i, column=c_i + 1, value=v).border = border
+            row_i += 1
+    else:
+        ws.merge_cells(start_row=row_i, start_column=1, end_row=row_i, end_column=6)
+        ws.cell(row=row_i, column=1, value='（暂无报价）'); row_i += 1
+    # 变更记录
+    if changes:
+        row_i += 1
+        ws.merge_cells(start_row=row_i, start_column=1, end_row=row_i, end_column=6)
+        ws.cell(row=row_i, column=1, value='维修变更记录').font = head_f; row_i += 1
+        for c_i, h in enumerate(['变更项目', '配件费', '工时费', '合计', '原因', '状态']):
+            cell = ws.cell(row=row_i, column=c_i + 1, value=h); cell.font = head_f; cell.border = border
+        row_i += 1
+        for ch in changes:
+            vals = [ch['add_item'], ch.get('add_part') or '', ch.get('add_labor') or '', ch.get('add_price') or '', ch.get('change_reason') or '', ch['status']]
+            for c_i, v in enumerate(vals):
+                ws.cell(row=row_i, column=c_i + 1, value=v).border = border
+            row_i += 1
+    row_i += 1
+    ws.merge_cells(start_row=row_i, start_column=1, end_row=row_i, end_column=6)
+    ws.cell(row=row_i, column=1, value=f'维修费合计: ¥{float(rp["quote_total"] or 0):.0f}    填报人: {session.get("user_name", "")}    打印时间: {now()[:16]}')
+    for col, w in zip('ABCDEF', [18, 26, 14, 14, 14, 14]):
+        ws.column_dimensions[col].width = w
+    bio = io.BytesIO(); wb.save(bio); bio.seek(0)
+    from flask import send_file
+    fname = f"设备维修单_{rp['plan_no']}.xlsx"
+    from urllib.parse import quote
+    return send_file(bio, as_attachment=True, download_name=fname, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 @app.route('/api/repairs/<int:rid>/withdraw', methods=['POST'])
 @login_required
