@@ -1758,14 +1758,14 @@ async function doSavePReq(asDraft,oid){
   if(r.success){alert(asDraft?'✅ 已存草稿（未提交审批，可稍后继续修改再提交）':'✅ 已保存修改并提交审批，进入审批流程');closeMod();loadPRequests();loadDashboard();loadApprovals&&loadApprovals()}
   else alert(r.error||'保存失败');
 }
-async function showPRequest(id){
+async function showPRequest(pid){
   // V11.150: 防连点(600ms内重复点击忽略) + 最新打开者优先(慢响应不覆盖新内容)
-  if(__guardOpen('pr:'+id))return;
+  if(__guardOpen('pr:'+pid))return;
   const my=++__dmSeq;
   // V11.140: 点击详情立即弹窗加载中, 数据到了再填充
-  showDetail('📝 采购申请 #'+id,'<div class="loading">加载中...</div>');
+  showDetail('📝 采购申请 #'+pid,'<div class="loading">加载中...</div>');
   let d;
-  try{d=await api(`/prequests/${id}`)}catch(e){if(my!==__dmSeq)return;id('dmBody').innerHTML='<div style="padding:20px;text-align:center;color:#c0392b;font-size:11px">⚠️ 加载失败(网络较慢)，请点击重试 <button class="btn btn-p btn-sm" onclick="showPRequest('+id+')">重试</button></div>';return}
+  try{d=await api(`/prequests/${pid}`)}catch(e){if(my!==__dmSeq)return;id('dmBody').innerHTML='<div style="padding:20px;text-align:center;color:#c0392b;font-size:11px">⚠️ 加载失败(网络较慢)，请点击重试 <button class="btn btn-p btn-sm" onclick="showPRequest('+pid+')">重试</button></div>';return}
   const r=d.request,items=d.items,approvals=d.approvals;
   window.__rejItems=[];  // V11.185: 本单被驳回条目集合(统一字符串比较)
   try{window.__rejItems=(r.rejected_items||'')=='__all__'?items.map(x=>String(x.id)):(JSON.parse(r.rejected_items||'[]')||[]).map(String)}catch(e){}
@@ -1793,8 +1793,8 @@ async function showPRequest(id){
     ${((r.status=='已驳回'||(r.status=='草稿'&&(r.reject_count||0)>0))&&(ME.role=='系统管理员'||ME.name==r.requester))?`<button class="btn btn-p btn-sm" style="background:#16a34a;border-color:#16a34a" onclick="resubmitDoc('purchase_request',${r.id},'申请单','${esc(r.req_no)}')">🔄 再次提交审批</button>`:''}`;
   if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
   showDetail(`申请单 ${r.req_no}`,h+'<div id="approvalFlowBox"></div><div id="rejectLogsBox"></div>',btns);
-  loadApprovalFlow('purchase_request',id,'approvalFlowBox');
-  loadRejectLogs('purchase_request',id,'rejectLogsBox');
+  loadApprovalFlow('purchase_request',pid,'approvalFlowBox');
+  loadRejectLogs('purchase_request',pid,'rejectLogsBox');
 }
 
 // ── 三方询价 (V11.0) ──
@@ -1872,14 +1872,14 @@ async function createInquiry(){
   if(r.success){alert(`✅ 询价单 ${r.inq_no} 已发起，请将报价链接发给各供应商`);closeMod();loadInquiries()}
   else alert(r.error||'发起失败');
 }
-async function showInquiry(id){
+async function showInquiry(qid){
   // V11.150: 防连点 + 最新打开者优先
-  if(__guardOpen('inq:'+id))return;
+  if(__guardOpen('inq:'+qid))return;
   const my=++__dmSeq;
   // V11.140: 点击详情立即弹窗显示加载中(隧道慢时不干等, 用户马上看到反馈)
-  showDetail('🔍 询价单 #'+id,'<div class="loading">加载中...</div>');
+  showDetail('🔍 询价单 #'+qid,'<div class="loading">加载中...</div>');
   let d;
-  try{d=await api(`/inquiries/${id}`)}catch(e){if(my!==__dmSeq)return;id('dmBody').innerHTML='<div style="padding:20px;text-align:center;color:#c0392b;font-size:11px">⚠️ 加载失败(网络较慢)，请点击重试 <button class="btn btn-p btn-sm" onclick="showInquiry('+id+')">重试</button></div>';return}
+  try{d=await api(`/inquiries/${qid}`)}catch(e){if(my!==__dmSeq)return;id('dmBody').innerHTML='<div style="padding:20px;text-align:center;color:#c0392b;font-size:11px">⚠️ 加载失败(网络较慢)，请点击重试 <button class="btn btn-p btn-sm" onclick="showInquiry('+qid+')">重试</button></div>';return}
   window.__inqSup = d.suppliers||[];  // V11.180: 议价弹窗用(读厂家原始/调整数据)
   const r=d.request||{};
   let h=`<div class="c2"><div><dt>询价单号</dt><dd><b>${esc(d.inq_no)}</b></dd><dt>申请单号</dt><dd>${esc(r.req_no||('#'+d.req_id))}</dd><dt>部门</dt><dd>${esc(r.dept||'')}</dd><dt>状态</dt><dd>${tag(d.status)}${d.deadline?` <span style="font-size:9px;color:${d.locked?'#b08900':'#16a34a'}">⏰截止${esc(d.deadline)}${d.locked?' 🔒未开标':' 已开标'}</span>`:''}</dd></div>
@@ -2212,14 +2212,14 @@ async function loadOrders(){
       ${(r.status=='待审批'||r.status=='已通过'||r.status=='审批通过')?` <button class="lnk" style="color:var(--o)" onclick="withdrawDoc('purchase_order',${r.id},'采购订单')">↩️撤回</button>`:''}${(r.status=='待审批'||r.status=='已驳回'||r.status=='草稿')?` <button class="lnk" style="color:var(--d)" onclick="delDoc('purchase_order',${r.id},'采购订单')">🗑️删除</button>`:''}</td>`;
     });
 }
-async function showOrder(id){
+async function showOrder(ordid){
   // V11.150: 防连点 + 最新打开者优先
-  if(__guardOpen('ord:'+id))return;
+  if(__guardOpen('ord:'+ordid))return;
   const my=++__dmSeq;
   // V11.140: 点击详情立即弹窗加载中, 数据到了再填充
-  showDetail('📋 订单 #'+id,'<div class="loading">加载中...</div>');
+  showDetail('📋 订单 #'+ordid,'<div class="loading">加载中...</div>');
   let d;
-  try{d=await api(`/orders/${id}`)}catch(e){if(my!==__dmSeq)return;id('dmBody').innerHTML='<div style="padding:20px;text-align:center;color:#c0392b;font-size:11px">⚠️ 加载失败(网络较慢)，请点击重试 <button class="btn btn-p btn-sm" onclick="showOrder('+id+')">重试</button></div>';return}
+  try{d=await api(`/orders/${ordid}`)}catch(e){if(my!==__dmSeq)return;id('dmBody').innerHTML='<div style="padding:20px;text-align:center;color:#c0392b;font-size:11px">⚠️ 加载失败(网络较慢)，请点击重试 <button class="btn btn-p btn-sm" onclick="showOrder('+ordid+')">重试</button></div>';return}
   const o=d.order;
   let h=`<div class="c2"><div><dt>单号</dt><dd><b>${esc(o.order_no)}</b></dd><dt>物资</dt><dd>${esc(o.item_name)}</dd><dt>数量</dt><dd>${o.quantity}${esc(o.unit)}</dd><dt>金额</dt><dd>¥${(o.total_amount||0).toFixed(0)}</dd></div>
     <div><dt>供应商</dt><dd>${esc(o.supplier)}</dd><dt>负责人</dt><dd>${esc(o.owner)}</dd><dt>交易模式</dt><dd><span class="tag ${o.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(o.trade_mode||'货到付款')}</span></dd><dt>状态</dt><dd>${tag(o.status)}</dd></div></div>`;
@@ -2260,23 +2260,23 @@ async function showOrder(id){
       </div>
       <div style="font-size:9px;font-weight:bold;color:#e65100;margin:5px 0 2px">🟠 暂估入库批次（${estB.length}）</div>${rowsOf(estB)}
       <div style="font-size:9px;font-weight:bold;color:#2e7d32;margin:5px 0 2px">🟢 正式入库批次（${fmB.length}）</div>${rowsOf(fmB)}
-      ${(openSt&&!doneAll&&isWarehouseB)?`<div style="margin-top:6px"><button class="btn btn-p btn-sm" onclick="showRcvBatchForm(${id})">➕ 新增验收批次</button> <span style="font-size:8px;color:#888">当前待验收待定 ${fmtN(st.pending)} 件，可继续分批验收</span></div>`:(doneAll?'<div style="font-size:8px;color:#2e7d32;margin-top:4px">✅ 全部数量已验收完成，新增验收入口已关闭</div>':'')}
+      ${(openSt&&!doneAll&&isWarehouseB)?`<div style="margin-top:6px"><button class="btn btn-p btn-sm" onclick="showRcvBatchForm(${ordid})">➕ 新增验收批次</button> <span style="font-size:8px;color:#888">当前待验收待定 ${fmtN(st.pending)} 件，可继续分批验收</span></div>`:(doneAll?'<div style="font-size:8px;color:#2e7d32;margin-top:4px">✅ 全部数量已验收完成，新增验收入口已关闭</div>':'')}
     </div>`;
   }
   let btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button>
-    <button class="btn btn-p btn-sm" onclick="downloadOrder(${id})">⬇️ 下载采购订单</button>
+    <button class="btn btn-p btn-sm" onclick="downloadOrder(${ordid})">⬇️ 下载采购订单</button>
     <button class="btn btn-w btn-sm" onclick="printDoc('订单 ${esc(o.order_no)}','${esc(o.order_no)} | ${esc(o.item_name)} | ${esc(o.supplier)} | ¥${(o.total_amount||0).toFixed(0)} | ${esc(o.status)}')">🖨 打印</button>`;
   if(['待审批','审批通过','已签合同','已通过'].includes(o.status)&&!o.has_contract)
-    btns+=`<button class="btn btn-p btn-sm" onclick="genContract(${id})">📄 生成采购合同</button>`;
+    btns+=`<button class="btn btn-p btn-sm" onclick="genContract(${ordid})">📄 生成采购合同</button>`;
   if(['待审批','审批通过'].includes(o.status))
-    btns+=`<button class="btn btn-d btn-sm" onclick="voidDoc('/api/orders/${id}/void','订单')">作废</button>`;
-  btns+=`<button class="btn btn-o btn-sm" style="color:#e67e22;border-color:#e67e22" onclick="urgentRemind('purchase_order',${id})">⏰ 钉钉加急提醒</button>`;
+    btns+=`<button class="btn btn-d btn-sm" onclick="voidDoc('/api/orders/${ordid}/void','订单')">作废</button>`;
+  btns+=`<button class="btn btn-o btn-sm" style="color:#e67e22;border-color:#e67e22" onclick="urgentRemind('purchase_order',${ordid})">⏰ 钉钉加急提醒</button>`;
   if((o.status=='已驳回'||(o.status=='草稿'&&(o.reject_count||0)>0))&&(ME.role=='系统管理员'||ME.name==o.requester))
-    btns+=`<button class="btn btn-p btn-sm" style="background:#16a34a;border-color:#16a34a" onclick="resubmitDoc('purchase_order',${id},'订单','${esc(o.order_no)}')">🔄 再次提交审批</button>`;
+    btns+=`<button class="btn btn-p btn-sm" style="background:#16a34a;border-color:#16a34a" onclick="resubmitDoc('purchase_order',${ordid},'订单','${esc(o.order_no)}')">🔄 再次提交审批</button>`;
   if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
   showDetail(`订单 ${o.order_no}`,h+'<div id="approvalFlowBox"></div><div id="rejectLogsBox"></div>',btns);
-  loadApprovalFlow('purchase_order',id,'approvalFlowBox');
-  loadRejectLogs('purchase_order',id,'rejectLogsBox');
+  loadApprovalFlow('purchase_order',ordid,'approvalFlowBox');
+  loadRejectLogs('purchase_order',ordid,'rejectLogsBox');
 }
 async function updateItemStatus(iid, newStatus){
   // V11.150: 防连点
@@ -3475,8 +3475,8 @@ async function loadSuppliers(){const s=await api('/suppliers');id('supplierGrid'
   <div style="font-size:8px;color:#999;line-height:1.5">类别:${esc(x.category||'-')}<br>开户行:${esc(x.bank||'-')}<br>账号:${esc(x.account||'-')}</div>
   <button class="lnk" style="text-align:left" onclick="showSupDetail(${x.id})">查看/编辑</button>
 </div>`).join('')}
-async function showSupDetail(id){
-  const s=(await api('/suppliers')).find(x=>x.id===id);
+async function showSupDetail(sid){
+  const s=(await api('/suppliers')).find(x=>x.id===sid);
   id('dmTitle').textContent='🏢 供应商档案';
   id('dmBody').innerHTML=`
     <div class="fr"><div class="fg"><label class="fl2">名称</label><input class="fc" id="sfName" value="${esc(s.name)}"></div>
@@ -3489,7 +3489,7 @@ async function showSupDetail(id){
     <div class="fg"><label class="fl2">评级</label><input class="fc" id="sfRating" type="number" step="0.1" value="${s.rating||4}"></div></div>`;
   id('detailModal').classList.add('show');
   id('dmFooter').innerHTML=ME.can_config?
-    `<button class="btn btn-o" onclick="closeMod()">关闭</button><button class="btn btn-p" onclick="doSupSave(${id})">保存</button>`
+    `<button class="btn btn-o" onclick="closeMod()">关闭</button><button class="btn btn-p" onclick="doSupSave(${sid})">保存</button>`
     :`<button class="btn btn-o" onclick="closeMod()">关闭</button>`;
 }
 function showSupForm(){
