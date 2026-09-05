@@ -18,15 +18,24 @@
 - **后台进程纪律**：守护进程（app_watchdog/tunnel_guard）必须用独立后台方式启动，**绝不能挂在长 CLI 会话里**（2026-08-24 烧钱事故：绑会话 6 天、2080 次 API 调用、费用 63 元）。长会话不用就退出。
 - **中文交流**：用户是中文/拼音输入，回复用简体中文，专业概念用大白话+打比方。
 
-## 三、系统状态（2026-08-24 确认）
+## 三、系统状态（2026-09-05 双机对齐确认）
 
-- 路径：`/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system`（git 根）
+- 双机路径：Mac(生产) `/Users/a0/Desktop/正成能源/01_系统程序/采购系统程序/purchase_system`；Windows(开发) `C:\Users\35322\Desktop\purchase_system`
 - 前端单文件 `templates/index.html`（HTML/CSS/JS 同文件），后端 `app.py`，venv `.venv/bin/python`
-- 版本：V11.68（月结汇总）；当前模型：xgxg 分身已切 Agnes AI（agnes-2.5-flash, custom provider）
+- 版本：V11.219（双机已对齐 GitHub main=fa4a6cd；旧版备份分支 remote-old-backup 勿删）；当前模型：xgxg 分身已切 Agnes AI（agnes-2.5-flash, custom provider）
 - 菜单顺序约定：采购管理 = 采购申请 → 三方询价 → 采购订单 → 合同管理 → 供应商（三方询价在采购订单上方，勿改）
 - 权限方案：界面统一（业务菜单全显示+无权限页面提示），后端数据过滤兜底，系统设置仅管理员
 - 进程：Flask 用 `lsof -i :5899` 查 PID，重启按 PID 精准杀（勿用 pkill 模式匹配，会误杀新进程）
-- 数据库 `data/purchase.db`，新列必须 ALTER TABLE ADD COLUMN
+
+## 三之补、表结构迁移纪律（2026-09-05 起强制，双机都必须遵守）
+
+数据库 `data/purchase.db` 不进 git（各机独立），代码才同步。**改表结构 = 必须写迁移文件**，只在自己库手工 ALTER 会让另一台代码跑起来报错：
+
+1. 谁改了表结构（新表/新列/改列），在 `migrations/` 下新建 `YYYYMMDD_说明.sql` 写 ALTER/CREATE 语句，随代码一起 commit + push
+2. 另一台 `git pull` 后执行 `python migrate_db.py`（Mac 用 `python3`），自动应用未执行的迁移（有备份+去重记录，可重复跑）
+3. 迁移文件只写结构变更，不写业务数据；加列用 `ALTER TABLE 表名 ADD COLUMN 列名 类型`
+4. 判断代码是否依赖新结构：pull 后先跑 migrate_db.py 再重启系统，顺序不能反
+5. 忘了写迁移文件的信号：系统报 "no such column/table" —— 立即补迁移文件，别绕道改代码
 
 ## 四、用户上下文（新会话必知）
 
