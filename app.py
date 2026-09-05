@@ -516,6 +516,17 @@ def init_db():
         if conn.execute("SELECT COUNT(*) FROM approval_flow_config WHERE biz_type=?", (_biz,)).fetchone()[0] == 0:
             conn.execute(f"""INSERT INTO approval_flow_config(biz_type,level_no,role,min_amount,max_amount,label) VALUES
                 ('{_biz}',1,'部门负责人',0,9999999,'入库/出库-部门审批')""")
+    # V11.175: 驳回历史表必须先于下方补列循环创建(否则老库缺表时 ALTER 报 no such table, 新库/迁移库无法启动)
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS approval_reject_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            biz_type TEXT, biz_id INTEGER,
+            approver TEXT, approver_id INTEGER DEFAULT 0,
+            comment TEXT, processed_at TEXT,
+            source TEXT DEFAULT 'system',
+            created_at TEXT DEFAULT (datetime('now','localtime')));
+        CREATE INDEX IF NOT EXISTS idx_reject_logs ON approval_reject_logs(biz_type, biz_id);
+    """)
     # ---- V4.4 需求文档补充: 交易模式/对账/合并开票/强制关联(幂等迁移) ----
     for _tbl, _col, _ddl in [
         # ---- V55 需求变更列(全部幂等) ----
