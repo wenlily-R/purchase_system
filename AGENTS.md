@@ -37,6 +37,22 @@
 4. 判断代码是否依赖新结构：pull 后先跑 migrate_db.py 再重启系统，顺序不能反
 5. 忘了写迁移文件的信号：系统报 "no such column/table" —— 立即补迁移文件，别绕道改代码
 
+## 三之补2、发版到公网链接（2026-09-05 用户确认，温温在 Windows 端开发）
+
+- **统一公网链接（唯一对外地址）**：`http://erp.firmamental.work:3388/`（生产=邢果 Mac，稳定域名；lhr.life / vicp.fun 等动态地址只作应急，不作为日常发版目标）
+- 用户预期：Windows 端改完功能 → 走完下面流程 → **用户浏览器刷新 `http://erp.firmamental.work:3388/` 即看到新功能**（代码层）
+- Windows 端标准动作（ran 分身执行）：改代码 → 验证（check_code.py + 实测）→ git commit + push → 生成下方「Mac 执行指令」给用户转发（ran 不能直连 Mac Hermes，靠用户转述）
+- **给 Mac 的标准发版指令**（用户转发给 Mac 的 xpgx 分身）：
+
+---
+cd <代码目录>
+git pull origin main
+python3 migrate_db.py
+ps aux | grep -E "watchdog|app.py" | grep -v grep    # 服务在跑则确认已重启到最新代码; 没自动拉就手动重启 app.py
+curl -s http://127.0.0.1:5899/ | head -c 120         # 本机服务正常
+---
+- 注意：表结构类改动依赖迁移纪律（migrate_db.py 自动应用 migrations/ 下的 .sql）；纯代码改动不需要迁移
+
 ## 四、用户上下文（新会话必知）
 
 - 用户是采购系统负责人温丽（admin 账号），非技术背景，专业术语要讲白话
