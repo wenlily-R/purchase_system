@@ -36,3 +36,7 @@ app_watchdog2.log
 
 # Mac误提交的测试凭证附件(冒号文件名Windows无法检出)
 uploads/voucher_*.xlsx
+
+# 运行日志/隧道地址(不入库, 防自动部署误判本地改动)
+data/app_watchdog.log
+data/serveo_url.txt
