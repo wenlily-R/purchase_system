@@ -33,3 +33,6 @@ data/watchdog.py
 # V11.126: 运行日志
 app_run*.log
 app_watchdog2.log
+
+# Mac误提交的测试凭证附件(冒号文件名Windows无法检出)
+uploads/voucher_*.xlsx
