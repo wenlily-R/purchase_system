@@ -1062,9 +1062,11 @@ function buildNav(){
     {label:'📦 库房',page:'receivings'},
     {label:'💰 财务',page:'payments'},
     {label:'📈 报表',page:'reports'},
-  ];
+        {label:'📊 数据看板',href:'/dashboard'},
+      ];
   let navHtml='';
   navCats.forEach(c=>{
+    if(c.href){navHtml+=`<a href="${c.href}" title="数据分析统计大屏" style="cursor:pointer">${c.label}</a>`;return}
     navHtml+=`<a onclick="sw('${c.page}')"${c.page=='approvals'?' class="appr-hl" title="待我审批"':''}>${c.label}${c.badge?`<span class="ab" id="navApprBadge"></span>`:''}</a>`;
   });
   id('topnav').innerHTML=navHtml;

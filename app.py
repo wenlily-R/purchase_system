@@ -11973,6 +11973,509 @@ def login_page():
     return resp
 
 # ============================================================
+# V11.220 数据看板(分析统计大屏) — 只读聚合, 不动物资采购/维修/库存等任何业务逻辑
+# 数据源=现有业务表实时读取; 新增无业务表(仅复用已有); 权限按角色分级(全量/域/仅自己)
+# ============================================================
+_DASH_LIVE = {'草稿', '已驳回', '已作废', '已撤销', '作废'}          # 统计排除的无效态
+_DASH_FULL_ROLES = ('系统管理员', '分管领导', '总经理', '财务', '采购员')
+
+def _dash_scope():
+    """看板数据域: full=全量(管理/领导/财务/采购) / own=仅自己发起的(普通员工)"""
+    r = session.get('user_role', '员工')
+    if r in _DASH_FULL_ROLES:
+        return 'full'
+    return 'own'
+
+def _dash_filters(c, alias, year=None, supplier=None, dept=None, time_range=None):
+    """按看板顶部筛选拼 WHERE; 返回 (sql片段, 参数list). alias=单据时间列所在表别名, 时间字段固定 created_at"""
+    conds, ps = [], []
+    if year:
+        conds.append(f"substr({alias}.created_at,1,4)=?")
+        ps.append(str(year))
+    if supplier:
+        conds.append(f"{alias}.supplier=?")
+        ps.append(supplier)
+    if dept:
+        conds.append(f"{alias}.dept=?")
+        ps.append(dept)
+    if time_range:
+        conds.append(f"{alias}.created_at>=?")
+        ps.append(time_range)
+    return (' AND '.join(conds), ps) if conds else ('1=1', [])
+
+def _dash_month_keys(year):
+    return ['%s-%02d' % (year, m) for m in range(1, 13)]
+
+def _dash_scope_own(c, alias, user_name, user_id):
+    return f"({alias}.requester=? OR {alias}.requester_id=?)", [user_name, user_id]
+
+@app.route('/api/dashboard/meta')
+@login_required
+def api_dashboard_meta():
+    """筛选下拉: 年份/供应商/物料类别/部门/仓库 + 权限提示"""
+    c = db()
+    yrs = [r[0] for r in c.execute("SELECT DISTINCT substr(created_at,1,4) y FROM purchase_orders WHERE created_at!='' ORDER BY y DESC")]
+    if not yrs:
+        yrs = [str(datetime.date.today().year)]
+    sups = [r[0] for r in c.execute("SELECT DISTINCT supplier FROM purchase_orders WHERE supplier!='' ORDER BY supplier")]
+    cats = [r[0] for r in c.execute("SELECT DISTINCT category FROM purchase_orders WHERE category!='' ORDER BY category")]
+    deps = [r[0] for r in c.execute("SELECT DISTINCT dept FROM purchase_requests WHERE dept!='' ORDER BY dept")]
+    whs = [r[0] for r in c.execute("SELECT DISTINCT warehouse FROM inventory WHERE warehouse!='' ORDER BY warehouse")]
+    c.close()
+    return jsonify({'years': yrs, 'suppliers': sups, 'categories': cats, 'departments': deps,
+                    'warehouses': whs, 'scope': _dash_scope(),
+                    'role': session.get('user_role', '')})
+
+@app.route('/api/dashboard/overview')
+@login_required
+def api_dashboard_overview():
+    """Tab1 经营总览: 6指标卡 + 近5年柱线对比 + 本年月度面积趋势 + 4组明细"""
+    y = int(request.args.get('year') or datetime.date.today().year)
+    sup = request.args.get('supplier') or ''
+    c = db()
+    own = _dash_scope() == 'own'
+    scope_sql = scope_ord = scope_con = ''
+    if own:
+        # 各表人员列不同: 申请/维修单有 requester_id; 订单表只有 owner_id; 合同表无人员列(经订单EXISTS)
+        scope_sql = " AND (requester=? OR requester_id=?)"
+        scope_ord = " AND (requester=? OR owner_id=?)"
+        scope_con = " AND EXISTS(SELECT 1 FROM purchase_orders po WHERE po.id=c.order_id AND (po.requester=? OR po.owner_id=?))"
+        own_ps = [session.get('user_name', ''), session.get('user_id', 0)]
+    else:
+        own_ps = []
+
+    def q(sql, ps=()):
+        return c.execute(sql, ps).fetchall()
+
+    # --- 核心指标 ---
+    # 本年采购总额/订单数(生效订单)
+    yyyy = str(y)
+    pre = str(y - 1)
+    base = "SELECT COALESCE(SUM(total_amount),0) a, COUNT(*) n FROM purchase_orders WHERE status NOT IN ('草稿','已驳回','已作废') AND substr(created_at,1,4)=?" + (scope_sql if False else '')
+    # 订单金额/数量: 本年+去年(同比)
+    this_o = q("SELECT COALESCE(SUM(total_amount),0), COUNT(*) FROM purchase_orders WHERE status NOT IN ('草稿','已驳回','已作废') AND substr(created_at,1,4)=? AND (?='' OR supplier=?)" + (scope_ord if own else ''), (yyyy, sup, sup) + (tuple(own_ps) if own else ()))[0]
+    last_o = q("SELECT COALESCE(SUM(total_amount),0), COUNT(*) FROM purchase_orders WHERE status NOT IN ('草稿','已驳回','已作废') AND substr(created_at,1,4)=? AND (?='' OR supplier=?)" + (scope_ord if own else ''), (pre, sup, sup) + (tuple(own_ps) if own else ()))[0]
+    # 平均单价(本年)
+    avg_price = (this_o[0] / this_o[1]) if this_o[1] else 0
+    avg_last = (last_o[0] / last_o[1]) if last_o[1] else 0
+    # 应付余额: 合同金额-已付款(全部在账)
+    pay_total = q("SELECT COALESCE(SUM(amount),0) FROM payment_requests WHERE status NOT IN ('草稿','已驳回','已作废')")[0][0]
+    con_total = q("SELECT COALESCE(SUM(amount),0) FROM contracts WHERE status NOT IN ('已驳回','已作废')")[0][0]
+    ap_bal = con_total - pay_total
+    # 库存金额(现库存)
+    inv_val = q("SELECT COALESCE(SUM(quantity*price),0) FROM inventory")[0][0]
+    # 维修费用(本年): 外委用 invoice_amount||quote_total||est_cost
+    repair_amt = q("SELECT COALESCE(SUM(CASE WHEN invoice_amount>0 THEN invoice_amount WHEN quote_total>0 THEN quote_total ELSE est_cost END),0) FROM repair_plans WHERE status NOT IN ('草稿','已驳回','已作废') AND substr(created_at,1,4)=?" + (scope_sql if own else ''), (yyyy,) + (tuple(own_ps) if own else ()))[0][0]
+    repair_amt_last = q("SELECT COALESCE(SUM(CASE WHEN invoice_amount>0 THEN invoice_amount WHEN quote_total>0 THEN quote_total ELSE est_cost END),0) FROM repair_plans WHERE status NOT IN ('草稿','已驳回','已作废') AND substr(created_at,1,4)=?" + (scope_sql if own else ''), (pre,) + (tuple(own_ps) if own else ()))[0][0]
+
+    def yoy(cur, last):
+        if last and last > 0:
+            return round((cur - last) / last * 100, 1)
+        return None
+
+    cards = [
+        {'k': '本年采购总额', 'v': round(this_o[0] / 10000, 2), 'unit': '万元', 'cmp': yoy(this_o[0], last_o[0]), 'cmp_label': '同比'},
+        {'k': '采购订单总数', 'v': this_o[1], 'unit': '笔', 'cmp': yoy(this_o[1], last_o[1]), 'cmp_label': '同比'},
+        {'k': '平均采购单价', 'v': round(avg_price, 2), 'unit': '元/笔', 'cmp': yoy(avg_last - avg_price, avg_last) if avg_last else None, 'cmp_label': '降本'},
+        {'k': '应付账款余额', 'v': round(ap_bal / 10000, 2), 'unit': '万元', 'cmp': None, 'cmp_label': '在账'},
+        {'k': '库存总金额', 'v': round(inv_val / 10000, 2), 'unit': '万元', 'cmp': None, 'cmp_label': '现值'},
+        {'k': '维修费用总额', 'v': round(repair_amt / 10000, 2), 'unit': '万元', 'cmp': yoy(repair_amt, repair_amt_last), 'cmp_label': '同比'},
+    ]
+    # --- 近5年 采购金额+降本 ---
+    years5 = []
+    for yy in range(y - 4, y + 1):
+        o = q("SELECT COALESCE(SUM(total_amount),0) FROM purchase_orders WHERE status NOT IN ('草稿','已驳回','已作废') AND substr(created_at,1,4)=?" + (scope_ord if own else ''), (str(yy),) + (tuple(own_ps) if own else ()))[0][0]
+        rq = q("SELECT COALESCE(SUM(total_estimated),0) FROM purchase_requests WHERE status NOT IN ('草稿','已驳回','已作废','已撤销') AND substr(created_at,1,4)=?" + (scope_sql if own else ''), (str(yy),) + (tuple(own_ps) if own else ()))[0][0]
+        years5.append({'year': yy, 'amt': round(o / 10000, 2), 'save': round(max(rq - o, 0) / 10000, 2)})
+    # --- 本年月度采购趋势(金额) ---
+    mrows = q("SELECT substr(created_at,6,2) m, COALESCE(SUM(total_amount),0) a FROM purchase_orders WHERE status NOT IN ('草稿','已驳回','已作废') AND substr(created_at,1,4)=? AND (?='' OR supplier=?)" + (scope_ord if own else '') + " GROUP BY m", (yyyy, sup, sup) + (tuple(own_ps) if own else ()))
+    mdict = {r[0]: round(r[1] / 10000, 2) for r in mrows}
+    months = [mdict.get(m, 0) for m in ['%02d' % i for i in range(1, 13)]]
+    # --- 明细 ---
+    scope_d = scope_sql if own else ''     # 申请/维修表域过滤
+    scope_do = scope_ord if own else ''    # 订单表域过滤
+    scope_dc = scope_con if own else ''    # 合同表域过滤(经订单EXISTS)
+    scope_ps = own_ps if own else []
+    lim = ' LIMIT 200'
+    mat_drop = q("SELECT pr.id, pr.req_no, ri.item_name, ri.spec, pr.dept, pr.total_estimated FROM purchase_requests pr LEFT JOIN request_items ri ON ri.req_id=pr.id WHERE pr.status NOT IN ('草稿','已驳回','已作废') AND ri.id IS NOT NULL" + scope_d + lim, tuple(scope_ps))
+    sup_rank = q("SELECT supplier, COALESCE(SUM(total_amount),0) amt, COUNT(*) n FROM purchase_orders WHERE status NOT IN ('草稿','已驳回','已作废')" + scope_do + " GROUP BY supplier ORDER BY amt DESC LIMIT 10", tuple(scope_ps))
+    ap_rows = q("SELECT contract_no, supplier, amount, COALESCE((SELECT SUM(amount) FROM payment_requests p WHERE p.contract_id=c.id AND p.status NOT IN ('草稿','已驳回','已作废')),0) paid FROM contracts c WHERE status NOT IN ('已驳回','已作废')" + scope_dc + " ORDER BY amount DESC" + lim, tuple(scope_ps))
+    c.close()
+    return jsonify({'cards': cards, 'years5': years5, 'months': months, 'labels_m': ['%d月' % i for i in range(1, 13)],
+                    'tables': {
+                        'material_drop': [dict_row({'req_no': r[1], 'item_name': r[2], 'spec': r[3], 'dept': r[4], 'est': r[5]}) for r in mat_drop],
+                        'supplier_rank': [dict_row({'supplier': r[0], 'amt': r[1], 'orders': r[2]}) for r in sup_rank],
+                        'ap_detail': [dict_row({'contract_no': r[0], 'supplier': r[1], 'amount': r[2], 'paid': r[3]}) for r in ap_rows],
+                    }})
+
+
+@app.route('/api/dashboard/purchase')
+@login_required
+def api_dashboard_purchase():
+    """Tab2 采购分析: 6指标 + 申请vs订单双柱 + 类别占比环 + 供应商TOP10横柱 + 3明细"""
+    y = int(request.args.get('year') or datetime.date.today().year)
+    sup = request.args.get('supplier') or ''
+    cat = request.args.get('category') or ''
+    c = db()
+    own = _dash_scope() == 'own'
+    scope_d = scope_ord = scope_inq = scope_inqa = ''
+    scope_ps = []
+    if own:
+        scope_d = " AND (requester=? OR requester_id=?)"   # 申请单表
+        scope_ord = " AND (requester=? OR owner_id=?)"     # 订单表(无requester_id)
+        scope_inq = " AND created_by=?"                    # 询价表(created_by存姓名)
+        scope_inqa = " AND i.created_by=?"                 # 询价表带别名
+        scope_ps = [session.get('user_name', ''), session.get('user_id', 0)]
+    yyyy = str(y)
+    supf = " AND (?='' OR supplier=?)"
+    sups_ps = [sup, sup]
+    catf = " AND (?='' OR category=?)"
+    cats_ps = [cat, cat]
+    iq_name = session.get('user_name', '') if own else ''
+
+    # 指标
+    rq_n = c.execute("SELECT COUNT(*), COALESCE(SUM(total_estimated),0) FROM purchase_requests WHERE status NOT IN ('草稿','已驳回','已作废','已撤销') AND substr(created_at,1,4)=?" + scope_d, (yyyy,) + tuple(scope_ps)).fetchone()
+    od_n = c.execute("SELECT COUNT(*), COALESCE(SUM(total_amount),0) FROM purchase_orders WHERE status NOT IN ('草稿','已驳回','已作废') AND substr(created_at,1,4)=?" + supf + scope_ord, (yyyy,) + tuple(sups_ps) + tuple(scope_ps)).fetchone()
+    inq_n = c.execute("SELECT COUNT(*) FROM inquiries WHERE substr(created_at,1,4)=?" + scope_inq, (yyyy,) + ((iq_name,) if own else ())).fetchone()[0]
+    # 询价节约: Σ(选中供应商对应申请预算-成交价) 简化=申请预算总额-订单总额(该年, 有询价来源)
+    save = max(rq_n[1] - od_n[1], 0)
+    cards = [
+        {'k': '采购申请总数', 'v': rq_n[0], 'unit': '笔', 'cmp': None, 'cmp_label': '本年'},
+        {'k': '采购申请总金额', 'v': round(rq_n[1] / 10000, 2), 'unit': '万元', 'cmp': None, 'cmp_label': '本年'},
+        {'k': '采购订单总数', 'v': od_n[0], 'unit': '笔', 'cmp': None, 'cmp_label': '本年'},
+        {'k': '采购订单总金额', 'v': round(od_n[1] / 10000, 2), 'unit': '万元', 'cmp': None, 'cmp_label': '本年'},
+        {'k': '询价比价次数', 'v': inq_n, 'unit': '次', 'cmp': None, 'cmp_label': '本年'},
+        {'k': '采购节约金额', 'v': round(save / 10000, 2), 'unit': '万元', 'cmp': None, 'cmp_label': '预算-成交'},
+    ]
+    # 申请vs订单 月度双柱(金额万元)
+    def monthly(sql, ps_extra=()):
+        rows = c.execute(sql, ps_extra).fetchall()
+        d = {r[0]: round(r[1] / 10000, 2) for r in rows}
+        return [d.get('%02d' % i, 0) for i in range(1, 13)]
+    req_m = monthly("SELECT substr(created_at,6,2) m, COALESCE(SUM(total_estimated),0) a FROM purchase_requests WHERE status NOT IN ('草稿','已驳回','已作废','已撤销') AND substr(created_at,1,4)=?" + scope_d + " GROUP BY m", (yyyy,) + tuple(scope_ps))
+    ord_m = monthly("SELECT substr(created_at,6,2) m, COALESCE(SUM(total_amount),0) a FROM purchase_orders WHERE status NOT IN ('草稿','已驳回','已作废') AND substr(created_at,1,4)=?" + supf + scope_ord + " GROUP BY m", (yyyy,) + tuple(sups_ps) + tuple(scope_ps))
+    # 类别占比(物资采购 vs 设备维修采购)按 req_type + order.category 近似
+    cat_rows = c.execute("SELECT COALESCE(NULLIF(req_type,''),'物资采购') t, COALESCE(SUM(total_estimated),0) a FROM purchase_requests WHERE status NOT IN ('草稿','已驳回','已作废','已撤销') AND substr(created_at,1,4)=?" + scope_d + " GROUP BY t", (yyyy,) + tuple(scope_ps)).fetchall()
+    cat_pie = [{'name': '物资采购' if '物资' in (r[0] or '') else '设备维修采购', 'value': round(r[1], 0)} for r in cat_rows] or [{'name': '物资采购', 'value': 0}]
+    # 供应商TOP10(横柱)
+    sup_top = c.execute("SELECT supplier, COALESCE(SUM(total_amount),0) a, COUNT(*) n FROM purchase_orders WHERE status NOT IN ('草稿','已驳回','已作废') AND supplier!=''" + scope_ord + " GROUP BY supplier ORDER BY a DESC LIMIT 10", tuple(scope_ps)).fetchall()
+    # 明细
+    def rows(sql, ps=()):
+        return [dict_row(dict(zip([d[0] for d in c.description], r))) for r in c.execute(sql, ps).fetchall()] if sql else []
+    # 用统一 dict 转换
+    def rows2(sql, ps=()):
+        cur = c.execute(sql, ps)
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+    rq_det = rows2("SELECT req_no, dept, requester, created_at, purpose, total_estimated, status FROM purchase_requests WHERE status NOT IN ('草稿','已驳回','已作废','已撤销') AND substr(created_at,1,4)=?" + scope_d + " ORDER BY created_at DESC LIMIT 200", (yyyy,) + tuple(scope_ps))
+    od_det = rows2("SELECT order_no, supplier, total_amount, created_at, status, trade_mode FROM purchase_orders WHERE status NOT IN ('草稿','已驳回','已作废') AND substr(created_at,1,4)=?" + supf + scope_ord + " ORDER BY created_at DESC LIMIT 200", (yyyy,) + tuple(sups_ps) + tuple(scope_ps))
+    iq_det = rows2("SELECT i.inq_no, i.title, i.status, i.created_at, (SELECT COUNT(*) FROM inquiry_suppliers s WHERE s.inquiry_id=i.id) sup_cnt FROM inquiries i WHERE substr(i.created_at,1,4)=?" + scope_inqa + " ORDER BY i.created_at DESC LIMIT 200", (yyyy,) + ((iq_name,) if own else ()))
+    c.close()
+    return jsonify({'cards': cards,
+                    'req_vs_ord': {'months': ['%d月' % i for i in range(1, 13)], 'req': req_m, 'ord': ord_m},
+                    'cat_pie': cat_pie,
+                    'sup_top': [dict_row({'supplier': r[0], 'amt': r[1], 'orders': r[2]}) for r in sup_top],
+                    'tables': {'req': rq_det, 'ord': od_det, 'inq': iq_det}})
+
+@app.route('/api/dashboard/inventory')
+@login_required
+def api_dashboard_inventory():
+    """Tab3 库存分析: 6指标 + 入出库双折线 + 类别占比环 + 季度周转柱 + 4明细"""
+    y = int(request.args.get('year') or datetime.date.today().year)
+    wh = request.args.get('warehouse') or ''
+    c = db()
+    own = _dash_scope() == 'own'
+    scope_d = " AND warehouse=?" if wh else ''
+    scope_ps = [wh] if wh else []
+    yyyy = str(y)
+
+    def ex(sql, ps=()):
+        return c.execute(sql, ps).fetchall()
+    def ex1(sql, ps=()):
+        r = c.execute(sql, ps).fetchone()
+        return r[0] if r else 0
+    inv = ex("SELECT COALESCE(SUM(quantity),0), COALESCE(SUM(quantity*price),0) FROM inventory" + (" WHERE " + scope_d[4:] if scope_d else ''), scope_ps)
+    if not inv:
+        inv = [(0, 0)]
+    inv_qty, inv_val = inv[0][0], inv[0][1]
+    low_n = ex1("SELECT COUNT(*) FROM inventory WHERE quantity < safe_stock AND safe_stock > 0" + scope_d, scope_ps)
+    # 入/出库数量(本年)
+    in_q = ex1("SELECT COALESCE(SUM(quantity),0) FROM receivings WHERE substr(created_at,1,4)=? AND status NOT IN ('草稿','已驳回','已作废')" + scope_d, (yyyy,) + tuple(scope_ps))
+    out_q = ex1("SELECT COALESCE(SUM(quantity),0) FROM requisitions WHERE substr(created_at,1,4)=? AND status NOT IN ('草稿','已驳回','已作废')", (yyyy,))
+    # 金额口径: 入库金额 receivings.est_amount 或 items 价估算; 出库金额= requisitions量×inventory.price 估算
+    in_amt = ex1("SELECT COALESCE(SUM(CASE WHEN est_amount>0 THEN est_amount ELSE quantity*(SELECT COALESCE(price,0) FROM inventory i WHERE i.item_name=r.item_name LIMIT 1) END),0) FROM receivings r WHERE substr(r.created_at,1,4)=? AND r.status NOT IN ('草稿','已驳回','已作废')" + scope_d.replace('warehouse','r.warehouse'), (yyyy,) + tuple(scope_ps))
+    avg_inv_val = inv_val or 1
+    turn = round(out_q * (inv_val / inv_qty if inv_qty else 0) / avg_inv_val, 2) if inv_qty else 0  # 出库成本/平均库存
+    cards = [
+        {'k': '当前库存总数量', 'v': inv_qty, 'unit': '', 'cmp': None, 'cmp_label': '现量'},
+        {'k': '当前库存总金额', 'v': round(inv_val / 10000, 2), 'unit': '万元', 'cmp': None, 'cmp_label': '现值'},
+        {'k': '本年入库总数量', 'v': in_q, 'unit': '', 'cmp': None, 'cmp_label': '本年'},
+        {'k': '本年出库总数量', 'v': out_q, 'unit': '', 'cmp': None, 'cmp_label': '本年'},
+        {'k': '库存周转率', 'v': turn, 'unit': '次', 'cmp': None, 'cmp_label': '估算'},
+        {'k': '库存预警物料数', 'v': low_n, 'unit': '种', 'cmp': None, 'cmp_label': '低于安全库存'},
+    ]
+    # 月度 入出库数量
+    def mrows(sql, ps=()):
+        d = {r[0]: r[1] for r in ex(sql, ps)}
+        return [d.get('%02d' % i, 0) for i in range(1, 13)]
+    in_m = mrows("SELECT substr(created_at,6,2) m, COALESCE(SUM(quantity),0) FROM receivings WHERE substr(created_at,1,4)=? AND status NOT IN ('草稿','已驳回','已作废')" + scope_d + " GROUP BY m", (yyyy,) + tuple(scope_ps))
+    out_m = mrows("SELECT substr(created_at,6,2) m, COALESCE(SUM(quantity),0) FROM requisitions WHERE substr(created_at,1,4)=? AND status NOT IN ('草稿','已驳回','已作废') GROUP BY m", (yyyy,))
+    # 类别占比(库存金额按cat_code)
+    cat_pie = ex("SELECT COALESCE(cat_code,'其他') t, COALESCE(SUM(quantity*price),0) a FROM inventory" + (" WHERE " + scope_d[4:] if scope_d else '') + " GROUP BY t", scope_ps)
+    cats = {}
+    for code, a in cat_pie:
+        nm = '未分类'
+        try:
+            row = c.execute('SELECT name FROM categories WHERE code=?', (code,)).fetchone()
+            nm = row[0] if row else (code or nm)
+        except Exception:
+            pass
+        cats[nm] = cats.get(nm, 0) + a
+    cat_list = [{'name': k, 'value': round(v, 0)} for k, v in cats.items()] or [{'name': '暂无', 'value': 0}]
+    # 季度周转柱
+    q_turn = []
+    for qq in range(1, 5):
+        qin = ex1("SELECT COALESCE(SUM(quantity),0) FROM receivings WHERE substr(created_at,1,4)=? AND CAST(substr(created_at,6,2) AS INTEGER) BETWEEN ? AND ?" + scope_d, (yyyy, (qq - 1) * 3 + 1, qq * 3) + tuple(scope_ps))
+        qout = ex1("SELECT COALESCE(SUM(quantity),0) FROM requisitions WHERE substr(created_at,1,4)=? AND CAST(substr(created_at,6,2) AS INTEGER) BETWEEN ? AND ?", (yyyy, (qq - 1) * 3 + 1, qq * 3))
+        q_turn.append(round(qout / (avg_inv_val + 1) * 100, 2) if avg_inv_val else 0)
+    # 明细
+    def rows2(sql, ps=()):
+        cur = c.execute(sql, ps)
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+    inv_det = rows2("SELECT item_name, spec, unit, quantity, price, (quantity*price) amt, warehouse FROM inventory" + (" WHERE " + scope_d[4:] if scope_d else '') + " ORDER BY amt DESC LIMIT 200", scope_ps)
+    in_det = rows2("SELECT receive_no, item_name, quantity, est_amount, is_est, received_at, warehouse FROM receivings WHERE substr(created_at,1,4)=? AND status NOT IN ('草稿','已驳回','已作废')" + scope_d + " ORDER BY created_at DESC LIMIT 200", (yyyy,) + tuple(scope_ps))
+    out_det = rows2("SELECT req_no, item_name, quantity, dept, receiver, created_at FROM requisitions WHERE substr(created_at,1,4)=? AND status NOT IN ('草稿','已驳回','已作废') ORDER BY created_at DESC LIMIT 200", (yyyy,))
+    low_det = rows2("SELECT item_name, quantity, safe_stock, (safe_stock-quantity) gap FROM inventory WHERE quantity < safe_stock AND safe_stock > 0" + scope_d + " ORDER BY gap DESC LIMIT 100", scope_ps)
+    c.close()
+    return jsonify({'cards': cards,
+                    'io': {'months': ['%d月' % i for i in range(1, 13)], 'in': in_m, 'out': out_m},
+                    'cat_pie': cat_list,
+                    'quarter_turn': {'quarters': ['Q1', 'Q2', 'Q3', 'Q4'], 'turn': q_turn},
+                    'tables': {'inv': inv_det, 'in': in_det, 'out': out_det, 'low': low_det}})
+
+
+@app.route('/api/dashboard/finance')
+@login_required
+def api_dashboard_finance():
+    """Tab4 财务分析: 6指标 + 合同月度柱 + 开票vs付款双折线 + 账龄饼 + 4明细(财务角色可见)"""
+    if session.get('user_role') not in _DASH_FULL_ROLES:
+        return jsonify({'error': '无财务分析查看权限'}), 403
+    y = int(request.args.get('year') or datetime.date.today().year)
+    c = db()
+    yyyy = str(y)
+
+    def ex1(sql, ps=()):
+        r = c.execute(sql, ps).fetchone()
+        return r[0] if r else 0
+    def rows2(sql, ps=()):
+        cur = c.execute(sql, ps)
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+    con_amt = ex1("SELECT COALESCE(SUM(amount),0) FROM contracts WHERE status NOT IN ('已驳回','已作废') AND substr(sign_date,1,4)=?", (yyyy,))
+    inv_amt = ex1("SELECT COALESCE(SUM(amount),0) FROM invoices WHERE status NOT IN ('作废') AND substr(created_at,1,4)=?", (yyyy,)) + ex1("SELECT COALESCE(SUM(amount),0) FROM contract_invoices WHERE substr(created_at,1,4)=?", (yyyy,))
+    pay_amt = ex1("SELECT COALESCE(SUM(amount),0) FROM payment_requests WHERE status NOT IN ('草稿','已驳回','已作废') AND substr(paid_at,1,4)=?", (yyyy,))
+    ap_bal = ex1("SELECT COALESCE(SUM(amount),0) FROM contracts WHERE status NOT IN ('已驳回','已作废')") - ex1("SELECT COALESCE(SUM(amount),0) FROM payment_requests WHERE status NOT IN ('草稿','已驳回','已作废')")
+    due_n = ex1("SELECT COUNT(*) FROM contracts WHERE inv_collect_status IN ('已催收待回','待收票','待催收') AND status NOT IN ('已驳回','已作废')")
+    cards = [
+        {'k': '合同总金额', 'v': round(con_amt / 10000, 2), 'unit': '万元', 'cmp': None, 'cmp_label': '本年签订'},
+        {'k': '已开票金额', 'v': round(inv_amt / 10000, 2), 'unit': '万元', 'cmp': None, 'cmp_label': '本年'},
+        {'k': '未开票金额', 'v': round(max(con_amt - inv_amt, 0) / 10000, 2), 'unit': '万元', 'cmp': None, 'cmp_label': '差额'},
+        {'k': '已付款金额', 'v': round(pay_amt / 10000, 2), 'unit': '万元', 'cmp': None, 'cmp_label': '本年'},
+        {'k': '应付账款余额', 'v': round(ap_bal / 10000, 2), 'unit': '万元', 'cmp': None, 'cmp_label': '在账'},
+        {'k': '发票催收预警数', 'v': due_n, 'unit': '个', 'cmp': None, 'cmp_label': '合同'},
+    ]
+    def mrows(sql, ps=()):
+        d = {r[0]: r[1] for r in c.execute(sql, ps).fetchall()}
+        return [d.get('%02d' % i, 0) for i in range(1, 13)]
+    con_m = [round(x / 10000, 2) for x in mrows("SELECT substr(sign_date,6,2) m, COALESCE(SUM(amount),0) FROM contracts WHERE status NOT IN ('已驳回','已作废') AND sign_date LIKE ? GROUP BY m", (yyyy + '%',))]
+    inv_m = [round(x / 10000, 2) for x in mrows("SELECT substr(created_at,6,2) m, COALESCE(SUM(amount),0) FROM invoices WHERE status NOT IN ('作废') AND created_at LIKE ? GROUP BY m", (yyyy + '%',))]
+    pay_m = [round(x / 10000, 2) for x in mrows("SELECT substr(paid_at,6,2) m, COALESCE(SUM(amount),0) FROM payment_requests WHERE status NOT IN ('草稿','已驳回','已作废') AND paid_at LIKE ? GROUP BY m", (yyyy + '%',))]
+    # 账龄饼: 应付余额按合同签订时间分桶(30/60/90/90+)
+    aging = {'30天内': 0, '30-60天': 0, '60-90天': 0, '90天以上': 0}
+    import datetime as _dt
+    today = _dt.date.today()
+    for r in c.execute("SELECT sign_date, amount FROM contracts WHERE status NOT IN ('已驳回','已作废')"):
+        amt = r[1] or 0
+        try:
+            sd = _dt.datetime.strptime((r[0] or '')[:10], '%Y-%m-%d').date()
+            days = (today - sd).days
+        except Exception:
+            days = 999
+        if days <= 30:
+            aging['30天内'] += amt
+        elif days <= 60:
+            aging['30-60天'] += amt
+        elif days <= 90:
+            aging['60-90天'] += amt
+        else:
+            aging['90天以上'] += amt
+    aging_pie = [{'name': k, 'value': round(v, 0)} for k, v in aging.items()]
+    # 明细
+    con_det = rows2("SELECT contract_no, supplier, amount, sign_date, status, inv_collect_status FROM contracts WHERE status NOT IN ('已驳回','已作废') AND substr(sign_date,1,4)=? ORDER BY amount DESC LIMIT 200", (yyyy,))
+    inv_det = rows2("SELECT invoice_no, supplier, amount, invoice_date, status FROM invoices WHERE status NOT IN ('作废') ORDER BY invoice_date DESC LIMIT 200")
+    pay_det = rows2("SELECT payment_no, supplier, amount, paid_at, payment_type FROM payment_requests WHERE status NOT IN ('草稿','已驳回','已作废') ORDER BY paid_at DESC LIMIT 200")
+    due_det = rows2("SELECT contract_no, supplier, amount, invoice_clause, inv_collect_status FROM contracts WHERE inv_collect_status IN ('已催收待回','待收票','待催收') AND status NOT IN ('已驳回','已作废') LIMIT 100")
+    c.close()
+    return jsonify({'cards': cards, 'con_m': con_m, 'inv_m': inv_m, 'pay_m': pay_m,
+                    'months': ['%d月' % i for i in range(1, 13)], 'aging_pie': aging_pie,
+                    'tables': {'con': con_det, 'inv': inv_det, 'pay': pay_det, 'due': due_det}})
+
+@app.route('/api/dashboard/repair')
+@login_required
+def api_dashboard_repair():
+    """Tab5 维修分析: 6指标 + 费用面积趋势 + 类型占比环 + 设备TOP10 + 3明细"""
+    y = int(request.args.get('year') or datetime.date.today().year)
+    c = db()
+    own = _dash_scope() == 'own'
+    scope_d = ''
+    scope_ps = []
+    if own:
+        scope_d = " AND (requester=? OR requester_id=?)"
+        scope_ps = [session.get('user_name', ''), session.get('user_id', 0)]
+    yyyy = str(y)
+
+    def ex1(sql, ps=()):
+        r = c.execute(sql, ps).fetchone()
+        return r[0] if r else 0
+    def rows2(sql, ps=()):
+        cur = c.execute(sql, ps)
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+    cost_sql = "CASE WHEN invoice_amount>0 THEN invoice_amount WHEN quote_total>0 THEN quote_total ELSE est_cost END"
+    n_all = ex1("SELECT COUNT(*) FROM repair_plans WHERE status NOT IN ('草稿','已驳回','已作废') AND substr(created_at,1,4)=?" + scope_d, (yyyy,) + tuple(scope_ps))
+    cost_all = ex1("SELECT COALESCE(SUM(" + cost_sql + "),0) FROM repair_plans WHERE status NOT IN ('草稿','已驳回','已作废') AND substr(created_at,1,4)=?" + scope_d, (yyyy,) + tuple(scope_ps))
+    cost_ext = ex1("SELECT COALESCE(SUM(" + cost_sql + "),0) FROM repair_plans WHERE repair_type='委外维修' AND status NOT IN ('草稿','已驳回','已作废') AND substr(created_at,1,4)=?" + scope_d, (yyyy,) + tuple(scope_ps))
+    cost_int = ex1("SELECT COALESCE(SUM(est_cost),0) FROM repair_plans WHERE repair_type='内部自修' AND status NOT IN ('草稿','已驳回','已作废') AND substr(created_at,1,4)=?" + scope_d, (yyyy,) + tuple(scope_ps))
+    chg_n = ex1("SELECT COUNT(*) FROM repair_changes rc JOIN repair_plans rp ON rp.id=rc.plan_id WHERE rp.status NOT IN ('草稿','已驳回','已作废') AND substr(rp.created_at,1,4)=?" + scope_d, (yyyy,) + tuple(scope_ps))
+    # 平均维修周期(报修→验收完成天数)
+    cyc = ex1("SELECT COALESCE(AVG(julianday(actual_finish)-julianday(created_at)),0) FROM repair_plans WHERE actual_finish!='' AND status NOT IN ('草稿','已驳回','已作废') AND substr(created_at,1,4)=?" + scope_d, (yyyy,) + tuple(scope_ps))
+    cards = [
+        {'k': '维修工单总数', 'v': n_all, 'unit': '单', 'cmp': None, 'cmp_label': '本年'},
+        {'k': '维修费用总额', 'v': round(cost_all / 10000, 2), 'unit': '万元', 'cmp': None, 'cmp_label': '本年'},
+        {'k': '外委维修费用', 'v': round(cost_ext / 10000, 2), 'unit': '万元', 'cmp': None, 'cmp_label': '委外'},
+        {'k': '内部自修费用', 'v': round(cost_int / 10000, 2), 'unit': '万元', 'cmp': None, 'cmp_label': '自修'},
+        {'k': '维修变更次数', 'v': chg_n, 'unit': '次', 'cmp': None, 'cmp_label': '本年'},
+        {'k': '平均维修周期', 'v': round(cyc, 1), 'unit': '天', 'cmp': None, 'cmp_label': '报修→完工'},
+    ]
+    # 月度费用
+    def mrows(sql, ps=()):
+        d = {r[0]: r[1] for r in c.execute(sql, ps).fetchall()}
+        return [round(d.get('%02d' % i, 0) / 10000, 2) for i in range(1, 13)]
+    cost_m = mrows("SELECT substr(created_at,6,2) m, COALESCE(SUM(" + cost_sql + "),0) FROM repair_plans WHERE status NOT IN ('草稿','已驳回','已作废') AND substr(created_at,1,4)=?" + scope_d + " GROUP BY m", (yyyy,) + tuple(scope_ps))
+    # 类型占比(数量+金额)
+    t_rows = c.execute("SELECT COALESCE(repair_type,'未定损') t, COUNT(*) n, COALESCE(SUM(" + cost_sql + "),0) a FROM repair_plans WHERE status NOT IN ('草稿','已驳回','已作废') AND substr(created_at,1,4)=?" + scope_d + " GROUP BY t", (yyyy,) + tuple(scope_ps)).fetchall()
+    type_pie = [{'name': r[0], 'n': r[1], 'value': round(r[2], 0)} for r in t_rows] or [{'name': '暂无', 'value': 0}]
+    # 设备TOP10
+    dev_top = c.execute("SELECT device_name, COALESCE(SUM(" + cost_sql + "),0) a, COUNT(*) n FROM repair_plans WHERE device_name!='' AND status NOT IN ('草稿','已驳回','已作废') AND substr(created_at,1,4)=?" + scope_d + " GROUP BY device_name ORDER BY a DESC LIMIT 10", (yyyy,) + tuple(scope_ps)).fetchall()
+    # 明细
+    wd_det = rows2("SELECT plan_no, device_name, fault_desc, dept, requester, created_at, repair_type, est_cost, quote_total, invoice_amount, status FROM repair_plans WHERE status NOT IN ('草稿','已驳回','已作废') AND substr(created_at,1,4)=?" + scope_d + " ORDER BY created_at DESC LIMIT 200", (yyyy,) + tuple(scope_ps))
+    chg_det = rows2("SELECT rp.plan_no, rc.add_part, rc.add_labor, rc.add_price, rc.status, rc.confirm1_by, rc.created_at FROM repair_changes rc JOIN repair_plans rp ON rp.id=rc.plan_id WHERE rp.status NOT IN ('草稿','已驳回','已作废')" + scope_d + " ORDER BY rc.created_at DESC LIMIT 200", tuple(scope_ps))
+    sup_stat = c.execute("SELECT repair_company, COUNT(*) n, COALESCE(SUM(" + cost_sql + "),0) a FROM repair_plans WHERE repair_company!='' AND status NOT IN ('草稿','已驳回','已作废')" + scope_d + " GROUP BY repair_company ORDER BY a DESC LIMIT 50", tuple(scope_ps)).fetchall()
+    c.close()
+    return jsonify({'cards': cards, 'cost_m': cost_m, 'months': ['%d月' % i for i in range(1, 13)],
+                    'type_pie': type_pie,
+                    'dev_top': [dict_row({'device_name': r[0], 'amt': r[1], 'n': r[2]}) for r in dev_top],
+                    'tables': {'work': wd_det, 'change': chg_det,
+                               'vendor': [dict_row({'company': r[0], 'n': r[1], 'amt': r[2]}) for r in sup_stat]}})
+
+@app.route('/dashboard')
+@login_required
+def page_dashboard():
+    return render_template('dashboard.html')
+
+
+@app.route('/api/dashboard/export')
+@login_required
+def api_dashboard_export():
+    """看板数据导出 Excel(openpyxl): 指标+图表数据+明细多sheet"""
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+    except Exception:
+        return jsonify({'error': '导出组件缺失'}), 500
+    tab = request.args.get('tab') or 'overview'
+    y = request.args.get('year') or str(datetime.date.today().year)
+    wb = openpyxl.Workbook()
+    ws = wb.active; ws.title = '看板指标'
+    ws.append(['数据看板导出', 'Tab=' + tab, '年度=' + y, '导出时间=' + now()])
+    hdr_fill = PatternFill('solid', fgColor='1a2a4a'); hdr_font = Font(color='FFFFFF', bold=True)
+    def sheet_from(name, headers, rows):
+        s = wb.create_sheet(re.sub(r'[\\/?*\[\]:]', '_', name)[:31])
+        s.append(headers)
+        for c in s[1]:
+            c.fill = hdr_fill; c.font = hdr_font
+        for r in rows:
+            s.append([r.get(h) if isinstance(r, dict) else r for h in headers])
+        return s
+    def gen(tabname, endpoint, extra_cols=None):
+        d = {}
+        try:
+            c = db()
+            cur = c.execute('SELECT 1')
+            # 直接内联各接口聚合(轻量复用): 调用对应函数再取json
+        finally:
+            pass
+    # ---- 复用各看板接口的JSON, 转sheet ----
+    import json as _json
+    data_map = {}
+    for t, ep in [('overview', 'overview'), ('purchase', 'purchase'), ('inventory', 'inventory'),
+                  ('finance', 'finance'), ('repair', 'repair')]:
+        try:
+            # 模拟请求参数取数(直接调用聚合函数; 注入当前用户会话以通过login_required)
+            with app.test_request_context('/api/dashboard/' + ep + '?year=' + y + '&supplier=&category=&dept=&warehouse='):
+                session['user_id'] = session.get('user_id') or 1
+                session['user_name'] = session.get('user_name') or '导出'
+                session['user_role'] = session.get('user_role') or '系统管理员'
+                fn = {'overview': api_dashboard_overview, 'purchase': api_dashboard_purchase,
+                      'inventory': api_dashboard_inventory, 'finance': api_dashboard_finance,
+                      'repair': api_dashboard_repair}[ep]
+                resp = fn()
+                data_map[t] = _json.loads(resp.get_data(as_text=True))
+        except Exception as e:
+            data_map[t] = {'error': str(e)}
+    d = data_map.get(tab, {})
+    if 'error' in d and tab != 'finance':
+        return jsonify({'error': '导出失败: ' + d['error']}), 500
+    # 指标卡 sheet
+    for c_ in (d.get('cards') or []):
+        ws.append([c_.get('k'), c_.get('v'), c_.get('unit', ''), c_.get('cmp_label', ''), c_.get('cmp', '')])
+    # 明细 sheets
+    tbl_defs = {
+        'overview': [('物料降本/申请明细', 'material_drop', ['req_no', 'item_name', 'spec', 'dept', 'est']),
+                     ('前十大供应商', 'supplier_rank', ['supplier', 'orders', 'amt']),
+                     ('应付账款明细', 'ap_detail', ['contract_no', 'supplier', 'amount', 'paid'])],
+        'purchase': [('采购申请明细', 'req', ['req_no', 'dept', 'requester', 'created_at', 'purpose', 'total_estimated', 'status']),
+                     ('采购订单明细', 'ord', ['order_no', 'supplier', 'total_amount', 'created_at', 'status']),
+                     ('询价比价明细', 'inq', ['inq_no', 'title', 'sup_cnt', 'created_at', 'status'])],
+        'inventory': [('库存台账', 'inv', ['item_name', 'spec', 'unit', 'quantity', 'amt', 'warehouse']),
+                      ('入库明细', 'in', ['receive_no', 'item_name', 'quantity', 'est_amount', 'received_at']),
+                      ('出库明细', 'out', ['req_no', 'item_name', 'quantity', 'dept', 'receiver', 'created_at']),
+                      ('库存预警', 'low', ['item_name', 'quantity', 'safe_stock', 'gap'])],
+        'finance': [('合同明细', 'con', ['contract_no', 'supplier', 'amount', 'sign_date', 'status']),
+                    ('发票台账', 'inv', ['invoice_no', 'supplier', 'amount', 'invoice_date', 'status']),
+                    ('付款明细', 'pay', ['payment_no', 'supplier', 'amount', 'paid_at', 'payment_type']),
+                    ('发票催收预警', 'due', ['contract_no', 'supplier', 'amount', 'invoice_clause', 'inv_collect_status'])],
+        'repair': [('维修工单明细', 'work', ['plan_no', 'device_name', 'fault_desc', 'dept', 'created_at', 'repair_type', 'status']),
+                   ('维修变更明细', 'change', ['plan_no', 'add_part', 'add_price', 'status', 'created_at']),
+                   ('维修服务商统计', 'vendor', ['company', 'n', 'amt'])],
+    }
+    for label, key, cols in tbl_defs.get(tab, []):
+        rows = (d.get('tables') or {}).get(key) or []
+        sheet_from(label, cols, rows)
+    bio = io.BytesIO()
+    wb.save(bio)
+    bio.seek(0)
+    from flask import send_file as _sf
+    fname = '数据看板_%s_%s.xlsx' % (tab, y)
+    resp = _sf(bio, as_attachment=True, download_name=fname,
+               mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
+
+
+# ============================================================
 # MAIN
 # ============================================================
 if __name__ == '__main__':
@@ -12031,4 +12534,5 @@ def simple_test():
 @app.route('/test')
 def test_page():
     return render_template('test.html')
+
 

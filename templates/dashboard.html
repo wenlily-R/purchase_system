@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>数据看板 · 正成能源采购系统</title>
+<script src="/static/echarts.min.js"></script>
+<script src="/static/html2canvas.min.js"></script>
+<style>
+:root{--bg1:#0a1628;--bg2:#1a2a4a;--card:rgba(255,255,255,.05);--bd:rgba(255,255,255,.1);
+--txt:#fff;--sub:#a0b0c0;--cyan:#00d4ff;--orange:#ff9500;--green:#00c853;--red:#ff5252;
+--purple:#a855f7;--pink:#ec4899;}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:"Microsoft YaHei",-apple-system,sans-serif;color:var(--txt);
+background:linear-gradient(135deg,var(--bg1) 0%,var(--bg2) 60%,#12203a 100%);min-height:100vh;font-size:13px}
+::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius:3px}
+.hd{display:flex;align-items:center;gap:10px;padding:10px 18px;background:rgba(10,22,40,.75);border-bottom:1px solid var(--bd);flex-wrap:wrap;position:sticky;top:0;z-index:50;backdrop-filter:blur(6px)}
+.hd .logo{font-size:17px;font-weight:700;letter-spacing:1px;white-space:nowrap}
+.hd .logo i{color:var(--cyan);font-style:normal}
+.hd .btn{background:rgba(255,255,255,.08);border:1px solid var(--bd);color:var(--txt);border-radius:6px;
+padding:5px 12px;cursor:pointer;font-size:12px;transition:.2s}
+.hd .btn:hover{background:rgba(255,255,255,.16)}
+.hd .btn.pri{background:linear-gradient(135deg,#00d4ff22,#00d4ff55);border-color:#00d4ff66}
+.hd .sp{flex:1}
+.sel{background:rgba(10,22,40,.6);border:1px solid var(--bd);color:#fff;border-radius:6px;padding:4px 8px;font-size:12px;outline:none}
+.sel:focus{border-color:var(--cyan)}
+.sel optgroup,.sel option{background:#12203a}
+.tabs{display:flex;gap:4px;padding:8px 18px 0;border-bottom:1px solid var(--bd);background:rgba(10,22,40,.5);flex-wrap:wrap}
+.tabs .t{padding:8px 20px;cursor:pointer;color:var(--sub);border-radius:8px 8px 0 0;font-size:13.5px;border:1px solid transparent;border-bottom:none;transition:.15s;user-select:none}
+.tabs .t:hover{color:#fff}
+.tabs .t.on{color:#fff;background:linear-gradient(180deg,rgba(0,212,255,.18),rgba(0,212,255,.04));border-color:var(--bd);font-weight:600}
+.tabs .t .ic{color:var(--cyan);margin-right:4px}
+.body{padding:12px 18px 30px}
+.sec{display:none}.sec.on{display:block}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:12px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:12px 14px;position:relative;overflow:hidden}
+.card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(180deg,var(--cyan),transparent)}
+.card.c2::before{background:linear-gradient(180deg,var(--orange),transparent)}
+.card.c3::before{background:linear-gradient(180deg,var(--green),transparent)}
+.card.c4::before{background:linear-gradient(180deg,var(--purple),transparent)}
+.card.c5::before{background:linear-gradient(180deg,var(--pink),transparent)}
+.card.c6::before{background:linear-gradient(180deg,#ffd700,transparent)}
+.card .k{color:var(--sub);font-size:11.5px;margin-bottom:6px}
+.card .v{font-size:26px;font-weight:700;color:#fff;line-height:1.1;font-variant-numeric:tabular-nums}
+.card .v i{font-style:normal;font-size:12px;color:var(--sub);font-weight:400;margin-left:3px}
+.card .cmp{margin-top:7px;font-size:11px;color:var(--sub)}
+.card .cmp b.up{color:var(--green)}.card .cmp b.down{color:var(--red)}.card .cmp b.flat{color:var(--sub)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px}
+@media(max-width:1100px){.grid2,.grid3{grid-template-columns:1fr}}
+.panel{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:10px 12px}
+.panel h3{font-size:13px;color:#fff;font-weight:600;margin-bottom:8px;display:flex;align-items:center}
+.panel h3::before{content:"";width:3px;height:12px;background:var(--cyan);border-radius:2px;margin-right:7px;display:inline-block}
+.chart{width:100%;height:280px}
+table.tbl{width:100%;border-collapse:collapse;font-size:12px}
+.tbl th{color:var(--sub);text-align:left;padding:6px 8px;border-bottom:1px solid var(--bd);font-weight:600;white-space:nowrap}
+.tbl td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.05);white-space:nowrap}
+.tbl tr:hover td{background:rgba(255,255,255,.04)}
+.tbl .no{color:var(--cyan);cursor:pointer;text-decoration:underline dotted}
+.tbl .amt{color:var(--orange);font-variant-numeric:tabular-nums}
+.tbl .up{color:var(--green)}.tbl .down{color:var(--red)}
+.wrap{max-height:320px;overflow:auto}
+.subtabs{display:flex;gap:2px;margin:4px 0 8px;flex-wrap:wrap}
+.subtabs .st{padding:4px 12px;cursor:pointer;color:var(--sub);font-size:12px;border-radius:12px;border:1px solid transparent}
+.subtabs .st.on{color:var(--cyan);border-color:var(--cyan);background:rgba(0,212,255,.08)}
+.tt{font-size:11px;color:var(--sub);text-align:center;padding:20px}
+/* 弹窗 */
+.mask{position:fixed;inset:0;background:rgba(5,10,20,.7);display:none;z-index:200;align-items:center;justify-content:center;backdrop-filter:blur(2px)}
+.mask.on{display:flex}
+.dlg{background:linear-gradient(160deg,#14233f,#0d1a30);border:1px solid var(--bd);border-radius:10px;width:min(860px,94vw);max-height:84vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.dlg .dt{padding:12px 16px;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;align-items:center}
+.dlg .dt b{font-size:14px}
+.dlg .x{cursor:pointer;color:var(--sub);font-size:18px;padding:0 4px}
+.dlg .db{padding:12px 16px;overflow:auto;flex:1}
+.toast{position:fixed;top:70px;left:50%;transform:translateX(-50%);background:rgba(0,212,255,.15);border:1px solid var(--cyan);
+color:#fff;padding:8px 18px;border-radius:20px;font-size:12.5px;z-index:300;display:none;backdrop-filter:blur(4px)}
+/* 大屏模式 */
+body.zen .filters,.body.zen .tabs-hide{display:none}
+body.zen .hd{position:static}
+body.zen .body{padding-top:6px}
+.badge{font-size:10px;color:#8fa3b8;border:1px solid var(--bd);padding:1px 6px;border-radius:8px;margin-left:6px}
+</style>
+</head>
+<body>
+<div class="toast" id="toast"></div>
+
+<div class="hd">
+  <div class="logo">📊 <i>数据看板</i> · 正成能源采购系统</div>
+  <button class="btn" id="btnBack" onclick="location.href='/'">⬅ 返回系统</button>
+  <span class="sp"></span>
+  <span class="filters">
+    <select class="sel" id="fYear" title="会计年度"></select>
+    <select class="sel" id="fSup" title="供应商"><option value="">全部供应商</option></select>
+    <select class="sel" id="fCat" title="物料类别"><option value="">全部物料类别</option></select>
+    <select class="sel" id="fDep" title="部门"><option value="">全部部门</option></select>
+    <select class="sel" id="fWh" title="仓库"><option value="">全部仓库</option></select>
+    <select class="sel" id="fRange" title="时间范围"><option value="">本年</option><option value="q">本季度</option><option value="m">本月</option><option value="12m">近12个月</option></select>
+  </span>
+  <button class="btn pri" onclick="refreshAll()">🔄 刷新</button>
+  <button class="btn" onclick="autoRefresh(this)">⏱ 自动</button>
+  <button class="btn" onclick="exportExcel()">⬇ Excel</button>
+  <button class="btn" onclick="shotPng()">📷 截图</button>
+  <button class="btn" onclick="toggleZen()">🖥 大屏</button>
+</div>
+
+<div class="tabs tabs-hide" id="tabs">
+  <div class="t on" data-tab="overview" onclick="switchTab('overview')"><span class="ic">🏠</span>经营总览</div>
+  <div class="t" data-tab="purchase" onclick="switchTab('purchase')"><span class="ic">🛒</span>采购分析</div>
+  <div class="t" data-tab="inventory" onclick="switchTab('inventory')"><span class="ic">📦</span>库存分析</div>
+  <div class="t" data-tab="finance" onclick="switchTab('finance')"><span class="ic">💰</span>财务分析</div>
+  <div class="t" data-tab="repair" onclick="switchTab('repair')"><span class="ic">🔧</span>维修分析</div>
+</div>
+
+<div class="body" id="body">
+<!-- ============ Tab1 经营总览 ============ -->
+<div class="sec on" id="sec-overview">
+  <div class="cards" id="ov-cards"></div>
+  <div class="grid2">
+    <div class="panel"><h3>历年采购金额对比(近5年)</h3><div class="chart" id="ch-ov5"></div></div>
+    <div class="panel"><h3>本年月度采购趋势</h3><div class="chart" id="ch-ovm"></div></div>
+  </div>
+  <div class="panel"><h3>明细分析</h3>
+    <div class="subtabs" id="ov-sub">
+      <div class="st on" data-i="0" onclick="subTab(this,'ov')">物料降本分析</div>
+      <div class="st" data-i="1" onclick="subTab(this,'ov')">前十大供应商</div>
+      <div class="st" data-i="2" onclick="subTab(this,'ov')">应付账款明细</div>
+    </div>
+    <div class="wrap" id="ov-tab0"></div><div class="wrap" style="display:none" id="ov-tab1"></div><div class="wrap" style="display:none" id="ov-tab2"></div>
+  </div>
+</div>
+
+<!-- ============ Tab2 采购分析 ============ -->
+<div class="sec" id="sec-purchase">
+  <div class="cards" id="pu-cards"></div>
+  <div class="grid3">
+    <div class="panel"><h3>申请 vs 订单(月度)</h3><div class="chart" id="ch-pu1"></div></div>
+    <div class="panel"><h3>采购类别占比</h3><div class="chart" id="ch-pu2"></div></div>
+    <div class="panel"><h3>供应商采购 TOP10</h3><div class="chart" id="ch-pu3"></div></div>
+  </div>
+  <div class="panel"><h3>明细</h3>
+    <div class="subtabs" id="pu-sub">
+      <div class="st on" data-i="0" onclick="subTab(this,'pu')">采购申请明细</div>
+      <div class="st" data-i="1" onclick="subTab(this,'pu')">采购订单明细</div>
+      <div class="st" data-i="2" onclick="subTab(this,'pu')">询价比价明细</div>
+    </div>
+    <div class="wrap" id="pu-tab0"></div><div class="wrap" style="display:none" id="pu-tab1"></div><div class="wrap" style="display:none" id="pu-tab2"></div>
+  </div>
+</div>
+
+<!-- ============ Tab3 库存分析 ============ -->
+<div class="sec" id="sec-inventory">
+  <div class="cards" id="in-cards"></div>
+  <div class="grid3">
+    <div class="panel"><h3>入库 vs 出库(月度)</h3><div class="chart" id="ch-in1"></div></div>
+    <div class="panel"><h3>库存类别占比</h3><div class="chart" id="ch-in2"></div></div>
+    <div class="panel"><h3>库存周转率(季度)</h3><div class="chart" id="ch-in3"></div></div>
+  </div>
+  <div class="panel"><h3>明细</h3>
+    <div class="subtabs" id="in-sub">
+      <div class="st on" data-i="0" onclick="subTab(this,'in')">库存台账</div>
+      <div class="st" data-i="1" onclick="subTab(this,'in')">入库明细</div>
+      <div class="st" data-i="2" onclick="subTab(this,'in')">出库明细</div>
+      <div class="st" data-i="3" onclick="subTab(this,'in')">库存预警</div>
+    </div>
+    <div class="wrap" id="in-tab0"></div><div class="wrap" style="display:none" id="in-tab1"></div><div class="wrap" style="display:none" id="in-tab2"></div><div class="wrap" style="display:none" id="in-tab3"></div>
+  </div>
+</div>
+
+<!-- ============ Tab4 财务分析 ============ -->
+<div class="sec" id="sec-finance">
+  <div class="cards" id="fi-cards"></div>
+  <div class="grid3">
+    <div class="panel"><h3>合同金额趋势(月度)</h3><div class="chart" id="ch-fi1"></div></div>
+    <div class="panel"><h3>开票 vs 付款(月度)</h3><div class="chart" id="ch-fi2"></div></div>
+    <div class="panel"><h3>应付账款账龄分布</h3><div class="chart" id="ch-fi3"></div></div>
+  </div>
+  <div class="panel"><h3>明细</h3>
+    <div class="subtabs" id="fi-sub">
+      <div class="st on" data-i="0" onclick="subTab(this,'fi')">合同明细</div>
+      <div class="st" data-i="1" onclick="subTab(this,'fi')">发票台账</div>
+      <div class="st" data-i="2" onclick="subTab(this,'fi')">付款明细</div>
+      <div class="st" data-i="3" onclick="subTab(this,'fi')">发票催收预警</div>
+    </div>
+    <div class="wrap" id="fi-tab0"></div><div class="wrap" style="display:none" id="fi-tab1"></div><div class="wrap" style="display:none" id="fi-tab2"></div><div class="wrap" style="display:none" id="fi-tab3"></div>
+  </div>
+</div>
+
+<!-- ============ Tab5 维修分析 ============ -->
+<div class="sec" id="sec-repair">
+  <div class="cards" id="rp-cards"></div>
+  <div class="grid3">
+    <div class="panel"><h3>维修费用趋势(月度)</h3><div class="chart" id="ch-rp1"></div></div>
+    <div class="panel"><h3>维修类型占比(金额)</h3><div class="chart" id="ch-rp2"></div></div>
+    <div class="panel"><h3>维修费用 TOP10 设备</h3><div class="chart" id="ch-rp3"></div></div>
+  </div>
+  <div class="panel"><h3>明细</h3>
+    <div class="subtabs" id="rp-sub">
+      <div class="st on" data-i="0" onclick="subTab(this,'rp')">维修工单明细</div>
+      <div class="st" data-i="1" onclick="subTab(this,'rp')">维修变更明细</div>
+      <div class="st" data-i="2" onclick="subTab(this,'rp')">维修服务商统计</div>
+    </div>
+    <div class="wrap" id="rp-tab0"></div><div class="wrap" style="display:none" id="rp-tab1"></div><div class="wrap" style="display:none" id="rp-tab2"></div>
+  </div>
+</div>
+</div>
+
+<!-- 下钻/明细弹窗 -->
+<div class="mask" id="mask" onclick="if(event.target===this)closeDlg()">
+  <div class="dlg">
+    <div class="dt"><b id="dlgT">明细</b><span class="x" onclick="closeDlg()">✕</span></div>
+    <div class="db"><div class="wrap" style="max-height:60vh" id="dlgB"></div></div>
+  </div>
+</div>
+
+<script>
+let E=window.echarts, charts={}, CUR='overview', META=null, autoTimer=null;
+const $=id=>document.getElementById(id);
+const C_COLORS=['#00d4ff','#ff9500','#00c853','#a855f7','#ec4899','#ffd700','#4facfe','#f472b6'];
+const AX={axisLine:{lineStyle:{color:'rgba(255,255,255,.15)'}},axisLabel:{color:'#a0b0c0',fontSize:11},
+  splitLine:{lineStyle:{color:'rgba(255,255,255,.06)'}}};
+function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(toast._t);toast._t=setTimeout(()=>t.style.display='none',2400)}
+async function api(u){const r=await fetch(u,{headers:{'X-Requested-With':'fetch'}});if(r.status===401){location.href='/';throw 0}
+  const j=await r.json().catch(()=>({}));if(r.status===403){toast(j.error||'无权限查看该模块');throw 0}if(!r.ok&&j.error)toast(j.error);return j}
+function fmtMoney(v){v=Number(v||0);return '¥'+(v>=10000?(v/10000).toFixed(2)+'万':v.toLocaleString('zh-CN',{maximumFractionDigits:2}))}
+function fmtW(v){return (Number(v||0)).toLocaleString('zh-CN',{maximumFractionDigits:2})}
+function arrow(cmp){if(cmp===null||cmp===undefined)return '<b class="flat">—</b>';
+  const up=cmp>=0,cls=up?'up':'down',ic=up?'▲':'▼';return '<b class="'+cls+'">'+ic+' '+Math.abs(cmp).toFixed(1)+'%</b>'}
+function cardHtml(c,i){const cls=['','c2','c3','c4','c5','c6'][i%6];return '<div class="card '+cls+'"><div class="k">'+esc(c.k)+'</div><div class="v">'+fmtW(c.v)+'<i>'+esc(c.unit||'')+'</i></div><div class="cmp">'+esc(c.cmp_label||'')+' '+(c.cmp!==undefined?arrow(c.cmp):'<b class="flat">—</b>')+'</div></div>'}
+function esc(s){return String(s===undefined||s===null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+function noLink(v){return '<span class="no" onclick="openDoc(\''+esc(v).replace(/'/g,'')+'\')">'+esc(v)+'</span>'}
+function openDoc(no){toast('单据 '+no+' → 已在主系统打开，可搜索该单号查看详情');window.open('/','_blank')}
+function renderTable(el,rows,cols,fn){if(!rows||!rows.length){el.innerHTML='<div class="tt">暂无数据</div>';return}
+  el.innerHTML='<table class="tbl"><thead><tr>'+cols.map(c=>'<th>'+c[1]+'</th>').join('')+'</tr></thead><tbody>'+rows.map(fn).join('')+'</tbody></table>'}
+/* ---- 筛选 / 元数据 ---- */
+function qs(){const p=new URLSearchParams();
+  p.set('year',$('fYear').value||'');const s=$('fSup').value,c=$('fCat').value,d=$('fDep').value,w=$('fWh').value;
+  if(s)p.set('supplier',s);if(c)p.set('category',c);if(d)p.set('dept',d);if(w)p.set('warehouse',w);return p.toString()}
+async function loadMeta(){META=await api('/api/dashboard/meta');
+  $('fYear').innerHTML=META.years.map(y=>'<option'+(y==new Date().getFullYear()?' selected':'')+'>'+y+'</option>').join('')||'<option>'+new Date().getFullYear()+'</option>';
+  $('fSup').innerHTML='<option value="">全部供应商</option>'+META.suppliers.map(x=>'<option>'+esc(x)+'</option>').join('');
+  $('fCat').innerHTML='<option value="">全部物料类别</option>'+META.categories.map(x=>'<option>'+esc(x)+'</option>').join('');
+  $('fDep').innerHTML='<option value="">全部部门</option>'+META.departments.map(x=>'<option>'+esc(x)+'</option>').join('');
+  $('fWh').innerHTML='<option value="">全部仓库</option>'+META.warehouses.map(x=>'<option>'+esc(x)+'</option>').join('');
+  if(META.scope==='own')toast('当前为普通员工视图：仅显示与您相关的数据');
+  ['fYear','fSup','fCat','fDep','fWh'].forEach(i=>$(i).onchange=refreshAll);$('fRange').onchange=refreshAll}
+/* ---- Tab 切换 / 数据装载 ---- */
+function switchTab(t){CUR=t;document.querySelectorAll('.tabs .t').forEach(x=>x.classList.toggle('on',x.dataset.tab===t));
+  document.querySelectorAll('.sec').forEach(x=>x.classList.toggle('on',x.id==='sec-'+t));loadTab(t)}
+async function refreshAll(){Object.keys(charts).forEach(k=>{charts[k].dispose()});charts={};loadTab(CUR)}
+async function loadTab(t){
+  if(t==='finance'&&META&&META.role&&!['系统管理员','分管领导','总经理','财务'].includes(META.role)){
+    $('sec-finance').innerHTML='<div class="tt" style="padding:60px">🔒 财务分析仅对 财务/管理 角色开放</div>';return}
+  const y=qs();let d;
+  try{d=await api('/api/dashboard/'+t+(y?'?'+y:''))}catch(e){return}
+  if(t==='overview')renderOv(d);else if(t==='purchase')renderPu(d);else if(t==='inventory')renderIn(d);
+  else if(t==='finance')renderFi(d);else if(t==='repair')renderRp(d)}
+/* ===== Tab1 经营总览 ===== */
+function renderOv(d){$('ov-cards').innerHTML=d.cards.map(cardHtml).join('');
+  const y5=echart('ch-ov5',{tooltip:{trigger:'axis'},legend:{textStyle:{color:'#a0b0c0'},top:0},
+    grid:{left:50,right:20,top:34,bottom:24},
+    xAxis:Object.assign({type:'category',data:d.years5.map(x=>x.year)},AX),
+    yAxis:Object.assign({type:'value',name:'万元',nameTextStyle:{color:'#a0b0c0'}},AX),
+    series:[{name:'采购金额',type:'bar',data:d.years5.map(x=>x.amt),barWidth:18,itemStyle:{borderRadius:[4,4,0,0],color:new E.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#00d4ff'},{offset:1,color:'#0066aa'}])}},
+      {name:'降本金额',type:'line',yAxisIndex:0,data:d.years5.map(x=>x.save),smooth:true,itemStyle:{color:'#00c853'},lineStyle:{color:'#00c853',width:2}}]});
+  const mk=echart('ch-ovm',{tooltip:{trigger:'axis'},grid:{left:50,right:20,top:20,bottom:24},
+    xAxis:Object.assign({type:'category',data:d.labels_m},AX),
+    yAxis:Object.assign({type:'value',name:'万元',nameTextStyle:{color:'#a0b0c0'}},AX),
+    series:[{name:'采购金额',type:'line',smooth:true,symbolSize:6,data:d.months,
+      itemStyle:{color:'#ff9500'},lineStyle:{color:'#ff9500',width:2.5},
+      areaStyle:{color:new E.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(255,149,0,.45)'},{offset:1,color:'rgba(255,149,0,.02)'}])}}]});
+  mk.on('click',p=>drillMonths('ov','采购金额',p.name,d.months));
+  renderTable($('ov-tab0'),(d.tables.material_drop||[]).slice(0,100),[['item_name','物料'],['spec','规格'],['dept','部门'],['req_no','申请单号'],['est','预估金额']],
+    x=>'<tr><td>'+esc(x.item_name)+'</td><td>'+esc(x.spec||'-')+'</td><td>'+esc(x.dept||'-')+'</td><td>'+noLink(x.req_no)+'</td><td class="amt">'+fmtMoney(x.est)+'</td></tr>');
+  renderTable($('ov-tab1'),(d.tables.supplier_rank||[]),[['supplier','供应商'],['orders','订单数'],['amt','采购金额']],
+    x=>'<tr><td>'+esc(x.supplier)+'</td><td>'+x.orders+'</td><td class="amt">'+fmtMoney(x.amt)+'</td></tr>');
+  renderTable($('ov-tab2'),(d.tables.ap_detail||[]),[['contract_no','合同号'],['supplier','供应商'],['amount','合同金额'],['paid','已付'],['bal','应付余额']],
+    x=>{const b=x.amount-x.paid;return '<tr><td>'+noLink(x.contract_no)+'</td><td>'+esc(x.supplier)+'</td><td class="amt">'+fmtMoney(x.amount)+'</td><td class="amt">'+fmtMoney(x.paid)+'</td><td class="amt '+(b>0?'':'up')+'">'+fmtMoney(b)+'</td></tr>'})}
+/* ===== Tab2 采购分析 ===== */
+function renderPu(d){$('pu-cards').innerHTML=d.cards.map(cardHtml).join('');
+  echart('ch-pu1',{tooltip:{trigger:'axis'},legend:{textStyle:{color:'#a0b0c0'},top:0},grid:{left:50,right:20,top:34,bottom:24},
+    xAxis:Object.assign({type:'category',data:d.req_vs_ord.months},AX),
+    yAxis:Object.assign({type:'value',name:'万元',nameTextStyle:{color:'#a0b0c0'}},AX),
+    series:[{name:'申请金额',type:'bar',data:d.req_vs_ord.req,barWidth:8,itemStyle:{color:new E.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#00d4ff'},{offset:1,color:'#0a4a7a'}])}},
+      {name:'订单金额',type:'bar',data:d.req_vs_ord.ord,barWidth:8,itemStyle:{color:new E.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#ff9500'},{offset:1,color:'#7a4a0a'}])}}]});
+  echart('ch-pu2',{tooltip:{trigger:'item',formatter:'{b}: ¥{c} ({d}%)'},legend:{orient:'vertical',right:6,textStyle:{color:'#a0b0c0'}},
+    series:[{type:'pie',radius:['42%','66%'],center:['40%','52%'],data:d.cat_pie.map((x,i)=>({name:x.name,value:x.value,itemStyle:{color:C_COLORS[i%C_COLORS.length]}})),
+      label:{color:'#cfd8e6'},labelLine:{lineStyle:{color:'rgba(255,255,255,.2)'}}}]});
+  const st=echart('ch-pu3',{tooltip:{trigger:'axis',axisPointer:{type:'shadow'}},grid:{left:120,right:30,top:10,bottom:24},
+    xAxis:Object.assign({type:'value',name:'万元',nameTextStyle:{color:'#a0b0c0'}},AX),
+    yAxis:Object.assign({type:'category',data:(d.sup_top||[]).map(x=>x.supplier).reverse()},AX),
+    series:[{type:'bar',barWidth:13,data:(d.sup_top||[]).map((x,i)=>({value:x.amt/10000,itemStyle:{color:new E.graphic.LinearGradient(0,0,1,0,[{offset:0,color:'#00d4ff'},{offset:1,color:'#7dd3fc'}])}})).reverse()}]});
+  st.on('click',p=>drillSup(p.name));
+  renderTable($('pu-tab0'),d.tables.req,[['req_no','申请单号'],['dept','部门'],['requester','申请人'],['created_at','申请时间'],['purpose','用途'],['total_estimated','金额'],['status','状态']],
+    x=>'<tr><td>'+noLink(x.req_no)+'</td><td>'+esc(x.dept)+'</td><td>'+esc(x.requester)+'</td><td>'+esc((x.created_at||'').slice(0,10))+'</td><td>'+esc((x.purpose||'').slice(0,26))+'</td><td class="amt">'+fmtMoney(x.total_estimated)+'</td><td>'+esc(x.status)+'</td></tr>');
+  renderTable($('pu-tab1'),d.tables.ord,[['order_no','订单号'],['supplier','供应商'],['total_amount','金额'],['created_at','下单时间'],['status','状态']],
+    x=>'<tr><td>'+noLink(x.order_no)+'</td><td>'+esc(x.supplier)+'</td><td class="amt">'+fmtMoney(x.total_amount)+'</td><td>'+esc((x.created_at||'').slice(0,10))+'</td><td>'+esc(x.status)+'</td></tr>');
+  renderTable($('pu-tab2'),d.tables.inq,[['inq_no','询价单号'],['title','内容'],['sup_cnt','供应商数'],['created_at','发起时间'],['status','状态']],
+    x=>'<tr><td>'+noLink(x.inq_no)+'</td><td>'+esc((x.title||'').slice(0,30))+'</td><td>'+(x.sup_cnt||0)+'</td><td>'+esc((x.created_at||'').slice(0,10))+'</td><td>'+esc(x.status)+'</td></tr>')}
+/* ===== Tab3 库存分析 ===== */
+function renderIn(d){$('in-cards').innerHTML=d.cards.map(cardHtml).join('');
+  echart('ch-in1',{tooltip:{trigger:'axis'},legend:{textStyle:{color:'#a0b0c0'},top:0},grid:{left:50,right:20,top:34,bottom:24},
+    xAxis:Object.assign({type:'category',data:d.io.months},AX),yAxis:Object.assign({type:'value'},AX),
+    series:[{name:'入库',type:'line',smooth:true,data:d.io.in,itemStyle:{color:'#00c853'},lineStyle:{color:'#00c853'}},
+      {name:'出库',type:'line',smooth:true,data:d.io.out,itemStyle:{color:'#ff5252'},lineStyle:{color:'#ff5252'}}]});
+  echart('ch-in2',{tooltip:{trigger:'item',formatter:'{b}: ¥{c} ({d}%)'},legend:{orient:'vertical',right:6,textStyle:{color:'#a0b0c0'}},
+    series:[{type:'pie',radius:['42%','66%'],center:['40%','52%'],data:d.cat_pie.map((x,i)=>({name:x.name,value:x.value,itemStyle:{color:C_COLORS[i%C_COLORS.length]}})),label:{color:'#cfd8e6'},labelLine:{lineStyle:{color:'rgba(255,255,255,.2)'}}}]});
+  echart('ch-in3',{tooltip:{trigger:'axis'},grid:{left:50,right:20,top:20,bottom:24},
+    xAxis:Object.assign({type:'category',data:d.quarter_turn.quarters},AX),yAxis:Object.assign({type:'value'},AX),
+    series:[{name:'周转(‰)',type:'bar',data:d.quarter_turn.turn,barWidth:26,itemStyle:{borderRadius:[4,4,0,0],color:new E.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#a855f7'},{offset:1,color:'#4a1a7a'}])}}]});
+  renderTable($('in-tab0'),d.tables.inv,[['item_name','物料'],['spec','规格'],['unit','单位'],['quantity','当前库存'],['amt','库存金额'],['warehouse','仓库']],
+    x=>'<tr><td>'+esc(x.item_name)+'</td><td>'+esc(x.spec||'-')+'</td><td>'+esc(x.unit||'-')+'</td><td>'+fmtW(x.quantity)+'</td><td class="amt">'+fmtMoney(x.amt)+'</td><td>'+esc(x.warehouse||'-')+'</td></tr>');
+  renderTable($('in-tab1'),d.tables.in,[['receive_no','入库单号'],['item_name','物料'],['quantity','数量'],['est_amount','金额'],['is_est','类型'],['received_at','入库时间'],['warehouse','仓库']],
+    x=>'<tr><td>'+noLink(x.receive_no)+'</td><td>'+esc(x.item_name)+'</td><td>'+fmtW(x.quantity)+'</td><td class="amt">'+fmtMoney(x.est_amount)+'</td><td>'+((x.is_est==1||x.is_est==='1')?'暂估':'正式')+'</td><td>'+esc((x.received_at||'').slice(0,10))+'</td><td>'+esc(x.warehouse||'-')+'</td></tr>');
+  renderTable($('in-tab2'),d.tables.out,[['req_no','出库单号'],['item_name','物料'],['quantity','数量'],['dept','领用部门'],['receiver','领用人'],['created_at','出库时间']],
+    x=>'<tr><td>'+noLink(x.req_no)+'</td><td>'+esc(x.item_name)+'</td><td>'+fmtW(x.quantity)+'</td><td>'+esc(x.dept||'-')+'</td><td>'+esc(x.receiver||'-')+'</td><td>'+esc((x.created_at||'').slice(0,10))+'</td></tr>');
+  renderTable($('in-tab3'),d.tables.low,[['item_name','物料'],['quantity','当前库存'],['safe_stock','安全库存'],['gap','缺口']],
+    x=>'<tr><td>'+esc(x.item_name)+'</td><td class="down">'+fmtW(x.quantity)+'</td><td>'+fmtW(x.safe_stock)+'</td><td class="down">'+fmtW(x.gap)+'</td></tr>')}
+/* ===== Tab4 财务分析 ===== */
+function renderFi(d){$('fi-cards').innerHTML=d.cards.map(cardHtml).join('');
+  echart('ch-fi1',{tooltip:{trigger:'axis'},grid:{left:50,right:20,top:20,bottom:24},
+    xAxis:Object.assign({type:'category',data:d.months},AX),yAxis:Object.assign({type:'value',name:'万元',nameTextStyle:{color:'#a0b0c0'}},AX),
+    series:[{name:'合同金额',type:'bar',data:d.con_m,barWidth:16,itemStyle:{borderRadius:[4,4,0,0],color:new E.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#00d4ff'},{offset:1,color:'#0066aa'}])}}]});
+  echart('ch-fi2',{tooltip:{trigger:'axis'},legend:{textStyle:{color:'#a0b0c0'},top:0},grid:{left:50,right:20,top:34,bottom:24},
+    xAxis:Object.assign({type:'category',data:d.months},AX),yAxis:Object.assign({type:'value',name:'万元',nameTextStyle:{color:'#a0b0c0'}},AX),
+    series:[{name:'已开票',type:'line',smooth:true,data:d.inv_m,itemStyle:{color:'#00c853'},lineStyle:{color:'#00c853'},areaStyle:{color:new E.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(0,200,83,.35)'},{offset:1,color:'rgba(0,200,83,.02)'}])}},
+      {name:'已付款',type:'line',smooth:true,data:d.pay_m,itemStyle:{color:'#ff9500'},lineStyle:{color:'#ff9500',type:'dashed'}}]});
+  echart('ch-fi3',{tooltip:{trigger:'item',formatter:'{b}: ¥{c} ({d}%)'},legend:{bottom:0,textStyle:{color:'#a0b0c0'}},
+    series:[{type:'pie',radius:'62%',center:['50%','44%'],data:d.aging_pie.map((x,i)=>({name:x.name,value:x.value,itemStyle:{color:['#00c853','#ffd700','#ff9500','#ff5252'][i%4]}})),
+      label:{color:'#cfd8e6'},labelLine:{lineStyle:{color:'rgba(255,255,255,.2)'}}}]});
+  renderTable($('fi-tab0'),d.tables.con,[['contract_no','合同号'],['supplier','供应商'],['amount','合同金额'],['sign_date','签订日期'],['inv_collect_status','发票状态'],['status','状态']],
+    x=>'<tr><td>'+noLink(x.contract_no)+'</td><td>'+esc(x.supplier)+'</td><td class="amt">'+fmtMoney(x.amount)+'</td><td>'+esc((x.sign_date||'').slice(0,10))+'</td><td>'+esc(x.inv_collect_status||'-')+'</td><td>'+esc(x.status)+'</td></tr>');
+  renderTable($('fi-tab1'),d.tables.inv,[['invoice_no','发票号'],['supplier','供应商'],['amount','开票金额'],['invoice_date','收票日期'],['status','状态']],
+    x=>'<tr><td>'+noLink(x.invoice_no)+'</td><td>'+esc(x.supplier)+'</td><td class="amt">'+fmtMoney(x.amount)+'</td><td>'+esc((x.invoice_date||'').slice(0,10))+'</td><td>'+esc(x.status)+'</td></tr>');
+  renderTable($('fi-tab2'),d.tables.pay,[['payment_no','付款单号'],['supplier','供应商'],['amount','金额'],['paid_at','付款日期'],['payment_type','方式']],
+    x=>'<tr><td>'+noLink(x.payment_no)+'</td><td>'+esc(x.supplier)+'</td><td class="amt">'+fmtMoney(x.amount)+'</td><td>'+esc((x.paid_at||'').slice(0,10))+'</td><td>'+esc(x.payment_type||'-')+'</td></tr>');
+  renderTable($('fi-tab3'),d.tables.due,[['contract_no','合同号'],['supplier','供应商'],['amount','合同金额'],['invoice_clause','开票约定'],['inv_collect_status','催收状态']],
+    x=>'<tr><td>'+noLink(x.contract_no)+'</td><td>'+esc(x.supplier)+'</td><td class="amt">'+fmtMoney(x.amount)+'</td><td>'+esc((x.invoice_clause||'-').slice(0,40))+'</td><td>'+esc(x.inv_collect_status||'-')+'</td></tr>')}
+/* ===== Tab5 维修分析 ===== */
+function renderRp(d){$('rp-cards').innerHTML=d.cards.map(cardHtml).join('');
+  const cm=echart('ch-rp1',{tooltip:{trigger:'axis'},grid:{left:50,right:20,top:20,bottom:24},
+    xAxis:Object.assign({type:'category',data:d.months},AX),yAxis:Object.assign({type:'value',name:'万元',nameTextStyle:{color:'#a0b0c0'}},AX),
+    series:[{name:'维修费用',type:'line',smooth:true,symbolSize:6,data:d.cost_m,itemStyle:{color:'#ff9500'},lineStyle:{color:'#ff9500',width:2.5},
+      areaStyle:{color:new E.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(255,149,0,.4)'},{offset:1,color:'rgba(255,149,0,.02)'}])}}]});
+  cm.on('click',p=>drillMonths('rp','维修费用',p.name,d.cost_m));
+  echart('ch-rp2',{tooltip:{trigger:'item',formatter:'{b}: ¥{c} ({d}%)'},legend:{bottom:0,textStyle:{color:'#a0b0c0'}},
+    series:[{type:'pie',radius:['40%','64%'],center:['50%','44%'],data:d.type_pie.map((x,i)=>({name:x.name||'未定损',value:x.value,itemStyle:{color:C_COLORS[i%C_COLORS.length]}})),
+      label:{color:'#cfd8e6'},labelLine:{lineStyle:{color:'rgba(255,255,255,.2)'}}}]});
+  const dt=echart('ch-rp3',{tooltip:{trigger:'axis',axisPointer:{type:'shadow'}},grid:{left:130,right:30,top:10,bottom:24},
+    xAxis:Object.assign({type:'value',name:'万元',nameTextStyle:{color:'#a0b0c0'}},AX),
+    yAxis:Object.assign({type:'category',data:(d.dev_top||[]).map(x=>String(x.device_name).slice(0,14)).reverse()},AX),
+    series:[{type:'bar',barWidth:13,data:(d.dev_top||[]).map((x,i)=>({value:x.amt/10000,itemStyle:{color:new E.graphic.LinearGradient(0,0,1,0,[{offset:0,color:'#ec4899'},{offset:1,color:'#f9a8d4'}])}})).reverse()}]});
+  dt.on('click',p=>drillDev(p.name));
+  renderTable($('rp-tab0'),d.tables.work,[['plan_no','工单号'],['device_name','设备'],['fault_desc','故障'],['dept','部门'],['created_at','报修时间'],['repair_type','类型'],['status','状态']],
+    x=>'<tr><td>'+noLink(x.plan_no)+'</td><td>'+esc(x.device_name)+'</td><td>'+esc((x.fault_desc||'').slice(0,20))+'</td><td>'+esc(x.dept||'-')+'</td><td>'+esc((x.created_at||'').slice(0,10))+'</td><td>'+esc(x.repair_type||'-')+'</td><td>'+esc(x.status)+'</td></tr>');
+  renderTable($('rp-tab1'),d.tables.change,[['plan_no','工单号'],['add_part','变更项目'],['add_price','变更费用'],['status','确认状态'],['confirm1_by','提交人'],['created_at','时间']],
+    x=>'<tr><td>'+noLink(x.plan_no)+'</td><td>'+esc(x.add_part||x.add_labor||'-')+'</td><td class="amt">'+fmtMoney(x.add_price)+'</td><td>'+esc(x.status)+'</td><td>'+esc(x.confirm1_by||'-')+'</td><td>'+esc((x.created_at||'').slice(0,10))+'</td></tr>');
+  renderTable($('rp-tab2'),d.tables.vendor,[['company','服务商'],['n','合作工单数'],['amt','维修总费用']],
+    x=>'<tr><td>'+esc(x.company)+'</td><td>'+x.n+'</td><td class="amt">'+fmtMoney(x.amt)+'</td></tr>')}
+/* ---- echarts helper ---- */
+function echart(elId,opt){if(charts[elId])charts[elId].dispose();
+  const ch=E.init($(elId));ch.setOption(opt);charts[elId]=ch;
+  window.addEventListener('resize',()=>ch.resize());return ch}
+/* ---- 子明细 tab ---- */
+function subTab(el,prefix){const i=el.dataset.i;
+  document.querySelectorAll('#'+prefix+'-sub .st').forEach(x=>x.classList.toggle('on',x===el));
+  for(let k=0;k<6;k++){const t=$(prefix+'-tab'+k);if(t)t.style.display=k==i?'block':'none'}}
+/* ---- 下钻 ---- */
+function drillMonths(tab,label,mName,data){openDlg(label+' · '+mName,
+  '<table class="tbl"><thead><tr><th>月份</th><th>金额(万元)</th></tr></thead><tbody><tr><td>'+esc(mName)+'</td><td class="amt">'+fmtW(data)+'</td></tr></tbody></table>')}
+function drillSup(name){openDlg('供应商下钻 · '+esc(name),
+  '<div class="tt">供应商维度明细请至 采购分析→采购订单明细 / 经营总览→明细 中查看：'+esc(name)+'</div>')}
+function drillDev(name){openDlg('设备下钻 · '+esc(name),
+  '<div class="tt">该设备维修明细请至 维修分析→维修工单明细 查看：'+esc(name)+'</div>')}
+function openDlg(title,html){$('dlgT').textContent=title;$('dlgB').innerHTML=html;$('mask').classList.add('on')}
+function closeDlg(){$('mask').classList.remove('on')}
+/* ---- 导出 / 截图 / 大屏 ---- */
+function exportExcel(){const q=qs()||'year='+new Date().getFullYear();
+  location.href='/api/dashboard/export?tab='+CUR+'&'+q;toast('Excel 导出中…')}
+async function shotPng(){toast('正在生成截图…');
+  try{const cv=await html2canvas(document.getElementById('body'),{backgroundColor:'#0a1628',scale:1.6,useCORS:true,logging:false});
+    const a=document.createElement('a');a.download='数据看板_'+CUR+'_'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.png';
+    a.href=cv.toDataURL('image/png');a.click();toast('✅ 截图已保存')}catch(e){toast('截图失败: '+e.message)}}
+function toggleZen(){document.body.classList.toggle('zen');toast(document.body.classList.contains('zen')?'已进入大屏模式 (Esc 退出)':'已退出大屏模式')}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){document.body.classList.remove('zen');closeDlg()}})
+let autoOn=false;
+function autoRefresh(btn){autoOn=!autoOn;btn.style.borderColor=autoOn?'var(--green)':'';btn.textContent=autoOn?'⏱ 自动 开':'⏱ 自动';
+  clearInterval(autoTimer);if(autoOn){autoTimer=setInterval(()=>{refreshAll()},300000);toast('已开启: 每5分钟自动刷新')}else toast('已关闭自动刷新')}
+/* ---- init ---- */
+(async function(){await loadMeta();refreshAll()})()
+</script>
+</body>
+</html>
