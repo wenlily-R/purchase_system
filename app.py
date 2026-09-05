@@ -12058,12 +12058,23 @@ def api_dashboard_overview():
     # 平均单价(本年)
     avg_price = (this_o[0] / this_o[1]) if this_o[1] else 0
     avg_last = (last_o[0] / last_o[1]) if last_o[1] else 0
-    # 应付余额: 合同金额-已付款(全部在账)
+    # 应付余额: 合同金额-已付款(全部在账); 较年初=今年新签净增应付/年初余额
     pay_total = q("SELECT COALESCE(SUM(amount),0) FROM payment_requests WHERE status NOT IN ('草稿','已驳回','已作废')")[0][0]
     con_total = q("SELECT COALESCE(SUM(amount),0) FROM contracts WHERE status NOT IN ('已驳回','已作废')")[0][0]
     ap_bal = con_total - pay_total
-    # 库存金额(现库存)
+    con_pre = q("SELECT COALESCE(SUM(amount),0) FROM contracts WHERE status NOT IN ('已驳回','已作废') AND substr(created_at,1,4)<?", (yyyy,))[0][0]
+    pay_pre = q("SELECT COALESCE(SUM(amount),0) FROM payment_requests WHERE status NOT IN ('草稿','已驳回','已作废') AND substr(created_at,1,4)<?", (yyyy,))[0][0]
+    bal_pre = con_pre - pay_pre
+    # 库存金额(现库存); 较上月=现库存额-本月净变动(入库-出库, 出库按现价估算), 仅本年视图有意义
     inv_val = q("SELECT COALESCE(SUM(quantity*price),0) FROM inventory")[0][0]
+    _cm = datetime.date.today().strftime('%Y-%m')
+    _is_cur = (yyyy == str(datetime.date.today().year))
+    if _is_cur:
+        _in_m = q("SELECT COALESCE(SUM(CASE WHEN est_amount>0 THEN est_amount ELSE quantity*(SELECT COALESCE(price,0) FROM inventory i WHERE i.item_name=r.item_name LIMIT 1) END),0) FROM receivings r WHERE substr(r.created_at,1,7)=? AND r.status NOT IN ('草稿','已驳回','已作废')", (_cm,))[0][0]
+        _out_m = q("SELECT COALESCE(SUM(quantity*(SELECT COALESCE(price,0) FROM inventory i WHERE i.item_name=r.item_name LIMIT 1)),0) FROM requisitions r WHERE substr(r.created_at,1,7)=? AND r.status NOT IN ('草稿','已驳回','已作废')", (_cm,))[0][0]
+        _inv_pre = max(inv_val - (_in_m - _out_m), 0)
+    else:
+        _inv_pre = 0
     # 维修费用(本年): 外委用 invoice_amount||quote_total||est_cost
     repair_amt = q("SELECT COALESCE(SUM(CASE WHEN invoice_amount>0 THEN invoice_amount WHEN quote_total>0 THEN quote_total ELSE est_cost END),0) FROM repair_plans WHERE status NOT IN ('草稿','已驳回','已作废') AND substr(created_at,1,4)=?" + (scope_sql if own else ''), (yyyy,) + (tuple(own_ps) if own else ()))[0][0]
     repair_amt_last = q("SELECT COALESCE(SUM(CASE WHEN invoice_amount>0 THEN invoice_amount WHEN quote_total>0 THEN quote_total ELSE est_cost END),0) FROM repair_plans WHERE status NOT IN ('草稿','已驳回','已作废') AND substr(created_at,1,4)=?" + (scope_sql if own else ''), (pre,) + (tuple(own_ps) if own else ()))[0][0]
@@ -12077,8 +12088,8 @@ def api_dashboard_overview():
         {'k': '本年采购总额', 'v': round(this_o[0] / 10000, 2), 'unit': '万元', 'cmp': yoy(this_o[0], last_o[0]), 'cmp_label': '同比'},
         {'k': '采购订单总数', 'v': this_o[1], 'unit': '笔', 'cmp': yoy(this_o[1], last_o[1]), 'cmp_label': '同比'},
         {'k': '平均采购单价', 'v': round(avg_price, 2), 'unit': '元/笔', 'cmp': yoy(avg_last - avg_price, avg_last) if avg_last else None, 'cmp_label': '降本'},
-        {'k': '应付账款余额', 'v': round(ap_bal / 10000, 2), 'unit': '万元', 'cmp': None, 'cmp_label': '在账'},
-        {'k': '库存总金额', 'v': round(inv_val / 10000, 2), 'unit': '万元', 'cmp': None, 'cmp_label': '现值'},
+        {'k': '应付账款余额', 'v': round(ap_bal / 10000, 2), 'unit': '万元', 'cmp': yoy(ap_bal, bal_pre), 'cmp_label': '较年初'},
+        {'k': '库存总金额', 'v': round(inv_val / 10000, 2), 'unit': '万元', 'cmp': yoy(inv_val, _inv_pre) if _is_cur else None, 'cmp_label': '较上月'},
         {'k': '维修费用总额', 'v': round(repair_amt / 10000, 2), 'unit': '万元', 'cmp': yoy(repair_amt, repair_amt_last), 'cmp_label': '同比'},
     ]
     # --- 近5年 采购金额+降本 ---
@@ -12100,11 +12111,21 @@ def api_dashboard_overview():
     mat_drop = q("SELECT pr.id, pr.req_no, ri.item_name, ri.spec, pr.dept, pr.total_estimated FROM purchase_requests pr LEFT JOIN request_items ri ON ri.req_id=pr.id WHERE pr.status NOT IN ('草稿','已驳回','已作废') AND ri.id IS NOT NULL" + scope_d + lim, tuple(scope_ps))
     sup_rank = q("SELECT supplier, COALESCE(SUM(total_amount),0) amt, COUNT(*) n FROM purchase_orders WHERE status NOT IN ('草稿','已驳回','已作废')" + scope_do + " GROUP BY supplier ORDER BY amt DESC LIMIT 10", tuple(scope_ps))
     ap_rows = q("SELECT contract_no, supplier, amount, COALESCE((SELECT SUM(amount) FROM payment_requests p WHERE p.contract_id=c.id AND p.status NOT IN ('草稿','已驳回','已作废')),0) paid FROM contracts c WHERE status NOT IN ('已驳回','已作废')" + scope_dc + " ORDER BY amount DESC" + lim, tuple(scope_ps))
+    # 供应商降本分析: 本年vs上年采购额 同比降幅 + 本年订单数(有效订单)
+    sup_y = q("SELECT supplier, COALESCE(SUM(total_amount),0), COUNT(*) FROM purchase_orders WHERE status NOT IN ('草稿','已驳回','已作废') AND substr(created_at,1,4)=?" + scope_do + " GROUP BY supplier", (yyyy,) + tuple(scope_ps))
+    sup_p = q("SELECT supplier, COALESCE(SUM(total_amount),0) FROM purchase_orders WHERE status NOT IN ('草稿','已驳回','已作废') AND substr(created_at,1,4)=?" + scope_do + " GROUP BY supplier", (pre,) + tuple(scope_ps))
+    _py = {r[0]: r[1] for r in sup_p}
+    sup_save = [dict_row({'supplier': s, 'last_amt': round(_py.get(s, 0), 2), 'this_amt': round(a, 2),
+                          'down': round((_py.get(s, 0) - a) / _py[s] * 100, 1) if _py.get(s, 0) and _py[s] > 0 else None,
+                          'orders': n})
+                for s, a, n in sup_y]
+    sup_save.sort(key=lambda x: x['this_amt'], reverse=True)
     c.close()
     return jsonify({'cards': cards, 'years5': years5, 'months': months, 'labels_m': ['%d月' % i for i in range(1, 13)],
                     'tables': {
                         'material_drop': [dict_row({'req_no': r[1], 'item_name': r[2], 'spec': r[3], 'dept': r[4], 'est': r[5]}) for r in mat_drop],
                         'supplier_rank': [dict_row({'supplier': r[0], 'amt': r[1], 'orders': r[2]}) for r in sup_rank],
+                        'supplier_save': sup_save[:30],
                         'ap_detail': [dict_row({'contract_no': r[0], 'supplier': r[1], 'amount': r[2], 'paid': r[3]}) for r in ap_rows],
                     }})
 
@@ -12444,6 +12465,7 @@ def api_dashboard_export():
     # 明细 sheets
     tbl_defs = {
         'overview': [('物料降本/申请明细', 'material_drop', ['req_no', 'item_name', 'spec', 'dept', 'est']),
+                     ('供应商降本分析', 'supplier_save', ['supplier', 'last_amt', 'this_amt', 'down', 'orders']),
                      ('前十大供应商', 'supplier_rank', ['supplier', 'orders', 'amt']),
                      ('应付账款明细', 'ap_detail', ['contract_no', 'supplier', 'amount', 'paid'])],
         'purchase': [('采购申请明细', 'req', ['req_no', 'dept', 'requester', 'created_at', 'purpose', 'total_estimated', 'status']),

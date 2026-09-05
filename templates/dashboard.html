@@ -97,7 +97,7 @@ body.zen .body{padding-top:6px}
     <select class="sel" id="fRange" title="时间范围"><option value="">本年</option><option value="q">本季度</option><option value="m">本月</option><option value="12m">近12个月</option></select>
   </span>
   <button class="btn pri" onclick="refreshAll()">🔄 刷新</button>
-  <button class="btn" onclick="autoRefresh(this)">⏱ 自动</button>
+  <button class="btn" id="autoBtn" onclick="autoRefresh(this)">⏱ 自动</button>
   <button class="btn" onclick="exportExcel()">⬇ Excel</button>
   <button class="btn" onclick="shotPng()">📷 截图</button>
   <button class="btn" onclick="toggleZen()">🖥 大屏</button>
@@ -122,10 +122,11 @@ body.zen .body{padding-top:6px}
   <div class="panel"><h3>明细分析</h3>
     <div class="subtabs" id="ov-sub">
       <div class="st on" data-i="0" onclick="subTab(this,'ov')">物料降本分析</div>
-      <div class="st" data-i="1" onclick="subTab(this,'ov')">前十大供应商</div>
-      <div class="st" data-i="2" onclick="subTab(this,'ov')">应付账款明细</div>
+      <div class="st" data-i="1" onclick="subTab(this,'ov')">供应商降本分析</div>
+      <div class="st" data-i="2" onclick="subTab(this,'ov')">前十大供应商</div>
+      <div class="st" data-i="3" onclick="subTab(this,'ov')">应付账款明细</div>
     </div>
-    <div class="wrap" id="ov-tab0"></div><div class="wrap" style="display:none" id="ov-tab1"></div><div class="wrap" style="display:none" id="ov-tab2"></div>
+    <div class="wrap" id="ov-tab0"></div><div class="wrap" style="display:none" id="ov-tab1"></div><div class="wrap" style="display:none" id="ov-tab2"></div><div class="wrap" style="display:none" id="ov-tab3"></div>
   </div>
 </div>
 
@@ -213,7 +214,7 @@ body.zen .body{padding-top:6px}
 </div>
 
 <script>
-let E=window.echarts, charts={}, CUR='overview', META=null, autoTimer=null;
+let E=window.echarts, charts={}, CUR='overview', META=null, autoTimer=null, autoOn=false;
 const $=id=>document.getElementById(id);
 const C_COLORS=['#00d4ff','#ff9500','#00c853','#a855f7','#ec4899','#ffd700','#4facfe','#f472b6'];
 const AX={axisLine:{lineStyle:{color:'rgba(255,255,255,.15)'}},axisLabel:{color:'#a0b0c0',fontSize:11},
@@ -271,9 +272,11 @@ function renderOv(d){$('ov-cards').innerHTML=d.cards.map(cardHtml).join('');
   mk.on('click',p=>drillMonths('ov','采购金额',p.name,d.months));
   renderTable($('ov-tab0'),(d.tables.material_drop||[]).slice(0,100),[['item_name','物料'],['spec','规格'],['dept','部门'],['req_no','申请单号'],['est','预估金额']],
     x=>'<tr><td>'+esc(x.item_name)+'</td><td>'+esc(x.spec||'-')+'</td><td>'+esc(x.dept||'-')+'</td><td>'+noLink(x.req_no)+'</td><td class="amt">'+fmtMoney(x.est)+'</td></tr>');
-  renderTable($('ov-tab1'),(d.tables.supplier_rank||[]),[['supplier','供应商'],['orders','订单数'],['amt','采购金额']],
+  renderTable($('ov-tab1'),(d.tables.supplier_save||[]),[['supplier','供应商'],['last_amt','上年采购额'],['this_amt','本年采购额'],['down','降幅'],['orders','订单数']],
+    x=>{const d=x.down;return '<tr><td>'+esc(x.supplier)+'</td><td class="amt">'+fmtMoney(x.last_amt)+'</td><td class="amt">'+fmtMoney(x.this_amt)+'</td><td>'+(d===null||d===undefined?'<b class="flat">—</b>':(d>=0?'<b class="up">▲ ':'<b class="down">▼ ')+Math.abs(d).toFixed(1)+'%</b>')+'</td><td>'+x.orders+'</td></tr>'});
+  renderTable($('ov-tab2'),(d.tables.supplier_rank||[]),[['supplier','供应商'],['orders','订单数'],['amt','采购金额']],
     x=>'<tr><td>'+esc(x.supplier)+'</td><td>'+x.orders+'</td><td class="amt">'+fmtMoney(x.amt)+'</td></tr>');
-  renderTable($('ov-tab2'),(d.tables.ap_detail||[]),[['contract_no','合同号'],['supplier','供应商'],['amount','合同金额'],['paid','已付'],['bal','应付余额']],
+  renderTable($('ov-tab3'),(d.tables.ap_detail||[]),[['contract_no','合同号'],['supplier','供应商'],['amount','合同金额'],['paid','已付'],['bal','应付余额']],
     x=>{const b=x.amount-x.paid;return '<tr><td>'+noLink(x.contract_no)+'</td><td>'+esc(x.supplier)+'</td><td class="amt">'+fmtMoney(x.amount)+'</td><td class="amt">'+fmtMoney(x.paid)+'</td><td class="amt '+(b>0?'':'up')+'">'+fmtMoney(b)+'</td></tr>'})}
 /* ===== Tab2 采购分析 ===== */
 function renderPu(d){$('pu-cards').innerHTML=d.cards.map(cardHtml).join('');
@@ -382,11 +385,14 @@ async function shotPng(){toast('正在生成截图…');
     a.href=cv.toDataURL('image/png');a.click();toast('✅ 截图已保存')}catch(e){toast('截图失败: '+e.message)}}
 function toggleZen(){document.body.classList.toggle('zen');toast(document.body.classList.contains('zen')?'已进入大屏模式 (Esc 退出)':'已退出大屏模式')}
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){document.body.classList.remove('zen');closeDlg()}})
-let autoOn=false;
-function autoRefresh(btn){autoOn=!autoOn;btn.style.borderColor=autoOn?'var(--green)':'';btn.textContent=autoOn?'⏱ 自动 开':'⏱ 自动';
-  clearInterval(autoTimer);if(autoOn){autoTimer=setInterval(()=>{refreshAll()},300000);toast('已开启: 每5分钟自动刷新')}else toast('已关闭自动刷新')}
+const AUTO_OPTS=[0,5,15,30];
+function applyAuto(btn,m,silent){autoOn=m>0;btn.style.borderColor=autoOn?'var(--green)':'';btn.textContent=m?('⏱ '+m+'分'):'⏱ 自动';
+  clearInterval(autoTimer);if(autoOn)autoTimer=setInterval(()=>refreshAll(),m*60000);
+  if(!silent)toast(autoOn?('自动刷新已开启: 每'+m+'分钟'):'已关闭自动刷新')}
+function autoRefresh(btn){const i=Math.max(0,AUTO_OPTS.indexOf(+(localStorage.dashAutoMin||0)));
+  const m=AUTO_OPTS[(i+1)%AUTO_OPTS.length];localStorage.dashAutoMin=m;applyAuto(btn,m,false)}
 /* ---- init ---- */
-(async function(){await loadMeta();refreshAll()})()
+(async function(){const ab=document.getElementById('autoBtn');if(ab)applyAuto(ab,+(localStorage.dashAutoMin||0),true);await loadMeta();refreshAll()})()
 </script>
 </body>
 </html>
