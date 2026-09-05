@@ -3906,7 +3906,7 @@ async function showRepairDetail(rid){
   if(p.status=='待回厂验收'&&canBuyer)acts.push(['✅ 联合性能验收','rpAccept('+rid+')']);
   if(p.status=='验收通过'&&canBuyer)acts.push(['📦 处理(归还/回收入库)','rpHandle('+rid+')']);
   if(p.status=='待发票登记'&&canBuyer)acts.push(['🧾 登记维修发票','rpInvoice('+rid+')']);
-  foot=`<button class="btn btn-o" onclick="closeMod()">关闭</button>`+`<button class="btn btn-o btn-sm" onclick="window.open('/api/repairs/${rid}/download','_blank')">⬇️ 下载维修单</button>`+acts.map(a=>`<button class="btn btn-p btn-sm" onclick="${a[1]};closeMod()">${a[0]}</button>`).join('');
+  foot=`<button class="btn btn-o" onclick="closeMod()">关闭</button>`+`<button class="btn btn-o btn-sm" onclick="window.open('/api/repairs/${rid}/download','_blank')">⬇️ 下载维修单</button>`+acts.map(a=>`<button class="btn btn-p btn-sm" onclick="${a[1]}${/^(rpDamageOpen|rpQuoteOpen|rpSelectVendor|rpAccept|rpHandle|rpInvoice|showRepairDetail)\(/.test(a[1])?'':';closeMod()'}">${a[0]}</button>`).join('');
   id('dmFooter').innerHTML=foot;
   id('detailModal').classList.add('show');
   window._rpChangeId=rid;
