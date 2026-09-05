@@ -94,7 +94,11 @@ def login_fail_count(c, username, ip):
     return r
 
 # ── 自动备份: sqlite backup API, 保留14份 (V5.1) ──
-BACKUP_DIR = '/Users/a0/Desktop/正成能源/04_数据库备份/自动备份'  # 2026-08-17 整理: 备份统一放正成能源/04_数据库备份/自动备份
+# 双机兼容: Mac(生产)用原固定路径; Windows(开发)落到本机桌面同名目录, 避免写死Mac路径导致WinError5备份失败
+if sys.platform.startswith('win'):
+    BACKUP_DIR = os.path.join(os.path.expanduser('~'), 'Desktop', '正成能源', '04_数据库备份', '自动备份')
+else:
+    BACKUP_DIR = '/Users/a0/Desktop/正成能源/04_数据库备份/自动备份'  # 2026-08-17 整理: 备份统一放正成能源/04_数据库备份/自动备份
 def backup_db():
     try:
         os.makedirs(BACKUP_DIR, exist_ok=True)
