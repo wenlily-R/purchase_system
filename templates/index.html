@@ -1683,7 +1683,7 @@ async function editPRequest(oid){
   id('dmBody').innerHTML=`
     <div class="fr"><div class="fg"><label class="fl2">申请单号</label><input class="fc" id="fReqNo" readonly value="${esc(r.req_no)}" style="background:#f5f5f5"></div>
     <div class="fg"><label class="fl2">申请日期</label><input class="fc" id="fReqApplyDate" readonly value="${esc(r.apply_date||'')}" style="background:#f5f5f5"></div></div>
-    <div class="fr"><div class="fg"><label class="fl2">类型</label><select class="fc" id="fReqType" onchange="reqTypeTip()"><option>物资采购</option><option>设备维修</option></select></div>
+    <div class="fr"><div class="fg"><label class="fl2">类型</label><input class="fc" id="fReqType" readonly value="物资采购" style="background:#f5f5f5;color:#555"></div>
     <div class="fg"><label class="fl2" id="fReqTypeTip" style="color:#b76e00;font-size:9px;align-self:center">📦 买物资: 填物资名称/规格/数量</label></div></div>
     <div class="fr"><div class="fg"><label class="fl2">申请部门</label><select class="fc" id="fReqDept"><option value="">请选择（选填）</option>${depts.map(x=>`<option ${x.name==r.dept?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div>
     <div class="fg"><label class="fl2">预算科目</label><select class="fc" id="fReqBud"><option value="">无</option></select></div></div>
@@ -1705,11 +1705,7 @@ async function editPRequest(oid){
     <button class="btn btn-p" onclick="doSavePReq()">✅ 保存并提交审批</button>`;
   // 预算回显
   id('fReqBud').innerHTML='<option value="">无</option>'+bs.map(b=>`<option value="${b.code}" ${b.code==r.budget_code?'selected':''}>${esc(b.name)} (¥${(b.annual_budget||0).toFixed(0)})</option>`).join('');
-  // 类型回显+提示(编辑模式标题保持"修改采购申请")
-  if(r.req_type){const _t=id('fReqType');_t.value=r.req_type==='物资采购'?'物资采购':'设备维修'}
-  const _tip=id('fReqTypeTip');if(_tip)_tip.textContent = (id('fReqType').value=='设备维修')
-    ? '🛠 报维修: 物资名称填设备名(如"传动轴"), 用途填使用地点+故障, 可附图'
-    : '📦 买物资: 填物资名称/规格/数量, 自动查库存';
+  // V11.223: 类型固定物资采购且只读展示(无下拉箭头), 表单内已直出, 无需回显处理
   // 整单附件列表回显
   reqAtts.forEach(a=>{const _wrap=document.createElement('div');_wrap.style.display='flex';_wrap.style.alignItems='center';_wrap.style.gap='6px';_wrap.innerHTML=`<a href="/uploads/${esc(a)}" target="_blank" style="color:#3370ff">📄 ${esc(a.split('/').pop())}</a><span onclick="this.parentElement.remove()" style="cursor:pointer;color:var(--d)">✕</span>`;id('reqAttList').appendChild(_wrap)});
   // 明细行回显(富字段)
@@ -3743,14 +3739,16 @@ async function showRepairForm(rid){
   const _editing = rid>0;
   if(__guardOpen('repair:'+(rid||'new')))return;
   window._rpAtts=[];window._rpEditId=rid||0;
+  const _depP=api('/departments').catch(()=>[]);  // V11.222: 申请部门改下拉, 数据源同物资采购(/departments)
   let _pre={},dd=null;
   if(_editing){
     try{dd=await api(`/repairs/${rid}/detail`);_pre=dd.plan||{};window._rpAtts=_pre.attachments?JSON.parse(_pre.attachments):[]}catch(e){}
   }
+  const depts=await _depP;
   id('dmTitle').textContent=_editing?('✏️ 编辑维修计划 '+(_pre.plan_no||'')):'🔧 新建维修计划';
   id('dmBody').innerHTML=`
     <div style="font-size:9px;color:#666;margin-bottom:6px">设备故障报修：提交后由定损角色（机电/机修/生产负责人，系统设置配置）技术判定。带 * 为必填。</div>
-    <div class="fr"><div class="fg"><label class="fl2">申请部门 *</label><input class="fc" id="rpDept" value="${esc(_pre.dept||ME.dept||'')}" placeholder="如: 生产部" list="deptList2"></div>
+    <div class="fr"><div class="fg"><label class="fl2">申请部门 *</label><select class="fc" id="rpDept"><option value="">请选择</option>${depts.map(x=>`<option ${x.name==(_pre.dept||ME.dept_name)?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div>
     <div class="fg"><label class="fl2">紧急等级 *</label><select class="fc" id="rpUrg"><option ${_pre.urgency=='紧急'?'':'selected'}>普通</option><option ${_pre.urgency=='紧急'?'selected':''}>紧急</option></select></div></div>
     <div class="fr"><div class="fg"><label class="fl2">维修物件分类 *</label><select class="fc" id="rpItemClass"><option value="小件" ${_pre.item_class!='大件'?'selected':''}>小件(高压胶管/阀件等)</option><option value="大件" ${_pre.item_class=='大件'?'selected':''}>大件(大型电机/减速机等)</option></select></div>
     <div class="fg"><label class="fl2">故障设备名称 *</label><input class="fc" id="rpDev" value="${esc(_pre.device_name||'')}" placeholder="如: 3号传送带电机"></div></div>
@@ -4750,7 +4748,7 @@ async function showForm(type){
     id('dmBody').innerHTML=`
       <div class="fr"><div class="fg"><label class="fl2">申请单号</label><input class="fc" id="fReqNo" readonly style="background:#f5f5f5"></div>
       <div class="fg"><label class="fl2">申请日期</label><input class="fc" id="fReqApplyDate" readonly style="background:#f5f5f5"></div></div>
-      <div class="fr"><div class="fg"><label class="fl2">类型</label><select class="fc" id="fReqType" onchange="reqTypeTip()"><option>物资采购</option><option>设备维修</option></select></div>
+      <div class="fr"><div class="fg"><label class="fl2">类型</label><input class="fc" id="fReqType" readonly value="物资采购" style="background:#f5f5f5;color:#555"></div>
       <div class="fg"><label class="fl2" id="fReqTypeTip" style="color:#b76e00;font-size:9px;align-self:center">📦 买物资: 填物资名称/规格/数量</label></div></div>
       <div class="fr"><div class="fg"><label class="fl2">申请部门</label><select class="fc" id="fReqDept" onchange="reqNoByDept()"><option value="">请选择（选填）</option>${depts.map(d=>`<option>${esc(d.name)}</option>`).join('')}</select></div>
       <div class="fg"><label class="fl2">预算科目</label><select class="fc" id="fReqBud"><option value="">无</option></select></div></div>
