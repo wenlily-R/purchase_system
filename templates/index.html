@@ -359,7 +359,11 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <button class="btn btn-p btn-sm" style="margin-left:auto" onclick="showRepairForm()">➕ 新建维修申请</button>
     <button class="btn btn-o btn-sm" onclick="showFlowChart('repair')">📊 维修流程图示</button>
     <button class="btn btn-o btn-sm" onclick="showDamageStats()">📈 损坏原因统计</button>
-    <select id="repairStatusF2" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px" onchange="loadRepairs2()"><option value="">全部状态</option><option>草稿</option><option>待定损</option><option>定损完成待审批</option><option>审批通过</option><option>待比价</option><option>已选服务商</option><option>委外维修中</option><option>变更待四方确认</option><option>待回厂验收</option><option>验收通过</option><option>待发票登记</option><option>已归档</option><option>定损驳回</option><option>验收不通过返修</option><option>已作废</option></select>
+  </div>
+  <div class="tabs" id="rpStepsBar" style="margin-bottom:4px;flex-wrap:wrap"></div>
+  <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap">
+    <select id="repairStatusF2" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px" onchange="rpStepClear();loadRepairs2()"><option value="">全部状态</option><option>草稿</option><option>待定损</option><option>定损完成待审批</option><option>审批通过</option><option>待比价</option><option>已选服务商</option><option>委外维修中</option><option>变更待四方确认</option><option>待回厂验收</option><option>验收通过</option><option>待发票登记</option><option>已归档</option><option>定损驳回</option><option>验收不通过返修</option><option>已作废</option></select>
+    <span id="rpStepHint" style="font-size:9px;color:#888"></span>
   </div>
   <div class="card"><div class="cb" id="repairsTable2"><div class="loading">加载中...</div></div></div></div>
 <div class="page" id="pinquiries"><h2>🔍 三方询价</h2><div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="showInquiryForm()">+ 发起三方询价</button><button class="btn btn-w btn-sm" onclick="loadInquiries()">🔄 刷新</button></div><div class="card"><div class="cb" id="inquiriesTable"><div class="loading">加载中...</div></div></div></div>
@@ -900,7 +904,7 @@ async function loadNotices(){
       ${n.pinned?`<span style="background:#ff5b4d;color:#fff;font-size:8px;padding:1px 5px;border-radius:3px;flex-shrink:0;margin-top:2px">置顶</span>`:`<span style="color:#d9a514;font-size:10px;flex-shrink:0;margin-top:1px">📢</span>`}
       <div style="flex:1;min-width:0">
         <div style="font-size:11px;font-weight:600;color:#16325c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(n.title)}</div>
-        <div style="font-size:8px;color:#aab3c2;margin-top:1px">${esc(n.publisher||'')}${n.publish_at?' · '+(n.publish_at||'').slice(0,16):''}</div>
+        <div style="font-size:8px;color:#aab3c2;margin-top:1px">${esc(n.publisher||'')}${n.publish_at?' · '+(n.publish_at||'').slice(0,19):''}</div>
       </div>
     </div>`).join('');
 }
@@ -909,7 +913,7 @@ function showNoticeDetail(id){
   if(!n)return;
   // 内容安全: 只渲染允许的富文本(去除script/iframe等); 图片放行 /uploads/
   let safe=(n.content||'').replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<iframe[\s\S]*?<\/iframe>/gi,'').replace(/on\w+\s*=/gi,'');
-  showDetail('📢 '+n.title,`<div style="font-size:10px;color:#888;margin-bottom:6px">发布人：${esc(n.publisher||'')} ｜ 发布时间：${esc((n.publish_at||n.created_at||'').slice(0,16))}${n.expire_at?` ｜ 有效期至：${esc((n.expire_at||'').slice(0,16))}`:''}</div>
+  showDetail('📢 '+n.title,`<div style="font-size:10px;color:#888;margin-bottom:6px">发布人：${esc(n.publisher||'')} ｜ 发布时间：${esc((n.publish_at||n.created_at||'').slice(0,19))}${n.expire_at?` ｜ 有效期至：${esc((n.expire_at||'').slice(0,19))}`:''}</div>
     <div style="font-size:12px;line-height:1.8;color:#333;word-break:break-all">${safe||'（无正文）'}</div>`,
     `<button class="btn btn-o" onclick="closeMod()">关闭</button>`);
 }
@@ -1449,11 +1453,11 @@ function apprZone(z){
   }else if(z=='started'){
     const list=d.i_started||[];
     box.innerHTML=rnder(list,['bt','no','name','status','created_at'],['类型','单号','内容','状态','发起时间'],
-      x=>`<td>${esc(x.bt)}</td><td><b>${esc(x.no)}</b></td><td>${esc(x.name||'')}</td><td>${tag(x.status)}</td><td>${esc((x.created_at||'').slice(0,16))}</td>`);
+      x=>`<td>${esc(x.bt)}</td><td><b>${esc(x.no)}</b></td><td>${esc(x.name||'')}</td><td>${tag(x.status)}</td><td>${esc((x.created_at||'').slice(0,19))}</td>`);
   }else if(z=='done'){
     const list=d.i_done||[];
     box.innerHTML=rnder(list,['biz_type','biz_id','role','status','processed_at'],['类型','单号','我的角色','结果','办结时间'],
-      x=>`<td>${typeName(x.biz_type)}</td><td>#${x.biz_id}</td><td>${esc(x.role||'')}</td><td>${x.status=='approved'?'<span style="color:var(--s)">✅ 同意</span>':'<span style="color:var(--d)">❌ 驳回</span>'}</td><td>${esc((x.processed_at||'').slice(0,16))}</td>`);
+      x=>`<td>${typeName(x.biz_type)}</td><td>#${x.biz_id}</td><td>${esc(x.role||'')}</td><td>${x.status=='approved'?'<span style="color:var(--s)">✅ 同意</span>':'<span style="color:var(--d)">❌ 驳回</span>'}</td><td>${esc((x.processed_at||'').slice(0,19))}</td>`);
   }else if(z=='reject'){
     const list=d.rejected||[];
     box.innerHTML=rnder(list,['biz_type','biz_id','cnt','last_comment'],['类型','单号','被驳回次数','最近原因'],
@@ -1835,7 +1839,7 @@ async function showInquiryForm(){
     `<div style="font-size:11px;margin-bottom:8px">选择已通过审批的采购申请，添加 <b>2-3 家</b> 供应商，每家将生成专属免登录报价链接。</div>
     <div style="margin-bottom:8px"><select id="iqReq" style="width:100%;padding:6px;border:1px solid var(--b);border-radius:4px;font-size:11px">${opts}</select></div>
     <div style="margin-bottom:8px"><label style="font-size:10px;color:#666;display:block;margin-bottom:3px">⏰ 报价截止时间（精确到分钟；截止后系统自动开标，统一展示各家报价）</label>
-    <input type="datetime-local" id="iqDeadline" value="${defDl}" style="width:100%;padding:6px;border:1px solid var(--b);border-radius:4px;font-size:11px"></div>
+    <input type="datetime-local" step="1" id="iqDeadline" value="${defDl}" style="width:100%;padding:6px;border:1px solid var(--b);border-radius:4px;font-size:11px"></div>
     <div style="font-size:9px;color:#b08900;margin:-4px 0 8px">🔒 截止前所有内部账号看不到任何报价（防止泄露、串标），商家可正常提交/修改；有特殊原因可联系采购主管延长截止时间</div>
     <div id="iqSups"></div>
     <button class="btn btn-o btn-sm" onclick="addIqSup()">+ 添加供应商</button>
@@ -1979,7 +1983,7 @@ async function showInquiry(qid){
 async function showExtendDl(iid,cur){
   showDetail('⏰ 延长报价截止时间',`<div style="font-size:10px;color:#666;margin-bottom:8px">仅采购主管及以上（分管领导/总经理/管理员）可操作，操作将记录日志。原截止：<b>${esc(cur||'')}</b></div>
     <div style="font-size:10px;color:#555;margin-bottom:3px">新截止时间（精确到分钟）</div>
-    <input type="datetime-local" id="extDl" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;font-size:12px">`,
+    <input type="datetime-local" step="1" id="extDl" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;font-size:12px">`,
     `<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="doExtendDl(${iid})">💾 保存</button>`);
 }
 async function doExtendDl(iid){
@@ -2260,7 +2264,7 @@ async function showOrder(ordid){
     const fmtN=n=>{const v=Number(n||0);return (v%1===0)?v.toString():v.toFixed(2)};
     const rowsOf=arr=>arr.length?`<table class="tb" style="font-size:9px"><thead><tr><th>批次</th><th>入库单号</th><th>本批数量</th><th>类型</th><th>验收人</th><th>时间</th><th>状态</th><th>操作</th></tr></thead><tbody>${arr.map(b=>{
       const typTxt=b.invoice_no?'<span class="tag" style="background:#e8f5e9;color:#2e7d32">已红冲</span>':(b.is_est?'<span class="tag" style="background:#fff3e0;color:#e65100">暂估</span>':'<span class="tag" style="background:#e8f5e9;color:#2e7d32">正式</span>');
-      return `<tr><td>${esc(b.batch_no||'整批')}</td><td><b>${esc(b.receive_no)}</b></td><td>${fmtN(b._qty)}${esc(b.unit||'')}</td><td>${typTxt}</td><td style="font-size:8px;color:#666">${esc(b.inspector||'-')}</td><td style="font-size:8px;color:#666">${esc((b.completed_at||b.created_at||'').slice(0,16))}</td><td>${tag(b.status)}</td><td><button class="lnk" onclick="showRcvDetail(${b.id})">详情</button></td></tr>`}).join('')}</tbody></table>`:'<div style="font-size:9px;color:#999;padding:2px 0">暂无批次</div>';
+      return `<tr><td>${esc(b.batch_no||'整批')}</td><td><b>${esc(b.receive_no)}</b></td><td>${fmtN(b._qty)}${esc(b.unit||'')}</td><td>${typTxt}</td><td style="font-size:8px;color:#666">${esc(b.inspector||'-')}</td><td style="font-size:8px;color:#666">${esc((b.completed_at||b.created_at||'').slice(0,19))}</td><td>${tag(b.status)}</td><td><button class="lnk" onclick="showRcvDetail(${b.id})">详情</button></td></tr>`}).join('')}</tbody></table>`:'<div style="font-size:9px;color:#999;padding:2px 0">暂无批次</div>';
     const estB=(st.batches||[]).filter(b=>b.is_est), fmB=(st.batches||[]).filter(b=>!b.is_est);
     h+=`<div style="margin-top:8px;border:1px solid #cfe0f5;border-radius:8px;padding:8px;background:#fbfdff">
       <div style="font-size:10px;font-weight:bold;color:#0a5ab8;margin-bottom:6px">📦 验收入库（分批）</div>
@@ -2304,7 +2308,7 @@ async function showOrderExec(oid){
       <span style="background:#eef2f8;padding:3px 8px;border-radius:10px">状态 <b>${esc(o.status)}</b></span>
       <span style="background:#eef2f8;padding:3px 8px;border-radius:10px">供应商 ${esc(o.supplier||'-')}</span>
       <span style="background:#eef2f8;padding:3px 8px;border-radius:10px">金额 ¥${(o.total_amount||0).toFixed(2)}</span>
-      <span style="background:#eef2f8;padding:3px 8px;border-radius:10px">创建 ${esc((o.created_at||'').slice(0,16))}</span>
+      <span style="background:#eef2f8;padding:3px 8px;border-radius:10px">创建 ${esc((o.created_at||'').slice(0,19))}</span>
     </div>
     <div style="max-height:52vh;overflow:auto">`;
   const iconOf={};
@@ -2319,7 +2323,7 @@ async function showOrderExec(oid){
       <div style="flex:1;padding-bottom:8px">
         <div style="display:flex;justify-content:space-between;gap:6px;flex-wrap:wrap">
           <b style="font-size:9.5px;color:#16325c">${esc(n.node)}</b>
-          <span style="font-size:8.5px;color:#888">${esc(String(n.time||'').slice(0,16))}</span>
+          <span style="font-size:8.5px;color:#888">${esc(String(n.time||'').slice(0,19))}</span>
         </div>
         <div style="font-size:8.5px;color:#888">执行人：${esc(n.actor||'-')} ｜ 状态：<span style="color:${dotColor}">${esc(n.status||'')}</span>${n.amt?` ｜ 金额 ¥${Number(n.amt).toFixed(2)}`:''}</div>
         ${n.note?`<div style="font-size:8.5px;color:#666;background:#f8fafc;border-radius:3px;padding:2px 6px;margin-top:2px;white-space:pre-wrap">${esc(n.note)}</div>`:''}
@@ -2400,7 +2404,7 @@ async function oelLoad(){
       <td>${step(s.rcv_cnt,s.rcv_ok)}</td>
       <td>${s.inv_cnt?`<span style="color:#16a34a">${s.inv_cnt}张</span>`:'<span style="color:#ccc">—</span>'}</td>
       <td>${s.pay_cnt?`<span style="color:#16a34a">${s.pay_cnt}笔</span>`:'<span style="color:#ccc">—</span>'}</td>
-      <td style="font-size:8px;color:#888">${esc((s.create_t||'').slice(0,16))}</td>
+      <td style="font-size:8px;color:#888">${esc((s.create_t||'').slice(0,19))}</td>
       <td><button class="lnk" style="color:#0d9488" onclick="showOrderExec(${o.id})">📋明细</button> <button class="lnk" onclick="showOrder(${o.id})">详情</button></td>
     </tr>`;
   });
@@ -2450,8 +2454,8 @@ async function genContractInv(oid,settle){
     <div style="margin-bottom:8px"><label style="font-size:10px;color:#555">📋 发票回收节点说明（开票时间节点/顺序/比例）</label>
       <textarea id="gcInvClause" style="width:100%;height:58px;border:1px solid #ccc;border-radius:4px;padding:6px;font-size:11px" placeholder="例：货到验收后30日内开具全额增值税专用发票；分两期开票，首期50%随货，尾期50%验收合格后开具"></textarea></div>
     <div style="display:flex;gap:8px;margin-bottom:4px">
-      <div style="flex:1"><label style="font-size:10px;color:#555">📅 预计首次开票时间(精确到时分)</label><input type="datetime-local" id="gcInvFirst" style="width:100%;border:1px solid #ccc;border-radius:4px;padding:4px;font-size:11px"></div>
-      <div style="flex:1"><label style="font-size:10px;color:#555">📅 预计全部开票完成时间(精确到时分)</label><input type="datetime-local" id="gcInvDone" style="width:100%;border:1px solid #ccc;border-radius:4px;padding:4px;font-size:11px"></div>
+      <div style="flex:1"><label style="font-size:10px;color:#555">📅 预计首次开票时间(精确到时分)</label><input type="datetime-local" step="1" id="gcInvFirst" style="width:100%;border:1px solid #ccc;border-radius:4px;padding:4px;font-size:11px"></div>
+      <div style="flex:1"><label style="font-size:10px;color:#555">📅 预计全部开票完成时间(精确到时分)</label><input type="datetime-local" step="1" id="gcInvDone" style="width:100%;border:1px solid #ccc;border-radius:4px;padding:4px;font-size:11px"></div>
     </div>
     <div style="font-size:9px;color:#999">填写开票时间后，系统将按节点自动提醒采购专员催收发票（系统内预警+钉钉提醒）</div>`,
     `<button class="btn btn-o" onclick="genContract(${oid})">← 返回</button><button class="btn btn-p" onclick="doGenContract(${oid},'${settle}')">📄 生成合同并提交审批</button>`);
@@ -2563,7 +2567,7 @@ async function loadApprovals(){
       const tm=APPR_TM[bt]||[bt,'#888'];
       return `<div style="margin-bottom:8px"><b style="font-size:10px">${tm[0]}（驳回 ${list.length} 单）</b>
         <table class="tb" style="margin-top:3px"><thead><tr><th>单据号</th><th>被驳回次数</th><th>最近驳回原因</th><th>最近时间</th></tr></thead>
-        <tbody>${list.map(x=>`<tr><td><b>${esc(x.biz_no||('#'+x.biz_id))}</b></td><td><b style="color:var(--d)">${x.cnt}次</b></td><td style="max-width:260px">${esc(x.last_comment||'')}</td><td style="font-size:8px;color:#999">${esc((x.processed_at||'').slice(0,16))}</td></tr>`).join('')}</tbody></table></div>`;
+        <tbody>${list.map(x=>`<tr><td><b>${esc(x.biz_no||('#'+x.biz_id))}</b></td><td><b style="color:var(--d)">${x.cnt}次</b></td><td style="max-width:260px">${esc(x.last_comment||'')}</td><td style="font-size:8px;color:#999">${esc((x.processed_at||'').slice(0,19))}</td></tr>`).join('')}</tbody></table></div>`;
     }).join('');
     return;
   }
@@ -2613,11 +2617,11 @@ async function showFinDetail(t,oid){
     const f=t=='credit'?[
       ['挂账单号',r.credit_no],['供应商',r.supplier],['类别',r.category],
       ['金额','¥'+(r.amount||0).toFixed(2)],['发票号',r.invoice_no],['内容',r.item_name],
-      ['状态',r.status],['创建时间',(r.created_at||'').slice(0,16)]
+      ['状态',r.status],['创建时间',(r.created_at||'').slice(0,19)]
     ]:[
       ['付款单号',r.payment_no],['类型',r.payment_type],['事由',r.reason||r.purpose||''],
       ['金额','¥'+(r.amount||0).toFixed(2)],['收款人',r.payee],['收款账户',r.account],
-      ['状态',r.status],['创建时间',(r.created_at||'').slice(0,16)]
+      ['状态',r.status],['创建时间',(r.created_at||'').slice(0,19)]
     ];
     showDetail((t=='credit'?'挂账单 ':'付款单 ')+(r.credit_no||r.payment_no||('#'+oid)),
       '<div class="c2">'+f.map(([k,v])=>`<div><dt>${k}</dt><dd>${esc(v||'')}</dd></div>`).join('')+'</div><div id="approvalFlowBox"></div><div id="rejectLogsBox"></div>',
@@ -2640,7 +2644,7 @@ async function showRequisitionDetail(rid){
     }
     showDetail(`出库单 ${r.req_no||('#'+rid)}`,`
       <div class="c2"><div><dt>单号</dt><dd><b>${esc(r.req_no||'')}</b></dd><dt>状态</dt><dd>${tag(r.status)}${(r.reject_count||0)>0?` <span style="font-size:9px;color:#c0392b;background:#fdeaea;border-radius:3px;padding:1px 5px">已驳回${r.reject_count}次</span>`:''}</dd><dt>领取人</dt><dd>${esc(r.receiver||r.requester||'')}</dd></div>
-      <div><dt>部门</dt><dd>${esc(r.receive_dept||r.dept||'')}</dd><dt>物资</dt><dd>${esc(r.item_name||'')}</dd><dt>创建时间</dt><dd>${esc((r.created_at||'').slice(0,16))}</dd></div></div>
+      <div><dt>部门</dt><dd>${esc(r.receive_dept||r.dept||'')}</dd><dt>物资</dt><dd>${esc(r.item_name||'')}</dd><dt>创建时间</dt><dd>${esc((r.created_at||'').slice(0,19))}</dd></div></div>
       ${itemsHtml}<div id="approvalFlowBox"></div><div id="rejectLogsBox"></div>`, `<button class="btn btn-o" onclick="closeMod()">关闭</button>
       <button class="lnk" style="color:#7c5cff" onclick="showDocOps('requisition',${rid},'出库单 ${esc(r.req_no||'')}')">🕘 操作记录</button>
       ${((r.status=='已驳回'||(r.status=='草稿'&&(r.reject_count||0)>0))&&(ME.role=='系统管理员'||ME.name==r.requester))?`<button class="btn btn-p btn-sm" style="background:#16a34a;border-color:#16a34a" onclick="resubmitDoc('requisition',${rid},'出库单','${esc(r.req_no||'')}')">🔄 再次提交审批</button>`:''}`);
@@ -2657,7 +2661,7 @@ async function loadRejectLogs(bt,bid,boxId){
     box.innerHTML='<div style="margin-top:8px;border-top:1px dashed #e5d0d0;padding-top:6px">'+
       '<div style="font-size:10px;font-weight:700;color:#c0392b;margin-bottom:4px">❌ 驳回记录（'+logs.length+'次）</div>'+
       logs.map((l,li)=>`<div style="font-size:9px;background:#fff5f5;border:1px solid #f5d0d0;border-radius:4px;padding:5px 8px;margin-bottom:4px">
-        <b style="color:#c0392b">${esc(l.approver||'钉钉')}</b> <span style="color:#999">${esc((l.processed_at||'').slice(0,16))}</span>
+        <b style="color:#c0392b">${esc(l.approver||'钉钉')}</b> <span style="color:#999">${esc((l.processed_at||'').slice(0,19))}</span>
         ${l.source=='dingtalk'?'<span style="color:#1f6feb;font-size:8px;border:1px solid #1f6feb;border-radius:3px;padding:0 3px">钉钉</span>':''}
         ${l.attachments&&l.attachments.length?`<span style="color:#7b241c;font-size:8px">📎${l.attachments.length}个附件</span>`:''}
         <button class="lnk" style="color:#1f6feb;font-size:9px;float:right" onclick="showRejectDetail(${li})">📋 查看详情</button>
@@ -2729,7 +2733,7 @@ async function loadApprovalFlow(bt,bid,boxId){
         <span style="font-size:13px;line-height:1.6">${dot}</span>
         <div style="flex:1;font-size:10px">
           <div><b>${esc(a.role||'审批')}</b> <span style="color:#666">(${stTxt})</span>${who?` <span style="color:var(--s)">${who}</span>`:''}</div>
-          <div style="color:#999;font-size:9px;margin-top:1px">${isDone||isRej?('审批时间：'+(esc((a.processed_at||'').slice(0,16))||'-')):''}</div>
+          <div style="color:#999;font-size:9px;margin-top:1px">${isDone||isRej?('审批时间：'+(esc((a.processed_at||'').slice(0,19))||'-')):''}</div>
           ${a.comment?`<div style="color:${isRej?'#c0392b':'#555'};background:${isRej?'#fff5f5':'#f4f9f4'};border-radius:3px;padding:3px 7px;margin-top:2px;white-space:pre-wrap">${isRej?'驳回理由：':''}${esc(a.comment)}</div>`:''}
           ${a.signature?`<img src="${a.signature}" alt="签名" loading="lazy" style="height:26px;vertical-align:middle;border:1px solid #e3e9f2;border-radius:3px;background:#fff;margin-top:2px">`:''}
         </div>
@@ -2757,7 +2761,7 @@ async function showDocOps(bt,bid,label){
       const diff=x.changes&&x.changes!='（无字段变化）'?`<div style="color:#8a6d3b;background:#fdf9ef;border-radius:3px;padding:3px 7px;margin-top:2px;white-space:pre-wrap;font-size:9px">🔧 ${esc(x.changes)}</div>`:'';
       const node=x.node?`<div style="color:#1f6feb;font-size:9px;margin-top:1px">${esc(x.node)}</div>`:'';
       return `<div style="border:1px solid #eef1f6;border-radius:5px;padding:5px 8px;margin-bottom:4px;background:#fcfdff">
-        <div style="font-size:10px"><b>${ic} ${esc(x.action||'操作')}</b> <span style="color:var(--s)">${esc(x.operator||'')}</span> <span style="color:#aaa;font-size:9px">${esc((x.created_at||'').slice(0,16))}</span> ${st?`<span style="margin-left:4px">${st}</span>`:''}</div>${node}${diff}</div>`;
+        <div style="font-size:10px"><b>${ic} ${esc(x.action||'操作')}</b> <span style="color:var(--s)">${esc(x.operator||'')}</span> <span style="color:#aaa;font-size:9px">${esc((x.created_at||'').slice(0,19))}</span> ${st?`<span style="margin-left:4px">${st}</span>`:''}</div>${node}${diff}</div>`;
     }).join('');
   }
   if(snaps.length){
@@ -2770,7 +2774,7 @@ async function showDocOps(bt,bid,label){
         const k=Object.keys(sd).filter(x=>!x.startsWith('__'));brief=Object.keys(sd).filter(x=>!x.startsWith('__')&&sd[x]&&!String(sd[x]).startsWith('[')&&!String(sd[x]).startsWith('{')&&String(sd[x]).length<40).map(x=>`${x}:${esc(String(sd[x]).slice(0,40))}`).slice(0,6).join('；')+sub;
       }catch(e){}
       return `<div style="border:1px solid #f3e3c9;border-radius:5px;padding:5px 8px;margin-bottom:4px;background:#fffdf7;font-size:9px">
-        <div><b>📦 版本快照 #${s.id}</b> <span style="color:var(--s)">${esc(s.operator||'')}</span> <span style="color:#aaa">${esc((s.created_at||'').slice(0,16))}</span></div>
+        <div><b>📦 版本快照 #${s.id}</b> <span style="color:var(--s)">${esc(s.operator||'')}</span> <span style="color:#aaa">${esc((s.created_at||'').slice(0,19))}</span></div>
         <div style="color:#666;margin-top:1px">${esc(s.reason||'')}</div>
         ${brief?`<div style="color:#8a6d3b;margin-top:2px">${brief}</div>`:''}
         <div style="margin-top:2px"><button class="lnk" style="color:#b45309" onclick="viewSnapJson(${s.id})">👁 查看完整快照数据</button></div></div>`;
@@ -3125,8 +3129,8 @@ async function showInvPlanModal(cid){
     <div style="margin-bottom:8px"><label style="font-size:10px;color:#555">📋 发票回收节点说明</label>
     <textarea id="ipClause" style="width:100%;height:64px;border:1px solid #ccc;border-radius:4px;padding:6px;font-size:11px">${esc(p.invoice_clause||'')}</textarea></div>
     <div style="display:flex;gap:8px;margin-bottom:8px">
-      <div style="flex:1"><label style="font-size:10px;color:#555">预计首次开票时间(精确到时分)</label><input type="datetime-local" id="ipFirst" value="${esc((p.invoice_est_first||'').replace(' ','T'))}" style="width:100%;border:1px solid #ccc;border-radius:4px;padding:4px;font-size:11px"></div>
-      <div style="flex:1"><label style="font-size:10px;color:#555">预计全部开票完成时间(精确到时分)</label><input type="datetime-local" id="ipDone" value="${esc((p.invoice_est_done||'').replace(' ','T'))}" style="width:100%;border:1px solid #ccc;border-radius:4px;padding:4px;font-size:11px"></div>
+      <div style="flex:1"><label style="font-size:10px;color:#555">预计首次开票时间(精确到时分)</label><input type="datetime-local" step="1" id="ipFirst" value="${esc((p.invoice_est_first||'').replace(' ','T'))}" style="width:100%;border:1px solid #ccc;border-radius:4px;padding:4px;font-size:11px"></div>
+      <div style="flex:1"><label style="font-size:10px;color:#555">预计全部开票完成时间(精确到时分)</label><input type="datetime-local" step="1" id="ipDone" value="${esc((p.invoice_est_done||'').replace(' ','T'))}" style="width:100%;border:1px solid #ccc;border-radius:4px;padding:4px;font-size:11px"></div>
     </div>
     <div style="margin-bottom:4px"><label style="font-size:10px;color:#555">催收状态</label><select id="ipStatus" style="width:100%;border:1px solid #ccc;border-radius:4px;padding:4px;font-size:11px">${opts}</select></div>`,
     `<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="saveInvPlan(${cid})">💾 保存</button>`);
@@ -3148,7 +3152,7 @@ async function showInvRegModal(cid){
     </div>
     <div style="display:flex;gap:8px;margin-bottom:8px">
       <div style="flex:1"><label style="font-size:10px;color:#555">发票类型</label><select id="riType" style="width:100%;border:1px solid #ccc;border-radius:4px;padding:4px;font-size:11px"><option value="专票">增值税专用发票（可抵税）</option><option value="普票">增值税普通发票</option><option value="其他">其他</option></select></div>
-      <div style="flex:1"><label style="font-size:10px;color:#555">收票日期(精确到时分)</label><input type="datetime-local" id="riDate" value="${td}" style="width:100%;border:1px solid #ccc;border-radius:4px;padding:4px;font-size:11px"></div>
+      <div style="flex:1"><label style="font-size:10px;color:#555">收票日期(精确到时分)</label><input type="datetime-local" step="1" id="riDate" value="${td}" style="width:100%;border:1px solid #ccc;border-radius:4px;padding:4px;font-size:11px"></div>
     </div>
     <div><label style="font-size:10px;color:#555">备注</label><input id="riRemark" style="width:100%;border:1px solid #ccc;border-radius:4px;padding:4px;font-size:11px" placeholder="选填"></div>`,
     `<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="doRegInvoice(${cid})">💾 登记</button>`);
@@ -3201,7 +3205,7 @@ async function showRcvDetail(id){
   if(!r){if(my!==__dmSeq)return;alert('入库单不存在');return}
   const items=r.items||[];
   let h=`<div class="c2"><div><dt>入库单号</dt><dd><b>${esc(r.receive_no)}</b></dd><dt>状态</dt><dd>${tag(r.status)}</dd><dt>仓库</dt><dd>${esc(r.warehouse||'主库房')}</dd><dt>验收人</dt><dd>${esc(r.inspector||'-')}</dd></div>
-    <div><dt>订单号</dt><dd>${esc(r.order_no||'-')}</dd><dt>供应商</dt><dd>${esc(r.supplier||'-')}</dd><dt>交易模式</dt><dd>${esc(r.trade_mode||'-')}</dd><dt>创建时间</dt><dd>${esc((r.created_at||'').slice(0,16))}</dd>${r.dept?`<dt>归属部门</dt><dd><span class="tag" style="background:#eef7ee;color:#2e7d32">${esc(r.dept)}</span></dd>`:''}</div></div>`;
+    <div><dt>订单号</dt><dd>${esc(r.order_no||'-')}</dd><dt>供应商</dt><dd>${esc(r.supplier||'-')}</dd><dt>交易模式</dt><dd>${esc(r.trade_mode||'-')}</dd><dt>创建时间</dt><dd>${esc((r.created_at||'').slice(0,19))}</dd>${r.dept?`<dt>归属部门</dt><dd><span class="tag" style="background:#eef7ee;color:#2e7d32">${esc(r.dept)}</span></dd>`:''}</div></div>`;
   if(items.length){
     h+=`<h4 style="font-size:10px;margin:8px 0 3px">📦 商品明细（${items.length}项，累计 ${r.total_qty||r.quantity}${esc(r.unit||'')}）</h4>
       <table class="tb" style="font-size:9px"><thead><tr><th>物资名称</th><th>规格</th><th>单价</th><th>数量</th><th>税率</th><th>金额</th></tr></thead>
@@ -3689,7 +3693,7 @@ async function traceInv(iid){
       flows.map(f=>{
         const jmp=f.doc_type=='receiving'?`<button class="lnk" onclick="sw('receivings')">入库单</button>`:f.doc_type=='requisition'?`<button class="lnk" onclick="sw('requisitions')">出库单</button>`:'';
         const col=f.flow_type.includes('出库')?'#e74c3c':'#27ae60';
-        return `<tr><td style="font-size:8px">${esc((f.created_at||'').slice(0,16))}</td><td><span style="color:${col};font-weight:600">${esc(f.flow_type)}</span></td><td><b>${esc(f.doc_no||'')}</b></td><td>${f.qty}</td><td>${f.balance_after}</td><td style="font-size:8px">${esc(f.operator||'')}</td><td>${jmp}</td></tr>`;
+        return `<tr><td style="font-size:8px">${esc((f.created_at||'').slice(0,19))}</td><td><span style="color:${col};font-weight:600">${esc(f.flow_type)}</span></td><td><b>${esc(f.doc_no||'')}</b></td><td>${f.qty}</td><td>${f.balance_after}</td><td style="font-size:8px">${esc(f.operator||'')}</td><td>${jmp}</td></tr>`;
       }).join('')+'</tbody></table>';
   }
   id('dmBody').innerHTML=body;
@@ -3898,10 +3902,14 @@ async function loadRepairs2(){
   // prepairs 兼容页(入口: 菜单🔧维修采购), 共用同一列表渲染到容器2
   const list=(await api('/repairs').catch(()=>[]));
   const f=id('repairStatusF2')?.value||'';
-  const arr=f?list.filter(x=>x.status===f):list;
+  // V11.224 分步骤视图: 步骤筛选(多状态组)优先, 与状态下拉互斥
+  const _stSel=_rpStep!=='all'?(rpSteps().find(s=>s.k===_rpStep)||{}).st||null:null;
+  const arr=_stSel?list.filter(x=>_stSel.includes(x.status)):(f?list.filter(x=>x.status===f):list);
   const tb=id('repairsTable2');if(!tb)return;
   const tmp=id('repairsTable');
   if(tmp){tmp.innerHTML='';}
+  // V11.224 分步骤视图: 每个流程步骤(对应一组状态)渲染为可点击按钮+各步单据数
+  rpStepsRender(list);
   tb.innerHTML=groupRnder(arr,x=>x.created_at,['维修单号','设备/故障','类型','维修费','状态','驳回','操作'],
     x=>{const canOps=['系统管理员','分管领导','总经理'].includes(ME.role)||x.requester===ME.name||x.requester_id===ME.id;
     const _rt=x.repair_type?`<span class="tag" style="background:#fef3e2;color:#b45309">${esc(x.repair_type)}</span>`:'<span class="tag" style="background:#eee;color:#666">待定损</span>';
@@ -3916,6 +3924,45 @@ async function loadRepairs2(){
     ${canOps&&(x.status=='待定损'||x.status=='定损完成待审批'||x.status=='审批驳回')?` <button class="lnk" style="color:var(--o)" onclick="withdrawRepair(${x.id})">↩️撤回</button>`:''}
     ${canOps&&x.status!='已作废'?` <button class="lnk" style="color:var(--d)" onclick="voidRepair(${x.id})">🗑️删除</button>`:''}</td>`});
 }
+// V11.224: 维修流程分步骤条 — 把15个状态归组为8个流程环节(与流程图示一致), 点击筛选, 每步显示单据数
+let _rpStep='all';
+function rpSteps(){
+  return [
+    {k:'all', t:'📋 全部'},
+    {k:'draft', t:'① 草稿待提', st:['草稿','定损驳回']},
+    {k:'damage', t:'② 待技术定损', st:['待定损']},
+    {k:'appr', t:'③ 定损审批中', st:['定损完成待审批','审批通过','审批驳回']},
+    {k:'quote', t:'④ 比价选商', st:['待比价','已选服务商']},
+    {k:'fix', t:'⑤ 维修执行中', st:['委外维修中','变更待四方确认','验收不通过返修']},
+    {k:'accept', t:'⑥ 待回厂验收', st:['待回厂验收','验收通过']},
+    {k:'invoice', t:'⑦ 待发票归档', st:['待发票登记']},
+    {k:'done', t:'⑧ 已归档/作废', st:['已归档','已作废']}
+  ];
+}
+function rpStepsRender(list){
+  const bar=id('rpStepsBar');if(!bar)return;
+  const steps=rpSteps();
+  const cntOf={};
+  (list||[]).forEach(x=>{
+    steps.forEach(s=>{if(s.k!=='all'&&(s.st||[]).includes(x.status))cntOf[s.k]=(cntOf[s.k]||0)+1});
+    cntOf['all']=(cntOf['all']||0)+1;
+  });
+  bar.innerHTML=steps.map(s=>{
+    const n=cntOf[s.k]||0;
+    const act=s.k===_rpStep?'act':'';
+    return `<button class="${act}" data-k="${s.k}" onclick="rpStepGo('${s.k}')">${s.t} <span style="font-size:8px;opacity:.7">${n}</span></button>`;
+  }).join('');
+  const hint=id('rpStepHint');if(hint){
+    const cur=steps.find(s=>s.k===_rpStep);
+    hint.textContent=_rpStep==='all'?'点击上面步骤可只看某一环节的单据（②③④⑤⑥为流程中环节）':`当前只看「${cur?cur.t:''}」环节，点「📋 全部」查看所有维修单`;
+  }
+}
+function rpStepGo(k){
+  _rpStep=k;
+  const f=id('repairStatusF2');if(f)f.value='';  // 步骤筛选与状态下拉互斥: 点步骤时清空状态下拉
+  loadRepairs2();
+}
+function rpStepClear(){_rpStep='all';}
 // V11.218: 列表✏️修改入口(全状态显示, 后端校验可编辑状态) — 与物资采购申请同构: 按钮恒在, 非法状态给友好提示
 async function editRepairDraft(rid){
   try{
@@ -3948,7 +3995,7 @@ async function showRepairForm(rid){
     <div class="fr"><div class="fg"><label class="fl2">设备编号 *</label><input class="fc" id="rpDevNo" value="${esc(_pre.device_no||'')}" placeholder="如: SB-003"></div>
     <div class="fg"><label class="fl2">初步故障判断 *</label><select class="fc" id="rpInitJudge"><option ${_pre.init_judge=='零部件更换维修'?'':'selected'}>设备整机维修</option><option ${_pre.init_judge=='零部件更换维修'?'selected':''}>零部件更换维修</option></select></div></div>
     <div class="fg"><label class="fl2">故障现象描述 *</label><textarea class="fc" id="rpFault" rows="2" placeholder="如: 异响/无法启动/发热">${esc(_pre.fault_desc||'')}</textarea></div>
-    <div class="fr"><div class="fg"><label class="fl2">故障发生时间 *</label><input class="fc" id="rpFaultTime" type="datetime-local" value="${esc((_pre.fault_time||'').replace(' ','T'))}"></div>
+    <div class="fr"><div class="fg"><label class="fl2">故障发生时间 *</label><input class="fc" id="rpFaultTime" type="datetime-local" step="1" value="${esc((_pre.fault_time||'').replace(' ','T'))}"></div>
     <div class="fg"><label class="fl2">预估维修费用(元)</label><input class="fc" id="rpEst" type="number" min="0" value="${_pre.est_cost||0}"></div></div>
     <div class="fg"><label class="fl2">备注</label><input class="fc" id="rpRem" value="${esc(_pre.remark||'')}"></div>
     <div style="border:1px solid var(--b);border-radius:4px;padding:6px;margin-top:4px"><label class="fl2">故障部件名称 * <span style="font-size:8px;color:#dc2626">(必填, 如: 线圈/壳体/高压胶管/油封/阀门管件)</span></label><div id="rpItems"></div>
@@ -4072,17 +4119,17 @@ async function showRepairDetail(rid){
     <div style="display:flex;gap:4px;margin:3px 0">${p.urgency==='紧急'?`<span class="tag" style="background:#fee2e2;color:#dc2626">⚡${esc(p.urgency)}</span>`:''}${p.repair_type?`<span class="tag" style="background:#fef3e2;color:#b45309">${esc(p.repair_type)}</span>`:''}${p.outer_status?`<span class="tag" style="background:#ede9fe;color:#7c3aed">${esc(p.outer_status)}</span>`:''}${p.accept_result?`<span class="tag" style="background:${p.accept_result=='通过'?'#dcfce7;color:#16a34a':'#fee2e2;color:#dc2626'}">验收${esc(p.accept_result)}</span>`:''}</div>
     <p><b>设备:</b> ${fmt(p.device_name)}${p.device_no?`（编号 ${fmt(p.device_no)}）`:''} ｜ <b>故障时间:</b> ${fmt((p.fault_time||'').replace('T',' '))} ｜ <b>初判:</b> ${fmt(p.init_judge)}</p>
     <p><b>故障现象:</b> ${fmt(p.fault_desc)}</p>
-    <p style="font-size:10px"><b>定损意见:</b> ${fmt(p.damage_opinion)}${p.damage_time?`（${fmt((p.damage_time||'').slice(0,16))}）`:''}${p.damage_reason_cat?`<br><b>损坏原因:</b> <span style="color:#b45309">${esc(p.damage_reason_cat)}</span>${p.damage_reason_sub?` → ${esc(p.damage_reason_sub)}`:''}${p.damage_reason_note?`（${esc(p.damage_reason_note)}）`:''}</span>`:''}</p>`;
+    <p style="font-size:10px"><b>定损意见:</b> ${fmt(p.damage_opinion)}${p.damage_time?`（${fmt((p.damage_time||'').slice(0,19))}）`:''}${p.damage_reason_cat?`<br><b>损坏原因:</b> <span style="color:#b45309">${esc(p.damage_reason_cat)}</span>${p.damage_reason_sub?` → ${esc(p.damage_reason_sub)}`:''}${p.damage_reason_note?`（${esc(p.damage_reason_note)}）`:''}</span>`:''}</p>`;
   if((d.items||[]).length)h+=`<p style="font-size:10px"><b>定损清单:</b> ${d.items.map(i=>`${esc(i.part_name)}${i.fault_note?'('+esc(i.fault_note)+')':''}`).join('、')}</p>`;
   if(p.internal_note)h+=`<p style="font-size:10px;color:#16a34a"><b>自修处理记录:</b> ${fmt(p.internal_note)}</p>`;
   if(p.convert_req_no)h+=`<p style="font-size:10px;color:#2f6fed"><b>已转物资采购申请:</b> ${esc(p.convert_req_no)}</p>`;
   if(p.vendor_selected)h+=`<p style="font-size:10px"><b>选定服务商:</b> ${fmt(p.vendor_selected)} ｜ <b>维修费合计:</b> <b style="color:#dc2626">¥${(p.quote_total||0).toFixed(0)}</b> ｜ <b>预估:</b> ¥${(p.est_cost||0).toFixed(0)}</p>`;
-  if(p.start_time||p.expect_finish||p.actual_finish)h+=`<p style="font-size:10px"><b>维修进度:</b> 开工 ${fmt((p.start_time||'').slice(0,16))} ｜ 预计完工 ${fmt(p.expect_finish||p.finish_date)} ｜ 实际完工 ${fmt((p.actual_finish||'').slice(0,16))}</p>`;
+  if(p.start_time||p.expect_finish||p.actual_finish)h+=`<p style="font-size:10px"><b>维修进度:</b> 开工 ${fmt((p.start_time||'').slice(0,19))} ｜ 预计完工 ${fmt(p.expect_finish||p.finish_date)} ｜ 实际完工 ${fmt((p.actual_finish||'').slice(0,19))}</p>`;
   if((d.quotes||[]).length){h+=`<div style="font-size:10px"><b>服务商报价:</b><table class="tb" style="font-size:8.5px;margin-top:2px"><thead><tr><th>服务商</th><th>维修项目</th><th>金额</th><th>工期</th></tr></thead><tbody>${d.quotes.map(q=>`<tr><td><b>${esc(q.company)}</b>${p.vendor_selected===q.company?' ✅选定':''}</td><td>${esc(q.item_name||'维修')}</td><td>¥${(q.price||0).toFixed(0)}</td><td>${esc(q.duration||'')}</td></tr>`).join('')}</tbody></table></div>`}
   if((d.changes||[]).length)h+=`<div style="margin-top:4px"><b style="font-size:10px;color:#b45309">⚠️ 维修变更单（永久留痕 ${p.change_count||0}次）:</b>${d.changes.map(c=>`<div style="font-size:9px;background:#fffaf5;border:1px solid #fde3c0;border-radius:4px;padding:3px 5px;margin-top:2px">
     <b>${esc(c.add_item)}</b> 新增费用 ¥${(c.add_price||0).toFixed(0)} ${c.add_part?`· 配件:${esc(c.add_part)}`:''}${c.add_labor?`· 工时:¥${(c.add_labor||0).toFixed(0)}`:''} · 状态: <b>${esc(c.status)}</b>${c.created_by?' · 发起:'+esc(c.created_by):''}
     <div style="color:#666">四方确认: 提报人[${c.confirm1_by?esc(c.confirm1_by):'待确认'}] 采购专员[${c.confirm2_by?esc(c.confirm2_by):'待确认'}] 机电厂长[${c.confirm3_by?esc(c.confirm3_by):'待确认'}] 机修主任[${c.confirm4_by?esc(c.confirm4_by):'待确认'}]${c.status=='待确认'&&canLead?` <button class="lnk" style="color:#16a34a" onclick="rpChangeVote(${rid},${c.id},'confirm')">✓同意</button> <button class="lnk" style="color:#dc2626" onclick="rpChangeVote(${rid},${c.id},'reject')">✗驳回</button>`:''}</div></div>`).join('')}</div>`;
-  if(p.accept_opinion)h+=`<p style="font-size:10px"><b>验收意见:</b> ${fmt(p.accept_opinion)}${p.accept_time?`（${fmt((p.accept_time||'').slice(0,16))}）`:''}</p>`;
+  if(p.accept_opinion)h+=`<p style="font-size:10px"><b>验收意见:</b> ${fmt(p.accept_opinion)}${p.accept_time?`（${fmt((p.accept_time||'').slice(0,19))}）`:''}</p>`;
   // V11.221: 大小件/验收场景/三方签字 展示
   if(p.item_class)h+=`<p style="font-size:10px"><b>物件分类:</b> ${p.item_class=='大件'?'<span class="tag" style="background:#e0e7ff;color:#4338ca">🏭 大件(三方验收)</span>':'<span class="tag" style="background:#eef2ff;color:#6366f1">🔩 小件</span>'}</p>`;
   if(p.accept_scene)h+=`<p style="font-size:10px"><b>验收场景:</b> ${fmt(p.accept_scene)}</p>`;
@@ -4315,7 +4362,7 @@ async function rpSendOut(rid){
 async function rpProgress(rid){
   id('dmTitle').textContent='🕐 更新维修进度';
   id('dmBody').innerHTML=`<div class="fr"><div class="fg"><label class="fl2">预计完工日期</label><input class="fc" id="rpExF" type="date"></div>
-    <div class="fg"><label class="fl2">开工时间</label><input class="fc" id="rpST" type="datetime-local"></div></div>
+    <div class="fg"><label class="fl2">开工时间</label><input class="fc" id="rpST" type="datetime-local" step="1"></div></div>
     <div class="fg"><label class="fl2">进度备注</label><input class="fc" id="rpPR"></div>`;
   id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="rpProgressDo('+rid+')">💾 保存进度</button>';
 }
@@ -4690,13 +4737,13 @@ async function showReturnDetail(rid){
     <div style="font-size:11px;line-height:1.9">
       <div style="display:flex;gap:6px;flex-wrap:wrap;font-size:10px;margin-bottom:6px">
         <span class="tag" style="background:${r.status=='退库已完成'?'#e8f5e9':r.status=='审批通过'?'#e3f2fd':r.status=='已驳回'?'#fdecea':'#fff8e1'};color:${r.status=='退库已完成'?'#2e7d32':r.status=='审批通过'?'#1565c0':r.status=='已驳回'?'#c0392b':'#8a6d00'}">${r.status}</span>
-        <span style="color:#888">申请: ${esc(r.requester||'')} ${(r.created_at||'').slice(0,16)}</span>
+        <span style="color:#888">申请: ${esc(r.requester||'')} ${(r.created_at||'').slice(0,19)}</span>
       </div>
       <div class="fg"><label class="fl2">源出库单</label><div style="flex:3;padding:4px 0">${esc(r.source_req_no||'')}（${esc((r.source||{}).dept||r.dept||'')}/${esc((r.source||{}).receiver||r.receiver||'')}领用）</div></div>
       <div class="fg"><label class="fl2">退库原因</label><div style="flex:3;padding:4px 0">${esc(r.reason||'')}${r.reason_note?`：${esc(r.reason_note)}`:''}</div></div>
       <div class="fg"><label class="fl2">归还仓库</label><div style="flex:3;padding:4px 0">${esc(r.warehouse||'主库房')}</div></div>
       <div class="fg"><label class="fl2">合计金额</label><div style="flex:3;padding:4px 0"><b>¥${(r.total_amount||0).toFixed(2)}</b> ${r.reject_count>0?`<span style="color:#e74c3c;font-size:9px">（累计驳回${r.reject_count}次）</span>`:''}</div></div>
-      ${r.warehouse_confirm_by?`<div class="fg"><label class="fl2">仓库确认</label><div style="flex:3;padding:4px 0;color:#2e7d32">✅ ${esc(r.warehouse_confirm_by)} ${(r.warehouse_confirm_at||'').slice(0,16)}</div></div>`:''}
+      ${r.warehouse_confirm_by?`<div class="fg"><label class="fl2">仓库确认</label><div style="flex:3;padding:4px 0;color:#2e7d32">✅ ${esc(r.warehouse_confirm_by)} ${(r.warehouse_confirm_at||'').slice(0,19)}</div></div>`:''}
       <table style="width:100%;border-collapse:collapse;font-size:10px;margin-top:4px">
         <tr style="background:#f0f4fa"><th style="border:1px solid #dfe6f0;padding:3px">#</th><th style="border:1px solid #dfe6f0;padding:3px">物资</th><th style="border:1px solid #dfe6f0;padding:3px">单位</th><th style="border:1px solid #dfe6f0;padding:3px">领用数</th><th style="border:1px solid #dfe6f0;padding:3px">已退</th><th style="border:1px solid #dfe6f0;padding:3px">可退</th><th style="border:1px solid #dfe6f0;padding:3px">本次退</th><th style="border:1px solid #dfe6f0;padding:3px">单价</th><th style="border:1px solid #dfe6f0;padding:3px">金额</th></tr>
         ${itemsHtml||'<tr><td colspan="9" style="text-align:center;color:#999">无明细</td></tr>'}
@@ -4740,7 +4787,7 @@ function showExpenseForm(){
   const t=new Date();
   id('dmTitle').textContent='💸 新增费用登记';
   id('dmBody').innerHTML=`
-    <div class="fr"><div class="fg"><label class="fl2">日期(精确到时分)</label><input class="fc" id="exDate" type="datetime-local" value="${(()=>{const n=new Date();const p=x=>String(x).padStart(2,'0');return n.getFullYear()+'-'+p(n.getMonth()+1)+'-'+p(n.getDate())+'T'+p(n.getHours())+':'+p(n.getMinutes())})()}"></div>
+    <div class="fr"><div class="fg"><label class="fl2">日期(精确到时分)</label><input class="fc" id="exDate" type="datetime-local" step="1" value="${(()=>{const n=new Date();const p=x=>String(x).padStart(2,'0');return n.getFullYear()+'-'+p(n.getMonth()+1)+'-'+p(n.getDate())+'T'+p(n.getHours())+':'+p(n.getMinutes())})()}"></div>
     <div class="fg"><label class="fl2">类别</label><select class="fc" id="exCat"><option>运输费</option><option>差旅费</option><option>办公费</option><option>维修费</option><option>其他</option></select></div></div>
     <div class="fr"><div class="fg"><label class="fl2">金额 *</label><input class="fc" id="exAmt" type="number"></div>
     <div class="fg"><label class="fl2">供应商</label><input class="fc" id="exSup"></div></div>
@@ -4770,7 +4817,7 @@ async function showAlertLog(){
     <span>${a.status=='processed'?'✅':'⏳'}${a.level=='red'?'🔴':a.level=='orange'?'🟡':'🟢'}</span>
     <span style="width:56px;white-space:nowrap;font-weight:600">${esc(a.alert_type)}</span>
     <span style="flex:1">${esc(a.title)}${a.processed_by?'（'+esc(a.processed_by)+'处理）':''}</span>
-    <span style="color:#999;white-space:nowrap">${esc((a.processed_at||a.created_at||'').slice(0,16))}</span></div>`).join('')||'暂无记录'}</div>`;
+    <span style="color:#999;white-space:nowrap">${esc((a.processed_at||a.created_at||'').slice(0,19))}</span></div>`).join('')||'暂无记录'}</div>`;
   id('detailModal').classList.add('show');
   id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">关闭</button>';
 }
@@ -4800,7 +4847,7 @@ async function loadAdjustments(){
     const r=await api('/adjustments');
     id('adjListBox').innerHTML=rnder(r,['adj_no','adj_type','item_name','adj_qty','unit','status','reason','created_by','created_at','id'],
       ['单号','类型','物资','数量','单位','状态','原因','经办人','时间','操作'],
-      x=>`<td><b>${esc(x.adj_no)}</b></td><td>${x.adj_type=='报溢'?'<span class="tag" style="background:#e8f5e9;color:#2e7d32">🟢 报溢</span>':'<span class="tag" style="background:#fff3e0;color:#e65100">🟠 报损</span>'}</td><td>${esc(x.item_name)}${x.spec?`<span style="color:#999">(${esc(x.spec)})</span>`:''}</td><td style="font-weight:600">${x.adj_qty}</td><td>${esc(x.unit||'个')}</td><td>${tag(x.status)}</td><td style="font-size:8px">${esc((x.reason||'').slice(0,20))}</td><td style="font-size:8px">${esc(x.created_by||'')}</td><td style="font-size:8px;color:#999">${esc((x.created_at||'').slice(0,16))}</td>
+      x=>`<td><b>${esc(x.adj_no)}</b></td><td>${x.adj_type=='报溢'?'<span class="tag" style="background:#e8f5e9;color:#2e7d32">🟢 报溢</span>':'<span class="tag" style="background:#fff3e0;color:#e65100">🟠 报损</span>'}</td><td>${esc(x.item_name)}${x.spec?`<span style="color:#999">(${esc(x.spec)})</span>`:''}</td><td style="font-weight:600">${x.adj_qty}</td><td>${esc(x.unit||'个')}</td><td>${tag(x.status)}</td><td style="font-size:8px">${esc((x.reason||'').slice(0,20))}</td><td style="font-size:8px">${esc(x.created_by||'')}</td><td style="font-size:8px;color:#999">${esc((x.created_at||'').slice(0,19))}</td>
       <td>${x.status=='待审批'?`<button class="lnk" style="color:var(--s)" onclick="adjApprove(${x.id},'approved')">✅通过</button> <button class="lnk" style="color:var(--d)" onclick="adjApprove(${x.id},'rejected')">❌驳回</button>`:'—'}</td>`);
   }catch(e){id('adjListBox').innerHTML='<div style="color:#e74c3c">加载失败</div>'}
 }
@@ -5110,7 +5157,7 @@ async function showForm(type){
       <div class="fg"><label class="fl2">单位</label><select class="fc" id="fDelUnit"><option>个</option><option>箱</option><option>桶</option></select></div></div>
       <div class="fr"><div class="fg"><label class="fl2">司机</label><input class="fc" id="fDelDrv"></div>
       <div class="fg"><label class="fl2">车牌</label><input class="fc" id="fDelVeh"></div></div>
-      <div class="fg"><label class="fl2">送货时间(精确到时分)</label><input class="fc" id="fDelDate" type="datetime-local" value="${(()=>{const n=new Date();const p=x=>String(x).padStart(2,'0');return n.getFullYear()+'-'+p(n.getMonth()+1)+'-'+p(n.getDate())+'T'+p(n.getHours())+':'+p(n.getMinutes())})()}"></div>`;
+      <div class="fg"><label class="fl2">送货时间(精确到时分)</label><input class="fc" id="fDelDate" type="datetime-local" step="1" value="${(()=>{const n=new Date();const p=x=>String(x).padStart(2,'0');return n.getFullYear()+'-'+p(n.getMonth()+1)+'-'+p(n.getDate())+'T'+p(n.getHours())+':'+p(n.getMinutes())})()}"></div>`;
     id('detailModal').classList.add('show');
     id('dmFooter').innerHTML=`<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="createDelivery()">提交</button>`;
   } else if(type=='credit'){
@@ -5131,7 +5178,7 @@ async function showForm(type){
       <div style="font-size:9px;color:#e74c3c;margin-bottom:4px">* 为必填项</div>
       <div class="fr"><div class="fg"><label class="fl2">付款事由 *</label><input class="fc" id="fPayReason" placeholder="如: 结算5月办公用品采购款"></div>
       <div class="fg"><label class="fl2">付款金额 *</label><input class="fc" id="fPayAmt" type="number" min="0"></div></div>
-      <div class="fr"><div class="fg"><label class="fl2">期望付款日期(精确到时分) *</label><input class="fc" id="fPayDate" type="datetime-local"></div>
+      <div class="fr"><div class="fg"><label class="fl2">期望付款日期(精确到时分) *</label><input class="fc" id="fPayDate" type="datetime-local" step="1"></div>
       <div class="fg"><label class="fl2">发票类型 *</label><select class="fc" id="fPayInvType"><option value="专票">专票</option><option value="普票">普票</option><option value="无票">无票</option></select></div></div>
       <div class="fr"><div class="fg"><label class="fl2">合同签订 *</label><select class="fc" id="fPayHasContract" onchange="payContractToggle()"><option value="是">是</option><option value="否">否</option></select></div>
       <div class="fg"><label class="fl2">合同附件</label><input class="fc" id="fPayConFile" type="file" onchange="uploadPayAtt(this,'con')"></div></div>
@@ -5305,7 +5352,7 @@ function importReqToOrder(){
     id('dmTitle').textContent='📥 选择申请单导入';
     id('dmBody').innerHTML='<div style="font-size:9px;color:#666;margin-bottom:4px">以下申请已审批通过、尚未下单，点击导入商品明细（单价留空，请按实际成交价填写）</div>'+
       pend.map(r=>`<div style="border:1px solid var(--b);border-radius:6px;padding:6px;margin-bottom:4px;cursor:pointer;background:var(--c)" onclick="applyReqImport(${r.id})">
-        <b>${esc(r.req_no)}</b> ${esc(r.purpose||'')} <span style="color:#999;font-size:8px">${esc(r.dept||'')} · ${(r.created_at||r.apply_date||'').slice(0,16)}</span></div>`).join('')||'<div style="color:#999">暂无</div>';
+        <b>${esc(r.req_no)}</b> ${esc(r.purpose||'')} <span style="color:#999;font-size:8px">${esc(r.dept||'')} · ${(r.created_at||r.apply_date||'').slice(0,19)}</span></div>`).join('')||'<div style="color:#999">暂无</div>';
     id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">取消</button>';
   }).catch(()=>alert('加载申请单失败'));
 }
@@ -5542,7 +5589,7 @@ async function loadInvoicePage(){
     `<div style="padding:4px 0">勾选订单合并开票:</div><div id="invMergeList" style="max-height:180px;overflow-y:auto">${can.map(o=>`<div style="display:flex;gap:4px;align-items:center;padding:2px 0;border-bottom:1px solid var(--b)">
       <input type="checkbox" class="invChk" value="${o.id}"><span style="flex:1">${esc(o.order_no)} ${esc(o.item_name)}</span><span>${esc(o.supplier)}</span><span style="color:#999">¥${(o.total_amount||0).toFixed(0)}</span></div>`).join('')}</div>
       <div class="fl" style="margin-top:4px"><input class="fc" id="fInvNo" placeholder="发票号码 *" style="width:140px">
-      <input class="fc" id="fInvDate" type="datetime-local" style="width:180px">
+      <input class="fc" id="fInvDate" type="datetime-local" step="1" style="width:180px">
       <select class="fc" id="fInvType" style="width:130px"><option>增值税专用发票</option><option>增值税普通发票</option><option>电子发票</option></select></div>`
     :'<div style="color:#999;padding:4px">暂无已入库待开票的货到付款订单</div>';
 }
@@ -5559,7 +5606,7 @@ async function loadLedger(){
   const q=new URLSearchParams({supplier:id('fLedgerSup').value,contract:id('fLedgerContract').value,start:id('fLedgerStart').value,end:id('fLedgerEnd').value});
   const l=await api('/ledger?'+q.toString());
   id('ledgerTable').innerHTML=rnder(l,['date','type','no','supplier','contract','item','amount','status'],['日期','类型','单号','供应商','合同','内容','金额','状态'],
-    x=>`<td>${esc((x.date||'').slice(0,16))}</td><td><span class="tag tg-b">${esc(x.type)}</span></td><td><b>${esc(x.no)}</b></td>
+    x=>`<td>${esc((x.date||'').slice(0,19))}</td><td><span class="tag tg-b">${esc(x.type)}</span></td><td><b>${esc(x.no)}</b></td>
       <td>${esc(x.supplier||'-')}</td><td style="font-size:8px">${esc(x.contract||'-')}</td><td>${esc(x.item||'')}</td>
       <td>${x.amount!=null?`¥${Number(x.amount).toFixed(0)}`:''}</td><td>${tag(x.status)}</td>`);
 }
@@ -5590,7 +5637,7 @@ async function loadSmallLedger(){
       <td>${esc(x.pay_method||'')}</td>
       <td>${certHtml}</td>
       <td>${stTag(x.status)}</td>
-      <td>${esc(x.requester||'')}<br><span style="color:#aaa;font-size:8px">${esc((x.created_at||'').slice(0,16))}</span></td>
+      <td>${esc(x.requester||'')}<br><span style="color:#aaa;font-size:8px">${esc((x.created_at||'').slice(0,19))}</span></td>
       <td style="font-size:8px">${x.audit_by?`<span style="color:#555">${esc(x.audit_by)} ${esc((x.audit_at||'').slice(5,16))}</span>${x.audit_remark?`<br>${esc(x.audit_remark)}`:''}`:'—'}</td>
       <td style="white-space:nowrap">
         ${(x.status=='待审核'&&canAudit)?`<button class="lnk" style="color:#16a34a" onclick="smallAudit(${x.id},'pass')">✓通过</button> <button class="lnk" style="color:#dc2626" onclick="smallAudit(${x.id},'abnormal')">⚠异常</button>`:''}
@@ -5888,9 +5935,9 @@ async function loadNoticeList(){
         <td><span style="color:${stColor};font-weight:600">${n.status}</span></td>
         <td>${esc(scopeTxt)}</td>
         <td>${n.pinned?'<span style="color:#ff5b4d">📌</span>':''}</td>
-        <td>${esc((n.effective_at||'立即').slice(0,16))}</td>
-        <td>${esc(n.expire_at?(n.expire_at).slice(0,16):'永久')}</td>
-        <td>${esc(n.publisher||'')}<br><span style="color:#aaa;font-size:7px">${esc((n.publish_at||n.created_at||'').slice(0,16))}</span></td>
+        <td>${esc((n.effective_at||'立即').slice(0,19))}</td>
+        <td>${esc(n.expire_at?(n.expire_at).slice(0,19):'永久')}</td>
+        <td>${esc(n.publisher||'')}<br><span style="color:#aaa;font-size:7px">${esc((n.publish_at||n.created_at||'').slice(0,19))}</span></td>
         <td style="white-space:nowrap">
           <button class="lnk" onclick="showNoticeForm(${n.id})">✏️编辑</button>
           ${n.status=='已发布'?`<button class="lnk" style="color:#e67e22" onclick="noticeAct(${n.id},'revoke')">撤销</button>`:''}
@@ -5932,8 +5979,8 @@ function showNoticeForm(id,doPublish){
       </select></div>
       <div class="fg" id="ntScopeUsersBox" style="display:${(n?.scope||'').startsWith('users:')?'flex':'none'}"><label class="fl2">指定员工</label><input class="fc" id="ntScopeUsers" value="${esc((n?.scope||'').startsWith('users:')?n.scope.split(':')[1]:'')}" placeholder="如: 温丽,穆娇,邢果"></div>
       <div class="fr">
-        <div class="fg"><label class="fl2">生效时间</label><input class="fc" type="datetime-local" id="ntEff" value="${ntToLocal(n?.effective_at)}"></div>
-        <div class="fg"><label class="fl2">失效时间(空=永久)</label><input class="fc" type="datetime-local" id="ntExp" value="${ntToLocal(n?.expire_at)}"></div>
+        <div class="fg"><label class="fl2">生效时间</label><input class="fc" type="datetime-local" step="1" id="ntEff" value="${ntToLocal(n?.effective_at)}"></div>
+        <div class="fg"><label class="fl2">失效时间(空=永久)</label><input class="fc" type="datetime-local" step="1" id="ntExp" value="${ntToLocal(n?.expire_at)}"></div>
       </div>
       <div class="fg"><label class="fl2" style="align-self:flex-start">公告内容</label>
         <div style="flex:3"><textarea id="ntContent" rows="6" style="width:100%;font-size:11px;padding:6px;border:1px solid var(--b);border-radius:4px;line-height:1.6" placeholder="公告正文（支持换行；图片请点下方按钮插入）">${esc(n?.content||'')}</textarea>
@@ -5950,7 +5997,7 @@ function ntToLocal(s){
   if(!s)return '';
   let t=String(s).replace(' ','T');
   if(t.length<=10)t+='T00:00';
-  return t.slice(0,16);
+  return t.slice(0,19);
 }
 function ntScopeTip(){
   const box=id('ntScopeUsersBox');if(box)box.style.display=(id('ntScope').value.startsWith('users:'))?'flex':'none';
@@ -6589,7 +6636,7 @@ async function loadReports2(){
     id('rBySup').innerHTML=rnder((d.by_sup||[]),['supplier','cnt','s'],['供应商','单数','金额'],
       x=>`<td><b>${esc(x.supplier)}</b></td><td>${x.cnt}</td><td>¥${(x.s||0).toFixed(0)}</td>`);
     id('rPrice').innerHTML=rnder((d.price_track||[]).slice(0,30),['item_name','spec','price','supplier','created_at'],['商品','规格','成交价','供应商','时间'],
-      x=>`<td>${esc(x.item_name)}</td><td>${esc(x.spec||'')}</td><td><b>¥${(x.price||0).toFixed(2)}</b></td><td>${esc(x.supplier)}</td><td style="font-size:8px">${esc((x.created_at||'').slice(0,16))}</td>`);
+      x=>`<td>${esc(x.item_name)}</td><td>${esc(x.spec||'')}</td><td><b>¥${(x.price||0).toFixed(2)}</b></td><td>${esc(x.supplier)}</td><td style="font-size:8px">${esc((x.created_at||'').slice(0,19))}</td>`);
     // 库存报表
     id('stockKpi').innerHTML=`<div class="kc"><div class="kl">当前库存品类</div><div class="kv cp">${(d.stock_low||[]).length}</div></div>
       <div class="kc"><div class="kl">30天入库</div><div class="kv cs">${d.in_sum||0}</div></div>
@@ -6599,7 +6646,7 @@ async function loadReports2(){
     id('rStockLow').innerHTML=rnder((d.stock_low||[]),['item_name','quantity','safe_stock'],['物资','库存','安全线'],
       x=>`<td><b>${esc(x.item_name)}</b></td><td style="color:${x.quantity<=0?'var(--d)':'var(--w)'};font-weight:600">${x.quantity}</td><td>${x.safe_stock}</td>`);
     id('rInOut').innerHTML=rnder((d.inout||[]).slice(0,50),['type','no','item_name','qty','t'],['类型','单号','物资','数量','时间'],
-      x=>`<td><span class="tag ${x.type=='入库'?'tg-g':'tg-o'}">${esc(x.type)}</span></td><td>${esc(x.no)}</td><td>${esc(x.item_name)}</td><td>${x.qty}</td><td style="font-size:8px">${esc((x.t||'').slice(0,16))}</td>`);
+      x=>`<td><span class="tag ${x.type=='入库'?'tg-g':'tg-o'}">${esc(x.type)}</span></td><td>${esc(x.no)}</td><td>${esc(x.item_name)}</td><td>${x.qty}</td><td style="font-size:8px">${esc((x.t||'').slice(0,19))}</td>`);
     // V11.206c 模块七: 入库/出库统计卡
     id('rRcvStats').innerHTML=rnder((d.rcv_stats||[]),['typ','cnt','qty'],['类型','单数','数量'],
       x=>`<td><span class="tag" style="background:${x.typ.includes('暂估')?'#fff3e0':'#e8f5e9'};color:${x.typ.includes('暂估')?'#e65100':'#2e7d32'}">${esc(x.typ)}</span></td><td>${x.cnt}</td><td><b>${x.qty}</b></td>`);
@@ -6612,7 +6659,7 @@ async function loadReports2(){
       <div class="kc"><div class="kl">超期应付款</div><div class="kv cd">${(d.overdue_pay||[]).length}笔</div></div>`;
     id('rPay').innerHTML=`<div style="padding:6px;font-size:11px">累计付款金额: <b>¥${(d.pay_sum||0).toFixed(2)}</b></div>`;
     id('rOverduePay').innerHTML=rnder((d.overdue_pay||[]),['credit_no','supplier','amount','created_at'],['挂账单','供应商','金额','挂账时间'],
-      x=>`<td>${esc(x.credit_no)}</td><td>${esc(x.supplier)}</td><td style="color:var(--d)">¥${(x.amount||0).toFixed(0)}</td><td style="font-size:8px">${esc((x.created_at||'').slice(0,16))}</td>`);
+      x=>`<td>${esc(x.credit_no)}</td><td>${esc(x.supplier)}</td><td style="color:var(--d)">¥${(x.amount||0).toFixed(0)}</td><td style="font-size:8px">${esc((x.created_at||'').slice(0,19))}</td>`);
     id('rSupLedger').innerHTML=rnder((d.sup_ledger||[]),['supplier','cnt','s'],['供应商','订单数','累计金额'],
       x=>`<td><b>${esc(x.supplier)}</b></td><td>${x.cnt}</td><td>¥${(x.s||0).toFixed(0)}</td>`);
   }catch(e){}
@@ -6641,8 +6688,8 @@ async function showTimeQuery(preBiz){
       <button class="btn btn-sm" id="tqQ_year" onclick="tqQuick('year')">本年</button>
     </div>
     <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-bottom:4px">
-      <input type="datetime-local" id="tqFrom" class="fc" style="width:158px" onchange="tqClearQuick()"> <span style="font-size:9px">~</span>
-      <input type="datetime-local" id="tqTo" class="fc" style="width:158px" onchange="tqClearQuick()">
+      <input type="datetime-local" step="1" id="tqFrom" class="fc" style="width:158px" step="1" onchange="tqClearQuick()"> <span style="font-size:9px">~</span>
+      <input type="datetime-local" step="1" id="tqTo" class="fc" style="width:158px" step="1" onchange="tqClearQuick()">
       <input id="tqKw" class="fc" style="width:120px" placeholder="关键词(单号/名称/供应商)" onkeydown="if(event.key==='Enter')tqSearch()">
       <button class="btn btn-p btn-sm" onclick="tqSearch()">🔍 查询</button>
       <button class="btn btn-o btn-sm" onclick="tqExport()">⬇️ 导出Excel</button>
@@ -6675,8 +6722,9 @@ function tqParams(){
   const p=new URLSearchParams({biz,tf});
   if(window._tqQuick)p.set('quick',window._tqQuick);
   const fr=id('tqFrom').value,to=id('tqTo').value;
-  if(fr){p.set('from',fr.replace('T',' ')+':00')}
-  if(to){p.set('to',to.replace('T',' ')+':59')}
+  // V11.224 精确到秒: datetime-local带step=1可输入秒; 无秒时补00:00/59:59(含当天整秒)
+  if(fr){let v=fr.replace('T',' ');v=v.length===16?v+':00':v;p.set('from',v)}
+  if(to){let v=to.replace('T',' ');v=v.length===16?v+':59':v;p.set('to',v)}
   if(kw)p.set('kw',kw);
   return p.toString();
 }
@@ -6697,7 +6745,7 @@ async function tqSearch(){
     const main=x._disp_main||x[dispCol]||x.device_name||x.purpose||x.contract_name||x.supplier||x.item_name||x.reason||x.title||'';
     const biz=id('tqBiz').value;
     const actBtn=biz=='approval'?'':`<button class="lnk" onclick="tqGoto('${biz}',${x.id})">👁 查看</button>`;
-    h+=`<tr><td>${i+1}</td><td><b>${esc(String(no))}</b></td><td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(String(main).slice(0,60))}</td><td>${x.status?esc(String(x.status)):'—'}</td><td style="font-size:8px">${esc(String(x[tf]||'').slice(0,16))}</td><td>${x._sub_cnt?'<span style="color:#1f6feb">'+x._sub_cnt+'行</span>':'—'}</td><td>${actBtn||''}</td></tr>`;
+    h+=`<tr><td>${i+1}</td><td><b>${esc(String(no))}</b></td><td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(String(main).slice(0,60))}</td><td>${x.status?esc(String(x.status)):'—'}</td><td style="font-size:8px">${esc(String(x[tf]||'').slice(0,19))}</td><td>${x._sub_cnt?'<span style="color:#1f6feb">'+x._sub_cnt+'行</span>':'—'}</td><td>${actBtn||''}</td></tr>`;
   });
   h+='</tbody></table>';
   box.innerHTML=h;

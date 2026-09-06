@@ -1586,7 +1586,7 @@ def fs_start_instance(biz_type, biz_id):
             {'id': pre+'_name', 'value': str(info[1])},
             {'id': pre+'_amount', 'value': str(info[2])},
             {'id': pre+'_applicant', 'value': str(info[3])},
-            {'id': pre+'_date', 'value': str(info[4] or '')[:16]},
+            {'id': pre+'_date', 'value': str(info[4] or '')[:19]},
         ]
         initiator = admin_open_id()
         ua = find_user_by_name(str(info[3]))
@@ -2816,7 +2816,7 @@ def dt_build_detail(biz_type, r, c):
     if biz_type == 'purchase_request':
         lines['单据编号'] = r['req_no']; lines['单据类型'] = '采购申请'
         lines['申请人'] = r['requester']; lines['申请部门'] = r['dept']
-        lines['申请时间'] = str(r['created_at'] or '')[:16]
+        lines['申请时间'] = str(r['created_at'] or '')[:19]
         lines['预算归属'] = r['budget_code'] or '-'
         lines['采购用途'] = r['purpose']
         lines['需求到货'] = str(r['target_date'] or '')[:10]
@@ -2860,7 +2860,7 @@ def dt_build_detail(biz_type, r, c):
     elif biz_type == 'purchase_order':
         lines['订单编号'] = r['order_no']; lines['单据类型'] = '采购订单'
         lines['供应商'] = r['supplier']; lines['申请人'] = r['requester']
-        lines['下单时间'] = str(r['created_at'] or '')[:16]
+        lines['下单时间'] = str(r['created_at'] or '')[:19]
         lines['交易模式'] = r['trade_mode'] or '货到付款'
         lines['紧急等级'] = '🚨加急' if r['urgent'] else '普通'
         lines['订单金额'] = f"¥{float(r['total_amount'] or 0):,.2f}"
@@ -2878,7 +2878,7 @@ def dt_build_detail(biz_type, r, c):
         lines['供应商'] = r['supplier'] if 'supplier' in r.keys() and r['supplier'] else '-'
         lines['仓库'] = r['warehouse'] or '主库房'
         lines['验收人'] = r['inspector'] or '-'
-        lines['提交时间'] = str(r['created_at'] or '')[:16]
+        lines['提交时间'] = str(r['created_at'] or '')[:19]
         lines['合格数量'] = f"{r['qualified_qty'] or r['quantity'] or 0}{r['unit'] or ''}"
         # V11.202 分批验收: 钉钉审批详情同步展示 批次/本批入库数量/订单待验收待定余量(仅关联订单或分批单)
         if 'batch_no' in r.keys() and r['batch_no']:
@@ -2908,7 +2908,7 @@ def dt_build_detail(biz_type, r, c):
         # V11.25: 领取人/领取部门(出库追溯)
         lines['领取人'] = r['receiver'] or r['requester'] or '-'
         lines['领取部门'] = r['receive_dept'] or r['dept'] or '-'
-        lines['提交时间'] = str(r['created_at'] or '')[:16]
+        lines['提交时间'] = str(r['created_at'] or '')[:19]
         lines['数量'] = f"{r['quantity'] or 0}{r['unit'] or ''}"
         lines['用途'] = r['purpose'] or '-'
         its = c.execute("SELECT * FROM requisition_items WHERE requisition_id=? ORDER BY id", (r['id'],)).fetchall()
@@ -2936,7 +2936,7 @@ def dt_build_detail(biz_type, r, c):
         lines['仓库'] = r['warehouse'] or '-'
         lines['退库原因'] = ((r['reason'] or '') + (('：' + str(r['reason_note'])) if r['reason_note'] else '')) or '-'
         lines['退库金额'] = f"¥{float(r['total_amount'] or 0):,.2f}"
-        lines['提交时间'] = str(r['created_at'] or '')[:16]
+        lines['提交时间'] = str(r['created_at'] or '')[:19]
         its = c.execute("SELECT * FROM return_items WHERE return_id=? ORDER BY id", (r['id'],)).fetchall()
         if its:
             lines['商品明细'] = ''
@@ -10107,9 +10107,9 @@ def check_invoice_node_reminders():
             pend = float(r['amount'] or 0) - st['received_amount']
             kinds = []
             if r['invoice_est_first'] and _today >= r['invoice_est_first'][:10] and st['received_count'] == 0:
-                kinds.append(('due', '预计首次开票时间%s已到, 尚未收到任何发票' % r['invoice_est_first'][:16]))
+                kinds.append(('due', '预计首次开票时间%s已到, 尚未收到任何发票' % r['invoice_est_first'][:19]))
             if r['invoice_est_done'] and _today > r['invoice_est_done'][:10] and pend > 0.01:
-                kinds.append(('overdue', '超过约定开票完成时间%s, 仍未收票¥%.2f' % (r['invoice_est_done'][:16], pend)))
+                kinds.append(('overdue', '超过约定开票完成时间%s, 仍未收票¥%.2f' % (r['invoice_est_done'][:19], pend)))
             for kind, _why in kinds:
                 _ex = c.execute("SELECT 1 FROM contract_inv_reminds WHERE contract_id=? AND remind_date=? AND kind=?",
                                 (r['id'], _today, kind)).fetchone()
@@ -10343,7 +10343,7 @@ def append_reject_rows(ws, start_row, biz_type, biz_id, ncols=11, CN=None):
             except Exception:
                 pass
             txt = '%s %s 审批人：%s    时间：%s    意见：%s%s' % (_src, _act, it.get('approver') or '钉钉',
-                                                          (it.get('processed_at') or '')[:16],
+                                                          (it.get('processed_at') or '')[:19],
                                                           it.get('comment') or '-', _att_txt)
             ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=ncols)
             c = ws.cell(row=r, column=1, value=txt)
@@ -10582,7 +10582,7 @@ def api_order_download(oid):
             apv = a['approver'] or ''
             if apv == '钉钉':
                 apv = '钉钉OA电子审批'
-            line = '%s ｜ %s ｜ %s %s' % (a['role'] or '', st, apv, str(a['processed_at'] or '')[:16])
+            line = '%s ｜ %s ｜ %s %s' % (a['role'] or '', st, apv, str(a['processed_at'] or '')[:19])
             if a['comment']:
                 line += ' ｜ ' + (a['comment'] or '')
             ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=7)
@@ -11776,11 +11776,11 @@ def api_repair_download(rid):
     ws['A1'].font = title_f; ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
     ws.row_dimensions[1].height = 28
     ws.merge_cells('A2:F2')
-    ws['A2'] = f'编号: {rp["plan_no"]}    申请部门: {rp["dept"] or ""}    提报人: {rp["requester"] or ""}    提报时间: {str(rp["created_at"] or "")[:16]}    状态: {rp["status"]}'
+    ws['A2'] = f'编号: {rp["plan_no"]}    申请部门: {rp["dept"] or ""}    提报人: {rp["requester"] or ""}    提报时间: {str(rp["created_at"] or "")[:19]}    状态: {rp["status"]}'
     ws['A2'].font = Font(size=9)
     rows = []
     rows.append(['故障设备名称', rp['device_name'] or '', '设备编号', rp['device_no'] or ''])
-    rows.append(['故障发生时间', str(rp['fault_time'] or '')[:16], '紧急等级', rp['urgency'] or ''])
+    rows.append(['故障发生时间', str(rp['fault_time'] or '')[:19], '紧急等级', rp['urgency'] or ''])
     rows.append(['初步故障判断', rp['init_judge'] or '', '预估维修费用', f"¥{float(rp['est_cost'] or 0):.0f}"])
     rows.append(['故障现象描述', rp['fault_desc'] or '', '', ''])
     rows.append(['定损意见', rp['damage_opinion'] or '', '定损类型', rp['repair_type'] or ''])
@@ -11842,7 +11842,7 @@ def api_repair_download(rid):
             row_i += 1
     row_i += 1
     ws.merge_cells(start_row=row_i, start_column=1, end_row=row_i, end_column=6)
-    ws.cell(row=row_i, column=1, value=f'维修费合计: ¥{float(rp["quote_total"] or 0):.0f}    填报人: {session.get("user_name", "")}    打印时间: {now()[:16]}')
+    ws.cell(row=row_i, column=1, value=f'维修费合计: ¥{float(rp["quote_total"] or 0):.0f}    填报人: {session.get("user_name", "")}    打印时间: {now()[:19]}')
     for col, w in zip('ABCDEF', [18, 26, 14, 14, 14, 14]):
         ws.column_dimensions[col].width = w
     bio = io.BytesIO(); wb.save(bio); bio.seek(0)
@@ -12622,7 +12622,7 @@ def api_small_ledger_export():
     for ri, r in enumerate(rows, 2):
         vals = [r['ledger_no'], r['kind'], r['dept'], r['requester'], r['content'] or r['item_name'],
                 r['amount'], r['happened_date'], r['supplier'] or r['payee_name'], r['pay_method'],
-                r['status'], r['audit_by'], (r['audit_at'] or '')[:16], r['audit_remark'], (r['created_at'] or '')[:16]]
+                r['status'], r['audit_by'], (r['audit_at'] or '')[:19], r['audit_remark'], (r['created_at'] or '')[:19]]
         for ci, v in enumerate(vals, 1):
             ws.cell(row=ri, column=ci, value=v)
     from openpyxl.utils import get_column_letter as _gcl
