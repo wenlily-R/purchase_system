@@ -29,8 +29,8 @@ cd "$DIR" || { echo "$(date '+%F %T') [FATAL] 无法进入仓库目录 $DIR"; ex
 if [ -f "$HOME/.ssh/github_deploy_key" ]; then
   export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/github_deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
 fi
-# cron/守护环境 PATH 精简, 防 alias/干扰
-export PATH=/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin
+# 注意: 不重写 PATH! 守护由交互终端/Hermes 用 nohup 拉起, 继承原环境即可
+# (git/ssh/python 都在; 若精简 PATH 反而会 git: command not found)
 
 LOG="data/auto_sync.log"
 mkdir -p data
