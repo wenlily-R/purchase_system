@@ -797,6 +797,18 @@ def init_db():
     for col, ddl in _adds:
         if col not in _rp:
             conn.execute(f"ALTER TABLE repair_plans ADD COLUMN {col} {ddl}")
+    # V11.221 设备维修2.0: 大小件验收/验收场景/三方签字/加急线下纸质件归档/使用周期(幂等补列)
+    _rp2 = [r[1] for r in conn.execute("PRAGMA table_info(repair_plans)").fetchall()]
+    _adds2 = [
+        ('item_class', "TEXT DEFAULT ''"),        # 维修物件分类 小件(胶管/阀件)/大件(大型电机/减速机)
+        ('accept_scene', "TEXT DEFAULT ''"),      # 验收场景 服务商出厂验收/回厂安装后验收
+        ('accept_signs', "TEXT DEFAULT ''"),      # JSON 大件三方签字 [{role,name,opinion,time}]
+        ('offline_papers', "TEXT DEFAULT ''"),    # JSON 加急线下签字纸质件归档 [{name,path,by,opinion,time}]
+        ('prev_gap_days', "INTEGER DEFAULT 0"),   # 距上次维修完成天数(设备使用周期, 服务商质量评估)
+    ]
+    for col, ddl in _adds2:
+        if col not in _rp2:
+            conn.execute(f"ALTER TABLE repair_plans ADD COLUMN {col} {ddl}")
     # V11.210 维修变更四方确认: 变更单加 四方确认人/时间/结果(提报人/采购专员/机电厂长/机修车间主任), 永久留痕不可删
     _rc = [r[1] for r in conn.execute("PRAGMA table_info(repair_changes)").fetchall()]
     if 'confirm1_by' not in _rc:
@@ -10912,7 +10924,9 @@ def api_repairs():
 @app.route('/api/repairs', methods=['POST'])
 @login_required
 def api_create_repair():
-    """第一步: 计划提报员提交维修计划(设备/故障/更换部件+故障照片附件)"""
+    """第一步: 计划提报员提交维修计划(设备/故障/更换部件+故障照片附件)
+    V11.221: 保存草稿宽松; 必填部件/附件强校验在 submit(提交报修)时执行;
+    自动记录距上次维修完成天数(设备使用周期, 服务商质量评估用)"""
     d = request.json or {}
     device = str(d.get('device_name') or '').strip()
     fault = str(d.get('fault_desc') or '').strip()
@@ -10921,29 +10935,62 @@ def api_create_repair():
     if not d.get('dept'): return jsonify({'error': '请选择申请部门'}), 400
     no = _repair_no()
     c = db()
-    c.execute("""INSERT INTO repair_plans(plan_no,device_name,device_no,fault_desc,fault_time,urgency,init_judge,est_cost,dept,requester,requester_id,status,attachments,remark)
-                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-              (no, device, str(d.get('device_no') or '').strip(), fault, str(d.get('fault_time') or ''),
+    # V11.221: 同设备(device_no/设备名)上次维修完成时间 → 距今天数=设备使用周期(服务商质量评估数据)
+    prev_gap = 0
+    dev_no = str(d.get('device_no') or '').strip()
+    try:
+        _last = c.execute("SELECT actual_finish FROM repair_plans WHERE device_no=? AND status='已归档' AND actual_finish!='' ORDER BY id DESC LIMIT 1", (dev_no,)).fetchone() if dev_no else None
+        if not _last:
+            _last = c.execute("SELECT actual_finish FROM repair_plans WHERE device_name=? AND status='已归档' AND actual_finish!='' ORDER BY id DESC LIMIT 1", (device,)).fetchone()
+        if _last and _last['actual_finish']:
+            try:
+                from datetime import datetime as _dt
+                prev_gap = max(0, (_dt.now() - _dt.strptime(str(_last['actual_finish'])[:19], '%Y-%m-%d %H:%M:%S')).days)
+            except Exception:
+                try:
+                    prev_gap = max(0, (_dt.now() - _dt.strptime(str(_last['actual_finish'])[:10], '%Y-%m-%d')).days)
+                except Exception:
+                    prev_gap = 0
+    except Exception:
+        prev_gap = 0
+    atts = d.get('attachments') or []
+    c.execute("""INSERT INTO repair_plans(plan_no,device_name,device_no,fault_desc,fault_time,urgency,init_judge,est_cost,dept,requester,requester_id,status,attachments,remark,item_class,prev_gap_days)
+                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+              (no, device, dev_no, fault, str(d.get('fault_time') or ''),
                d.get('urgency') or '普通', d.get('init_judge') or '', float(d.get('est_cost') or 0),
                d.get('dept', ''), session['user_name'], session['user_id'],
-               '草稿', json.dumps(d.get('attachments') or [], ensure_ascii=False), d.get('remark', '')))
+               '草稿', json.dumps(atts, ensure_ascii=False), str(d.get('remark') or '').strip(),
+               d.get('item_class') or '小件', prev_gap))
     pid = c.execute("SELECT id FROM repair_plans WHERE plan_no=?", (no,)).fetchone()[0]
     for it in (d.get('items') or []):
         if str(it.get('part_name') or '').strip():
-            c.execute("INSERT INTO repair_items(plan_id,part_name,fault_note) VALUES(?,?,?)", (pid, it['part_name'], it.get('fault_note', '')))
+            c.execute("INSERT INTO repair_items(plan_id,part_name,fault_note) VALUES(?,?,?)", (pid, it['part_name'].strip(), it.get('fault_note', '')))
     c.commit(); c.close()
-    log(session['user_name'], '新建维修报修单', f'{no} {device}')
+    log(session['user_name'], '新建维修报修单', f'{no} {device} 部件{len(d.get("items") or [])}项 附件{len(atts)}个')
     return jsonify({'success': True, 'id': pid, 'plan_no': no})
 
 @app.route('/api/repairs/<int:rid>/submit', methods=['POST'])
 @login_required
 def api_repair_submit(rid):
-    """节点1: 报修提交 — 单据流转至定损确认环节(钉钉推定损角色, 不建审批)"""
+    """节点1: 报修提交 — 单据流转至定损确认环节(钉钉推定损角色, 不建审批)
+    V11.221: 提交前强校验 故障部件名称≥1项 + 附件两类(损坏照片/手写故障说明)必传"""
+    d = request.json or {}
     c = db()
     r = c.execute("SELECT * FROM repair_plans WHERE id=?", (rid,)).fetchone()
     if not r: c.close(); return jsonify({'error': '维修单不存在'}), 404
     if r['status'] not in ('草稿', '定损驳回'):
         c.close(); return jsonify({'error': f'当前状态({r["status"]})不可提交报修'}), 400
+    # V11.221 2.0表单必填: 故障部件名称至少一项
+    it_cnt = c.execute("SELECT COUNT(*) FROM repair_items WHERE plan_id=? AND part_name!=''", (rid,)).fetchone()[0]
+    if it_cnt == 0:
+        c.close(); return jsonify({'error': '请填写故障部件名称(如线圈/壳体/高压胶管/油封/阀门管件)，至少一项'}), 400
+    # V11.221 2.0必传附件: 损坏照片 + 手写故障说明(两类合计≥2且均需存在)
+    try:
+        atts = json.loads(r['attachments'] or '[]')
+    except Exception:
+        atts = []
+    if len(atts) < 2:
+        c.close(); return jsonify({'error': '必传附件：①故障部件损坏照片 ②手写故障说明(写明故障点)，各至少1张，缺一不可提交'}), 400
     c.execute("UPDATE repair_plans SET status='待定损', updated_at=? WHERE id=?", (now(), rid))
     c.commit()
     # V11.214: 通知定损角色(分管领导/总经理/管理员) — 铃铛+钉钉; 排除提交人自己
@@ -10980,8 +11027,8 @@ def api_repair_damage(rid):
     if not r: c.close(); return jsonify({'error': '维修单不存在'}), 404
     if r['status'] not in ('待定损', '定损完成待审批', '审批驳回'):
         c.close(); return jsonify({'error': f'当前状态({r["status"]})不可定损'}), 400
-    # 定损人权限: 系统设置配的定损角色(默认分管领导), 管理员可代
-    if session.get('user_role') not in ('系统管理员', '分管领导', '总经理'):
+    # 定损人权限: V11.221 2.0 采购专员定损三分支 — 采购员/部门负责人可定损(原仅分管领导), 管理员可代
+    if session.get('user_role') not in ('系统管理员', '分管领导', '总经理', '采购员', '部门负责人'):
         c.close(); return jsonify({'error': '仅定损角色(系统设置配置)可定损'}), 403
     op_name = session['user_name']
     opinion = str(d.get('opinion') or '').strip()
@@ -11260,7 +11307,11 @@ def api_repair_change_confirm(rid):
 @login_required
 def api_repair_accept(rid):
     """节点9: 回厂联合性能验收(服务类验收, 非普通入库) — 结果二选一: 通过/不通过返修
-    必填性能验收结果(不只外观); 上传测试报告/照片; 不通过退回服务商返修"""
+    必填性能验收结果(不只外观); 上传测试报告/照片; 不通过退回服务商返修
+    V11.221 2.0验收分大小件:
+      小件(高压胶管/阀件等) = 申请部门负责人单方线上验收(意见+现场照片);
+      大件(大型电机/减速机) = 机电部+申请部门领导+采购专员 三方线上签字(accept_signs JSON);
+      验收场景 accept_scene: 服务商出厂验收 / 回厂安装后验收"""
     d = request.json or {}
     c = db()
     r = c.execute("SELECT * FROM repair_plans WHERE id=?", (rid,)).fetchone()
@@ -11275,16 +11326,31 @@ def api_repair_accept(rid):
         c.close(); return jsonify({'error': '请选择验收结果(通过/不通过返修)'}), 400
     if result == 'pass' and not opinion:
         c.close(); return jsonify({'error': '验收通过必须填写性能验收意见(不能只填外观合格)'}), 400
+    # V11.221: 验收场景(出厂/回厂) 默认回厂安装后验收
+    scene = str(d.get('scene') or '').strip() or '回厂安装后验收'
+    if scene not in ('服务商出厂验收', '回厂安装后验收'):
+        scene = '回厂安装后验收'
+    iclass = str(r['item_class'] or d.get('item_class') or '').strip() or '小件'
+    signs = d.get('signs') or []
+    # V11.221: 大件通过必须三方签字齐全(机电部/申请部门领导/采购专员)
+    if iclass == '大件' and result == 'pass':
+        need = ['机电部', '申请部门领导', '采购专员']
+        got = {str(s.get('role') or '').strip() for s in signs if str(s.get('name') or '').strip() and str(s.get('opinion') or '').strip()}
+        missing = [x for x in need if x not in got]
+        if missing:
+            c.close(); return jsonify({'error': '大件验收通过需三方线上签字齐全(缺:' + '、'.join(missing) + ')，每方须填姓名+验收意见'}), 400
     files = json.dumps(d.get('files') or [], ensure_ascii=False)
+    signs_json = json.dumps(signs, ensure_ascii=False) if signs else json.dumps([], ensure_ascii=False)
     if result == 'pass':
-        c.execute("UPDATE repair_plans SET accept_result='通过', accept_opinion=?, accept_files=?, accept_time=?, outer_status='已回厂', status='验收通过', updated_at=? WHERE id=?",
-                  (opinion, files, now(), now(), rid))
+        c.execute("UPDATE repair_plans SET accept_result='通过', accept_opinion=?, accept_files=?, accept_time=?, outer_status='已回厂', status='验收通过', item_class=?, accept_scene=?, accept_signs=?, updated_at=? WHERE id=?",
+                  (opinion, files, now(), iclass, scene, signs_json, now(), rid))
     else:
-        c.execute("UPDATE repair_plans SET accept_result='不通过返修', accept_opinion=?, accept_files=?, status='验收不通过返修', updated_at=? WHERE id=?",
-                  (opinion or '退回服务商返修', files, now(), rid))
+        c.execute("UPDATE repair_plans SET accept_result='不通过返修', accept_opinion=?, accept_files=?, item_class=?, accept_scene=?, accept_signs=?, status='验收不通过返修', updated_at=? WHERE id=?",
+                  (opinion or '退回服务商返修', files, iclass, scene, signs_json, now(), rid))
     c.commit(); c.close()
-    log(session['user_name'], '验收' + ('通过' if result == 'pass' else '不通过'), f'{r["plan_no"]} {"性能验收通过" if result=="pass" else "退回服务商返修"}')
-    return jsonify({'success': True})
+    _lg = f'{r["plan_no"]} {"性能验收通过" if result=="pass" else "退回服务商返修"}({iclass}/{scene})'
+    log(session['user_name'], '验收' + ('通过' if result == 'pass' else '不通过'), _lg)
+    return jsonify({'success': True, 'item_class': iclass, 'scene': scene})
 
 @app.route('/api/repairs/<int:rid>/handle', methods=['POST'])
 @login_required
@@ -11385,11 +11451,11 @@ def api_repair_update(rid):
     if not device: c.close(); return jsonify({'error': '请填写故障设备名称'}), 400
     # 更新主表(保留 plan_no/requester/status)
     c.execute("""UPDATE repair_plans SET device_name=?, device_no=?, fault_desc=?, fault_time=?, urgency=?,
-                 init_judge=?, est_cost=?, dept=?, attachments=?, remark=?, updated_at=? WHERE id=?""",
+                 init_judge=?, est_cost=?, dept=?, attachments=?, remark=?, item_class=?, updated_at=? WHERE id=?""",
               (device, str(d.get('device_no') or '').strip(), str(d.get('fault_desc') or '').strip(),
                str(d.get('fault_time') or ''), d.get('urgency') or '普通', d.get('init_judge') or '',
                float(d.get('est_cost') or 0), d.get('dept') or r['dept'], json.dumps(d.get('attachments') or [], ensure_ascii=False),
-               str(d.get('remark') or ''), now(), rid))
+               str(d.get('remark') or ''), d.get('item_class') or r['item_class'] or '小件', now(), rid))
     # 重建部件明细
     c.execute("DELETE FROM repair_items WHERE plan_id=?", (rid,))
     for it in (d.get('items') or []):
@@ -11500,6 +11566,57 @@ def api_repair_download(rid):
     fname = f"设备维修单_{rp['plan_no']}.xlsx"
     from urllib.parse import quote
     return send_file(bio, as_attachment=True, download_name=fname, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+@app.route('/api/repairs/<int:rid>/offline-paper', methods=['POST'])
+@login_required
+def api_repair_offline_paper(rid):
+    """V11.221 2.0缺口①: 加急线下审批兜底 — 上传线下签字纸质件归档 + (可选)线下审批直接通过
+    body: {files:[upload路径...], opinion:线下签字说明, approve:true=视同三级审批已线下完成(仅加急单且状态=定损完成待审批)}
+    线下签字件永久归档, 全程留痕可追溯; 非加急单仍强制线上审批流"""
+    d = request.json or {}
+    c = db()
+    r = c.execute("SELECT * FROM repair_plans WHERE id=?", (rid,)).fetchone()
+    if not r: c.close(); return jsonify({'error': '维修单不存在'}), 404
+    op_name = session['user_name']
+    files = d.get('files') or []
+    opinion = str(d.get('opinion') or '').strip()
+    if not files: c.close(); return jsonify({'error': '请上传线下签字纸质件(照片/扫描件)'}), 400
+    if r['status'] not in ('草稿', '待定损', '定损完成待审批', '审批驳回'):
+        c.close(); return jsonify({'error': f'当前状态({r["status"]})不可归档线下签字件'}), 400
+    # 追加归档(JSON数组, 永久留痕)
+    try:
+        op = json.loads(r['offline_papers'] or '[]')
+    except Exception:
+        op = []
+    op.append({'files': files, 'by': op_name, 'opinion': opinion or '线下签字纸质件归档', 'time': now()})
+    c.execute("UPDATE repair_plans SET offline_papers=? WHERE id=?", (json.dumps(op, ensure_ascii=False), rid))
+    # 加急线下审批兜底: 加急单且在审批节点 → 视同三级审批线下完成, 直接流转审批通过(仅限加急)
+    approve = bool(d.get('approve'))
+    is_urgent = (r['urgency'] == '紧急')
+    flowed = False
+    if approve:
+        if not is_urgent:
+            c.commit(); c.close(); return jsonify({'error': '仅【紧急】单据支持线下审批兜底，普通单据必须走线上审批流'}), 400
+        if r['status'] != '定损完成待审批':
+            c.commit(); c.close(); return jsonify({'error': f'当前状态({r["status"]})不在审批节点，无法线下审批通过'}), 400
+        c.commit(); c.close()
+        # 复用统一审批办结: 全部审批实例approved + 父单据状态流转审批通过(带'线下签字'留痕)
+        ok = finish_approvals('repair_plan', rid, 'ok', op_name, session.get('user_id', 0),
+                              comment=f'加急线下审批通过({op_name}) 纸质签字件已归档', attachments=files)
+        # finish_approvals 仅在无pending时改父状态; 加急线下=全部节点一次通过
+        cc = db()
+        pend = cc.execute("SELECT COUNT(*) FROM approval_instances WHERE biz_type='repair_plan' AND biz_id=? AND status='pending'", (rid,)).fetchone()[0]
+        if pend > 0:
+            cc.execute("UPDATE approval_instances SET status='approved', approver=?, approver_id=?, comment='加急线下签字通过', processed_at=? WHERE biz_type='repair_plan' AND biz_id=? AND status='pending'",
+                       (op_name, session.get('user_id', 0), now(), rid))
+            cc.execute("UPDATE repair_plans SET status='审批通过', updated_at=? WHERE id=?", (now(), rid))
+            cc.commit()
+        cc.close()
+        flowed = True
+    else:
+        c.commit(); c.close()
+    log(op_name, '线下签字件归档', f'{r["plan_no"]} 归档{len(files)}件' + (' + 加急线下审批通过' if flowed else ''))
+    return jsonify({'success': True, 'flowed': flowed, 'count': len(op)})
 
 @app.route('/api/repairs/<int:rid>/withdraw', methods=['POST'])
 @login_required
