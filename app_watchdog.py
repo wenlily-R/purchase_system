@@ -10,7 +10,11 @@ import os, sys, time, signal, subprocess, hashlib
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 APP = os.path.join(BASE, 'app.py')
-VENV_PY = os.path.join(BASE, '.venv', 'bin', 'python')
+# 路径自适应: Windows=.venv/Scripts/python.exe, Mac/Linux=.venv/bin/python (一份脚本双端通用)
+if os.path.exists(os.path.join(BASE, '.venv', 'Scripts', 'python.exe')):
+    VENV_PY = os.path.join(BASE, '.venv', 'Scripts', 'python.exe')
+else:
+    VENV_PY = os.path.join(BASE, '.venv', 'bin', 'python')
 WATCH_DIRS = [BASE, os.path.join(BASE, 'templates')]
 WATCH_EXTS = ('.py', '.html', '.js', '.css')
 
