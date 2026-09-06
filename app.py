@@ -11542,6 +11542,24 @@ def api_repair_damage(rid):
         create_approvals('repair_plan', rid, est, submitter=r['requester'] or '')
         try: start_instances('repair_plan', rid)
         except Exception: pass
+        # V11.227: 审批到人即通知(不依赖OA模板码) — 系统铃铛+钉钉工作通知, 指向维修审批中心
+        try:
+            cc = db()
+            _first = cc.execute("SELECT approver FROM approval_instances WHERE biz_type='repair_plan' AND biz_id=? AND status='pending' AND level_no=(SELECT MIN(level_no) FROM approval_instances WHERE biz_type='repair_plan' AND biz_id=? AND status='pending')", (rid, rid)).fetchone()
+            if _first and _first['approver']:
+                _u = cc.execute("SELECT id,dingtalk_userid,name FROM users WHERE name=? AND is_active=1", (_first['approver'],)).fetchone()
+                if _u:
+                    try:
+                        add_notif([_u['id']], f'🔧 维修定损待审批 {r["plan_no"]}',
+                                  f'{r["device_name"]} 预估¥{est:.0f} 请到 审批中心→维修审批中心 处理', 'repair_plan', rid, conn=cc)
+                    except Exception:
+                        pass
+                    if _u['dingtalk_userid']:
+                        dt_send_todo([_u['dingtalk_userid']], f'🔧 维修定损待审批 {r["plan_no"]}',
+                                     f'{r["device_name"]} 预估¥{est:.0f} 已进入维修审批中心，请审批', '', 'repair_plan', rid)
+            cc.close()
+        except Exception:
+            pass
         c.close()
         log(op_name, '定损:委外维修', f'{r["plan_no"]} 预估¥{est:.0f} 待分级审批')
         return jsonify({'success': True})

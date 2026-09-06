@@ -1052,8 +1052,8 @@ function buildNav(){
     // V11.221: 设备维修独立成模块(与采购管理菜单分开, 审批中心/工作流各自独立)
     // V11.224c: 导航按"待办"精简(专业导航: 菜单给"要处理的", 流程视图留页面步骤条) —
     //   4项: 全部/报修待提(草稿+驳回)/待技术定损(红点提醒)/已归档; 定损审批在审批中心-维修, 比价/委外/验收在单据详情推进
-    // V11.226c: 组名对齐采购管理; 菜单首项简洁为"设备维修"(不带全部), 红点标注仅用于报修待提/待技术定损
-    ['设备维修管理',[['repairs','🔧','设备维修','all'],['repairs','📝','报修待提','draft'],['repairs','🔍','待技术定损','damage'],['repairs','🗂','已归档/作废','done']]],
+    // V11.227: 打通四环节流转视图 — 菜单= 报修待提→待技术定损→设备维修(执行中,新增)→已归档/作废, 与单据自动流转环节一一对应
+    ['设备维修管理',[['repairs','🔧','设备维修','all'],['repairs','📝','报修待提','draft'],['repairs','🔍','待技术定损','damage'],['repairs','🛠','设备维修','running'],['repairs','🗂','已归档/作废','done']]],
     ['采购管理',[['prequests','📝','采购申请'],['inquiries','🔍','三方询价'],['orders','📋','采购订单'],['contracts','📄','合同管理'],['suppliers','🏢','供应商']]],
     ['仓储库存',[['receivings','📦','入库验收'],['requisitions','📤','出库管理'],['returns','↩️','退库管理'],['inventory','📦','库存查询'],['counts','📋','库存盘点']]],
     ['财务往来',[['payments','💰','付款申请'],['expenses','💸','费用登记'],['settlements','📊','月度对账'],['invoices','🧾','合并开票'],['ledger','🔍','往来台账'],['small','💼','小额台账']]],
@@ -3992,34 +3992,85 @@ async function loadRepairs2(){
   if(tmp){tmp.innerHTML='';}
   // V11.224 分步骤视图: 每个流程步骤(对应一组状态)渲染为可点击按钮+各步单据数
   rpStepsRender(list);
-  tb.innerHTML=groupRnder(arr,x=>x.created_at,['维修单号','设备/故障','类型','维修费','状态','驳回','操作'],
+  tb.innerHTML=groupRnder(arr,x=>x.created_at,['维修单号','设备/故障','类型','维修费','环节','状态','驳回','操作'],
     x=>{const canOps=['系统管理员','分管领导','总经理'].includes(ME.role)||x.requester===ME.name||x.requester_id===ME.id;
     const _rt=x.repair_type?`<span class="tag" style="background:#fef3e2;color:#b45309">${esc(x.repair_type)}</span>`:'<span class="tag" style="background:#eee;color:#666">待定损</span>';
+    // V11.227: 行按钮显示条件与后端允许状态对齐(消除"点了报错"的死按钮): 修改=草稿/定损驳回; 删除=可作废状态集; 撤回=审批前
+    const _canEdit=canOps&&['草稿','定损驳回'].includes(x.status);
+    const _canVoid=canOps&&['草稿','定损驳回','已归档','验收通过','待发票登记','已选服务商'].includes(x.status);
     return `<td><b>${esc(x.plan_no)}</b>${x.urgency=='紧急'?` <span class="tag" style="background:#fee2e2;color:#dc2626">⚡紧急</span>`:''}</td>
     <td><b>${esc(x.device_name||'')}</b><div style="font-size:8px;color:#888;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.fault_desc||'')}</div></td>
-    <td>${_rt}</td><td>¥${(x.quote_total||0).toFixed(0)}</td><td>${tag(x.status)}</td>${rejCell(x)}
+    <td>${_rt}</td><td>¥${(x.quote_total||0).toFixed(0)}</td><td>${rpStageBadge(x.status)}</td><td>${tag(x.status)}</td>${rejCell(x)}
     <td style="white-space:nowrap"><button class="lnk" onclick="showRepairDetail(${x.id})">详情</button>
     <button class="lnk" style="color:var(--s)" onclick="window.open('/api/repairs/${x.id}/download','_blank')">⬇️下载</button>
-    <button class="lnk" style="color:#b08900" onclick="editRepairDraft(${x.id})">✏️修改</button>
+    ${_canEdit?` <button class="lnk" style="color:#b08900" onclick="editRepairDraft(${x.id})">✏️修改</button>`:''}
     ${canOps&&x.status=='草稿'?` <button class="lnk" style="color:var(--s);font-weight:600" onclick="submitRepair(${x.id})">📤 提交报修</button>`:''}
     ${canOps&&x.status=='定损驳回'?` <button class="lnk" style="color:var(--s);font-weight:600" onclick="submitRepair(${x.id})">📤 重新提交</button>`:''}
     ${canOps&&(x.status=='待定损'||x.status=='定损完成待审批'||x.status=='审批驳回')?` <button class="lnk" style="color:var(--o)" onclick="withdrawRepair(${x.id})">↩️撤回</button>`:''}
-    ${canOps&&x.status!='已作废'?` <button class="lnk" style="color:var(--d)" onclick="voidRepair(${x.id})">🗑️删除</button>`:''}</td>`});
+    ${_canVoid&&x.status!='已作废'?` <button class="lnk" style="color:var(--d)" onclick="voidRepair(${x.id})">🗑️删除</button>`:''}</td>`});
 }
 // V11.224: 维修流程分步骤条 — 把15个状态归组为8个流程环节(与流程图示一致), 点击筛选, 每步显示单据数
+// V11.227: 新增 running「设备维修(执行中)」环节组(对标用户四环节: 报修待提→待技术定损→设备维修→已归档/作废)
 let _rpStep='all';
 function rpSteps(){
   return [
     {k:'all', t:'📋 全部'},
-    {k:'draft', t:'① 草稿待提', st:['草稿','定损驳回']},
-    {k:'damage', t:'② 待技术定损', st:['待定损']},
-    {k:'appr', t:'③ 定损审批中', st:['定损完成待审批','审批通过','审批驳回']},
+    {k:'draft', t:'① 报修待提', st:['草稿','定损驳回']},
+    {k:'damage', t:'② 待技术定损', st:['待定损','审批驳回']},
+    {k:'appr', t:'③ 定损审批中', st:['定损完成待审批','审批通过']},
     {k:'quote', t:'④ 比价选商', st:['待比价','已选服务商']},
     {k:'fix', t:'⑤ 维修执行中', st:['委外维修中','变更待四方确认','验收不通过返修']},
     {k:'accept', t:'⑥ 待回厂验收', st:['待回厂验收','验收通过']},
     {k:'invoice', t:'⑦ 待发票归档', st:['待发票登记']},
+    {k:'running', t:'🛠 设备维修(执行中)', st:['定损完成待审批','审批通过','待比价','已选服务商','委外维修中','变更待四方确认','待回厂验收','验收通过','验收不通过返修','待发票登记']},
     {k:'done', t:'⑧ 已归档/作废', st:['已归档','已作废']}
   ];
+}
+// 环节归并(行徽标/详情用): 系统15状态 → 用户四环节
+function rpStageOf(st){
+  const m={
+    '草稿':'报修待提','定损驳回':'报修待提',
+    '待定损':'待技术定损','审批驳回':'待技术定损',
+    '定损完成待审批':'设备维修','审批通过':'设备维修','待比价':'设备维修','已选服务商':'设备维修',
+    '委外维修中':'设备维修','变更待四方确认':'设备维修','待回厂验收':'设备维修','验收通过':'设备维修',
+    '验收不通过返修':'设备维修','待发票登记':'设备维修',
+    '已归档':'已归档/作废','已作废':'已归档/作废'
+  };
+  return m[st]||'报修待提';
+}
+const RP_STAGE_COLOR={'报修待提':'#64748b','待技术定损':'#f59e0b','设备维修':'#1f6feb','已归档/作废':'#16a34a'};
+function rpStageBadge(st){
+  const n=rpStageOf(st),c=RP_STAGE_COLOR[n]||'#64748b';
+  return `<span class="tag" style="background:${c}18;color:${c};border:1px solid ${c}44">${esc(n)}</span>`;
+}
+// V11.227: 详情页「流转环节轨迹+下一步」— 单据自动流转到哪一环节一目了然, 每状态给下一步操作指引
+function rpFlowGuide(st){
+  const stages=['报修待提','待技术定损','设备维修','已归档/作废'];
+  const cur=rpStageOf(st);
+  const ci=stages.indexOf(cur);
+  const nexts={
+    '草稿':'✏️ 可修改草稿，点下方「📤 提交报修」后自动流转到待技术定损',
+    '定损驳回':'❌ 定损被驳回（原因见定损意见），修改后点「📤 重新提交」重新进入待技术定损',
+    '待定损':'⏳ 已自动流转：等待定损人做技术定损（通知已推送）',
+    '定损完成待审批':'✅ 已自动进入【审批中心→维修审批中心】三级审批',
+    '审批驳回':'↩️ 审批驳回：单据回到待技术定损，需重新定损或撤回修改',
+    '审批通过':'✅ 审批通过，自动进入设备维修：录服务商报价→比价选商',
+    '待比价':'🔧 设备维修中：录多家服务商报价后比价选商',
+    '已选服务商':'🔧 已选服务商：生成委托单(WY)→发料委外',
+    '委外维修中':'🔧 维修执行中：完工后自动流转到待回厂验收',
+    '变更待四方确认':'🔧 维修变更待四方确认，确认后继续维修',
+    '待回厂验收':'📦 服务商已完工回厂：做回厂联合性能验收',
+    '验收不通过返修':'🔧 验收不通过：服务商返修后再验收',
+    '验收通过':'✅ 验收通过：选择归还部门/回收入库（登记发票后自动归档）',
+    '待发票登记':'🧾 登记维修发票后单据自动归档闭环',
+    '已归档':'🏁 已闭环归档，可下载单据留存',
+    '已作废':'🏁 单据已作废'
+  };
+  const seq=stages.map((s,i)=>{const c=i<ci?'#16a34a':(i===ci?RP_STAGE_COLOR[s]:'#cbd5e1');
+    return `<span style="font-size:8.5px;font-weight:${i===ci?800:600};color:${c}">${i<ci?'✓ ':''}${esc(s)}</span>`;}).join('<span style="color:#cbd5e1"> → </span>');
+  return `<div style="background:#f8fafc;border:1px solid #dfe9f5;border-radius:6px;padding:5px 8px;margin:4px 0">
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${seq}<span style="margin-left:auto">${rpStageBadge(st)}</span></div>
+    <div style="font-size:8.5px;color:#16325c;margin-top:3px">💡 下一步：${nexts[st]||'在下方操作按钮中推进流程'}</div></div>`;
 }
 function rpStepsRender(list){
   // 步骤条 UI 已移除(V11.226e); 本函数仅保留空实现兼容旧调用(无页面元素)
@@ -4223,6 +4274,7 @@ async function showRepairDetail(rid){
   let h=`<div style="font-size:10.5px;line-height:1.8">
     <div style="font-size:9px;color:#666">${esc(p.plan_no)}${p.entrust_no?` · 委托单 <b>${esc(p.entrust_no)}</b>`:''} · 状态 <b>${esc(p.status)}</b> · 提报 ${esc(p.requester||'')}(${esc(p.dept||'')})</div>
     <div style="display:flex;gap:4px;margin:3px 0">${p.urgency==='紧急'?`<span class="tag" style="background:#fee2e2;color:#dc2626">⚡${esc(p.urgency)}</span>`:''}${p.repair_type?`<span class="tag" style="background:#fef3e2;color:#b45309">${esc(p.repair_type)}</span>`:''}${p.outer_status?`<span class="tag" style="background:#ede9fe;color:#7c3aed">${esc(p.outer_status)}</span>`:''}${p.accept_result?`<span class="tag" style="background:${p.accept_result=='通过'?'#dcfce7;color:#16a34a':'#fee2e2;color:#dc2626'}">验收${esc(p.accept_result)}</span>`:''}</div>
+    ${rpFlowGuide(p.status)}
     <p><b>设备:</b> ${fmt(p.device_name)}${p.device_no?`（编号 ${fmt(p.device_no)}）`:''} ｜ <b>故障时间:</b> ${fmt((p.fault_time||'').replace('T',' '))} ｜ <b>初判:</b> ${fmt(p.init_judge)}</p>
     <p><b>故障现象:</b> ${fmt(p.fault_desc)}</p>
     <p style="font-size:10px"><b>定损意见:</b> ${fmt(p.damage_opinion)}${p.damage_time?`（${fmt((p.damage_time||'').slice(0,19))}）`:''}${p.damage_reason_cat?`<br><b>损坏原因:</b> <span style="color:#b45309">${esc(p.damage_reason_cat)}</span>${p.damage_reason_sub?` → ${esc(p.damage_reason_sub)}`:''}${p.damage_reason_note?`（${esc(p.damage_reason_note)}）`:''}</span>`:''}</p>`;
