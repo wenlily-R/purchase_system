@@ -10355,7 +10355,6 @@ def check_invoice_node_reminders():
                     kinds.append(('due', '预计首次开票时间%s已到, 尚未收到任何发票' % r['invoice_est_first'][:19]))
                 if r['invoice_est_done'] and _today > r['invoice_est_done'][:10] and pend > 0.01:
                     kinds.append(('overdue', '超过约定开票完成时间%s, 仍未收票¥%.2f' % (r['invoice_est_done'][:19], pend)))
- (V11.225 发票回收节点2.0(顺序节点计划): ①每份合同可依序录入N个发票回收节点(节点条件/约定开票金额/约定时间), 生成合同弹窗两步入库, docx正文按节点逐条生成「发票开具与回收条款」(无节点回退旧条款文本), 老合同可补录/全量修改, 补录弹窗提示旧版条款转节点 ②登记发票可选挂对应节点(下拉), 合同详情展示节点状态表(待收/部分/已收齐/已到约定时间未收红标), 发票行加对应节点列 ③提醒引擎按节点逐节点触发(约定时间到且该节点未收齐→钉钉推经办采购员+系统预警, kind=node<id>每日去重), 老合同回退首次/全部两时间点; dashboard发票催收预警节点化(到期橙/超期红) ④统计: 发票台账overdue兼容节点判定, 新API /api/reports/invoice-node-ledger节点级欠票台账, 供应商维度行加📋核对下钻(供应商→合同→节点欠票明细, 一键跳合同详情登记/催办) ⑤迁移20260906_发票回收节点_顺序节点计划.sql(contract_inv_nodes新表+contract_invoices.node_id幂等), check_code全绿+E2E实测(3节点生成→docx条款→登记挂节点→全量替换→提醒node9→ledger→超期标记)零残留)
             for kind, _why in kinds:
                 _ex = c.execute("SELECT 1 FROM contract_inv_reminds WHERE contract_id=? AND remind_date=? AND kind=?",
                                 (r['id'], _today, kind)).fetchone()
