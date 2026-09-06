@@ -953,6 +953,36 @@ def init_db():
             conn.execute(f"ALTER TABLE {_t} ADD COLUMN last_edit_by TEXT DEFAULT ''")
         if 'last_edit_at' not in _tcols:
             conn.execute(f"ALTER TABLE {_t} ADD COLUMN last_edit_at TEXT DEFAULT ''")
+    # V11.224 模块三: 税率参数配置表(供应商→品类→单据类型→系统兜底 优先级匹配)
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS tax_rate_config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scope TEXT NOT NULL DEFAULT 'system',
+            ref_key TEXT DEFAULT '',
+            tax_rate REAL DEFAULT 13,
+            taxpayer_type TEXT DEFAULT '一般纳税人',
+            remark TEXT DEFAULT '',
+            is_active INTEGER DEFAULT 1,
+            created_by TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            updated_at TEXT DEFAULT '');
+        CREATE INDEX IF NOT EXISTS idx_tax_cfg_scope ON tax_rate_config(scope, ref_key);
+    """)
+    # 默认税率参数(系统兜底=13%, 首次建库写入)
+    if conn.execute("SELECT COUNT(*) FROM tax_rate_config WHERE scope='system'").fetchone()[0] == 0:
+        conn.execute("INSERT INTO tax_rate_config(scope,ref_key,tax_rate,taxpayer_type,remark) VALUES('system','',13,'一般纳税人','系统兜底默认税率(优先级最低)')")
+    # 模块三: 单据层补列 税率/税额/价税合计(幂等)
+    for _t, _col, _ddl in [
+        ('purchase_requests', 'tax_rate', "ALTER TABLE purchase_requests ADD COLUMN tax_rate REAL DEFAULT 13"),
+        ('purchase_requests', 'tax_amount', "ALTER TABLE purchase_requests ADD COLUMN tax_amount REAL DEFAULT 0"),
+        ('purchase_requests', 'total_inc_tax', "ALTER TABLE purchase_requests ADD COLUMN total_inc_tax REAL DEFAULT 0"),
+        ('receivings', 'tax_rate', "ALTER TABLE receivings ADD COLUMN tax_rate REAL DEFAULT 13"),
+        ('receivings', 'tax_amount', "ALTER TABLE receivings ADD COLUMN tax_amount REAL DEFAULT 0"),
+        ('receivings', 'total_inc_tax', "ALTER TABLE receivings ADD COLUMN total_inc_tax REAL DEFAULT 0"),
+    ]:
+        _cols = [r[1] for r in conn.execute(f"PRAGMA table_info({_t})").fetchall()]
+        if _col not in _cols:
+            conn.execute(_ddl)
     conn.commit(); conn.close()
 
 # ============================================================
@@ -5472,10 +5502,17 @@ def api_create_order():
     no = gen_no('CG', 'purchase_orders', 'order_no', conn)
     rows = []
     total_qty = 0.0; grand_amt = 0.0; grand_tax = 0.0; grand_total = 0.0
+    # V11.224 模块三: 税率参数自动匹配 — 前端未显式传税率时, 按 供应商→品类→单据类型→兜底 取默认
+    _auto_rate, _auto_why = tax_match_rate(str(d.get('supplier') or ''), str(d.get('category') or ''), 'purchase_order', conn=conn)
     for it in items:
         qty = float(it.get('quantity',1) or 1)
         price = float(it.get('price',0) or 0)
-        tr = float(it.get('tax_rate', d.get('tax_rate',13)) or 13)
+        _it_rate = it.get('tax_rate')
+        if _it_rate is None or _it_rate == '' or float(_it_rate or 0) == 0:
+            _it_rate = d.get('tax_rate') or _auto_rate
+        else:
+            _it_rate = float(_it_rate)
+        tr = float(_it_rate or 13)
         amt = qty*price; tax = amt*tr/100
         total_qty += qty; grand_amt += amt; grand_tax += tax; grand_total += amt+tax
         rows.append((it.get('item_name',''), it.get('spec','') or '', it.get('unit','个') or '个', qty, price, amt, tr, tax, amt+tax))
@@ -12280,6 +12317,138 @@ def api_doc_delete(biz_type, bid):
     conn.commit(); conn.close()
     log(session['user_name'], '删除单据', f'{biz_type}#{bid} {no}')
     return jsonify({'success': True, 'message': f'单据 {no} 已删除'})
+
+# ============================================================
+# V11.224 采购优化3.0-模块三: 税率参数配置(金蝶式优先级匹配)
+# 优先级(高→低): 供应商专票税率 → 物料品类税率 → 单据类型默认税率 → 系统兜底默认税率
+# 含: 配置CRUD / 自动匹配函数(单条单据可查命中链路) / 税额计算辅助
+# ============================================================
+_TAX_SCOPES = [
+    ('supplier', '按供应商(专票税率)'),
+    ('category', '按物料品类'),
+    ('doc_type', '按单据类型'),
+    ('system', '系统兜底'),
+]
+
+
+def tax_match_rate(supplier='', category='', doc_type='', conn=None):
+    """按优先级返回命中税率: 返回 (税率, 命中说明)。全部为空→系统兜底"""
+    _own = conn is None
+    if _own:
+        conn = db()
+    try:
+        # 1. 供应商专票税率(名称精确)
+        if supplier:
+            r = conn.execute("SELECT tax_rate FROM tax_rate_config WHERE scope='supplier' AND ref_key=? AND is_active=1 ORDER BY id DESC LIMIT 1", (str(supplier).strip(),)).fetchone()
+            if r:
+                if _own: conn.close()
+                return float(r['tax_rate']), f'按供应商「{supplier}」专票税率'
+        # 2. 物料品类
+        if category:
+            r = conn.execute("SELECT tax_rate FROM tax_rate_config WHERE scope='category' AND ref_key=? AND is_active=1 ORDER BY id DESC LIMIT 1", (str(category).strip(),)).fetchone()
+            if r:
+                if _own: conn.close()
+                return float(r['tax_rate']), f'按物料品类「{category}」税率'
+        # 3. 单据类型默认
+        if doc_type:
+            r = conn.execute("SELECT tax_rate FROM tax_rate_config WHERE scope='doc_type' AND ref_key=? AND is_active=1 ORDER BY id DESC LIMIT 1", (str(doc_type).strip(),)).fetchone()
+            if r:
+                if _own: conn.close()
+                return float(r['tax_rate']), f'按单据类型「{doc_type}」默认税率'
+        # 4. 系统兜底
+        r = conn.execute("SELECT tax_rate FROM tax_rate_config WHERE scope='system' AND is_active=1 ORDER BY id DESC LIMIT 1").fetchone()
+        rate = float(r['tax_rate']) if r else 13.0
+        if _own: conn.close()
+        return rate, '系统兜底默认税率'
+    except Exception:
+        if _own:
+            try: conn.close()
+            except Exception: pass
+        return 13.0, '系统兜底默认税率'
+
+
+def tax_calc(amount, tax_rate):
+    """税额/价税合计计算: 入参amount为不含税额, 税额=amount*rate%, 价税合计=amount+税额"""
+    try:
+        rate = float(tax_rate or 0)
+        amt = float(amount or 0)
+    except Exception:
+        rate, amt = 0, 0.0
+    tax = round(amt * rate / 100, 2)
+    return {'tax_rate': rate, 'tax_amount': tax, 'total_inc_tax': round(amt + tax, 2)}
+
+
+@app.route('/api/tax-config')
+@login_required
+def api_tax_config():
+    """税率参数配置列表(含系统兜底)+匹配预览"""
+    conn = db()
+    rows = conn.execute("SELECT * FROM tax_rate_config ORDER BY CASE scope WHEN 'supplier' THEN 1 WHEN 'category' THEN 2 WHEN 'doc_type' THEN 3 ELSE 4 END, id").fetchall()
+    sup = request.args.get('supplier', '')
+    cat = request.args.get('category', '')
+    dt = request.args.get('doc_type', '')
+    matched = None
+    if sup or cat or dt:
+        rate, why = tax_match_rate(sup, cat, dt, conn=conn)
+        matched = {'rate': rate, 'why': why}
+    conn.close()
+    return jsonify({'rows': [dict(x) for x in rows], 'scopes': _TAX_SCOPES, 'matched': matched})
+
+
+@app.route('/api/tax-config', methods=['POST'])
+@login_required
+def api_tax_config_save():
+    """新增/更新税率配置(仅管理员/分管领导)"""
+    if not can_manage_config():
+        return jsonify({'error': '仅系统管理员/分管领导可维护税率参数'}), 403
+    d = request.json or {}
+    scope = d.get('scope', '')
+    if scope not in ('supplier', 'category', 'doc_type', 'system'):
+        return jsonify({'error': '无效的配置范围'}), 400
+    try:
+        rate = float(d.get('tax_rate', 13))
+    except Exception:
+        return jsonify({'error': '税率必须为数字'}), 400
+    if rate < 0 or rate > 100:
+        return jsonify({'error': '税率须在 0~100 之间'}), 400
+    conn = db()
+    exist = conn.execute("SELECT id FROM tax_rate_config WHERE scope=? AND ref_key=?", (scope, str(d.get('ref_key') or '').strip())).fetchone()
+    if exist:
+        conn.execute("UPDATE tax_rate_config SET tax_rate=?, taxpayer_type=?, remark=?, is_active=?, updated_at=? WHERE id=?",
+                     (rate, d.get('taxpayer_type') or '一般纳税人', d.get('remark') or '', 1 if d.get('is_active', 1) else 0, now(), exist['id']))
+        cid = exist['id']
+    else:
+        cur = conn.execute("INSERT INTO tax_rate_config(scope,ref_key,tax_rate,taxpayer_type,remark,is_active,created_by) VALUES(?,?,?,?,?,?,?)",
+                           (scope, str(d.get('ref_key') or '').strip(), rate, d.get('taxpayer_type') or '一般纳税人', d.get('remark') or '', 1 if d.get('is_active', 1) else 0, session.get('user_name', '')))
+        cid = cur.lastrowid
+    conn.commit(); conn.close()
+    log(session['user_name'], '税率配置', f'{scope}:{d.get("ref_key","")} → {rate}%')
+    return jsonify({'success': True, 'id': cid})
+
+
+@app.route('/api/tax-config/<int:cid>', methods=['DELETE'])
+@login_required
+def api_tax_config_del(cid):
+    if not can_manage_config():
+        return jsonify({'error': '仅系统管理员/分管领导可维护税率参数'}), 403
+    conn = db()
+    conn.execute("DELETE FROM tax_rate_config WHERE id=?", (cid,))
+    conn.commit(); conn.close()
+    return jsonify({'success': True})
+
+
+@app.route('/api/tax-config/auto', methods=['POST'])
+@login_required
+def api_tax_config_auto():
+    """按单据自动匹配税率(下单/建申请/入库预填调用): 入参 {supplier, category, doc_type, amount}
+    返回 {tax_rate, tax_amount, total_inc_tax, matched_why}"""
+    d = request.json or {}
+    rate, why = tax_match_rate(d.get('supplier', ''), d.get('category', ''), d.get('doc_type', ''))
+    calc = tax_calc(d.get('amount', 0), rate)
+    calc['tax_rate'] = rate
+    calc['matched_why'] = why
+    return jsonify(calc)
+
 
 # ---- 报表中心扩充数据 ----
 # ============================================================
