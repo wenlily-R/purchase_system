@@ -1862,8 +1862,10 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
     approved = c.execute("SELECT COUNT(*) FROM approval_instances WHERE biz_type=? AND biz_id=? AND status='approved'", (biz_type, biz_id)).fetchone()[0]
     if result == 'ok':
         if pending > 0:
-            if approved == 0:
-                # 飞书回调场景: 节点全pending但审批已全过 → 一次性全部置approved
+            if approved == 0 or instance_code:
+                # 飞书回调/钉钉终态回写: 节点全pending 或 钉钉实例已终态(即使网页已批过部分节点)
+                # V11.228修复: 网页批1级+钉钉批2级混合场景 → 剩余pending一并置approved, 不再拒不同步
+                # 节点全pending但审批已全过 → 一次性全部置approved
                 c.execute("UPDATE approval_instances SET status='approved', approver=?, approver_id=?, comment=?, processed_at=? WHERE biz_type=? AND biz_id=? AND status='pending'",
                           (approver, approver_id, comment, now(), biz_type, biz_id))
                 # V11.184: 同意操作记录(含钉钉上传附件)
@@ -3581,7 +3583,8 @@ def dt_extract_agree_op(inst):
         ops = inst.get('operation_records') or inst.get('operationRecords') or []
         if not isinstance(ops, list):
             return None
-        for op in ops:
+        # V11.228修复: 取最后一个同意操作(钉钉终态=最后审批人; 原取第一个会记错审批人)
+        for op in reversed(ops):
             if not isinstance(op, dict):
                 continue
             if str(op.get('operation_result') or op.get('result') or '').upper() in ('AGREE', 'APPROVE'):
