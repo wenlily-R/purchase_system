@@ -352,6 +352,11 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
   <div id="preqMat">
     <div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="showForm('prequest')">+ 新建物资采购申请</button><button class="btn btn-o btn-sm" onclick="showFlowChart('purchase')">📊 采购流程图示</button><button class="btn btn-w btn-sm" onclick="showAddCart()">🛒 加购下单(汇总已通过申请)</button><select id="reqTypeFilter" onchange="loadPRequests()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="物资采购" selected>物资采购</option><option value="">全部类型</option></select></div>
     <div class="card"><div class="cb" id="prequestsTable"><div class="loading">加载中...</div></div></div>
+    <!-- V11.226: 物资采购申请 树状分支流程图(常驻页下方, 与上方列表/流程图示弹窗共存) -->
+    <div class="card" style="margin-top:6px">
+      <div class="ch" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><h3 style="margin:0">🌳 物资采购申请流程树</h3><span style="font-size:9px;color:#999">分支视图：点任意节点跳转对应页面查看该环节单据（列表/历史）</span></div>
+      <div class="cb" id="reqFlowTree" style="padding:10px"><div class="loading">流程树加载中...</div></div>
+    </div>
   </div>
 </div>
 <div class="page" id="prepairs"><h2>🔧 设备维修管理 <span style="font-size:10px;color:#999;font-weight:normal">(报修→定损→审批→比价→委外→验收→归档)</span></h2>
@@ -366,7 +371,13 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <select id="repairStatusF2" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px" onchange="rpStepClear();loadRepairs2()"><option value="">全部状态</option><option>草稿</option><option>待定损</option><option>定损完成待审批</option><option>审批通过</option><option>待比价</option><option>已选服务商</option><option>委外维修中</option><option>变更待四方确认</option><option>待回厂验收</option><option>验收通过</option><option>待发票登记</option><option>已归档</option><option>定损驳回</option><option>验收不通过返修</option><option>已作废</option></select>
     <span id="rpStepHint" style="font-size:9px;color:#888"></span>
   </div>
-  <div class="card"><div class="cb" id="repairsTable2"><div class="loading">加载中...</div></div></div></div>
+  <div class="card"><div class="cb" id="repairsTable2"><div class="loading">加载中...</div></div></div>
+  <!-- V11.226: 设备维修 树状分支流程图(常驻页下方, 与上方步骤TAB/列表/流程图示弹窗共存) -->
+  <div class="card" style="margin-top:6px">
+    <div class="ch" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><h3 style="margin:0">🌳 设备维修流程树</h3><span style="font-size:9px;color:#999">分支视图：定损三选一（自修/委外/换新）· 点任意节点跳转对应环节查看单据</span></div>
+    <div class="cb" id="rpFlowTree" style="padding:10px"><div class="loading">流程树加载中...</div></div>
+  </div>
+</div>
 <div class="page" id="pinquiries"><h2>🔍 三方询价</h2><div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="showInquiryForm()">+ 发起三方询价</button><button class="btn btn-w btn-sm" onclick="loadInquiries()">🔄 刷新</button></div><div class="card"><div class="cb" id="inquiriesTable"><div class="loading">加载中...</div></div></div></div>
 <div class="page" id="porders"><h2>📋 采购订单</h2><div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="showForm('order')">+ 新建订单</button><button class="btn btn-o btn-sm" onclick="showOrderExecList()">📋 订单执行明细表</button></div><div class="card"><div class="cb" id="ordersTable"><div class="loading">加载中...</div></div></div></div>
 <div class="page" id="papprovals"><h2>✅ 审批中心 <span style="font-size:10px;color:#999;font-weight:normal">(采购/维修 双中心独立)</span></h2>
@@ -1481,6 +1492,7 @@ function apprZone(z){
 // 需求44: 申请单价格隔离(员工/部门负责人不显示价格列)
 function canSeePrice(){return ['系统管理员','财务','分管领导','总经理'].includes(ME.role)}
 async function loadPRequests(){
+  renderFlowTree('reqFlowTree','purchase');  // V11.226: 页下方树状分支流程图(渲染一次)
   const r=await api('/prequests');
   // V11.50: 类型筛选(物资采购/设备维修)
   const fType=id('reqTypeFilter')?.value||'';
@@ -3979,6 +3991,7 @@ async function loadRepairs(){
   return loadRepairs2();
 }
 async function loadRepairs2(){
+  renderFlowTree('rpFlowTree','repair');  // V11.226: 页下方树状分支流程图(渲染一次)
   // prepairs 兼容页(入口: 菜单🔧维修采购), 共用同一列表渲染到容器2
   const list=(await api('/repairs').catch(()=>[]));
   const f=id('repairStatusF2')?.value||'';
@@ -6376,6 +6389,102 @@ function showFlowChart(kind){
     </div>`;
   }).join('')+'</div>';
   showDetail(f.title,h,'<button class="btn btn-o" onclick="closeMod()">关闭</button>');
+}
+
+// ================= V11.226: 树状分支流程图(采购申请/设备维修 页下方常驻, 与旧视图共存) =================
+const FLOW_TREES={
+  purchase:{
+    head:[
+      {t:'① 需求部门提交采购申请',d:'需求部门 / 提报人',r:'填写物资/数量/用途/预算归属；草稿可改、驳回可重提',j:"sw('prequests')"},
+      {t:'② 部门负责人审核',d:'部门负责人（可指定具体审批人）',r:'申请审批第 1 级；通过后进入金额判定',j:"apprCenter('buy');sw('approvals')"},
+    ],
+    judge:{ic:'💰',t:'③ 金额判定',d:'按单笔金额分流',r:'<1000 元走小额通道；≥1000 元走完整采购流程（参照增值税小额政策，系统固定阈值 1000 元）'},
+    cols:[
+      {lab:'小额通道 · <1000元',color:'#b45309',nodes:[
+        {t:'简化审批',d:'部门负责人 → 采购员',r:'豁免询价与多级审批，直批采购',j:"apprCenter('buy');sw('approvals')"},
+        {t:'采购执行 / 线下操作',d:'采购员',r:'可先采购，3 个工作日内补录上传合规凭证',j:"sw('small')"},
+        {t:'生成小额采购/维修台账',d:'采购员',r:'收据/付款记录/验收单留痕，财务可核可审',j:"sw('small')"},
+      ]},
+      {lab:'常规流程 · ≥1000元',color:'#1f6feb',nodes:[
+        {t:'④ 采购选型 / 三方询价',d:'采购员',r:'发起询价→供应商报价→截止开标→比价选中',j:"sw('inquiries')"},
+        {t:'⑤ 采购订单审批',d:'部门负责人→财务→分管领导/总经理',r:'按系统审批流档位分级；通过后自动生成待入库',j:"sw('orders')"},
+        {t:'⑥ 供应商接单 / 发货',d:'供应商',r:'订单标注发货状态、到货跟进',j:"sw('orders')"},
+        {t:'⑦ 到货验收（可分批/暂估）',d:'采购员 / 需求人',r:'收货清点→分批验收（暂估/正式）',j:"sw('receivings')"},
+        {t:'⑧ 入库办理',d:'库管员',r:'审批通过自动加库存 + 流水留痕',j:"sw('receivings')"},
+        {t:'⑨ 发票校验 / 暂估红冲',d:'采购员',r:'收到发票→核对（专票可抵税）；暂估转正式',j:"sw('receivings')"},
+        {t:'⑩ 财务付款',d:'财务',r:'付款申请→审批→付款',j:"sw('payments')"},
+        {t:'⑪ 订单关闭归档',d:'系统自动',r:'验收+发票+付款全部完成自动关闭',j:"sw('orders')"},
+      ]},
+    ],
+    tail:null
+  },
+  repair:{
+    head:[
+      {t:'① 使用部门提交报修单',d:'使用部门 / 提报人',r:'设备名称/编号/故障现象/发生时间/紧急度；草稿可改',j:"sw('repairs')"},
+    ],
+    judge:{ic:'🔍',t:'② 技术定损判定',d:'机电 / 机修 / 生产负责人',r:'损坏原因定损（一级+二级标准分类）后三选一决定维修方式'},
+    cols:[
+      {lab:'A · 内部自修闭环',color:'#16a34a',nodes:[
+        {t:'定损审批（按金额分级）',d:'部门主管→机电厂长→生产厂长',r:'自修方案审批；驳回可重提',j:"apprCenter('repair');sw('approvals')"},
+        {t:'厂内维修执行',d:'机电车间',r:'按自修方案领料维修',j:"rpMenuStep('fix')"},
+        {t:'回厂性能验收',d:'使用部门 + 机电',r:'性能验收：通过→结算 / 不通过→返修',j:"rpMenuStep('accept')"},
+        {t:'费用结算归档',d:'财务 / 系统',r:'维修费用登记 → 单据归档',j:"rpMenuStep('invoice')"},
+      ]},
+      {lab:'B · 委外维修',color:'#e67e22',nodes:[
+        {t:'定损审批（按金额分级）',d:'部门主管→机电厂长→生产厂长',r:'委外方案审批',j:"apprCenter('repair');sw('approvals')"},
+        {t:'服务商比价选商',d:'采购员 / 服务商',r:'多家报价（配件+工时+工期+质保）→选定→委托单WY',j:"rpMenuStep('quote')"},
+        {t:'发料委外 / 维修执行',d:'机电 / 服务商',r:'维修中变更需四方确认（费用才计入）· 永久留痕',j:"rpMenuStep('fix')"},
+        {t:'回厂联合性能验收',d:'使用部门 + 机电',r:'性能意见必填；不通过返修',j:"rpMenuStep('accept')"},
+        {t:'发票登记 / 费用结算',d:'财务 / 系统',r:'发票归档 → 单据关闭',j:"rpMenuStep('invoice')"},
+      ]},
+      {lab:'C · 更换新设备',color:'#7c5cff',nodes:[
+        {t:'一键转物资采购申请',d:'机电 / 生产',r:'生成 SC 采购申请单，自动进入采购流程',j:"sw('prequests')"},
+        {t:'按物资采购流程继续',d:'采购员',r:'选型→订单→到货→发票→付款（见物资采购申请流程树）',j:"sw('prequests')"},
+      ]},
+    ],
+    tail:[{t:'③ 单据关闭归档',d:'系统自动',r:'验收 + 发票完成后归档；历史可查（含变更记录）',j:"rpMenuStep('done')"}]
+  }
+};
+// 树内通用片段: 主干节点(圆点+卡+下引线)
+function _ftNode(n,small){
+  const sz=small?9:10;
+  return `<div style="display:flex;gap:6px;cursor:pointer" onclick="${n.j}" title="点击前往对应页面查看「${esc(n.t)}」环节单据">
+    <div style="display:flex;flex-direction:column;align-items:center;width:13px"><div style="width:11px;height:11px;border-radius:50%;background:${small?'#8fb3dd':'#1f6feb'};margin-top:5px;flex:none"></div><div style="width:2px;flex:1;background:#c9d9f0;min-height:6px"></div></div>
+    <div style="flex:1;background:#f7fafd;border:1px solid #dfe9f5;border-radius:6px;padding:${small?'3px 6px':'5px 8px'};margin-bottom:1px;min-width:0">
+      <div style="font-size:${sz}px;font-weight:700;color:#16325c;display:flex;justify-content:space-between;gap:6px;align-items:center">${esc(n.t)}<span style="font-size:8px;color:#1f6feb;flex:none">📍</span></div>
+      <div style="font-size:8px;color:#888;margin-top:1px">责任：<span style="color:#b7791f">${esc(n.d)}</span></div>
+      <div style="font-size:8px;color:#777;margin-top:1px;line-height:1.45">${esc(n.r||'')}</div>
+    </div></div>`;
+}
+function _ftJudge(jd){
+  return `<div style="background:#fff8ef;border:1px solid #f5c778;border-left:4px solid #f59e0b;border-radius:6px;padding:6px 10px;margin:2px 0">
+    <div style="font-size:10px;font-weight:800;color:#92400e">${jd.ic} ${esc(jd.t)}</div>
+    <div style="font-size:8.5px;color:#92400e;margin-top:2px">责任：${esc(jd.d)} ｜ 规则：${esc(jd.r)}</div></div>`;
+}
+function _ftFork(){
+  return `<div style="display:flex;flex-direction:column;align-items:center"><div style="width:2px;height:10px;background:#c9d9f0"></div><div style="width:92%;height:2px;background:#c9d9f0;margin:0 0 6px 0"></div></div>`;
+}
+function renderFlowTree(boxId,kind){
+  const box=id(boxId); if(!box||box.dataset.rd)return;
+  const T=FLOW_TREES[kind]; if(!T){box.innerHTML='';return}
+  box.dataset.rd='1';
+  let h='<div style="font-size:9px;color:#999;margin-bottom:6px">💡 流程图仅供业务参考：节点为实际业务环节，点击节点可跳转对应页面查看历史单据；具体审批档位以 系统设置→审批流 为准。</div>';
+  (T.head||[]).forEach(n=>{h+=_ftNode(n,false)});
+  if(T.judge)h+=_ftJudge(T.judge);
+  if(T.cols){
+    h+=_ftFork();
+    h+='<div style="display:flex;gap:10px;flex-wrap:wrap">'+T.cols.map(col=>{
+      return `<div style="flex:1;min-width:210px;max-width:${col.nodes&&col.nodes.length>=5?'520px':'none'}">
+        <div style="display:flex;align-items:center;gap:5px;margin:2px 0 0 4px"><span style="width:9px;height:9px;border-radius:50%;background:${col.color};display:inline-block"></span><b style="font-size:9.5px;color:#16325c">${esc(col.lab)}</b></div>
+        <div style="border-left:2px solid #c9d9f0;margin:2px 0 0 6px;padding-left:6px">${col.nodes.map(n=>_ftNode(n,true)).join('')}</div>
+      </div>`;
+    }).join('')+'</div>';
+    if(T.tail&&T.tail.length){
+      h+='<div style="display:flex;justify-content:center;margin:4px 0 0 -6px"><div style="width:2px;height:10px;background:#c9d9f0"></div></div>';
+      h+=T.tail.map(n=>_ftNode(n,false)).join('');
+    }
+  }
+  box.innerHTML=h;
 }
 
 function afAddLevel(){
