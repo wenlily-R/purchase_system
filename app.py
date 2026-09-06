@@ -809,6 +809,15 @@ def init_db():
     for col, ddl in _adds2:
         if col not in _rp2:
             conn.execute(f"ALTER TABLE repair_plans ADD COLUMN {col} {ddl}")
+    # V11.224 模块六: 定损单「设备损坏原因」标准化(一级分类+二级明细, ISO14224参考) — 幂等补列
+    _rp6 = [r[1] for r in conn.execute("PRAGMA table_info(repair_plans)").fetchall()]
+    for _c6, _d6 in [
+        ('damage_reason_cat', "TEXT DEFAULT ''"),   # 损坏原因一级分类
+        ('damage_reason_sub', "TEXT DEFAULT ''"),   # 损坏原因二级明细
+        ('damage_reason_note', "TEXT DEFAULT ''"),  # 其他原因手填备注
+    ]:
+        if _c6 not in _rp6:
+            conn.execute(f"ALTER TABLE repair_plans ADD COLUMN {_c6} {_d6}")
     # V11.210 维修变更四方确认: 变更单加 四方确认人/时间/结果(提报人/采购专员/机电厂长/机修车间主任), 永久留痕不可删
     _rc = [r[1] for r in conn.execute("PRAGMA table_info(repair_changes)").fetchall()]
     if 'confirm1_by' not in _rc:
@@ -11257,12 +11266,21 @@ def api_repair_damage(rid):
         c.close(); return jsonify({'error': '仅定损角色(系统设置配置)可定损'}), 403
     op_name = session['user_name']
     opinion = str(d.get('opinion') or '').strip()
+    # V11.224 模块六: 损坏原因标准化(一级+二级+备注), 提交定损时必填
+    _rcat = str(d.get('damage_reason_cat') or '').strip()
+    _rsub = str(d.get('damage_reason_sub') or '').strip()
+    _rnote = str(d.get('damage_reason_note') or '').strip()
+    if act in ('internal', 'external', 'replace') and not _rcat:
+        c.close(); return jsonify({'error': '请选择「设备损坏原因」一级分类'}), 400
+    # V11.224 模块六: 「其他原因」必须补充具体说明(自由文本仅保留此处)
+    if act in ('internal', 'external', 'replace') and _rcat == '其他原因' and not _rnote:
+        c.close(); return jsonify({'error': '「其他原因」请补充填写具体损坏原因说明'}), 400
     _logmsg = ''
     if act == 'internal':
         note = str(d.get('internal_note') or '').strip()
         if not note: c.close(); return jsonify({'error': '请填写自修处理记录'}), 400
-        c.execute("UPDATE repair_plans SET repair_type='内部自修', internal_note=?, damage_opinion=?, damage_time=?, status='已归档', actual_finish=? WHERE id=?",
-                  (note, opinion or '内部自修处理', now(), now(), rid))
+        c.execute("UPDATE repair_plans SET repair_type='内部自修', internal_note=?, damage_opinion=?, damage_time=?, status='已归档', actual_finish=?, damage_reason_cat=?, damage_reason_sub=?, damage_reason_note=? WHERE id=?",
+                  (note, opinion or '内部自修处理', now(), now(), _rcat, _rsub, _rnote, rid))
         _logmsg = f'{r["plan_no"]} 自修闭环归档'
     elif act == 'external':
         # 清旧明细重录定损清单
@@ -11272,8 +11290,8 @@ def api_repair_damage(rid):
                 c.execute("INSERT INTO repair_items(plan_id,part_name,fault_note,confirm_status,price,unit) VALUES(?,?,?,'确认维修',?,?)",
                           (rid, it['part_name'], it.get('fault_note', ''), float(it.get('price') or 0), it.get('unit') or '项'))
         est = float(d.get('est_cost') or r['est_cost'] or 0)
-        c.execute("UPDATE repair_plans SET repair_type='委外维修', damage_items_json=?, damage_opinion=?, damage_time=?, est_cost=?, status='定损完成待审批' WHERE id=?",
-                  (json.dumps(d.get('items') or [], ensure_ascii=False), opinion, now(), est, rid))
+        c.execute("UPDATE repair_plans SET repair_type='委外维修', damage_items_json=?, damage_opinion=?, damage_time=?, est_cost=?, status='定损完成待审批', damage_reason_cat=?, damage_reason_sub=?, damage_reason_note=? WHERE id=?",
+                  (json.dumps(d.get('items') or [], ensure_ascii=False), opinion, now(), est, _rcat, _rsub, _rnote, rid))
         c.commit()
         # 节点3: 按预估金额分级审批 — 必须先提交释放写锁, create_approvals用独立连接
         create_approvals('repair_plan', rid, est, submitter=r['requester'] or '')
@@ -11291,8 +11309,8 @@ def api_repair_damage(rid):
                   (req_no, r['dept'] or '', r['requester'] or '', r['requester_id'] or 0,
                    f"设备报废更换: {r['fault_desc'] or ''}（原维修单{r['plan_no']}转来）", '草稿', float(d.get('est_cost') or r['est_cost'] or 0),
                    f'由维修单 {r["plan_no"]} 定损"建议直接更换新设备"生成', '物资采购', now(), datetime.date.today().strftime('%Y-%m-%d')))
-        c.execute("UPDATE repair_plans SET repair_type='更换新设备', convert_req_no=?, damage_opinion=?, damage_time=?, status='已归档' WHERE id=?",
-                  (req_no, opinion, now(), rid))
+        c.execute("UPDATE repair_plans SET repair_type='更换新设备', convert_req_no=?, damage_opinion=?, damage_time=?, status='已归档', damage_reason_cat=?, damage_reason_sub=?, damage_reason_note=? WHERE id=?",
+                  (req_no, opinion, now(), _rcat, _rsub, _rnote, rid))
         _logmsg = f'{r["plan_no"]} → 物资申请{req_no}'
     elif act == 'reject':
         reason = str(d.get('reason') or '').strip()
@@ -11309,6 +11327,36 @@ def api_repair_damage(rid):
     elif act == 'reject':
         log(op_name, '定损驳回', _logmsg)
     return jsonify({'success': True})
+
+
+@app.route('/api/repairs/damage-stats')
+@login_required
+def api_repair_damage_stats():
+    """V11.224 模块六: 按损坏原因维度统计设备故障频次/维修成本(设备管理数据支撑)"""
+    if session.get('user_role') not in ('系统管理员', '分管领导', '总经理', '库管员', '采购员', '财务'):
+        return jsonify({'error': '无权限查看'}), 403
+    c = db()
+    rows = c.execute("""SELECT damage_reason_cat, damage_reason_sub,
+        COUNT(*) freq, COALESCE(SUM(quote_total),0) cost_total,
+        COALESCE(SUM(est_cost),0) est_total
+        FROM repair_plans
+        WHERE damage_reason_cat != '' AND status != '已作废'
+        GROUP BY damage_reason_cat, damage_reason_sub
+        ORDER BY freq DESC, cost_total DESC""").fetchall()
+    # 汇总(仅一级)
+    cats = {}
+    for r in rows:
+        cat = r['damage_reason_cat'] or '(未填)'
+        if cat not in cats:
+            cats[cat] = {'cat': cat, 'freq': 0, 'cost_total': 0, 'subs': []}
+        cats[cat]['freq'] += r['freq']
+        cats[cat]['cost_total'] += r['cost_total'] or 0
+        if r['damage_reason_sub']:
+            cats[cat]['subs'].append({'sub': r['damage_reason_sub'], 'freq': r['freq'], 'cost': r['cost_total'] or 0})
+    for v in cats.values():
+        v['subs'].sort(key=lambda x: -x['freq'])
+    c.close()
+    return jsonify({'by_cat': [cats[k] for k in cats], 'detail': [dict_row(r) for r in rows]})
 
 @app.route('/api/repairs/<int:rid>/quote', methods=['POST'])
 @login_required
