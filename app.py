@@ -2993,7 +2993,12 @@ def gen_doc_voucher(biz_type, biz_id, kind, title):
         if not url:
             return None
         client = app.test_client()
-        client.post('/api/login', json={'username': 'admin', 'password': 'admin123'})
+        # V11.229修复: 不再硬编码admin/admin123登录(admin密码已改→登录401→凭证生成失败→钉钉审批无附件);
+        # 直接注入系统会话调下载接口(与页面下载同一份生成逻辑; login_required仅校验user_id存在)
+        with client.session_transaction() as sess:
+            sess['user_id'] = 1
+            sess['user_name'] = '系统'
+            sess['user_role'] = '系统管理员'
         resp = client.get(url)
         if resp.status_code != 200 or not resp.data:
             log('系统', '单据凭证生成失败', f'{biz_type}#{biz_id}: 下载接口HTTP {resp.status_code}')
@@ -6832,8 +6837,12 @@ def api_inquiry_export(iid):
     if not i:
         conn.close(); return jsonify({'error': '询价单不存在'}), 404
     # V11.205: 统一开标 — 截止前禁止导出比价单(报价内容不外泄)
+    # V11.229修复: 与详情接口V11.217一致 — 全部受邀供应商已报价则提前开标解锁;
+    # (否则提交定标审批生成钉钉附件时被锁挡→审批无附件)
     if _inq_locked(i['deadline']):
-        conn.close(); return jsonify({'error': '报价未开标（截止 %s），开标后方可导出比价单' % (i['deadline'] or '')}), 400
+        _noq = conn.execute("SELECT COUNT(*) FROM inquiry_suppliers WHERE inquiry_id=? AND (quote_price IS NULL OR quote_price=0)", (iid,)).fetchone()[0]
+        if _noq > 0:
+            conn.close(); return jsonify({'error': '报价未开标（截止 %s），开标后方可导出比价单' % (i['deadline'] or '')}), 400
     pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (i['req_id'],)).fetchone()
     items = conn.execute("SELECT * FROM request_items WHERE req_id=? ORDER BY id", (i['req_id'],)).fetchall()
     sups = [dict(s) for s in conn.execute("SELECT * FROM inquiry_suppliers WHERE inquiry_id=? ORDER BY id", (iid,)).fetchall()]
