@@ -1050,7 +1050,8 @@ function buildNav(){
   const groups=[
     ['工作台',[['dashboard','📊','工作台']]],
     // V11.221: 设备维修独立成模块(与采购管理菜单分开, 审批中心/工作流各自独立)
-    ['设备维修',[['repairs','🔧','设备维修管理']]],
+    // V11.224b: 维修流程分步骤菜单(参照采购管理组: 每一步一个入口) — 点击进入维修管理并定位到该环节
+    ['设备维修',[['repairs','🔧','全部维修单','all'],['repairs','📝','报修·草稿待提','draft'],['repairs','🔍','待技术定损','damage'],['repairs','✅','定损审批中','appr'],['repairs','💰','比价选商','quote'],['repairs','🔧','维修执行中','fix'],['repairs','📦','待回厂验收','accept'],['repairs','🧾','待发票归档','invoice'],['repairs','🗂','已归档/作废','done']]],
     ['采购管理',[['prequests','📝','采购申请'],['inquiries','🔍','三方询价'],['orders','📋','采购订单'],['contracts','📄','合同管理'],['suppliers','🏢','供应商']]],
     ['仓储库存',[['receivings','📦','入库验收'],['requisitions','📤','出库管理'],['returns','↩️','退库管理'],['inventory','📦','库存查询'],['counts','📋','库存盘点']]],
     ['财务往来',[['payments','💰','付款申请'],['expenses','💸','费用登记'],['settlements','📊','月度对账'],['invoices','🧾','合并开票'],['ledger','🔍','往来台账'],['small','💼','小额台账']]],
@@ -1060,7 +1061,12 @@ function buildNav(){
   // V11.201: 过滤无权限的菜单项(空组不显示); 审批中心/工作台/报表全员可进(数据按角色过滤)
   let html=groups.map((g,gi)=>{
     const items=g[1].filter(i=>i[0]=='dashboard'||i[0]=='approvals'||i[0]=='reports'||__pageAllowed(i[0]))
-      .map(i=>`<div class="si si-sub" onclick="sw('${i[0]}')">${i[1]}${i[2]}</div>`).join('');
+      .map(i=>{
+        // V11.224b: 菜单项第4元素=维修步骤key → 点击进维修管理并定位该环节
+        const step=i[3]||'';
+        const click=step?`rpMenuStep('${step}')`:`sw('${i[0]}')`;
+        return `<div class="si si-sub" onclick="${click}">${i[1]}${i[2]}</div>`;
+      }).join('');
     if(!items)return '';
     return `<div class="si-grp" onclick="toggleGrp(this,${gi})">${g[0]}<span class="arr" style="margin-left:auto">▶</span></div><div class="grp-body" id="grp${gi}">${items}</div>`;
   }).join('');
@@ -3963,6 +3969,26 @@ function rpStepGo(k){
   loadRepairs2();
 }
 function rpStepClear(){_rpStep='all';}
+// V11.224b: 菜单分步骤入口 — 设步骤→进入维修管理页→列表按该环节过滤并高亮步骤条
+function rpMenuStep(k){
+  if(!rpSteps().some(s=>s.k===k))k='all';
+  _rpStep=k;
+  sw('repairs');
+  // 页面加载后确保步骤条与列表都已按该步骤呈现(sw→loadRepairs2内部已调rpStepsRender)
+  const sb=id('rpStepsBar');
+  if(sb&&sb.querySelectorAll('button').length){
+    sb.querySelectorAll('button').forEach(b=>b.classList.toggle('act',b.getAttribute('data-k')===k));
+  }
+  // 高亮当前菜单项(侧边栏)
+  document.querySelectorAll('.si').forEach(a=>{
+    const m=a.getAttribute('onclick')||'';
+    a.classList.toggle('act',m.includes("rpMenuStep('"+k+"')"));
+  });
+  // 展开设备维修分组
+  const grp=document.querySelectorAll('.si-grp');
+  grp.forEach((g,gi)=>{if((g.textContent||'').includes('设备维修')){const body=id('grp'+gi);if(body&&body.style.display==='none')toggleGrp(g,gi)}});
+  try{window.scrollTo(0,0)}catch(e){}
+}
 // V11.218: 列表✏️修改入口(全状态显示, 后端校验可编辑状态) — 与物资采购申请同构: 按钮恒在, 非法状态给友好提示
 async function editRepairDraft(rid){
   try{
