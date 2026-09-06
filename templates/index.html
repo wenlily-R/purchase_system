@@ -1765,6 +1765,7 @@ async function showPRequest(pid){
     }catch(e){}
   }
   const btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button>
+    <button class="lnk" style="color:#7c5cff" onclick="showDocOps('purchase_request',${r.id},'申请单 ${esc(r.req_no)}')">🕘 操作记录</button>
     <button class="btn btn-p btn-sm" onclick="window.open('/api/prequests/${r.id}/download','_blank')">⬇️ 下载申请单</button>
     ${(ME.role=='系统管理员'||ME.name==r.requester)?`<button class="btn btn-o btn-sm" style="color:#e67e22;border-color:#e67e22" onclick="urgentRemind('purchase_request',${r.id})">⏰ 钉钉加急提醒</button>`:''}
     ${((r.status=='已驳回'||(r.status=='草稿'&&(r.reject_count||0)>0))&&(ME.role=='系统管理员'||ME.name==r.requester))?`<button class="btn btn-p btn-sm" style="background:#16a34a;border-color:#16a34a" onclick="resubmitDoc('purchase_request',${r.id},'申请单','${esc(r.req_no)}')">🔄 再次提交审批</button>`:''}`;
@@ -1935,7 +1936,7 @@ async function showInquiry(qid){
   if(d.status=='定标审批中') lowestNote = `<div style="margin:8px 0;padding:8px 10px;background:#fff8e1;border:1px solid #f5c518;border-radius:6px;font-size:11px;color:#8a6d3b">⏳ 已提交领导审批，等待领导选择采购方式（通过后这里会出现【分项定标】指引）</div>`;
   else if(d.status=='待定标') lowestNote = `<div style="margin:8px 0;padding:8px 10px;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:6px;font-size:11px;color:#2e7d32">✅ 领导已同意按各物资最低价择优采购 — 请点击【🔀 分项定标】，系统已按每项最低价默认勾选，确认后生成采购订单</div>`;
   else if(d.status=='已生成订单') lowestNote = `<div style="margin:8px 0;padding:8px 10px;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:6px;font-size:11px;color:#2e7d32">✅ 已按领导审批结果生成采购订单，可在【采购订单】查看</div>`;
-  const btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button>${d.locked?'':`<button class="btn btn-p" onclick="exportInquiry(${d.id})">📥 导出Excel</button>`}${splitBtn}${submitBtn}`;
+  const btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button><button class="lnk" style="color:#7c5cff" onclick="showDocOps('inquiry',${d.id},'询价单 ${esc(d.inq_no)}')">🕘 操作记录</button>${d.locked?'':`<button class="btn btn-p" onclick="exportInquiry(${d.id})">📥 导出Excel</button>`}${splitBtn}${submitBtn}`;
   if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
   // V11.179: 询价审批详情也显示审批流程+驳回记录
   showDetail(`询价单 ${d.inq_no}`,lowestNote+h+'<div id="approvalFlowBox"></div><div id="rejectLogsBox"></div>',btns);
@@ -2243,6 +2244,7 @@ async function showOrder(ordid){
     </div>`;
   }
   let btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button>
+    <button class="lnk" style="color:#7c5cff" onclick="showDocOps('purchase_order',${ordid},'订单 ${esc(o.order_no)}')">🕘 操作记录</button>
     <button class="btn btn-p btn-sm" onclick="downloadOrder(${ordid})">⬇️ 下载采购订单</button>
     <button class="btn btn-w btn-sm" onclick="printDoc('订单 ${esc(o.order_no)}','${esc(o.order_no)} | ${esc(o.item_name)} | ${esc(o.supplier)} | ¥${(o.total_amount||0).toFixed(0)} | ${esc(o.status)}')">🖨 打印</button>`;
   if(['待审批','审批通过','已签合同','已通过'].includes(o.status)&&!o.has_contract)
@@ -2498,6 +2500,7 @@ async function showRequisitionDetail(rid){
       <div class="c2"><div><dt>单号</dt><dd><b>${esc(r.req_no||'')}</b></dd><dt>状态</dt><dd>${tag(r.status)}${(r.reject_count||0)>0?` <span style="font-size:9px;color:#c0392b;background:#fdeaea;border-radius:3px;padding:1px 5px">已驳回${r.reject_count}次</span>`:''}</dd><dt>领取人</dt><dd>${esc(r.receiver||r.requester||'')}</dd></div>
       <div><dt>部门</dt><dd>${esc(r.receive_dept||r.dept||'')}</dd><dt>物资</dt><dd>${esc(r.item_name||'')}</dd><dt>创建时间</dt><dd>${esc((r.created_at||'').slice(0,16))}</dd></div></div>
       ${itemsHtml}<div id="approvalFlowBox"></div><div id="rejectLogsBox"></div>`, `<button class="btn btn-o" onclick="closeMod()">关闭</button>
+      <button class="lnk" style="color:#7c5cff" onclick="showDocOps('requisition',${rid},'出库单 ${esc(r.req_no||'')}')">🕘 操作记录</button>
       ${((r.status=='已驳回'||(r.status=='草稿'&&(r.reject_count||0)>0))&&(ME.role=='系统管理员'||ME.name==r.requester))?`<button class="btn btn-p btn-sm" style="background:#16a34a;border-color:#16a34a" onclick="resubmitDoc('requisition',${rid},'出库单','${esc(r.req_no||'')}')">🔄 再次提交审批</button>`:''}`);
     loadApprovalFlow('requisition',rid,'approvalFlowBox');
     loadRejectLogs('requisition',rid,'rejectLogsBox');
@@ -2593,6 +2596,52 @@ async function loadApprovalFlow(bt,bid,boxId){
     h+='</div></div>';
     box.innerHTML=h;
   }catch(e){}
+}
+// V11.224 模块一: 单据操作记录/修改留痕审计 — 展示 操作人/时间/动作/状态流转/差异明细 + 历史版本快照
+async function showDocOps(bt,bid,label){
+  showDetail(`🕘 ${label} 操作记录`,'<div class="loading">加载中...</div>',
+    '<button class="btn btn-o" onclick="closeMod()">关闭</button>');
+  let logs=[],snaps=[];
+  try{const d=await api(`/docs/${bt}/${bid}/edit-logs`,{noCache:true});logs=d.logs||[]}catch(e){}
+  try{const d2=await api(`/docs/${bt}/${bid}/snapshots`,{noCache:true});snaps=d2.snapshots||[]}catch(e){}
+  const actIcon={'修改':'✏️','重提':'🔄','提交':'📤','撤回':'↩️','删除':'🗑️','作废':'🚫','审批通过':'✅','驳回':'❌'};
+  let h='<div style="font-size:9px;color:#666;margin-bottom:6px">📌 该单据全部操作留痕：操作人 / 时间 / 动作 / 状态流转 / 修改差异（V11.224 全流程可追溯）</div>';
+  if(!logs.length&&!snaps.length){h+='<div style="color:#999;padding:10px;text-align:center;font-size:10px">暂无操作记录</div>'}
+  if(logs.length){
+    h+='<div style="font-size:10px;font-weight:700;color:#1f6feb;margin:4px 0">🕘 操作日志</div>';
+    h+=logs.map(x=>{
+      const ic=actIcon[x.action]||'•';
+      const st=x.status_before&&x.status_after&&x.status_before!=x.status_after?`<span style="color:#888">${esc(x.status_before)} → <b>${esc(x.status_after)}</b></span>`:(x.status_after?`<span style="color:#888">状态：${esc(x.status_after)}</span>`:'');
+      const diff=x.changes&&x.changes!='（无字段变化）'?`<div style="color:#8a6d3b;background:#fdf9ef;border-radius:3px;padding:3px 7px;margin-top:2px;white-space:pre-wrap;font-size:9px">🔧 ${esc(x.changes)}</div>`:'';
+      const node=x.node?`<div style="color:#1f6feb;font-size:9px;margin-top:1px">${esc(x.node)}</div>`:'';
+      return `<div style="border:1px solid #eef1f6;border-radius:5px;padding:5px 8px;margin-bottom:4px;background:#fcfdff">
+        <div style="font-size:10px"><b>${ic} ${esc(x.action||'操作')}</b> <span style="color:var(--s)">${esc(x.operator||'')}</span> <span style="color:#aaa;font-size:9px">${esc((x.created_at||'').slice(0,16))}</span> ${st?`<span style="margin-left:4px">${st}</span>`:''}</div>${node}${diff}</div>`;
+    }).join('');
+  }
+  if(snaps.length){
+    h+='<div style="font-size:10px;font-weight:700;color:#b45309;margin:8px 0 4px">📦 历史版本快照（修改前原数据，可追溯）</div>';
+    h+=snaps.map(s=>{
+      let brief='';
+      try{
+        const sd=JSON.parse(s.snap_json||'{}');
+        const sub=Object.keys(sd.__subs__||{}).length?`（含${Object.entries(sd.__subs__||{}).map(([k,v])=>k+':'+(v||[]).length+'行').join('，')}）`:'';
+        const k=Object.keys(sd).filter(x=>!x.startsWith('__'));brief=Object.keys(sd).filter(x=>!x.startsWith('__')&&sd[x]&&!String(sd[x]).startsWith('[')&&!String(sd[x]).startsWith('{')&&String(sd[x]).length<40).map(x=>`${x}:${esc(String(sd[x]).slice(0,40))}`).slice(0,6).join('；')+sub;
+      }catch(e){}
+      return `<div style="border:1px solid #f3e3c9;border-radius:5px;padding:5px 8px;margin-bottom:4px;background:#fffdf7;font-size:9px">
+        <div><b>📦 版本快照 #${s.id}</b> <span style="color:var(--s)">${esc(s.operator||'')}</span> <span style="color:#aaa">${esc((s.created_at||'').slice(0,16))}</span></div>
+        <div style="color:#666;margin-top:1px">${esc(s.reason||'')}</div>
+        ${brief?`<div style="color:#8a6d3b;margin-top:2px">${brief}</div>`:''}
+        <div style="margin-top:2px"><button class="lnk" style="color:#b45309" onclick="viewSnapJson(${s.id})">👁 查看完整快照数据</button></div></div>`;
+    }).join('');
+  }
+  id('dmBody').innerHTML=h;
+}
+async function viewSnapJson(sid){
+  const r=await api('/snapshots/data/'+sid,{noCache:true});
+  if(!r||!r.snap){alert('快照读取失败');return}
+  let txt='';
+  try{txt=JSON.stringify(JSON.parse(r.snap.snap_json||'{}'),null,1)}catch(e){txt=r.snap.snap_json||''}
+  showDetail('📦 版本快照 #'+sid,'<pre style="font-size:9px;max-height:60vh;overflow:auto;white-space:pre-wrap;background:#f8f9fb;padding:8px;border-radius:5px">'+esc(txt)+'</pre>','<button class="btn btn-o" onclick="closeMod()">关闭</button>');
 }
 // V11.184: 审批附件渲染 — 图片缩略可点大图, 文件显示名称, 点击调下载(未开通权限→友好提示+OA链接)
 function renderAttHtml(atts,instCode){
@@ -2889,6 +2938,7 @@ async function showContract(id){
     <div><dt>状态</dt><dd>${tag(c.status)}${(c.reject_count||0)>0?` <span style="font-size:9px;color:#c0392b;background:#fdeaea;border-radius:3px;padding:1px 5px">已驳回${c.reject_count}次</span>`:''}</dd><dt>签订日期</dt><dd>${esc(c.sign_date||'-')}</dd><dt>关联订单</dt><dd>#${c.order_id||'-'}</dd></div></div>`;
   if(c.file_path)h+=`<div style="margin-top:8px"><button class="btn btn-p btn-sm" onclick="window.open('/uploads/${esc(c.file_path)}','_blank')">📄 打开/下载合同文件</button> <button class="btn btn-w btn-sm" onclick="editContract(${id})">✏️ 编辑合同文本</button></div>`;
   h+=`<div style="margin-top:6px"><button class="btn btn-o btn-sm" style="color:#b08900;border-color:#b08900" onclick="editDoc('contract',${id},'合同')">✏️ 修改合同信息</button>
+    <button class="lnk" style="color:#7c5cff" onclick="showDocOps('contract',${id},'合同 ${esc(c.contract_no)}')">🕘 操作记录</button>
     ${((c.status=='已驳回'||(c.status=='草稿'&&(c.reject_count||0)>0))&&ME.role=='系统管理员')?`<button class="btn btn-p btn-sm" style="background:#16a34a;border-color:#16a34a" onclick="resubmitDoc('contract',${id},'合同','${esc(c.contract_no)}')">🔄 再次提交审批</button>`:''}</div>`;
   if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
   // V11.203 模块一: 发票台账区块(条款/开票计划/催收状态/登记发票列表)
@@ -3034,6 +3084,7 @@ async function showRcvDetail(id){
     }catch(e){}
   }
   const btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button>
+    <button class="lnk" style="color:#7c5cff" onclick="showDocOps('receiving',${r.id},'入库单 ${esc(r.receive_no)}')">🕘 操作记录</button>
     ${r.status=='待入库'?`<button class="btn btn-p btn-sm" onclick="completeRcv(${r.id},${r.total_qty||r.quantity},${r.order_id||0})">📤 提交审批</button>`:''}
     <button class="btn btn-o btn-sm" style="color:#b08900;border-color:#b08900" onclick="editDoc('receiving',${r.id},'入库单')">✏️ 修改</button>
     ${((r.status=='已驳回'||(r.status=='草稿'&&(r.reject_count||0)>0))&&(ME.role=='系统管理员'||ME.name==r.inspector))?`<button class="btn btn-p btn-sm" style="background:#16a34a;border-color:#16a34a" onclick="resubmitDoc('receiving',${r.id},'入库单','${esc(r.receive_no)}')">🔄 再次提交审批</button>`:''}`;
@@ -3901,7 +3952,8 @@ async function showRepairDetail(rid){
   h+=`</div>`;
   id('dmTitle').textContent='🔧 设备维修单 '+esc(p.plan_no);
   id('dmBody').innerHTML=h;
-  let foot=`<button class="btn btn-o" onclick="closeMod()">关闭</button>`;
+  let foot=`<button class="btn btn-o" onclick="closeMod()">关闭</button>
+    <button class="lnk" style="color:#7c5cff" onclick="showDocOps('repair_plan',${rid},'维修单 ${esc(p.plan_no)}')">🕘 操作记录</button>`;
   // 阶段操作按钮(按状态机)
   const acts=[];
   if(p.status=='草稿'&&canOp)acts.push(['📤 提交报修(待定损)','submitRepair('+rid+')']);
@@ -4421,6 +4473,7 @@ async function showReturnDetail(rid){
     <td><b>${it.return_qty}</b></td><td>¥${(it.price||0).toFixed(2)}</td><td><b>¥${(it.amount||0).toFixed(2)}</b></td></tr>`}).join('');
   const flowsHtml=(r.flows||[]).map(f=>`<tr><td>${esc(f.created_at)}</td><td>${esc(f.operator)}</td><td>${esc(f.item_name)} ${f.spec||''}</td><td>+${f.qty}</td><td>余额${f.balance_after}</td></tr>`).join('');
   const btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button>
+    <button class="lnk" style="color:#7c5cff" onclick="showDocOps('return_request',${r.id},'退库单 ${esc(r.return_no)}')">🕘 操作记录</button>
     ${r.status=='草稿'?`<button class="btn btn-p" onclick="submitReturn(${r.id})">📤 提交审批</button> <button class="btn btn-w" style="color:#16325c;border-color:#d9a514" onclick="doReturnVoid(${r.id})">作废</button>`:''}
     ${r.status=='已驳回'?`<button class="btn btn-p" style="background:#16a34a;border-color:#16a34a" onclick="submitReturn(${r.id})">🔄 再次提交审批</button> <button class="btn btn-w" onclick="doReturnVoid(${r.id})">作废</button>`:''}
     ${r.status=='审批通过'?`<button class="btn btn-p" style="background:#16a34a;border-color:#16a34a" onclick="confirmReturnWarehouse(${r.id})">✅ 确认退库入库</button>`:''}`;

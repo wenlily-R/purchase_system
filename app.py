@@ -911,7 +911,48 @@ def init_db():
             title TEXT, content TEXT, biz_type TEXT, biz_id INTEGER,
             status TEXT DEFAULT 'pending', created_at TEXT DEFAULT (datetime('now','localtime')),
             processed_at TEXT, processed_by TEXT);
+        -- V11.224 采购优化3.0模块一: 单据修改操作日志(所有编辑/重提/撤回/删除留痕, 支持审计查询)
+        CREATE TABLE IF NOT EXISTS doc_edit_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            biz_type TEXT NOT NULL, biz_id INTEGER NOT NULL, doc_no TEXT DEFAULT '',
+            action TEXT DEFAULT '修改',          -- 修改/重提/提交/撤回/删除/作废/审批通过/驳回
+            operator TEXT DEFAULT '', operator_id INTEGER DEFAULT 0,
+            status_before TEXT DEFAULT '', status_after TEXT DEFAULT '',
+            changes TEXT DEFAULT '',            -- 人类可读差异描述(逐字段: 旧→新)
+            detail TEXT DEFAULT '',             -- JSON: {fields:{旧:新}, old_summary, new_summary}
+            node TEXT DEFAULT '',               -- 重提节点说明
+            created_at TEXT DEFAULT (datetime('now','localtime')));
+        CREATE INDEX IF NOT EXISTS idx_doc_edit_logs_doc ON doc_edit_logs(biz_type, biz_id);
+        CREATE INDEX IF NOT EXISTS idx_doc_edit_logs_time ON doc_edit_logs(created_at);
+        -- V11.224 模块一: 单据修改前原数据快照(已完成单据修改保留原版本, 全链路可追溯)
+        CREATE TABLE IF NOT EXISTS doc_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            biz_type TEXT NOT NULL, biz_id INTEGER NOT NULL, doc_no TEXT DEFAULT '',
+            snap_json TEXT DEFAULT '', operator TEXT DEFAULT '',
+            reason TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now','localtime')));
+        CREATE INDEX IF NOT EXISTS idx_doc_snapshots_doc ON doc_snapshots(biz_type, biz_id);
+        -- V11.224 模块五: 小额(<1000元)线下补录台账(线下操作后3工作日内补录+凭证, 财务审核)
+        CREATE TABLE IF NOT EXISTS small_purchase_ledger (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ledger_no TEXT UNIQUE, kind TEXT DEFAULT '采购', dept TEXT DEFAULT '',
+            requester TEXT DEFAULT '', requester_id INTEGER DEFAULT 0,
+            item_name TEXT DEFAULT '', content TEXT DEFAULT '',
+            amount REAL DEFAULT 0, happened_date TEXT DEFAULT '',
+            supplier TEXT DEFAULT '', payee_name TEXT DEFAULT '', pay_method TEXT DEFAULT '',
+            certificates TEXT DEFAULT '[]', status TEXT DEFAULT '待审核',
+            audit_by TEXT DEFAULT '', audit_at TEXT DEFAULT '', audit_remark TEXT DEFAULT '',
+            remark TEXT DEFAULT '', created_by TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now','localtime')), updated_at TEXT DEFAULT '');
+        CREATE INDEX IF NOT EXISTS idx_small_ledger_time ON small_purchase_ledger(created_at);
+        CREATE INDEX IF NOT EXISTS idx_small_ledger_status ON small_purchase_ledger(status);
     """)
+    # V11.224 模块一: 各业务表补 last_edit_by/last_edit_at(最后修改人/时间, 幂等)
+    for _t in ('purchase_requests', 'purchase_orders', 'receivings', 'contracts', 'requisitions', 'repair_plans', 'return_requests'):
+        _tcols = [r[1] for r in conn.execute(f"PRAGMA table_info({_t})").fetchall()]
+        if 'last_edit_by' not in _tcols:
+            conn.execute(f"ALTER TABLE {_t} ADD COLUMN last_edit_by TEXT DEFAULT ''")
+        if 'last_edit_at' not in _tcols:
+            conn.execute(f"ALTER TABLE {_t} ADD COLUMN last_edit_at TEXT DEFAULT ''")
     conn.commit(); conn.close()
 
 # ============================================================
@@ -5169,9 +5210,27 @@ def api_resubmit_prequest(rid):
                           it.get('attach','') or ''))
     if d.get('draft'):
         # V11.187: 存草稿 — 保留现有审批实例记录(驳回历史仍在), 不进审批流不发钉钉
+        # V11.224 模块一: 草稿保存留痕
+        try:
+            _nd = dict(conn.execute("SELECT * FROM purchase_requests WHERE id=?", (rid,)).fetchone())
+            _doc_trace('purchase_request', rid, '修改', old_d=None, new_d=_nd,
+                       old_status=pr['status'], new_status='草稿', node='保存草稿(未提交审批)', conn=conn)
+        except Exception:
+            pass
         conn.commit(); conn.close()
         log(session['user_name'], '修改采购申请', f'申请#{rid} 保存为草稿(未提交)')
         return jsonify({'success':True, 'draft':True})
+    # V11.224 模块一: 重提动作留痕(操作人/时间/原状态→待审批)
+    try:
+        _old_pr = dict(pr)
+        _old_pr['__subs__'] = {'request_items': [dict(x) for x in conn.execute("SELECT * FROM request_items WHERE req_id=?", (rid,)).fetchall()]}
+        _nd2 = dict(conn.execute("SELECT * FROM purchase_requests WHERE id=?", (rid,)).fetchone())
+        _nd2['__subs__'] = {'request_items': [dict(x) for x in conn.execute("SELECT * FROM request_items WHERE req_id=?", (rid,)).fetchall()]}
+        _doc_trace('purchase_request', rid, '重提', old_d=_old_pr, new_d=_nd2,
+                   old_status=pr['status'], new_status='待审批',
+                   node='修改后重新提交审批', conn=conn)
+    except Exception:
+        pass
     conn.execute("DELETE FROM approval_instances WHERE biz_type='purchase_request' AND biz_id=?", (rid,))
     conn.execute("DELETE FROM dingtalk_instances WHERE biz_type='purchase_request' AND biz_id=?", (rid,))
     conn.commit()
@@ -11461,6 +11520,17 @@ def api_repair_update(rid):
     for it in (d.get('items') or []):
         if str(it.get('part_name') or '').strip():
             c.execute("INSERT INTO repair_items(plan_id,part_name,fault_note) VALUES(?,?,?)", (rid, it['part_name'], it.get('fault_note', '')))
+    # V11.224 模块一: 维修报修单修改留痕(操作人/时间/前后差异)
+    try:
+        _old_rep = dict(r)
+        _old_rep['__subs__'] = {'repair_items': [dict(x) for x in c.execute("SELECT * FROM repair_items WHERE plan_id=?", (rid,)).fetchall()]}
+        _new_rep = dict(c.execute("SELECT * FROM repair_plans WHERE id=?", (rid,)).fetchone())
+        _new_rep['__subs__'] = {'repair_items': [dict(x) for x in c.execute("SELECT * FROM repair_items WHERE plan_id=?", (rid,)).fetchall()]}
+        _doc_trace('repair_plan', rid, '修改', old_d=_old_rep, new_d=_new_rep,
+                   old_status=r['status'], new_status=r['status'],
+                   node='维修报修单修改（草稿/定损驳回）', conn=c)
+    except Exception:
+        pass
     c.commit(); c.close()
     log(session['user_name'], '修改维修报修单', f'{r["plan_no"]} {device}')
     return jsonify({'success': True})
@@ -11741,6 +11811,15 @@ def api_doc_withdraw(biz_type, bid):
         conn.execute(f"UPDATE {table} SET reject_count=COALESCE(reject_count,0)+1 WHERE id=?", (bid,))
     except Exception:
         pass
+    # V11.224 模块一: 撤回动作操作留痕(操作人/时间/状态流转)
+    try:
+        _newr = conn.execute(f"SELECT * FROM {table} WHERE id=?", (bid,)).fetchone()
+        _doc_trace(biz_type, bid, '撤回', old_d=None,
+                   new_d=dict(_newr) if _newr else None,
+                   old_status=status, new_status='草稿', node='发起人撤回，单据退回草稿，修改后可再次提交审批',
+                   conn=conn)
+    except Exception:
+        pass
     conn.commit()
     conn.close()
     log(session['user_name'], '撤回审批', f'{biz_type}#{bid} {no} 撤回退回草稿(未自动重审)')
@@ -11756,24 +11835,42 @@ def api_doc_update(biz_type, bid):
     - 明细子表重建(request_items/order_items/requisition_items/items_json)
     - 金额字段自动重算(单价x数量x税率)
     - 审批中/已通过单据: 编辑后回到待审批重新走流程(撤回原审批)"""
+    conn = db()
+    # V11.224 模块一(全流程可修改): 权限放宽 — 系统管理员/分管领导/配置用户 或 单据提交人本人
+    # (保留 V11.201 库存敏感硬边界: 库存仅 系统管理员/分管领导/总经理, 采购员/财务/员工只读)
+    _me_usr = None
     if not can_manage_config():
-        return jsonify({'error': '仅系统管理员可编辑单据'}), 403
+        _me_usr = conn.execute("SELECT * FROM users WHERE id=?", (session.get('user_id', 0),)).fetchone()
+        if biz_type != 'inventory':
+            _who = None
+            try:
+                _who = find_doc_submitter(biz_type, bid)
+            except Exception:
+                _who = None
+            if not (_who and _me_usr and _who.get('name') == _me_usr['name']):
+                conn.close(); return jsonify({'error': '仅单据提交人本人或系统管理员/分管领导可修改'}), 403
+        else:
+            conn.close(); return jsonify({'error': '无权限：库存数据仅管理员/分管领导可修改，采购员只读'}), 403
     # V11.201 权限收紧: 库存修改属敏感业务写操作 — 仅 系统管理员/分管领导/总经理 可改, 采购员/财务/员工只读
     # (即使采购员被加进 config_users 也在此拦截, 库存只读是硬边界)
     if biz_type == 'inventory' and session.get('user_role') not in ('系统管理员', '分管领导', '总经理'):
-        return jsonify({'error': '无权限：库存数据仅管理员/分管领导可修改，采购员只读'}), 403
+        conn.close(); return jsonify({'error': '无权限：库存数据仅管理员/分管领导可修改，采购员只读'}), 403
     d = request.json or {}
     if biz_type not in _DELETE_TABLE:
         return jsonify({'error': f'不支持的编辑类型: {biz_type}'}), 400
     table = _DELETE_TABLE[biz_type]
     no_col = _DELETE_NO_COL[biz_type]
     biz = _DELETE_BIZTYPE[biz_type]
-    conn = db()
     row = conn.execute(f"SELECT * FROM {table} WHERE id=?", (bid,)).fetchone()
     if not row:
         conn.close(); return jsonify({'error': '单据不存在'}), 404
     old_status = row['status'] if 'status' in row.keys() else ''
     no = row[no_col] if no_col in row.keys() else str(bid)
+    old_full = None
+    try:
+        old_full = _doc_full_dict(conn, biz_type, bid)
+    except Exception:
+        old_full = None
 
     # ---- 主表字段白名单 + 更新 ----
     EDITABLE = {
@@ -11842,10 +11939,29 @@ def api_doc_update(biz_type, bid):
                          (items[0].get('item_name', ''), items[0].get('spec', ''), total_q, items[0].get('unit', '个'),
                           json.dumps(items, ensure_ascii=False), bid))
 
+    # ---- V11.224 模块一: 已过账(影响库存)单据禁改数量 — 防账实不符, 需走红冲/作废重建 ----
+    if biz_type == 'receiving' and old_status == '已入库' and isinstance(d.get('items'), list):
+        _old_q = float(row['quantity'] or 0)
+        _new_q = sum(float(it.get('quantity', 0) or 0) for it in d['items'] if it.get('item_name'))
+        if abs(_old_q - _new_q) > 1e-9:
+            conn.close(); return jsonify({'error': '该入库单已入库(库存已增加)，不可直接修改数量。请先「作废」回滚库存后重新入库，或走红冲处理'}), 400
+    if biz_type == 'requisition' and old_status == '已出库' and isinstance(d.get('items'), list):
+        _old_q = float(row['quantity'] or 0)
+        _new_q = sum(float(it.get('quantity', 0) or 0) for it in d['items'] if it.get('item_name'))
+        if abs(_old_q - _new_q) > 1e-9:
+            conn.close(); return jsonify({'error': '该出库单已完成出库(库存已扣减)，不可直接修改数量。请先「作废」回滚库存或走退库流程'}), 400
+    # ---- V11.224 模块一: 修改前自动保存原数据版本(已完成/已通过/历史单据修改, 原版本留档可追溯) ----
+    _snap_reason = ''
+    if old_status in ('已通过', '审批通过', '已入库', '已出库', '已完成', '已关闭', '已核销', '验收通过', '已归档'):
+        _snap_reason = f"修改{old_status}单据前自动留档"
+    if _snap_reason:
+        _doc_snapshot(biz_type, bid, _snap_reason, conn=conn)
+
     # ---- 审批状态处理: 已完成的单据编辑后重新走审批 ----
     if biz_type in ('purchase_request', 'purchase_order', 'contract', 'receiving', 'requisition'):
-        if old_status in ('已通过', '审批通过', '已入库', '已出库'):
-            conn.execute(f"UPDATE {table} SET status='待审批', updated_at=? WHERE id=?", (now(), bid))
+        if old_status in ('已通过', '审批通过', '已入库', '已出库', '已完成', '已关闭', '已核销', '验收通过'):
+            conn.execute(f"UPDATE {table} SET status='待审批', updated_at=?, last_edit_by=?, last_edit_at=? WHERE id=?",
+                         (now(), session.get('user_name', ''), now(), bid))
             conn.execute("UPDATE approval_instances SET status='rejected', comment='编辑后重新审批' WHERE biz_type=? AND biz_id=? AND status IN ('pending','approved')", (biz, bid))
             conn.execute("DELETE FROM dingtalk_instances WHERE biz_type=? AND biz_id=?", (biz, bid))
             conn.commit()
@@ -11859,12 +11975,217 @@ def api_doc_update(biz_type, bid):
             create_approvals(biz, bid, amount, submitter=session.get('user_name',''))
             start_instances(biz, bid)
         else:
+            conn.execute(f"UPDATE {table} SET last_edit_by=?, last_edit_at=? WHERE id=?",
+                         (session.get('user_name', ''), now(), bid))
             conn.commit()
+    else:
+        try:
+            _lc = [r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+            if 'last_edit_by' in _lc:
+                conn.execute(f"UPDATE {table} SET last_edit_by=?, last_edit_at=? WHERE id=?",
+                             (session.get('user_name', ''), now(), bid))
+        except Exception:
+            pass
+        conn.commit()
+
+    # ---- V11.224 模块一: 操作留痕(操作人/时间/前后差异/重提节点) ----
+    try:
+        new_full = _doc_full_dict(conn, biz_type, bid)
+        new_status_after = ''
+        try:
+            _nr = conn.execute(f"SELECT status FROM {table} WHERE id=?", (bid,)).fetchone()
+            if _nr: new_status_after = _nr['status'] or ''
+        except Exception:
+            new_status_after = old_status
+        if old_status != new_status_after and new_status_after == '待审批':
+            _node = '单据经修改后已重新进入审批流'
+        elif old_status in ('草稿', '已驳回'):
+            _node = '草稿/驳回状态直接修改'
+        else:
+            _node = ''
+        _doc_trace(biz_type, bid, '修改', old_d=old_full, new_d=new_full,
+                   old_status=old_status, new_status=new_status_after, node=_node, conn=conn)
+        conn.commit()  # V11.224: 留痕随事务提交(否则close回滚丢日志)
+    except Exception:
+        pass
 
     conn.close()
     log(session['user_name'], '编辑单据', f'{biz_type}#{bid} {no}')
     return jsonify({'success': True, 'message': f'单据 {no} 已更新（数据实时生效）'})
 
+
+
+# ============================================================
+# V11.224 采购优化3.0-模块一: 单据修改留痕 / 原版本快照 / 操作日志审计
+# ============================================================
+def _doc_subs(conn, biz_type, bid):
+    """抓单据明细子表(用于快照/差异): 返回 {表名: [行dict...]}"""
+    _map = {
+        'purchase_request': [('request_items', 'req_id')],
+        'purchase_order': [('order_items', 'order_id')],
+        'requisition': [('requisition_items', 'requisition_id')],
+        'return_request': [('return_items', 'return_id')],
+        'repair_plan': [('repair_items', 'plan_id'), ('repair_quotes', 'plan_id'), ('repair_changes', 'plan_id')],
+    }
+    out = {}
+    for t, fk in _map.get(biz_type, []):
+        try:
+            rows = conn.execute(f"SELECT * FROM {t} WHERE {fk}=?", (bid,)).fetchall()
+            out[t] = [dict(x) for x in rows]
+        except Exception:
+            out[t] = []
+    return out
+
+
+def _doc_full_dict(conn, biz_type, bid):
+    """单据完整数据 = 主表行 + 明细子表(用于版本快照/差异对比)"""
+    tbl = _DELETE_TABLE.get(biz_type, '')
+    if not tbl:
+        return None
+    row = conn.execute(f"SELECT * FROM {tbl} WHERE id=?", (bid,)).fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    d['__subs__'] = _doc_subs(conn, biz_type, bid)
+    return d
+
+
+def _doc_no_of(biz_type, row_dict):
+    """从行dict取单号显示"""
+    nc = _DELETE_NO_COL.get(biz_type, '')
+    return str(row_dict.get(nc) or row_dict.get('id') or '')
+
+
+def _human_diff(old_d, new_d):
+    """主表字段差异 → 人类可读(含子表明细行数变化); 返回 (描述str, fieldsJSON)"""
+    if not old_d or not new_d:
+        return '（无对比数据）', {}
+    skip = {'updated_at', 'last_edit_at', 'last_edit_by', '__subs__'}
+    fields = {}
+    for k in new_d:
+        if k in skip or k == 'id':
+            continue
+        if k not in old_d:
+            continue
+        ov, nv = old_d.get(k), new_d.get(k)
+        if ov is None: ov = ''
+        if nv is None: nv = ''
+        if str(ov) != str(nv):
+            fields[k] = {'old': ov, 'new': nv}
+    desc = []
+    for k, v in fields.items():
+        _o = str(v['old']); _n = str(v['new'])
+        if len(_o) > 60: _o = _o[:60] + '…'
+        if len(_n) > 60: _n = _n[:60] + '…'
+        desc.append(f"{k}: “{_o}” → “{_n}”")
+    # 子表行数变化
+    _os = (old_d.get('__subs__') or {}); _ns = (new_d.get('__subs__') or {})
+    for t in set(list(_os.keys()) + list(_ns.keys())):
+        _oc = len(_os.get(t) or []); _nc = len(_ns.get(t) or [])
+        if _oc != _nc:
+            desc.append(f"{t}: {_oc}行 → {_nc}行")
+    if not desc:
+        return '（无字段变化）', fields
+    return '；'.join(desc), fields
+
+
+def _doc_snapshot(biz_type, bid, reason='', conn=None):
+    """修改前保存原数据版本快照(已完成单据修改保留原版本, 全链路可追溯)
+    conn: 可选, 传入调用方连接则复用(避免未提交事务下新连接读不到/写锁等待)"""
+    try:
+        _own = conn is None
+        if _own:
+            conn = db()
+        d = _doc_full_dict(conn, biz_type, bid)
+        if d is None:
+            if _own: conn.close()
+            return
+        d.pop('__subs__', None)
+        conn.execute("INSERT INTO doc_snapshots(biz_type,biz_id,doc_no,snap_json,operator,reason) VALUES(?,?,?,?,?,?)",
+                     (biz_type, bid, _doc_no_of(biz_type, d), json.dumps(d, ensure_ascii=False, default=str),
+                      session.get('user_name', ''), reason))
+        if _own:
+            conn.commit(); conn.close()
+    except Exception as _e:
+        try:
+            log('系统', '快照失败', f'{biz_type}#{bid} {_e}')
+        except Exception:
+            pass
+
+
+def _doc_trace(biz_type, bid, action, old_d=None, new_d=None, old_status='', new_status='', node='', conn=None):
+    """写操作留痕日志: 操作人/时间/前后差异/重提节点 → doc_edit_logs(审计查询)
+    conn: 可选, 传入调用方连接则复用(未提交事务内调用不锁冲突)"""
+    try:
+        desc, fields = _human_diff(old_d, new_d)
+        _own = conn is None
+        if _own:
+            conn = db()
+        conn.execute("""INSERT INTO doc_edit_logs(biz_type,biz_id,doc_no,action,operator,operator_id,
+                     status_before,status_after,changes,detail,node)
+                     VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                     (biz_type, bid, _doc_no_of(biz_type, new_d or old_d or {}), action,
+                      session.get('user_name', ''), session.get('user_id', 0),
+                      old_status, new_status, desc,
+                      json.dumps({'fields': fields}, ensure_ascii=False, default=str), node))
+        if _own:
+            conn.commit(); conn.close()
+    except Exception as _e:
+        try:
+            log('系统', '留痕失败', f'{biz_type}#{bid} {_e}')
+        except Exception:
+            pass
+
+
+_DOC_DETAIL_TABS = {
+    'purchase_request': ('purchase_requests', 'req_no', 'requester', 'dept'),
+    'purchase_order': ('purchase_orders', 'order_no', 'owner', 'requester'),
+    'contract': ('contracts', 'contract_no', '', ''),
+    'receiving': ('receivings', 'receive_no', 'inspector', ''),
+    'requisition': ('requisitions', 'req_no', 'requester', ''),
+    'return_request': ('return_requests', 'return_no', 'requester', ''),
+    'repair_plan': ('repair_plans', 'plan_no', 'requester', ''),
+    'payment': ('payment_requests', 'payment_no', '', ''),
+    'inventory': ('inventory', 'item_name', '', ''),
+    'credit': ('credit_notes', 'credit_no', '', ''),
+    'invoice': ('invoices', 'invoice_no', '', ''),
+}
+
+
+@app.route('/api/docs/<biz_type>/<int:bid>/edit-logs')
+@login_required
+def api_doc_edit_logs(biz_type, bid):
+    """模块一: 单据操作日志审计查询(修改/重提/撤回/删除/提交 全留痕)"""
+    conn = db()
+    rows = conn.execute(
+        "SELECT * FROM doc_edit_logs WHERE biz_type=? AND biz_id=? ORDER BY id DESC LIMIT 200",
+        (biz_type, bid)).fetchall()
+    conn.close()
+    return jsonify({'logs': [dict(x) for x in rows]})
+
+
+@app.route('/api/docs/<biz_type>/<int:bid>/snapshots')
+@login_required
+def api_doc_snapshots(biz_type, bid):
+    """模块一: 单据历史版本快照列表(修改前的原数据版本, 审计可对比)"""
+    conn = db()
+    rows = conn.execute(
+        "SELECT * FROM doc_snapshots WHERE biz_type=? AND biz_id=? ORDER BY id DESC LIMIT 50",
+        (biz_type, bid)).fetchall()
+    conn.close()
+    return jsonify({'snapshots': [dict(x) for x in rows]})
+
+
+@app.route('/api/snapshots/data/<int:sid>')
+@login_required
+def api_snapshot_data(sid):
+    """模块一: 取单个版本快照完整数据(审计查看)"""
+    conn = db()
+    row = conn.execute("SELECT * FROM doc_snapshots WHERE id=?", (sid,)).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({'error': '快照不存在'}), 404
+    return jsonify({'snap': dict(row)})
 
 
 _DELETE_TABLE = {
@@ -11944,6 +12265,14 @@ def api_doc_delete(biz_type, bid):
     }
     for rel, fk in rel_map.get(biz_type, []):
         conn.execute(f"DELETE FROM {rel} WHERE {fk}=?", (bid,))
+    # V11.224 模块一: 删除动作操作留痕(删除前记录单据全貌, 审计可追溯)
+    try:
+        _del_old = dict(row) if row else None
+        _doc_trace(biz_type, bid, '删除', old_d=_del_old, new_d=None,
+                   old_status=status, new_status='已删除', node='单据被删除，删除前数据已留档',
+                   conn=conn)
+    except Exception:
+        pass
     conn.execute("DELETE FROM approval_instances WHERE biz_type=? AND biz_id=?", (biz, bid))
     conn.execute("DELETE FROM dingtalk_instances WHERE biz_type=? AND biz_id=?", (biz, bid))
     conn.execute("DELETE FROM inventory_flows WHERE doc_type=? AND doc_id=?", (biz, bid))
