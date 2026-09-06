@@ -37,6 +37,7 @@ body{background:var(--v9-bg);color:var(--v9-t)}
 .side .si:hover{background:#eef2f7;color:#0c3a6b}
 .side .si.act{background:linear-gradient(90deg,#14508c,#1a6bb0);color:#fff;border-left-color:#f5821f;font-weight:700;box-shadow:0 3px 10px rgba(20,80,140,.3)}
 .side .si .badge{background:#e74c3c;color:#fff;font-size:9px;padding:1px 5px;border-radius:8px;margin-left:4px}
+.side .si .badge.rp-bdg{margin-left:auto;min-width:16px;text-align:center}
 .side .si-grp{display:flex;align-items:center;gap:5px;padding:7px 14px;cursor:pointer;font-size:10px;color:#33475c;font-weight:700;letter-spacing:.4px;border-radius:6px;margin:1px 6px}
 .side .si-grp:hover{color:#14508c;background:#f0f4fa}
 .side .si-grp .arr{color:#a0b0c4;font-size:8px;transition:transform .2s}
@@ -1050,8 +1051,9 @@ function buildNav(){
   const groups=[
     ['工作台',[['dashboard','📊','工作台']]],
     // V11.221: 设备维修独立成模块(与采购管理菜单分开, 审批中心/工作流各自独立)
-    // V11.224b: 维修流程分步骤菜单(参照采购管理组: 每一步一个入口) — 点击进入维修管理并定位到该环节
-    ['设备维修',[['repairs','🔧','全部维修单','all'],['repairs','📝','报修·草稿待提','draft'],['repairs','🔍','待技术定损','damage'],['repairs','✅','定损审批中','appr'],['repairs','💰','比价选商','quote'],['repairs','🔧','维修执行中','fix'],['repairs','📦','待回厂验收','accept'],['repairs','🧾','待发票归档','invoice'],['repairs','🗂','已归档/作废','done']]],
+    // V11.224c: 导航按"待办"精简(专业导航: 菜单给"要处理的", 流程视图留页面步骤条) —
+    //   4项: 全部/报修待提(草稿+驳回)/待技术定损(红点提醒)/已归档; 定损审批在审批中心-维修, 比价/委外/验收在单据详情推进
+    ['设备维修',[['repairs','🔧','维修管理(全部)','all'],['repairs','📝','报修待提','draft'],['repairs','🔍','待技术定损','damage'],['repairs','🗂','已归档/作废','done']]],
     ['采购管理',[['prequests','📝','采购申请'],['inquiries','🔍','三方询价'],['orders','📋','采购订单'],['contracts','📄','合同管理'],['suppliers','🏢','供应商']]],
     ['仓储库存',[['receivings','📦','入库验收'],['requisitions','📤','出库管理'],['returns','↩️','退库管理'],['inventory','📦','库存查询'],['counts','📋','库存盘点']]],
     ['财务往来',[['payments','💰','付款申请'],['expenses','💸','费用登记'],['settlements','📊','月度对账'],['invoices','🧾','合并开票'],['ledger','🔍','往来台账'],['small','💼','小额台账']]],
@@ -1062,16 +1064,19 @@ function buildNav(){
   let html=groups.map((g,gi)=>{
     const items=g[1].filter(i=>i[0]=='dashboard'||i[0]=='approvals'||i[0]=='reports'||__pageAllowed(i[0]))
       .map(i=>{
-        // V11.224b: 菜单项第4元素=维修步骤key → 点击进维修管理并定位该环节
+        // V11.224c: 菜单项第4元素=维修步骤key → 点击进维修管理并定位该环节; 右侧红点显示待办数(仅draft/damage)
         const step=i[3]||'';
         const click=step?`rpMenuStep('${step}')`:`sw('${i[0]}')`;
-        return `<div class="si si-sub" onclick="${click}">${i[1]}${i[2]}</div>`;
+        const badge=(step==='draft'||step==='damage')?`<span class="badge rp-bdg" id="rpBdg_${step}" style="display:none"></span>`:'';
+        return `<div class="si si-sub" onclick="${click}">${i[1]}${i[2]}${badge}</div>`;
       }).join('');
     if(!items)return '';
     return `<div class="si-grp" onclick="toggleGrp(this,${gi})">${g[0]}<span class="arr" style="margin-left:auto">▶</span></div><div class="grp-body" id="grp${gi}">${items}</div>`;
   }).join('');
   if(ME.can_config){html+=`<div class="sl">系统配置</div><div class="si si-sub" onclick="sw('feishu')">✈️飞书</div><div class="si si-sub" onclick="sw('dingtalk')">💬钉钉</div><div class="si si-sub" onclick="sw('system')">⚙️系统设置</div>`}
   id('sideMenu').innerHTML=html;
+  // V11.224c: 侧边栏维修待办红点(菜单构建后拉取一次; 60s自动刷新时同步)
+  refreshRpBadges();
   // V11.66: 顶部导航 = 六大业务大类全部显示(界面统一, 权限由页面拦截)
   const navCats=[
     {label:'📊 工作台',page:'dashboard'},
@@ -1297,6 +1302,8 @@ setInterval(()=>{
     'dingtalk':loadDingTalk,
     'settlements':loadSettlements,'invoices':loadInvoicePage,'ledger':loadLedger,'system':loadSystem,'small':loadSmallLedger}[_curPage];
   if(fn)fn().catch(()=>{});
+  // V11.224c: 60s自动刷新时同步维修菜单红点待办
+  refreshRpBadges();
 },60000);
 function showDetail(t,h,f){id('dmTitle').textContent=t;id('dmBody').innerHTML=h;id('dmFooter').innerHTML=f||'<button class="btn btn-o" onclick="closeMod()">关闭</button>';id('detailModal').classList.add('show')}
 
@@ -4056,6 +4063,24 @@ function rpMenuStep(k){
   const grp=document.querySelectorAll('.si-grp');
   grp.forEach((g,gi)=>{if((g.textContent||'').includes('设备维修')){const body=id('grp'+gi);if(body&&body.style.display==='none')toggleGrp(g,gi)}});
   try{window.scrollTo(0,0)}catch(e){}
+}
+// V11.224c: 侧边栏维修待办红点 — 报修待提(草稿+定损驳回)/待技术定损 数量, 无待办隐藏
+async function refreshRpBadges(){
+  try{
+    if(!ME||!ME.username)return;
+    if(id('loginPage')&&id('loginPage').style.display!=='none')return;
+    const list=await api('/repairs',{noCache:true}).catch(()=>null);
+    if(!list)return;
+    const cnt={draft:0,damage:0};
+    (list||[]).forEach(x=>{
+      if(x.status==='草稿'||x.status==='定损驳回')cnt.draft++;
+      if(x.status==='待定损')cnt.damage++;
+    });
+    [['draft',cnt.draft],['damage',cnt.damage]].forEach(([k,n])=>{
+      const el=id('rpBdg_'+k);
+      if(el){el.textContent=n>0?n:'';el.style.display=n>0?'inline-block':'none';}
+    });
+  }catch(e){}
 }
 // V11.218: 列表✏️修改入口(全状态显示, 后端校验可编辑状态) — 与物资采购申请同构: 按钮恒在, 非法状态给友好提示
 async function editRepairDraft(rid){
