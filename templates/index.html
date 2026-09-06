@@ -362,7 +362,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
   </div>
   <div class="card"><div class="cb" id="repairsTable2"><div class="loading">加载中...</div></div></div></div>
 <div class="page" id="pinquiries"><h2>🔍 三方询价</h2><div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="showInquiryForm()">+ 发起三方询价</button><button class="btn btn-w btn-sm" onclick="loadInquiries()">🔄 刷新</button></div><div class="card"><div class="cb" id="inquiriesTable"><div class="loading">加载中...</div></div></div></div>
-<div class="page" id="porders"><h2>📋 采购订单</h2><div style="margin-bottom:4px"><button class="btn btn-p btn-sm" onclick="showForm('order')">+ 新建订单</button></div><div class="card"><div class="cb" id="ordersTable"><div class="loading">加载中...</div></div></div></div>
+<div class="page" id="porders"><h2>📋 采购订单</h2><div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="showForm('order')">+ 新建订单</button><button class="btn btn-o btn-sm" onclick="showOrderExecList()">📋 订单执行明细表</button></div><div class="card"><div class="cb" id="ordersTable"><div class="loading">加载中...</div></div></div></div>
 <div class="page" id="papprovals"><h2>✅ 审批中心 <span style="font-size:10px;color:#999;font-weight:normal">(采购/维修 双中心独立)</span></h2>
   <div class="tabs" id="apprCenterTabs" style="margin-bottom:4px">
     <button class="act" data-c="buy" onclick="apprCenter('buy')">📦 采购审批中心</button>
@@ -2205,7 +2205,7 @@ async function loadOrders(){
       <td><span class="tag ${r.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(r.trade_mode||'货到付款')}</span></td>
       <td>¥${(r.total_amount||0).toFixed(0)}</td><td>${tag(r.status)}</td><td>${pg}</td>
       ${rejCell(r)}
-      <td><button class="lnk" onclick="showOrder(${r.id})">详情</button> <button class="lnk" style="color:#b08900" onclick="editDoc('purchase_order',${r.id},'采购订单')">✏️修改</button>
+      <td><button class="lnk" onclick="showOrder(${r.id})">详情</button> <button class="lnk" style="color:#0d9488" onclick="showOrderExec(${r.id})">📋执行明细</button> <button class="lnk" style="color:#b08900" onclick="editDoc('purchase_order',${r.id},'采购订单')">✏️修改</button>
       
       ${(r.status=='待审批'||r.status=='已通过'||r.status=='审批通过')?` <button class="lnk" style="color:var(--o)" onclick="withdrawDoc('purchase_order',${r.id},'采购订单')">↩️撤回</button>`:''}${(r.status=='待审批'||r.status=='已驳回'||r.status=='草稿')?` <button class="lnk" style="color:var(--d)" onclick="delDoc('purchase_order',${r.id},'采购订单')">🗑️删除</button>`:''}</td>`;
     });
@@ -2263,6 +2263,7 @@ async function showOrder(ordid){
   }
   let btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button>
     <button class="lnk" style="color:#7c5cff" onclick="showDocOps('purchase_order',${ordid},'订单 ${esc(o.order_no)}')">🕘 操作记录</button>
+    <button class="lnk" style="color:#0d9488" onclick="showOrderExec(${ordid})">📋 执行明细</button>
     <button class="btn btn-p btn-sm" onclick="downloadOrder(${ordid})">⬇️ 下载采购订单</button>
     <button class="btn btn-w btn-sm" onclick="printDoc('订单 ${esc(o.order_no)}','${esc(o.order_no)} | ${esc(o.item_name)} | ${esc(o.supplier)} | ¥${(o.total_amount||0).toFixed(0)} | ${esc(o.status)}')">🖨 打印</button>`;
   if(['待审批','审批通过','已签合同','已通过'].includes(o.status)&&!o.has_contract)
@@ -2277,6 +2278,60 @@ async function showOrder(ordid){
   loadApprovalFlow('purchase_order',ordid,'approvalFlowBox');
   loadRejectLogs('purchase_order',ordid,'rejectLogsBox');
 }
+// V11.224 模块四: 订单执行明细表 — 全生命周期节点时间轴(创建/审批/合同/入库/发票/付款/留痕)
+async function showOrderExec(oid){
+  if(__guardOpen('oexec:'+oid))return;
+  showDetail('📋 订单执行明细','<div class="loading">加载中...</div>','<button class="btn btn-o" onclick="closeMod()">关闭</button>');
+  const d=await api(`/orders/${oid}/execution`).catch(e=>({error:(e.error||e.message)}));
+  if(d.error||!d.nodes){id('dmBody').innerHTML=`<div style="color:#c0392b;padding:10px">❌ ${esc(d.error||'加载失败')}</div>`;return}
+  const o=d.order;
+  let h=`<div style="font-size:9.5px;color:#666;margin-bottom:6px">📋 订单 <b>${esc(o.order_no)}</b> 全生命周期执行明细（${d.node_count}个节点，按时间正序） — 覆盖创建/审批/合同/入库/发票/付款/操作留痕，可审计追溯。</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;font-size:9px">
+      <span style="background:#eef2f8;padding:3px 8px;border-radius:10px">状态 <b>${esc(o.status)}</b></span>
+      <span style="background:#eef2f8;padding:3px 8px;border-radius:10px">供应商 ${esc(o.supplier||'-')}</span>
+      <span style="background:#eef2f8;padding:3px 8px;border-radius:10px">金额 ¥${(o.total_amount||0).toFixed(2)}</span>
+      <span style="background:#eef2f8;padding:3px 8px;border-radius:10px">创建 ${esc((o.created_at||'').slice(0,16))}</span>
+    </div>
+    <div style="max-height:52vh;overflow:auto">`;
+  const iconOf={};
+  d.nodes.forEach((n,i)=>{
+    const isLast=i===d.nodes.length-1;
+    const dotColor = n.status=='已通过'||n.status=='已创建'||String(n.status).includes('通过')||n.status=='已入库'||n.status=='已付款'||String(n.status).includes('红冲')?'#16a34a':String(n.status).includes('驳回')||String(n.status).includes('撤回')||String(n.status).includes('作废')?'#dc2626':'#1f6feb';
+    h+=`<div style="display:flex;gap:8px">
+      <div style="display:flex;flex-direction:column;align-items:center;width:16px">
+        <div style="width:11px;height:11px;border-radius:50%;background:${dotColor};flex-shrink:0;margin-top:3px"></div>
+        ${!isLast?'<div style="width:2px;flex:1;background:#dbe6f5"></div>':''}
+      </div>
+      <div style="flex:1;padding-bottom:8px">
+        <div style="display:flex;justify-content:space-between;gap:6px;flex-wrap:wrap">
+          <b style="font-size:9.5px;color:#16325c">${esc(n.node)}</b>
+          <span style="font-size:8.5px;color:#888">${esc(String(n.time||'').slice(0,16))}</span>
+        </div>
+        <div style="font-size:8.5px;color:#888">执行人：${esc(n.actor||'-')} ｜ 状态：<span style="color:${dotColor}">${esc(n.status||'')}</span>${n.amt?` ｜ 金额 ¥${Number(n.amt).toFixed(2)}`:''}</div>
+        ${n.note?`<div style="font-size:8.5px;color:#666;background:#f8fafc;border-radius:3px;padding:2px 6px;margin-top:2px;white-space:pre-wrap">${esc(n.note)}</div>`:''}
+      </div>
+    </div>`;
+  });
+  h+='</div>';
+  id('dmTitle').textContent='📋 订单执行明细 '+o.order_no;
+  id('dmBody').innerHTML=h;
+  id('dmFooter').innerHTML=`<button class="btn btn-o" onclick="closeMod()">关闭</button>
+    <button class="btn btn-o btn-sm" onclick="execExport(${oid})">⬇️ 导出Excel</button>`;
+}
+async function execExport(oid){
+  const r=await fetch('/api/orders/'+oid+'/execution',{credentials:'include'});
+  const d=await r.json();
+  if(d.error){alert(d.error);return}
+  // 前端生成CSV(节点行)
+  const escC=v=>{const s=String(v==null?'':v);return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s};
+  const lines=['序号,节点,时间,执行人,状态,说明,金额'];
+  d.nodes.forEach(n=>lines.push([n.seq,n.node,n.time||'',n.actor||'',n.status||'',(n.note||'').replace(/\n/g,' '),n.amt].map(escC).join(',')));
+  const blob=new Blob(['\ufeff'+lines.join('\n')],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`订单${d.order.order_no}_执行明细.csv`;
+  document.body.appendChild(a);a.click();a.remove();
+}
 async function updateItemStatus(iid, newStatus){
   // V11.150: 防连点
   if(__guardOpen('uis:'+iid+':'+newStatus))return;
@@ -2284,6 +2339,61 @@ async function updateItemStatus(iid, newStatus){
   const r=await api(`/order_items/${iid}/status`,{method:'POST',body:JSON.stringify({status:newStatus})});
   if(r.success){alert('✅ 状态已更新');showOrder(lastOrderId)}else alert(r.error||'更新失败');
 }
+// V11.224 模块四: 订单执行明细总表(全部订单+节点摘要+筛选+下钻单订单明细)
+async function showOrderExecList(){
+  if(__guardOpen('oexec:list'))return;
+  showDetail('📋 订单执行明细总表','<div class="loading">加载中...</div>','<button class="btn btn-o" onclick="closeMod()">关闭</button>');
+  const statuses=['草稿','待审批','已驳回','审批通过','已通过','执行中','已签合同','已入库','全部已验收','已核销','已完成','已关闭','已作废','部分到货，待继续验收'];
+  id('dmTitle').textContent='📋 订单执行明细总表';
+  id('dmBody').innerHTML=`
+    <div style="font-size:9px;color:#666;margin-bottom:6px">全部采购订单的执行进度总览：每单展示审批/合同/入库/发票/付款各环节完成情况，点「📋明细」查看该订单全生命周期时间轴（含每节点时间/操作人/状态/金额）。金额敏感，无权限角色不可见。</div>
+    <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-bottom:5px">
+      <input class="fc" id="oelNo" style="width:130px" placeholder="订单号(模糊)">
+      <input class="fc" id="oelSup" style="width:110px" placeholder="供应商(模糊)">
+      <select class="fc" id="oelSt" style="width:130px"><option value="">全部状态</option>${statuses.map(s=>`<option>${s}</option>`).join('')}</select>
+      <button class="btn btn-p btn-sm" onclick="oelLoad()">🔍 查询</button>
+      <span id="oelCnt" style="font-size:9px;color:#888"></span>
+    </div>
+    <div id="oelBox" style="font-size:9px"><div class="loading">加载中...</div></div>`;
+  id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">关闭</button>';
+  oelLoad();
+}
+async function oelLoad(){
+  const box=id('oelBox');if(!box)return;
+  box.innerHTML='<div class="loading">查询中...</div>';
+  const p=new URLSearchParams();
+  const no=id('oelNo').value.trim();if(no)p.set('order_no',no);
+  const sup=id('oelSup').value.trim();if(sup)p.set('supplier',sup);
+  const st=id('oelSt').value;if(st)p.set('status',st);
+  const d=await api('/orders/execution-list?'+p.toString(),{noCache:true}).catch(e=>({error:(e.error||e.message||'查询失败')}));
+  if(d.error){box.innerHTML=`<div style="color:#c0392b;padding:6px">❌ ${esc(d.error)}</div>`;return}
+  const rows=d.rows||[];
+  id('oelCnt').textContent=`共 ${d.total} 单`;
+  if(!rows.length){box.innerHTML='<div style="color:#999;padding:10px;text-align:center">暂无符合条件的订单</div>';return}
+  const stTag=s=>{const m={'草稿':'#999','待审批':'#e67e22','已驳回':'#dc2626','审批通过':'#16a34a','已通过':'#16a34a','已入库':'#16a34a','全部已验收':'#16a34a','执行中':'#1f6feb','已签合同':'#1f6feb','已关闭':'#888','已完成':'#16a34a','已作废':'#bbb'};return `<span style="color:#fff;background:${m[s]||'#888'};padding:1px 6px;border-radius:3px;font-size:8px">${esc(s)}</span>`};
+  let h='<table class="tb" style="font-size:9px"><thead><tr><th>订单号</th><th>物资</th><th>供应商</th><th>金额</th><th>状态</th><th>审批</th><th>合同</th><th>入库</th><th>发票</th><th>付款</th><th>创建时间</th><th>操作</th></tr></thead><tbody>';
+  rows.forEach(o=>{
+    const s=o._sum||{};
+    const step=(cnt,ok)=>cnt?`<span style="color:${ok==cnt?'#16a34a':'#e67e22'}" title="${ok}/${cnt}完成">${ok}/${cnt}</span>`:'<span style="color:#ccc">—</span>';
+    h+=`<tr>
+      <td><b>${esc(o.order_no)}</b></td>
+      <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(o.item_name)}</td>
+      <td>${esc(o.supplier||'')}</td>
+      <td>¥${(o.total_amount||0).toFixed(0)}</td>
+      <td>${stTag(o.status)}</td>
+      <td>${step(s.appr_cnt,s.appr_ok)}</td>
+      <td>${s.ct_cnt?`<span style="color:#16a34a">${s.ct_cnt}份</span>`:'<span style="color:#ccc">—</span>'}</td>
+      <td>${step(s.rcv_cnt,s.rcv_ok)}</td>
+      <td>${s.inv_cnt?`<span style="color:#16a34a">${s.inv_cnt}张</span>`:'<span style="color:#ccc">—</span>'}</td>
+      <td>${s.pay_cnt?`<span style="color:#16a34a">${s.pay_cnt}笔</span>`:'<span style="color:#ccc">—</span>'}</td>
+      <td style="font-size:8px;color:#888">${esc((s.create_t||'').slice(0,16))}</td>
+      <td><button class="lnk" style="color:#0d9488" onclick="showOrderExec(${o.id})">📋明细</button> <button class="lnk" onclick="showOrder(${o.id})">详情</button></td>
+    </tr>`;
+  });
+  h+='</tbody></table>';
+  box.innerHTML=h;
+}
+
 var lastOrderId=null;
 const _orig_showOrder=showOrder;
 window.showOrder=function(id){lastOrderId=id;return _orig_showOrder(id)};

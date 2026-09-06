@@ -5350,6 +5350,135 @@ def api_order(oid):
                     'rcv_stats': _st})
 
 
+@app.route('/api/orders/<int:oid>/execution')
+@login_required
+def api_order_execution(oid):
+    """V11.224 模块四: 订单执行明细表 — 聚合订单全生命周期节点
+    节点: 订单创建→提交审批→各审批节点(同意/驳回)→合同生成→入库批次(验收/入库/暂估红冲)→发票→付款→关闭
+    每节点含: 时间/操作人/状态/说明/金额, 按时间正序, 支持审计追溯"""
+    if not can_see_price():
+        return jsonify({'error': '无权限查看订单执行明细(金额敏感)'}), 403
+    conn = db()
+    o = conn.execute("SELECT * FROM purchase_orders WHERE id=?", (oid,)).fetchone()
+    if not o:
+        conn.close(); return jsonify({'error': '订单不存在'}), 404
+    od = dict(o)
+    nodes = []
+    # 1. 创建节点
+    nodes.append({'seq': 1, 'node': '订单创建', 'time': od.get('created_at') or '', 'actor': od.get('owner') or od.get('requester') or '',
+                  'status': '已创建', 'note': f"单号{od.get('order_no')} 供应商:{od.get('supplier')} 金额:{od.get('total_amount')}",
+                  'amt': od.get('total_amount') or 0})
+    # 2. 提交审批(从审批实例最早创建推) / 各审批节点
+    apps = conn.execute("SELECT * FROM approval_instances WHERE biz_type='purchase_order' AND biz_id=? ORDER BY level_no, id", (oid,)).fetchall()
+    for a in apps:
+        ad = dict(a)
+        st_txt = {'pending': '待审批', 'approved': '已通过', 'rejected': '已驳回/撤回'}.get(ad.get('status'), ad.get('status') or '')
+        note = f"第{ad.get('level_no')}级 · {ad.get('role') or ''}"
+        if ad.get('comment'):
+            note += f" 意见: {ad['comment']}"
+        nodes.append({'seq': 1, 'node': f'审批-{ad.get("role") or "审批"}', 'time': ad.get('processed_at') or ad.get('created_at') or '',
+                      'actor': ad.get('approver') or '', 'status': st_txt, 'note': note, 'amt': 0})
+    # 3. 明细执行状态(联系厂家/发货/到货)
+    ois = conn.execute("SELECT * FROM order_items WHERE order_id=? ORDER BY id", (oid,)).fetchall()
+    for it in ois:
+        if it['status'] and it['status'] != '未联系':
+            nodes.append({'seq': 1, 'node': f'明细进度-{it.get("item_name")}', 'time': it.get('updated_at') or '',
+                          'actor': '', 'status': it['status'], 'note': f"数量{it.get('quantity')}", 'amt': it.get('total_amount') or 0})
+    # 4. 合同
+    cts = conn.execute("SELECT * FROM contracts WHERE order_id=? AND status NOT IN ('已作废','已撤回','撤回')", (oid,)).fetchall()
+    for ct in cts:
+        ctd = dict(ct)
+        nodes.append({'seq': 1, 'node': '合同生成', 'time': ctd.get('sign_date') or ctd.get('created_at') or '',
+                      'actor': '', 'status': ctd.get('status') or '', 'note': f"合同号:{ctd.get('contract_no')} 金额:{ctd.get('amount')}", 'amt': ctd.get('amount') or 0})
+    # 5. 入库批次/验收/红冲
+    rcvs = conn.execute("SELECT * FROM receivings WHERE order_id=? ORDER BY id", (oid,)).fetchall()
+    for rv in rcvs:
+        rvd = dict(rv)
+        st_txt = rvd.get('status') or ''
+        typ = ''
+        if rvd.get('is_est'):
+            typ = '暂估' if not rvd.get('invoice_no') else '暂估已红冲'
+        else:
+            typ = '正式'
+        batch = f"批次{rvd.get('batch_no')}" if rvd.get('batch_no') else '整批'
+        nodes.append({'seq': 1, 'node': f'验收入库-{batch}({typ})', 'time': rvd.get('completed_at') or rvd.get('received_at') or rvd.get('created_at') or '',
+                      'actor': rvd.get('inspector') or '', 'status': st_txt,
+                      'note': f"{rvd.get('receive_no')} 数量:{rvd.get('quantity')} 金额:{rvd.get('amount') or rvd.get('est_amount') or ''}",
+                      'amt': rvd.get('amount') or rvd.get('est_amount') or 0})
+    # 6. 发票
+    invs = conn.execute("SELECT * FROM invoices WHERE order_id=? OR order_ids LIKE ? ORDER BY id", (oid, f'%"{oid}"%')).fetchall()
+    for iv in invs:
+        ivd = dict(iv)
+        nodes.append({'seq': 1, 'node': '发票登记', 'time': ivd.get('invoice_date') or ivd.get('created_at') or '',
+                      'actor': '', 'status': ivd.get('status') or '', 'note': f"票号:{ivd.get('invoice_no')} 价税合计:{ivd.get('total_amount')}",
+                      'amt': ivd.get('total_amount') or 0})
+    # 7. 付款
+    pays = conn.execute("SELECT pr.* FROM payment_requests pr LEFT JOIN credit_notes cn ON pr.credit_id=cn.id WHERE pr.contract_id IN (SELECT id FROM contracts WHERE order_id=?) OR cn.order_id=? ORDER BY pr.id", (oid, oid)).fetchall()
+    for pv in pays:
+        pvd = dict(pv)
+        nodes.append({'seq': 1, 'node': '付款', 'time': pvd.get('paid_at') or pvd.get('created_at') or '',
+                      'actor': '', 'status': pvd.get('status') or '', 'note': f"{pvd.get('payment_no')} 金额:{pvd.get('amount')}",
+                      'amt': pvd.get('amount') or 0})
+    # 8. 操作留痕(模块一doc_edit_logs, 修改/撤回等)
+    logs = conn.execute("SELECT * FROM doc_edit_logs WHERE biz_type='purchase_order' AND biz_id=? ORDER BY id", (oid,)).fetchall()
+    for lg in logs:
+        lgd = dict(lg)
+        nodes.append({'seq': 1, 'node': f'操作-{lgd.get("action")}', 'time': lgd.get('created_at') or '', 'actor': lgd.get('operator') or '',
+                      'status': f"{lgd.get('status_before') or ''}→{lgd.get('status_after') or ''}", 'note': lgd.get('changes') or lgd.get('node') or '', 'amt': 0})
+    # 时间正序排列 + 序号
+    nodes.sort(key=lambda x: str(x.get('time') or ''))
+    for i, n in enumerate(nodes, 1):
+        n['seq'] = i
+    conn.close()
+    return jsonify({'order': od, 'nodes': nodes, 'node_count': len(nodes)})
+
+
+@app.route('/api/orders/execution-list')
+@login_required
+def api_orders_execution_list():
+    """V11.224 模块四: 订单执行明细总表 — 全部订单+各生命周期节点摘要
+    筛选: order_no/supplier/status(逗号分隔多值)/kw(物料名); 每单含节点数组与关键节点时间"""
+    if not can_see_price():
+        return jsonify({'error': '无权限查看订单执行明细(金额敏感)'}), 403
+    c = db()
+    where = []
+    args = []
+    order_no = request.args.get('order_no', '').strip()
+    supplier = request.args.get('supplier', '').strip()
+    sts = request.args.get('status', '').strip()
+    kw = request.args.get('kw', '').strip()
+    if order_no:
+        where.append("order_no LIKE ?"); args.append(f'%{order_no}%')
+    if supplier:
+        where.append("supplier LIKE ?"); args.append(f'%{supplier}%')
+    if sts:
+        _sl = [x.strip() for x in sts.split(',') if x.strip()]
+        if _sl:
+            where.append("status IN (" + ','.join('?' * len(_sl)) + ")"); args += _sl
+    if kw:
+        where.append("(item_name LIKE ? OR order_no LIKE ?)"); args += [f'%{kw}%', f'%{kw}%']
+    wsql = (' WHERE ' + ' AND '.join(where)) if where else ''
+    rows = c.execute(f"SELECT * FROM purchase_orders{wsql} ORDER BY id DESC LIMIT 300", args).fetchall()
+    out = []
+    for o in rows:
+        od = dict(o)
+        # 节点摘要
+        create_t = od.get('created_at') or ''
+        apps = c.execute("SELECT COUNT(*) c, SUM(CASE WHEN status='approved' THEN 1 ELSE 0 END) ok FROM approval_instances WHERE biz_type='purchase_order' AND biz_id=?", (od['id'],)).fetchone()
+        rcv = c.execute("SELECT COUNT(*) c, SUM(CASE WHEN status='已入库' THEN 1 ELSE 0 END) ok FROM receivings WHERE order_id=?", (od['id'],)).fetchone()
+        inv = c.execute("SELECT COUNT(*) FROM invoices WHERE order_id=? OR order_ids LIKE ?", (od['id'], f'%"{od["id"]}"%')).fetchone()[0]
+        cts = c.execute("SELECT COUNT(*) FROM contracts WHERE order_id=? AND status NOT IN ('已作废','已撤回','撤回')", (od['id'],)).fetchone()[0]
+        pays = c.execute("SELECT COUNT(*) FROM payment_requests pr LEFT JOIN credit_notes cn ON pr.credit_id=cn.id WHERE pr.contract_id IN (SELECT id FROM contracts WHERE order_id=?) OR cn.order_id=?", (od['id'], od['id'])).fetchone()[0]
+        od['_sum'] = {
+            'create_t': create_t, 'appr_cnt': apps[0], 'appr_ok': apps[1],
+            'rcv_cnt': rcv[0], 'rcv_ok': rcv[1], 'inv_cnt': inv, 'ct_cnt': cts, 'pay_cnt': pays,
+            'node_total': 1 + apps[0] + rcv[0] + inv + cts + pays
+        }
+        out.append(od)
+    c.close()
+    return jsonify({'rows': out, 'total': len(out)})
+
+
 @app.route('/api/orders/<int:oid>/receiving-batch', methods=['POST'])
 @login_required
 def api_order_receiving_batch(oid):
