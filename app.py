@@ -634,6 +634,8 @@ def init_db():
         ('contracts', 'invoice_est_done', "ALTER TABLE contracts ADD COLUMN invoice_est_done TEXT DEFAULT ''"),
         ('contracts', 'inv_collect_status', "ALTER TABLE contracts ADD COLUMN inv_collect_status TEXT DEFAULT ''"),
         ('contract_invoices', 'node_id', "ALTER TABLE contract_invoices ADD COLUMN node_id INTEGER DEFAULT 0"),
+        # ---- V11.228 合同: 收款账户信息快照(仅系统面板留存, 禁止写入合同正文docx) ----
+        ('contracts', 'bank_info', "ALTER TABLE contracts ADD COLUMN bank_info TEXT DEFAULT ''"),
     ]:
         _cols = [r[1] for r in conn.execute(f"PRAGMA table_info({_tbl})").fetchall()]
         if _col not in _cols:
@@ -674,6 +676,19 @@ def init_db():
             created_at TEXT DEFAULT (datetime('now','localtime'))
         );
         CREATE INDEX IF NOT EXISTS idx_inv_nodes ON contract_inv_nodes(contract_id);
+    """)
+    # ---- V11.228 合同附件: 发票/扫描件等资料 — 仅系统内留存预览下载, 不嵌入打印到合同正文 ----
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS contract_attachments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            contract_id INTEGER NOT NULL,
+            file_name TEXT DEFAULT '',
+            file_path TEXT DEFAULT '',
+            file_kind TEXT DEFAULT '其他',
+            uploaded_by TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now','localtime'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_ct_att ON contract_attachments(contract_id);
     """)
     # ---- V11.193 退库模块: 退库申请单(已领用物资退回仓库) ----
     conn.executescript("""
@@ -3242,9 +3257,22 @@ def dt_start_instance(biz_type, biz_id):
             return None
         info = dt_biz_info(biz_type, biz_id)
         if not info: return None
+        # V11.228 Bug1: 提交人=实际操作提交账号(谁提交, 钉钉审批就显示谁) — 优先当前请求登录人(session),
+        # 后台线程(无请求上下文/重试)回退单据申请人(info[3]); 修复"穆娇提交却显示温丽"的错配
         originator = ''
-        ua = find_user_by_name(str(info[3]))
-        if ua and ua['dingtalk_userid']: originator = ua['dingtalk_userid']
+        try:
+            _uid = session.get('user_id')
+            if _uid:
+                _c = db()
+                _uu = _c.execute("SELECT dingtalk_userid FROM users WHERE id=? AND is_active=1", (_uid,)).fetchone()
+                _c.close()
+                if _uu and _uu['dingtalk_userid']:
+                    originator = _uu['dingtalk_userid']
+        except Exception:
+            originator = ''
+        if not originator:
+            ua = find_user_by_name(str(info[3]))
+            if ua and ua['dingtalk_userid']: originator = ua['dingtalk_userid']
         if not originator:
             # 兜底: 第一个已绑定钉钉ID的审批人, 再不行用系统内任意已绑定用户
             originator = approvers[0] if approvers else dt_first_bound_userid()
@@ -7161,10 +7189,16 @@ def api_budgets():
 @login_required
 def api_contracts():
     # V11.159: 合同列表 — 员工仅看自己相关的(通过订单的发起人关联)
+    # V11.228: 附带合同附件列表 + 收款账户快照(仅面板展示用)
+    _ws, _args = '', ()
     if session.get('user_role') == '员工':
-        conn = db(); rows = conn.execute("SELECT c.*,po.order_no FROM contracts c LEFT JOIN purchase_orders po ON c.order_id=po.id WHERE po.requester_id=? ORDER BY c.id DESC LIMIT 50", (session.get('user_id', 0),)).fetchall(); conn.close()
-        return jsonify([dict_row(r) for r in rows])
-    conn = db(); rows = conn.execute("SELECT c.*,po.order_no FROM contracts c LEFT JOIN purchase_orders po ON c.order_id=po.id ORDER BY c.id DESC LIMIT 50").fetchall(); conn.close()
+        _ws, _args = ' WHERE po.requester_id=?', (session.get('user_id', 0),)
+    conn = db()
+    rows = conn.execute("SELECT c.*,po.order_no FROM contracts c LEFT JOIN purchase_orders po ON c.order_id=po.id" + _ws + " ORDER BY c.id DESC LIMIT 50", _args).fetchall()
+    _atts = {}
+    for _a in conn.execute("SELECT contract_id AS cid,id,file_name,file_path,file_kind,uploaded_by,created_at FROM contract_attachments ORDER BY id DESC").fetchall():
+        _atts.setdefault(_a['cid'], []).append(dict_row(_a))
+    conn.close()
     out = []
     for r in rows:
         d = dict_row(r)
@@ -7172,6 +7206,11 @@ def api_contracts():
             d['amount_upper'] = rmb_upper(float(d.get('amount') or 0))
         except Exception:
             d['amount_upper'] = ''
+        d['attachments'] = _atts.get(r['id'], [])
+        try:
+            d['bank'] = json.loads(d.get('bank_info') or '{}')
+        except Exception:
+            d['bank'] = {}
         out.append(d)
     return jsonify(out)
 
@@ -9794,12 +9833,13 @@ def api_contract_generate():
         '{合同编号}': cno, '{订单编号}': o['order_no'],
         '{甲方名称}': cname, '{甲方地址}': caddr, '{甲方联系人}': ccontact, '{甲方电话}': cphone,
         '{乙方名称}': sup['name'] if sup else (o['supplier'] or ''),
-        '{乙方地址}': sup['bank'] if sup else '', '{乙方联系人}': sup['contact'] if sup else '',
-        '{乙方电话}': sup['phone'] if sup else '', '{乙方开户行}': sup['bank'] if sup else '',
-        '{乙方账号}': sup['account'] if sup else '',
+        '{乙方地址}': '', '{乙方联系人}': sup['contact'] if sup else '',
+        '{乙方电话}': sup['phone'] if sup else '',
+        # V11.228 Bug2③: 收款账户(开户行/账号)信息禁止写入合同正文docx — 占位一律置空, 段落整体移除
+        '{乙方开户行}': '', '{乙方账号}': '',
         '{下单日期}': (o['created_at'] or '')[:10], '{预计交货日期}': o['target_date'] or '',
         '{结算方式}': settle, '{明细清单}': items_txt,
-        '{合计金额}': f"¥{o['total_amount'] or 0:,.2f}（人民币大写：{rmb_upper(o['total_amount'] or 0)}）",
+        '{合计金额}': '',  # V11.228: total 联动计算后填充(见下方覆盖), 修复合同金额/大写取旧订单0值
     }
     try:
         from docx import Document
@@ -9808,16 +9848,42 @@ def api_contract_generate():
             conn.close(); return jsonify({'error': '模板文件缺失, 请重新上传'}), 400
         doc = Document(tpl_path)
         # 明细行(多商品订单取 order_items 汇总)
+        # V11.228 Bug2②: 税金联动兜底 — 明细税额缺失/为0而税率>0时按 金额×税率 补算并写回库,
+        # 再按明细重新汇总订单, 保证合同文档与系统数据一致(修复"税率13%但金额0"/数值丢失置零)
+        if _oi:
+            _dirty = False
+            for _it in _oi:
+                _rate = float(_it['tax_rate'] or 0)
+                _amt = float(_it['amount'] or 0)
+                _tax = float(_it['tax_amount'] or 0)
+                if _rate > 0 and _tax <= 0 and _amt > 0:
+                    _tax = round(_amt * _rate / 100.0, 2)
+                    conn.execute("UPDATE order_items SET tax_amount=?, total_amount=?, updated_at=? WHERE id=?",
+                                 (_tax, round(_amt + _tax, 2), now(), _it['id']))
+                    _dirty = True
+            if _dirty:
+                conn.commit()
+                _oi = conn.execute("SELECT * FROM order_items WHERE order_id=? ORDER BY id", (oid,)).fetchall()
         if _oi:
             amt = sum(float(r['amount'] or 0) for r in _oi)
             tax = sum(float(r['tax_amount'] or 0) for r in _oi)
             total = sum(float(r['total_amount'] or 0) for r in _oi)
             tax_rate = float(_oi[0]['tax_rate'] or 13) if _oi else 13
+            if tax <= 0 and amt > 0 and tax_rate > 0:  # 仍为0(明细无税率)时按订单税率兜底
+                tax = round(amt * tax_rate / 100.0, 2); total = round(amt + tax, 2)
         else:
             amt = float(o['amount'] or 0)
             tax_rate = float(o['tax_rate'] or 13)
             tax = amt * tax_rate / 100.0
             total = amt + tax
+        # V11.228: 汇总回写订单(金额/税额/价税合计), 保证后续单据与合同取值一致不丢零
+        try:
+            conn.execute("UPDATE purchase_orders SET amount=?, tax_amount=?, total_amount=?, updated_at=? WHERE id=?",
+                         (round(amt, 2), round(tax, 2), round(total, 2), now(), oid))
+            conn.commit()
+        except Exception:
+            pass
+        mapping['{合计金额}'] = f"¥{total:,.2f}（人民币大写：{rmb_upper(total)}）"  # V11.228: 用联动后的含税合计填充
         # 交付天数
         days = ''
         if o['target_date']:
@@ -9848,12 +9914,7 @@ def api_contract_generate():
             for pat, repx in reps:
                 if re.search(pat, t):
                     t = re.sub(pat, repx, t)
-            if '收款账户名称：' in t:
-                t = t.replace('收款账户名称：', '收款账户名称：' + (sup['name'] if sup else (o['supplier'] or '')))
-            if '收款账号：' in t:
-                t = t.replace('收款账号：', '收款账号：' + (sup['account'] if sup and sup['account'] else ''))
-            if '收款银行：' in t:
-                t = t.replace('收款银行：', '收款银行：' + (sup['bank'] if sup and sup['bank'] else ''))
+            # V11.228 Bug2③: 收款账户信息禁止进入合同正文 — 段落区整体移除(见下方 _acc_drop), 此处不再注入任何账户值
             # V11.144: 结算方式注入 — 付款条款段(甲方自收到发票后...)前插入现结/月结说明
             if ('甲方自收到发票后' in t) and _settle_choice in ('现结', '月结'):
                 _sline = '现结：一单一结，验收合格后立即付款；' if _settle_choice == '现结' else '月结：月底按厂家汇总对账，统一生成月度合同后付款；'
@@ -9861,9 +9922,21 @@ def api_contract_generate():
             elif re.search(r'20\d\d年\s*\d+\s*月\s*\d+日', t):
                 t = re.sub(r'20\d\d年\s*\d+\s*月\s*\d+日', today_s, t)
             return t
+        # V11.228 Bug2③: 收款账户信息禁止进入合同正文 — 收集区段(标题「收款账户信息」→「银行行号」)待整体移除
+        _acc_drop = []
+        _acc_zone = False
+        for _pa in doc.paragraphs:
+            _tx = _pa.text or ''
+            if '收款账户信息' in _tx:
+                _acc_zone = True
+            if _acc_zone:
+                _acc_drop.append(_pa)
+            if '银行行号' in _tx:
+                _acc_zone = False
         # 1) 段落: 占位符 + 框架合同字段填充
         for para in doc.paragraphs:
             t = para.text
+            orig_t = t
             for k, v in mapping.items():
                 if k in t:
                     t = t.replace(k, v)
@@ -9874,19 +9947,35 @@ def api_contract_generate():
             elif t.strip().startswith('乙方：') and len(t.strip()) <= 5:
                 t = '乙方：' + (sup['name'] if sup else (o['supplier'] or '')) + '（供应方）'
             t = _apply_ct(t)
+            # V11.228: 开户/账号/收款占位替换后无值(空壳标签/残留占位) → 删段, 账户信息不进正文
+            if any(k in orig_t for k in ('开户行', '收款账户', '收款账号', '收款银行', '银行行号', '{乙方账号}', '{乙方开户行}')) and not re.search(r'[0-9A-Za-z¥￥$]', t):
+                _acc_drop.append(para)
+                continue
             if t != para.text:
                 para.text = t
+        for _p in _acc_drop:  # 物理移除收款账户区段/空账户标签段
+            try:
+                _el = _p._element
+                if _el.getparent() is not None:
+                    _el.getparent().remove(_el)
+            except Exception:
+                pass
         # 2) 表格: 先处理所有单元格段落(占位符替换 + 合计金额大写/税金/税率/收款账户等), 再填明细
         for table in doc.tables:
             for _row in table.rows:
                 for _cell in _row.cells:
                     for _p in _cell.paragraphs:
                         if _p.text.strip():
+                            _nt0 = _p.text
                             _nt = _p.text
                             for _k, _v in mapping.items():
                                 if _k in _nt:
                                     _nt = _nt.replace(_k, _v)
                             _nt = _apply_ct(_nt)
+                            # V11.228: 单元格收款账户空标签(无值) → 清空, 不进正文
+                            if any(k in _nt0 for k in ('开户行', '收款账户', '收款账号', '收款银行', '银行行号', '{乙方账号}', '{乙方开户行}')) and not re.search(r'[0-9A-Za-z¥￥$]', _nt):
+                                _p.text = ''
+                                continue
                             if _nt != _p.text:
                                 _p.text = _nt
             rows = table.rows
@@ -10034,11 +10123,18 @@ def api_contract_generate():
                 full_text += '\n' + ' | '.join(c.text for c in row.cells)
     except Exception as e:
         conn.close(); return jsonify({'error': f'合同生成失败: {e}'}), 500
-    conn.execute("""INSERT INTO contracts(contract_no,order_id,contract_name,supplier,amount,sign_date,start_date,end_date,content,file_path,status,remark,created_at,updated_at,invoice_clause,invoice_est_first,invoice_est_done)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (cno, oid, f"{o['item_name']}采购合同", o['supplier'] or '', o['total_amount'] or 0, (o['created_at'] or '')[:10],
+    # V11.228 Bug2③: 收款账户信息仅系统面板留存 — 存 contracts.bank_info 快照(不进合同正文docx)
+    try:
+        _bank_json = json.dumps({'name': (sup['name'] if sup else (o['supplier'] or '')),
+                                 'account': (sup['account'] if sup and sup['account'] else ''),
+                                 'bank': (sup['bank'] if sup and sup['bank'] else '')}, ensure_ascii=False)
+    except Exception:
+        _bank_json = ''
+    conn.execute("""INSERT INTO contracts(contract_no,order_id,contract_name,supplier,amount,sign_date,start_date,end_date,content,file_path,status,remark,created_at,updated_at,invoice_clause,invoice_est_first,invoice_est_done,bank_info)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (cno, oid, f"{o['item_name']}采购合同", o['supplier'] or '', round(total, 2), (o['created_at'] or '')[:10],
          (o['created_at'] or '')[:10], o['target_date'], full_text, fname, '待审批', f"由订单{o['order_no']}自动生成", datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-         inv_clause, inv_first, inv_done))
+         inv_clause, inv_first, inv_done, _bank_json))
     cid = conn.execute("SELECT id FROM contracts WHERE contract_no=?", (cno,)).fetchone()[0]
     # V11.225: 发票回收顺序节点随合同一并入库(生成弹窗录入; 未录=空)
     if inv_nodes:
@@ -10316,6 +10412,50 @@ def api_contract_invoice_delete(cid, iid):
     conn.commit()
     conn.close()
     log(session['user_name'], '删除发票记录', '合同发票登记记录 #%s' % iid)
+    return jsonify({'success': True})
+
+
+# ================= V11.228 合同附件(发票/扫描件等): 登记/删除 — 仅系统内留存预览下载, 不进合同正文 =================
+@app.route('/api/contracts/<int:cid>/attachment', methods=['POST'])
+@login_required
+def api_contract_attachment_add(cid):
+    """登记合同附件: 前端先走通用 /api/upload 落盘, 再带 file_path 登记(支持多文件逐条登记)"""
+    d = request.json or {}
+    fp = str(d.get('file_path') or '').strip().lstrip('/')
+    conn = db()
+    c = conn.execute("SELECT id,contract_no FROM contracts WHERE id=?", (cid,)).fetchone()
+    if not c:
+        conn.close(); return jsonify({'error': '合同不存在'}), 404
+    # 兼容两种存法: /api/upload 返回带 uploads/ 前缀的路径 与 裸文件名
+    _fsp = fp if fp.startswith('uploads/') else ('uploads/' + fp)
+    if not fp or not os.path.exists(os.path.join(BASE, _fsp)):
+        conn.close(); return jsonify({'error': '附件文件不存在, 请重新上传'}), 400
+    fname = str(d.get('file_name') or os.path.basename(fp) or '附件').strip()
+    fkind = str(d.get('file_kind') or '其他').strip() or '其他'
+    conn.execute("INSERT INTO contract_attachments(contract_id,file_name,file_path,file_kind,uploaded_by,created_at) VALUES(?,?,?,?,?,?)",
+                 (cid, fname, fp, fkind, session.get('user_name', ''), now()))
+    conn.commit()
+    conn.close()
+    log(session['user_name'], '合同附件上传', f'{c["contract_no"]} 附件[{fkind}]{fname}')
+    return jsonify({'success': True})
+
+
+@app.route('/api/contracts/<int:cid>/attachment/<int:aid>', methods=['DELETE'])
+@login_required
+def api_contract_attachment_del(cid, aid):
+    """删除合同附件(上传人本人/领导/管理员)"""
+    conn = db()
+    row = conn.execute("SELECT * FROM contract_attachments WHERE id=? AND contract_id=?", (aid, cid)).fetchone()
+    if not row:
+        conn.close(); return jsonify({'error': '附件不存在'}), 404
+    me = conn.execute("SELECT name FROM users WHERE id=?", (session.get('user_id', 0),)).fetchone()
+    can = session.get('user_role') in ('系统管理员', '分管领导', '总经理') or (me and me['name'] == row['uploaded_by'])
+    if not can:
+        conn.close(); return jsonify({'error': '仅上传人本人或领导可删除'}), 403
+    conn.execute("DELETE FROM contract_attachments WHERE id=?", (aid,))
+    conn.commit()
+    conn.close()
+    log(session['user_name'], '删除合同附件', f'附件#{aid} 已删除')
     return jsonify({'success': True})
 
 
