@@ -472,6 +472,16 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
   </div>
   <div class="card"><div class="ch"><h3>全流程单据（订单/到货/入库/发票/挂账/付款）</h3></div><div class="cb" id="ledgerTable"><div class="loading">加载中...</div></div></div>
 </div>
+<div class="page" id="psmall">
+  <h2>💼 小额采购/维修台账 <span style="font-size:10px;color:#999;font-weight:normal">(单笔 &lt;1000元 · 线下操作3工作日内补录 · 财务审核)</span></h2>
+  <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap">
+    <span style="font-size:9px;color:#666">合规规则：单笔金额 <b style="color:#16a34a">&lt; ¥<span id="smallTh">1000</span></b> 的零星采购/维修，可①线上走简化流程（新建采购申请/维修申请）或②线下先办、3个工作日内在此补录+上传凭证（收据/付款记录/验收单/维修明细），财务审核留痕；<b style="color:#c0392b">≥ ¥<span id="smallTh2">1000</span> 必须走系统全流程，禁止线下补录</b>（参考2026增值税法自然人按次纳税起征点）。</span>
+    <button class="btn btn-p btn-sm" style="margin-left:auto" onclick="smallAdd()">➕ 补录一笔</button>
+    <button class="btn btn-w btn-sm" onclick="loadSmallLedger()">🔄 刷新</button>
+    <button class="btn btn-o btn-sm" onclick="window.open('/api/small-ledger/export','_blank')">⬇️ 导出台账</button>
+  </div>
+  <div class="card"><div class="cb" id="smallLedgerTable"><div class="loading">加载中...</div></div></div>
+</div>
 <div class="page" id="preports">
   <h2>📊 报表中心</h2>
   <div class="tabs" id="reportTabs">
@@ -1038,7 +1048,7 @@ function buildNav(){
     ['设备维修',[['repairs','🔧','设备维修管理']]],
     ['采购管理',[['prequests','📝','采购申请'],['inquiries','🔍','三方询价'],['orders','📋','采购订单'],['contracts','📄','合同管理'],['suppliers','🏢','供应商']]],
     ['仓储库存',[['receivings','📦','入库验收'],['requisitions','📤','出库管理'],['returns','↩️','退库管理'],['inventory','📦','库存查询'],['counts','📋','库存盘点']]],
-    ['财务往来',[['payments','💰','付款申请'],['expenses','💸','费用登记'],['settlements','📊','月度对账'],['invoices','🧾','合并开票'],['ledger','🔍','往来台账']]],
+    ['财务往来',[['payments','💰','付款申请'],['expenses','💸','费用登记'],['settlements','📊','月度对账'],['invoices','🧾','合并开票'],['ledger','🔍','往来台账'],['small','💼','小额台账']]],
     ['审批中心',[['approvals','✅','审批中心']]],
     ['报表中心',[['reports','📊','报表中心']]],
   ];
@@ -1165,7 +1175,8 @@ function sw(name){
     'dingtalk':loadDingTalk,
     'counts':()=>{loadAdjustments()},
     'returns':loadReturns,
-    'settlements':loadSettlements,'invoices':loadInvoicePage,'ledger':loadLedger,'system':loadSystem};
+    'settlements':loadSettlements,'invoices':loadInvoicePage,'ledger':loadLedger,'system':loadSystem,
+    'small':loadSmallLedger};
   // V11.66: 页面级权限拦截 — 无权限角色看到友好提示(数据级过滤已在后端兜底)
   if(!__pageAllowed(name)){
     const wrap=id('p'+name);
@@ -1212,6 +1223,7 @@ function __pageRoles(name){
     'returns':'库管员、部门负责人、分管领导、总经理、系统管理员',
     'counts':'库管员、分管领导、总经理、系统管理员',
     'payments':'财务、分管领导、总经理、系统管理员',
+    'small':'采购员、库管员、财务、分管领导、总经理、系统管理员',
     'expenses':'财务、分管领导、总经理、系统管理员',
     'settlements':'财务、分管领导、总经理、系统管理员',
     'invoices':'财务、分管领导、总经理、系统管理员',
@@ -1237,6 +1249,7 @@ function __pageAllowed(name){
     'returns':['库管员','部门负责人','分管领导','总经理','系统管理员'],
     'counts':['库管员','分管领导','总经理','系统管理员'],
     'payments':['财务','分管领导','总经理','系统管理员'],
+    'small':['采购员','库管员','财务','分管领导','总经理','系统管理员'],
     'expenses':['财务','分管领导','总经理','系统管理员'],
     'settlements':['财务','分管领导','总经理','系统管理员'],
     'invoices':['财务','分管领导','总经理','系统管理员'],
@@ -1271,7 +1284,7 @@ setInterval(()=>{
     'contracts':loadContracts,'receivings':loadReceivings,'repairs':loadRepairs2,
     'payments':loadPayments,'inventory':loadInventory,'requisitions':()=>{reqTab(Array.from(document.querySelectorAll('#reqTabs button')).find(b=>b.classList.contains('act'))?.dataset?.z||'inv');loadReqInv();loadRequisitions()},'suppliers':loadSuppliers,'reports':loadReports,'feishu':loadFeishu,
     'dingtalk':loadDingTalk,
-    'settlements':loadSettlements,'invoices':loadInvoicePage,'ledger':loadLedger,'system':loadSystem}[_curPage];
+    'settlements':loadSettlements,'invoices':loadInvoicePage,'ledger':loadLedger,'system':loadSystem,'small':loadSmallLedger}[_curPage];
   if(fn)fn().catch(()=>{});
 },60000);
 function showDetail(t,h,f){id('dmTitle').textContent=t;id('dmBody').innerHTML=h;id('dmFooter').innerHTML=f||'<button class="btn btn-o" onclick="closeMod()">关闭</button>';id('detailModal').classList.add('show')}
@@ -5481,6 +5494,103 @@ async function loadLedger(){
     x=>`<td>${esc((x.date||'').slice(0,16))}</td><td><span class="tag tg-b">${esc(x.type)}</span></td><td><b>${esc(x.no)}</b></td>
       <td>${esc(x.supplier||'-')}</td><td style="font-size:8px">${esc(x.contract||'-')}</td><td>${esc(x.item||'')}</td>
       <td>${x.amount!=null?`¥${Number(x.amount).toFixed(0)}`:''}</td><td>${tag(x.status)}</td>`);
+}
+// ================= V11.224 模块五: 小额采购/维修台账 =================
+let _SL_ATTS=[];
+async function loadSmallLedger(){
+  const box=id('smallLedgerTable');if(!box)return;
+  const d=await api('/small-ledger',{noCache:true}).catch(e=>({error:(e.error||e.message),rows:[],threshold:1000}));
+  if(d.error){box.innerHTML=`<div style="color:#c0392b;padding:8px">❌ ${esc(d.error)}</div>`;return}
+  const rows=d.rows||[];
+  if(id('smallTh'))id('smallTh').textContent=d.threshold||1000;
+  if(id('smallTh2'))id('smallTh2').textContent=d.threshold||1000;
+  if(!rows.length){box.innerHTML='<div style="color:#999;padding:10px;text-align:center">暂无补录记录 — 点「➕ 补录一笔」登记线下零星采购/维修</div>';return}
+  const canAudit=['财务','系统管理员','分管领导','总经理'].includes(ME.role);
+  const stTag=s=>({'待审核':'<span style="color:#fff;background:#e67e22;padding:1px 6px;border-radius:3px;font-size:8px">待审核</span>','审核通过':'<span style="color:#fff;background:#16a34a;padding:1px 6px;border-radius:3px;font-size:8px">✅审核通过</span>','标记异常':'<span style="color:#fff;background:#dc2626;padding:1px 6px;border-radius:3px;font-size:8px">⚠️标记异常</span>'}[s]||esc(s));
+  box.innerHTML='<table class="tb" style="font-size:9px"><thead><tr><th>台账编号</th><th>类型</th><th>部门</th><th>内容</th><th>金额</th><th>发生日期</th><th>供应商/收款方</th><th>支付</th><th>凭证</th><th>状态</th><th>补录人/时间</th><th>审核信息</th><th>操作</th></tr></thead><tbody>'+
+  rows.map(x=>{
+    const certs=[];try{certs=JSON.parse(x.certificates||'[]')}catch(e){}
+    const certHtml=certs.length?certs.map(c=>{const n=String(c).split('/').pop();return `<a href="/uploads/${esc(c)}" target="_blank" style="color:#1f6feb;margin-right:4px" title="${esc(n)}">📄</a>`}).join(''):'<span style="color:#ccc">无</span>';
+    return `<tr>
+      <td><b>${esc(x.ledger_no)}</b></td>
+      <td><span class="tag ${x.kind=='维修'?'tg-o':'tg-b'}">${esc(x.kind)}</span></td>
+      <td>${esc(x.dept||'')}</td>
+      <td style="max-width:180px">${esc(x.content||x.item_name||'')}</td>
+      <td><b>¥${Number(x.amount||0).toFixed(2)}</b></td>
+      <td>${esc(x.happened_date||'')}</td>
+      <td>${esc(x.supplier||x.payee_name||'')}</td>
+      <td>${esc(x.pay_method||'')}</td>
+      <td>${certHtml}</td>
+      <td>${stTag(x.status)}</td>
+      <td>${esc(x.requester||'')}<br><span style="color:#aaa;font-size:8px">${esc((x.created_at||'').slice(0,16))}</span></td>
+      <td style="font-size:8px">${x.audit_by?`<span style="color:#555">${esc(x.audit_by)} ${esc((x.audit_at||'').slice(5,16))}</span>${x.audit_remark?`<br>${esc(x.audit_remark)}`:''}`:'—'}</td>
+      <td style="white-space:nowrap">
+        ${(x.status=='待审核'&&canAudit)?`<button class="lnk" style="color:#16a34a" onclick="smallAudit(${x.id},'pass')">✓通过</button> <button class="lnk" style="color:#dc2626" onclick="smallAudit(${x.id},'abnormal')">⚠异常</button>`:''}
+        ${((x.status=='待审核'&&(x.requester_id==ME.id))||ME.role=='系统管理员')?`<button class="lnk" style="color:var(--d)" onclick="smallDel(${x.id})">删</button>`:''}
+      </td>
+    </tr>`;
+  }).join('')+'</tbody></table>';
+}
+function smallAdd(){
+  window._SL_ATTS=[];
+  showDetail('➕ 小额采购/维修补录（线下操作后登记）',`
+    <div style="font-size:9px;color:#666;margin-bottom:6px">适用范围：单笔 <b>&lt; ¥1000</b> 的零星采购/维修（已在线下完成）。<b>≥1000元必须走系统全流程</b>（系统会拦截）。线下操作完成后 <b>3个工作日内</b>必须补录并上传合规凭证，保证业务可追溯、可审计。</div>
+    <div class="fr"><div class="fg"><label class="fl2">业务类型 *</label><select class="fc" id="slKind"><option value="采购">采购</option><option value="维修">维修</option></select></div>
+    <div class="fg"><label class="fl2">金额(含税) *</label><input class="fc" id="slAmt" type="number" step="0.01" placeholder="必须小于1000" oninput="slAmtChk()"></div></div>
+    <div class="fr"><div class="fg"><label class="fl2">线下发生日期 *</label><input class="fc" id="slDate" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
+    <div class="fg"><label class="fl2">部门</label><input class="fc" id="slDept" value="${esc(ME.dept_name||'')}"></div></div>
+    <div class="fr"><div class="fg"><label class="fl2">采购/维修内容 *</label><input class="fc" id="slContent" placeholder="买了什么/修了什么，简要描述"></div>
+    <div class="fg"><label class="fl2">物资名称(选填)</label><input class="fc" id="slItem" placeholder="如: 螺丝/轴承"></div></div>
+    <div class="fr"><div class="fg"><label class="fl2">供应商/收款方</label><input class="fc" id="slSup" placeholder="个体户/商店名/收款人"></div>
+    <div class="fg"><label class="fl2">支付方式</label><select class="fc" id="slPay"><option value="现金">现金</option><option value="微信">微信</option><option value="支付宝">支付宝</option><option value="银行转账">银行转账</option><option value="其他">其他</option></select></div></div>
+    <div class="fg"><label class="fl2">合规凭证 *（收据/付款记录/验收单/维修明细 拍照上传）</label>
+      <input class="fc" id="slFiles" type="file" multiple accept="image/*,.pdf" onchange="slUp(this)"></div>
+    <div id="slAttList" style="font-size:9px;color:#666"></div>
+    <div class="fg"><label class="fl2">备注</label><input class="fc" id="slRem" placeholder="补充说明(选填)"></div>
+    <div id="slWarn" style="font-size:9px;color:#e67e22;margin-top:2px"></div>`,
+    '<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="smallSave()">💾 提交补录</button>');
+}
+function slAmtChk(){
+  const v=parseFloat(id('slAmt').value)||0;
+  id('slWarn').textContent=v>=1000?'⚠️ 金额≥1000元必须走系统全流程，不可线下补录！':(v>0?'✅ 符合小额补录范围':'');
+}
+async function slUp(inp){
+  for(const f of inp.files){
+    const fd=new FormData();fd.append('file',f);
+    const r=await fetch('/api/upload',{method:'POST',body:fd,credentials:'include'}).then(x=>x.json()).catch(()=>({}));
+    const p=r.file_path||r.path;
+    if(p){window._SL_ATTS.push(p);
+      const wr=document.createElement('div');wr.style.display='flex';wr.style.alignItems='center';wr.style.gap='6px';
+      wr.innerHTML=`<a href="/uploads/${esc(p)}" target="_blank" style="color:#3370ff">📄 ${esc(String(p).split('/').pop())}</a><span onclick="this.parentElement.remove();window._SL_ATTS.splice(window._SL_ATTS.indexOf('${esc(p)}'),1)" style="cursor:pointer;color:var(--d)">✕</span>`;
+      id('slAttList').appendChild(wr);
+    }
+  }
+  inp.value='';
+}
+async function smallSave(){
+  const amt=parseFloat(id('slAmt').value)||0;
+  if(!(id('slContent').value.trim())){alert('请填写采购/维修内容');return}
+  if(amt<=0||amt>=1000){alert('金额须大于0且小于1000元（≥1000走系统全流程）');return}
+  if(!window._SL_ATTS.length){alert('请至少上传1份合规凭证（收据/付款记录/验收单/维修明细）');return}
+  const body={kind:id('slKind').value,amount:amt,happened_date:id('slDate').value,dept:id('slDept').value,
+    content:id('slContent').value.trim(),item_name:id('slItem').value.trim(),supplier:id('slSup').value.trim(),
+    pay_method:id('slPay').value,remark:id('slRem').value.trim(),certificates:window._SL_ATTS};
+  const r=await api('/small-ledger',{method:'POST',body:JSON.stringify(body)});
+  if(r.success){alert('✅ '+r.message);closeMod();loadSmallLedger()}
+  else alert('❌ '+(r.error||'补录失败'));
+}
+async function smallAudit(id,act){
+  const why=act=='abnormal'?(prompt('请填写异常原因（不合规凭证说明，留痕供审计）：')||'').trim():'';
+  if(act=='abnormal'&&!why){alert('标记异常需填写原因');return}
+  const r=await api(`/small-ledger/${id}/audit`,{method:'POST',body:JSON.stringify({action:act,remark:why})});
+  if(r.success){alert('✅ '+r.message);loadSmallLedger()}
+  else alert('❌ '+(r.error||'操作失败'));
+}
+async function smallDel(id){
+  if(!confirm('确认删除该补录记录？'))return;
+  const r=await api('/small-ledger/'+id,{method:'DELETE'});
+  if(r.success){alert('已删除');loadSmallLedger()}
+  else alert('❌ '+(r.error||'删除失败'));
 }
 async function fillSupSelects(){
   try{

@@ -12448,6 +12448,147 @@ def api_doc_delete(biz_type, bid):
     return jsonify({'success': True, 'message': f'单据 {no} 已删除'})
 
 # ============================================================
+# V11.224 采购优化3.0-模块五: 小额(<阈值, 默认1000元)采购/维修差异化规则
+# 规则: ≥阈值 必须走系统全流程(申请→报价→审批→采购/维修→验收入库→结算), 禁止线下;
+#       <阈值 支持: 模式一 简化流程(部门负责人→采购员) 或 模式二 线下操作3工作日内补录台账(财务审核)
+# ============================================================
+def small_threshold():
+    """小额阈值(元), 默认1000, 系统设置可改"""
+    try:
+        return float(cfg_get('small_amount_threshold', '1000') or 1000)
+    except Exception:
+        return 1000.0
+
+
+@app.route('/api/small-ledger')
+@login_required
+def api_small_ledger():
+    """小额采购/维修补录台账列表(模式二线下操作补录)"""
+    conn = db()
+    role = session.get('user_role')
+    rows = conn.execute("SELECT * FROM small_purchase_ledger ORDER BY id DESC LIMIT 300").fetchall()
+    out = []
+    for r in rows:
+        d = dict_row(r)
+        if not can_see_price():
+            d = mask_price(d)
+        out.append(d)
+    conn.close()
+    return jsonify({'rows': out, 'threshold': small_threshold()})
+
+
+@app.route('/api/small-ledger', methods=['POST'])
+@login_required
+def api_small_ledger_save():
+    """线下操作补录(模式二): 金额<阈值才允许; 3个工作日内补录提示; 凭证附件必传"""
+    d = request.json or {}
+    kind = d.get('kind') or '采购'
+    try:
+        amt = float(d.get('amount') or 0)
+    except Exception:
+        return jsonify({'error': '金额必须为数字'}), 400
+    th = small_threshold()
+    if amt >= th:
+        return jsonify({'error': f'金额 ¥{amt:g} ≥ 小额阈值 ¥{th:g}：必须走系统全流程（提报→报价→审批→验收入库→结算），禁止线下操作补录。请回到「新建采购申请/维修申请」按正式流程提交'}), 400
+    if amt <= 0:
+        return jsonify({'error': '金额必须大于0'}), 400
+    if not (d.get('content') or d.get('item_name')):
+        return jsonify({'error': '请填写采购/维修内容'}), 400
+    certs = d.get('certificates') or []
+    if not isinstance(certs, list) or not len(certs):
+        return jsonify({'error': '请上传合规凭证（收款收据/付款记录/验收单/维修明细），保证业务可追溯'}), 400
+    conn = db()
+    no = gen_no('XE', 'small_purchase_ledger', 'ledger_no', conn)
+    cur = conn.execute("""INSERT INTO small_purchase_ledger(ledger_no,kind,dept,requester,requester_id,item_name,content,amount,
+        happened_date,supplier,payee_name,pay_method,certificates,status,remark,created_by)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (no, kind, d.get('dept') or '', session.get('user_name', ''), session.get('user_id', 0),
+         d.get('item_name') or '', d.get('content') or '', amt,
+         d.get('happened_date') or today(), d.get('supplier') or '',
+         d.get('payee_name') or '', d.get('pay_method') or '',
+         json.dumps(certs, ensure_ascii=False), '待审核', d.get('remark') or '', session.get('user_name', '')))
+    conn.commit(); conn.close()
+    log(session['user_name'], '小额台账补录', f'{no} {kind} ¥{amt:g}')
+    return jsonify({'success': True, 'ledger_no': no, 'message': f'补录成功（{no}），已进入财务审核。请确保线下操作在3个工作日内完成补录'})
+
+
+@app.route('/api/small-ledger/<int:lid>/audit', methods=['POST'])
+@login_required
+def api_small_ledger_audit(lid):
+    """财务审核: 通过或标记异常(不合规凭证); 仅 财务/系统管理员/分管领导"""
+    if session.get('user_role') not in ('财务', '系统管理员', '分管领导', '总经理'):
+        return jsonify({'error': '仅财务/领导可审核小额台账'}), 403
+    d = request.json or {}
+    act = d.get('action')  # pass=审核通过 / abnormal=标记异常
+    if act not in ('pass', 'abnormal'):
+        return jsonify({'error': '无效审核动作'}), 400
+    conn = db()
+    r = conn.execute("SELECT * FROM small_purchase_ledger WHERE id=?", (lid,)).fetchone()
+    if not r:
+        conn.close(); return jsonify({'error': '记录不存在'}), 404
+    st = '审核通过' if act == 'pass' else '标记异常'
+    conn.execute("UPDATE small_purchase_ledger SET status=?, audit_by=?, audit_at=?, audit_remark=?, updated_at=? WHERE id=?",
+                 (st, session.get('user_name', ''), now(), d.get('remark') or '', now(), lid))
+    conn.commit(); conn.close()
+    log(session['user_name'], '小额台账审核', f'{r["ledger_no"]} → {st}')
+    return jsonify({'success': True, 'message': f'已{st}'})
+
+
+@app.route('/api/small-ledger/<int:lid>', methods=['DELETE'])
+@login_required
+def api_small_ledger_del(lid):
+    """删除补录(仅本人待审核或管理员)"""
+    conn = db()
+    r = conn.execute("SELECT * FROM small_purchase_ledger WHERE id=?", (lid,)).fetchone()
+    if not r:
+        conn.close(); return jsonify({'error': '记录不存在'}), 404
+    me_admin = can_manage_config()
+    me_own = (r['requester_id'] or 0) == session.get('user_id', 0)
+    if not (me_admin or (me_own and r['status'] == '待审核')):
+        conn.close(); return jsonify({'error': '仅本人待审核记录或管理员可删除'}), 403
+    conn.execute("DELETE FROM small_purchase_ledger WHERE id=?", (lid,))
+    conn.commit(); conn.close()
+    return jsonify({'success': True})
+
+
+@app.route('/api/small-ledger/export')
+@login_required
+def api_small_ledger_export():
+    """小额台账导出Excel"""
+    if not can_manage_config():
+        return jsonify({'error': '仅管理员/分管领导可导出'}), 403
+    from io import BytesIO as _BI
+    import openpyxl
+    from openpyxl.styles import Font as _F2, PatternFill as _PF2
+    conn = db()
+    rows = conn.execute("SELECT * FROM small_purchase_ledger ORDER BY id DESC").fetchall()
+    conn.close()
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = '小额采购维修台账'
+    hdr = ['台账编号', '类型', '部门', '补录人', '内容', '金额(含税)', '发生日期', '供应商/收款方', '支付方式', '状态', '审核人', '审核时间', '审核备注', '补录时间']
+    for ci, h in enumerate(hdr, 1):
+        cell = ws.cell(row=1, column=ci, value=h)
+        cell.font = _F2(bold=True, color='FFFFFF')
+        cell.fill = _PF2('solid', fgColor='B45309')
+    for ri, r in enumerate(rows, 2):
+        vals = [r['ledger_no'], r['kind'], r['dept'], r['requester'], r['content'] or r['item_name'],
+                r['amount'], r['happened_date'], r['supplier'] or r['payee_name'], r['pay_method'],
+                r['status'], r['audit_by'], (r['audit_at'] or '')[:16], r['audit_remark'], (r['created_at'] or '')[:16]]
+        for ci, v in enumerate(vals, 1):
+            ws.cell(row=ri, column=ci, value=v)
+    from openpyxl.utils import get_column_letter as _gcl
+    for ci in range(1, len(hdr) + 1):
+        ws.column_dimensions[_gcl(ci)].width = 16
+    bio = _BI(); wb.save(bio); bio.seek(0)
+    from urllib.parse import quote as _q
+    resp = make_response(bio.getvalue())
+    resp.mimetype = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    resp.headers['Content-Disposition'] = f"attachment; filename*=UTF-8''{_q('小额采购维修台账.xlsx')}"
+    return resp
+
+
+# ============================================================
 # V11.224 采购优化3.0-模块三: 税率参数配置(金蝶式优先级匹配)
 # 优先级(高→低): 供应商专票税率 → 物料品类税率 → 单据类型默认税率 → 系统兜底默认税率
 # 含: 配置CRUD / 自动匹配函数(单条单据可查命中链路) / 税额计算辅助
