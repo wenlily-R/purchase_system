@@ -633,6 +633,7 @@ def init_db():
         ('contracts', 'invoice_est_first', "ALTER TABLE contracts ADD COLUMN invoice_est_first TEXT DEFAULT ''"),
         ('contracts', 'invoice_est_done', "ALTER TABLE contracts ADD COLUMN invoice_est_done TEXT DEFAULT ''"),
         ('contracts', 'inv_collect_status', "ALTER TABLE contracts ADD COLUMN inv_collect_status TEXT DEFAULT ''"),
+        ('contract_invoices', 'node_id', "ALTER TABLE contract_invoices ADD COLUMN node_id INTEGER DEFAULT 0"),
     ]:
         _cols = [r[1] for r in conn.execute(f"PRAGMA table_info({_tbl})").fetchall()]
         if _col not in _cols:
@@ -659,6 +660,20 @@ def init_db():
             created_at TEXT DEFAULT (datetime('now','localtime')),
             UNIQUE(contract_id, remind_date, kind)
         );
+    """)
+    # ---- V11.225 发票回收节点2.0: 合同发票「顺序节点」计划(每合同多节点: 触发条件/约定金额/约定时间) ----
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS contract_inv_nodes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            contract_id INTEGER NOT NULL,
+            seq INTEGER DEFAULT 1,
+            trigger_desc TEXT DEFAULT '',
+            amount REAL DEFAULT 0,
+            plan_date TEXT DEFAULT '',
+            remark TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now','localtime'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_inv_nodes ON contract_inv_nodes(contract_id);
     """)
     # ---- V11.193 退库模块: 退库申请单(已领用物资退回仓库) ----
     conn.executescript("""
@@ -5853,27 +5868,58 @@ def api_dashboard():
     except Exception:
         pass
     # V11.203 模块一1.2: 发票节点到期/超期 → 系统内动态预警(钉钉推送由 check_invoice_node_reminders 负责)
+    # V11.225: 节点计划优先(逐节点到期未收→橙/超期→红), 老合同无节点回退首次/全部两时间点
     try:
         _today_s = datetime.date.today().strftime('%Y-%m-%d')
-        _ic = c.execute("SELECT * FROM contracts WHERE status='执行中' AND (invoice_est_first!='' OR invoice_est_done!='')").fetchall()
+        _ic = c.execute("SELECT * FROM contracts WHERE status='执行中'").fetchall()
         for _ct in _ic:
             _st2 = _contract_inv_stats(c, _ct['id'])
             _pend2 = float(_ct['amount'] or 0) - _st2['received_amount']
-            _lv = ''
-            _ac = ''
-            if _ct['invoice_est_first'] and _today_s >= _ct['invoice_est_first'][:10] and _st2['received_count'] == 0:
-                _lv = 'orange'
-                _ac = '已到预计首次开票日(%s)，尚未收到任何发票' % _ct['invoice_est_first'][:10]
-            elif _ct['invoice_est_done'] and _today_s > _ct['invoice_est_done'][:10] and _pend2 > 0.01:
-                _lv = 'red'
-                _ac = '已超过约定开票完成日(%s)，仍未收票 ¥%.2f' % (_ct['invoice_est_done'][:10], _pend2)
-            if _lv:
-                alerts.insert(0, {'id': 0, 'alert_type': '发票催收', 'level': _lv,
-                                  'title': '合同 %s' % _ct['contract_no'],
-                                  'content': _ac + '（供应商:%s），请采购专员及时跟进取票并登记' % (_ct['supplier'] or '-'),
-                                  'biz_type': 'contract', 'biz_id': _ct['id'],
-                                  'created_at': _ct['updated_at'] or '', 'status': 'pending',
-                                  'link': "sw('contracts')"})
+            _nds = _inv_nodes(c, _ct['id'])
+            if _nds:
+                _all_done2 = True
+                for _n in _nds:
+                    _nst2 = _node_stats(c, _ct['id'], _n['id'])
+                    _amt2 = float(_n['amount'] or 0)
+                    _done2 = (_amt2 > 0 and _nst2['received_amount'] >= _amt2 - 0.01) or \
+                             (_amt2 <= 0 and _nst2['received_count'] > 0)
+                    if not _done2:
+                        _all_done2 = False
+                    if _n['plan_date'] and not _done2:
+                        _lv = ''
+                        _ac = ''
+                        if _today_s == _n['plan_date'][:10]:
+                            _lv = 'orange'
+                            _ac = '第%d节点「%s」约定开票时间%s到期，该节点发票待收' % (_n['seq'], (_n['trigger_desc'] or '')[:40], _n['plan_date'][:10])
+                        elif _today_s > _n['plan_date'][:10]:
+                            _lv = 'red'
+                            _ac = '第%d节点「%s」超过约定开票时间%s，尚未收回该节点发票' % (_n['seq'], (_n['trigger_desc'] or '')[:40], _n['plan_date'][:10])
+                        if _amt2 > 0:
+                            _ac += '（约定¥%.2f/已收¥%.2f）' % (_amt2, _nst2['received_amount'])
+                        if _lv:
+                            alerts.insert(0, {'id': 0, 'alert_type': '发票催收', 'level': _lv,
+                                              'title': '合同 %s' % _ct['contract_no'],
+                                              'content': _ac + '（供应商:%s），请采购专员线下向供应商取票并登记' % (_ct['supplier'] or '-'),
+                                              'biz_type': 'contract', 'biz_id': _ct['id'],
+                                              'created_at': _ct['updated_at'] or '', 'status': 'pending',
+                                              'link': "sw('contracts')"})
+                if _all_done2:
+                    continue
+            else:
+                if _ct['invoice_est_first'] and _today_s >= _ct['invoice_est_first'][:10] and _st2['received_count'] == 0:
+                    alerts.insert(0, {'id': 0, 'alert_type': '发票催收', 'level': 'orange',
+                                      'title': '合同 %s' % _ct['contract_no'],
+                                      'content': '已到预计首次开票日(%s)，尚未收到任何发票（供应商:%s），请采购专员及时跟进取票并登记' % (_ct['invoice_est_first'][:10], _ct['supplier'] or '-'),
+                                      'biz_type': 'contract', 'biz_id': _ct['id'],
+                                      'created_at': _ct['updated_at'] or '', 'status': 'pending',
+                                      'link': "sw('contracts')"})
+                elif _ct['invoice_est_done'] and _today_s > _ct['invoice_est_done'][:10] and _pend2 > 0.01:
+                    alerts.insert(0, {'id': 0, 'alert_type': '发票催收', 'level': 'red',
+                                      'title': '合同 %s' % _ct['contract_no'],
+                                      'content': '已超过约定开票完成日(%s)，仍未收票 ¥%.2f（供应商:%s），请采购专员及时跟进取票并登记' % (_ct['invoice_est_done'][:10], _pend2, _ct['supplier'] or '-'),
+                                      'biz_type': 'contract', 'biz_id': _ct['id'],
+                                      'created_at': _ct['updated_at'] or '', 'status': 'pending',
+                                      'link': "sw('contracts')"})
     except Exception:
         pass
     # ── ④ 数据看板 ──
@@ -9019,7 +9065,6 @@ def _inv_stats_rows(args):
     inv_map = {}
     for r in conn.execute("SELECT contract_id, COUNT(*) n, COALESCE(SUM(amount),0) amt FROM contract_invoices GROUP BY contract_id"):
         inv_map[r['contract_id']] = {'n': r['n'], 'amt': float(r['amt'] or 0)}
-    conn.close()
     today = datetime.date.today().strftime('%Y-%m-%d')
     detail = []
     for r in rows:
@@ -9027,12 +9072,31 @@ def _inv_stats_rows(args):
         st = inv_map.get(d['id'], {'n': 0, 'amt': 0.0})
         amt = float(d['amount'] or 0)
         pend = max(round(amt - st['amt'], 2), 0)
-        over = bool(d.get('invoice_est_done')) and today > str(d['invoice_est_done'])[:10] and pend > 0.01
+        # V11.225: 超期判定兼容节点模式 — 有节点计划的合同按"任一节点约定时间已过且未收齐"判超期, 无节点按老 invoice_est_done
+        over = False
+        try:
+            _nds = _inv_nodes(conn, d['id'])
+        except Exception:
+            _nds = []
+        if _nds:
+            for _n in _nds:
+                if not _n['plan_date']:
+                    continue
+                _nst = _node_stats(conn, d['id'], _n['id'])
+                _amt2 = float(_n['amount'] or 0)
+                _done2 = (_amt2 > 0 and _nst['received_amount'] >= _amt2 - 0.01) or \
+                         (_amt2 <= 0 and _nst['received_count'] > 0)
+                if today > _n['plan_date'][:10] and not _done2:
+                    over = True
+                    break
+        if not over and d.get('invoice_est_done'):
+            over = bool(d.get('invoice_est_done')) and today > str(d['invoice_est_done'])[:10] and pend > 0.01
         d['inv_count'] = st['n']
         d['inv_amount'] = round(st['amt'], 2)
         d['pending'] = pend
         d['overdue'] = over
         detail.append(d)
+    conn.close()
     summary = {'contracts': len(detail),
                'amount': round(sum(float(x['amount'] or 0) for x in detail), 2),
                'inv_amount': round(sum(x['inv_amount'] for x in detail), 2),
@@ -9141,6 +9205,59 @@ def api_invoice_stats_export():
     fn = '发票台账_%s维度_%s.xlsx' % (dim, datetime.date.today().strftime('%Y%m%d'))
     return send_file(bio, as_attachment=True, download_name=fn,
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+# ---- V11.225: 发票节点催办核对台账(供应商维度核对下钻 / 合同节点级欠票明细) ----
+@app.route('/api/reports/invoice-node-ledger')
+@login_required
+def api_invoice_node_ledger():
+    """发票节点核对: ?supplier=供应商(可空=全部) / ?contract_id=指定合同(可空)
+    输出每份合同的节点级欠票明细(节点条件/约定金额/约定时间/已收/未收/是否完成/是否超期), 供催办核对"""
+    if not can_see_price():
+        return jsonify({'error': '无权限查看发票台账(金额敏感数据)'}), 403
+    sup = (request.args.get('supplier') or '').strip()
+    try:
+        cid = int(request.args.get('contract_id') or 0) or None
+    except Exception:
+        cid = None
+    q = "SELECT * FROM contracts WHERE status NOT IN ('已作废','已撤回','撤回','草稿')"
+    p = []
+    if sup:
+        q += " AND supplier LIKE ?"
+        p.append('%' + sup + '%')
+    if cid:
+        q += " AND id=?"
+        p.append(cid)
+    q += " ORDER BY supplier, created_at DESC, id DESC"
+    conn = db()
+    today = datetime.date.today().strftime('%Y-%m-%d')
+    out = []
+    try:
+        _rows = conn.execute(q, p).fetchall()
+        for _r in _rows:
+            _st = _contract_inv_stats(conn, _r['id'])
+            _nodes = _inv_nodes(conn, _r['id'])
+            _node_list = []
+            for _n in _nodes:
+                _nst = _node_stats(conn, _r['id'], _n['id'])
+                _amt = float(_n['amount'] or 0)
+                _done = (_amt > 0 and _nst['received_amount'] >= _amt - 0.01) or \
+                        (_amt <= 0 and _nst['received_count'] > 0)
+                _ov = bool(_n['plan_date']) and today > _n['plan_date'][:10] and not _done
+                _node_list.append(dict(_n,
+                                       received_count=_nst['received_count'],
+                                       received_amount=round(_nst['received_amount'], 2),
+                                       pending=round(max(_amt - _nst['received_amount'], 0), 2) if _amt > 0 else 0,
+                                       done=_done, overdue=_ov))
+            out.append({'contract_id': _r['id'], 'contract_no': _r['contract_no'],
+                        'contract_name': _r['contract_name'] or '', 'supplier': _r['supplier'] or '',
+                        'amount': float(_r['amount'] or 0), 'status': _r['status'],
+                        'received_amount': round(_st['received_amount'], 2),
+                        'pending': round(max(float(_r['amount'] or 0) - _st['received_amount'], 0), 2),
+                        'has_nodes': bool(_nodes), 'nodes': _node_list})
+    finally:
+        conn.close()
+    return jsonify({'list': out, 'today': today})
 
 
 @app.route('/api/receivings/<int:rid>/invoice-match', methods=['POST'])
@@ -9608,6 +9725,8 @@ def api_contract_generate():
     inv_clause = (d.get('invoice_clause') or '').strip()
     inv_first = (d.get('invoice_est_first') or '').strip()[:10]
     inv_done = (d.get('invoice_est_done') or '').strip()[:10]
+    # V11.225: 发票回收顺序节点(生成合同弹窗录入, 每节点=触发条件/约定开票金额/约定时间), 可空
+    inv_nodes = [x for x in (d.get('nodes') or []) if isinstance(x, dict)] or None
     o = conn.execute("SELECT * FROM purchase_orders WHERE id=?", (oid,)).fetchone()
     if not o:
         conn.close(); return jsonify({'error': '订单不存在'}), 400
@@ -9838,29 +9957,56 @@ def api_contract_generate():
                         if k in cell.text:
                             cell.text = cell.text.replace(k, v)
         # V11.203 模块一1.1: 发票条款注入 — 在结算付款条款段(甲方自收到发票后...)后插入独立发票条款段(每份合同可编辑区域)
-        if inv_clause or inv_first or inv_done:
+        # V11.225: 有发票回收顺序节点时按节点逐条生成(触发条件/金额/约定时间), 无节点回退老逻辑(条款文本+首次/全部时间)
+        def _mk_para_after(_anchor, _txt):
+            from docx.oxml import OxmlElement as _OE
+            from docx.oxml.ns import qn as _QN
+            _p = _OE('w:p')
+            _r = _OE('w:r')
+            _t = _OE('w:t')
+            _t.text = _txt
+            _t.set(_QN('xml:space'), 'preserve')
+            _r.append(_t)
+            _p.append(_r)
+            _anchor._p.addnext(_p)
+            return _p
+        _anchor = None
+        for para in doc.paragraphs:
+            if '甲方自收到发票后' in para.text:
+                _anchor = para
+                break
+        if inv_nodes:
+            if _anchor is not None:
+                # addnext 每次插到锚点正后方会反序, 故整组段落先收集再倒序逐个 addnext
+                _paras_txt = ['发票开具与回收条款：本合同货款发票由乙方按下列顺序节点向甲方开具交付，甲方按节点催收核对：']
+                for _i, _nd in enumerate(inv_nodes, 1):
+                    _desc = str(_nd.get('trigger_desc') or '').strip()
+                    _amt = _nd.get('amount')
+                    _dt = str(_nd.get('plan_date') or '').strip()[:10]
+                    _seg = []
+                    if _desc:
+                        _seg.append('节点条件：' + _desc)
+                    if _amt not in (None, ''):
+                        try:
+                            _seg.append('约定开票金额：人民币¥{:,.2f}元'.format(float(_amt)))
+                        except Exception:
+                            _seg.append('约定开票金额：' + str(_amt))
+                    if _dt:
+                        _seg.append('约定收回时间：' + _dt)
+                    if _seg:
+                        _paras_txt.append('（%d）%s。' % (_i, '；'.join(_seg)))
+                _paras_txt.append('乙方逾期未按约定节点开具并交付发票的，甲方有权顺延支付对应款项，由此造成的损失由乙方承担。')
+                for _txt in reversed(_paras_txt):
+                    _mk_para_after(_anchor, _txt)
+        elif inv_clause or inv_first or inv_done:
             _inv_txt = '发票条款：' + (inv_clause or '按双方协商约定开票')
             if inv_first:
                 _inv_txt += '；预计首次开票时间：' + inv_first
             if inv_done:
                 _inv_txt += '；预计全部开票完成时间：' + inv_done
             _inv_txt += '。'
-            _anchor = None
-            for para in doc.paragraphs:
-                if '甲方自收到发票后' in para.text:
-                    _anchor = para
-                    break
             if _anchor is not None:
-                from docx.oxml import OxmlElement as _OE
-                from docx.oxml.ns import qn as _QN
-                _p = _OE('w:p')
-                _r = _OE('w:r')
-                _t = _OE('w:t')
-                _t.text = _inv_txt
-                _t.set(_QN('xml:space'), 'preserve')
-                _r.append(_t)
-                _p.append(_r)
-                _anchor._p.addnext(_p)
+                _mk_para_after(_anchor, _inv_txt)
         fname = f"contract_{cno}.docx"
         _fpath = os.path.join(BASE, 'uploads', fname)
         # V11.164: 防编号复用覆盖历史文件 — 目标文件已存在且无合同记录引用(孤儿残留, 如清理过contracts表)时先删除再生成
@@ -9882,6 +10028,9 @@ def api_contract_generate():
          (o['created_at'] or '')[:10], o['target_date'], full_text, fname, '待审批', f"由订单{o['order_no']}自动生成", datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
          inv_clause, inv_first, inv_done))
     cid = conn.execute("SELECT id FROM contracts WHERE contract_no=?", (cno,)).fetchone()[0]
+    # V11.225: 发票回收顺序节点随合同一并入库(生成弹窗录入; 未录=空)
+    if inv_nodes:
+        _save_inv_nodes(conn, cid, inv_nodes)
     conn.commit()
     create_approvals('contract', cid, o['total_amount'] or 0, submitter=session['user_name'])
     start_instances('contract', cid)
@@ -9989,10 +10138,60 @@ def _notice_visible_sql(conn, me_role, me_name):
     return out
 
 # ---- V11.203 模块一1.1/1.2: 合同发票计划/催收状态保存(采购员登记发票条款/开票计划/标记催收, 老合同也可补录) ----
+# V11.225 发票回收节点2.0: 新增 nodes 顺序节点计划(全量替换), 未传则保持原节点不动
+def _inv_nodes(c, cid):
+    """某合同的发票回收顺序节点列表(seq升序)"""
+    try:
+        return [dict_row(x) for x in c.execute(
+            "SELECT * FROM contract_inv_nodes WHERE contract_id=? ORDER BY seq, id", (cid,)).fetchall()]
+    except Exception:
+        return []
+
+
+def _save_inv_nodes(conn, cid, nodes):
+    """全量替换某合同的发票节点(先删后插, 自动按传入顺序编号); 无节点则清空"""
+    conn.execute("DELETE FROM contract_inv_nodes WHERE contract_id=?", (cid,))
+    _seq = 0
+    for _nd in (nodes or []):
+        if not isinstance(_nd, dict):
+            continue
+        _seq += 1
+        conn.execute("""INSERT INTO contract_inv_nodes(contract_id,seq,trigger_desc,amount,plan_date,remark)
+                        VALUES(?,?,?,?,?,?)""",
+                     (cid, _seq, str(_nd.get('trigger_desc') or '').strip()[:300],
+                      float(_nd.get('amount') or 0) if (_nd.get('amount') not in (None, '')) else 0,
+                      str(_nd.get('plan_date') or '').strip()[:10],
+                      str(_nd.get('remark') or '').strip()[:200]))
+
+
+def _node_stats(c, cid, node_id):
+    """某合同某发票节点已收发票张数/金额(登记发票挂了该节点才计入; 未挂节点的不计入任何节点)"""
+    _r = c.execute("SELECT COUNT(*) n, COALESCE(SUM(amount),0) amt FROM contract_invoices WHERE contract_id=? AND node_id=?",
+                   (cid, node_id)).fetchone()
+    return {'received_count': _r['n'], 'received_amount': float(_r['amt'] or 0)}
+
+
+def _inv_plan_payload(c, ct):
+    """合同发票计划组装: 老字段(兼容) + nodes(节点含已收/状态/到期标记), 供详情与补录弹窗共用"""
+    _today = datetime.date.today().strftime('%Y-%m-%d')
+    nodes = []
+    for _n in _inv_nodes(c, ct['id']):
+        _st = _node_stats(c, ct['id'], _n['id'])
+        _amt = float(_n['amount'] or 0)
+        _pend = max(round(_amt - _st['received_amount'], 2), 0)
+        _due = bool(_n['plan_date']) and _today >= _n['plan_date'][:10] and _pend > 0.01
+        nodes.append(dict(_n, received_count=_st['received_count'], received_amount=round(_st['received_amount'], 2),
+                          pending=_pend, due=_due))
+    return {'invoice_clause': ct['invoice_clause'] or '', 'invoice_est_first': ct['invoice_est_first'] or '',
+            'invoice_est_done': ct['invoice_est_done'] or '', 'inv_collect_status': ct['inv_collect_status'] or '',
+            'nodes': nodes}
+
+
 @app.route('/api/contracts/<int:cid>/invoice-plan', methods=['POST'])
 @login_required
 def api_contract_invoice_plan(cid):
-    """字段均为可选项, 传了才更新(未传保留原值): invoice_clause/invoice_est_first/invoice_est_done/inv_collect_status"""
+    """字段均为可选项, 传了才更新(未传保留原值): invoice_clause/invoice_est_first/invoice_est_done/inv_collect_status
+    V11.225: nodes=[{trigger_desc,amount,plan_date}] 全量替换本合同发票回收节点(顺序自动编号)"""
     d = request.json or {}
     conn = db()
     ct = conn.execute("SELECT * FROM contracts WHERE id=?", (cid,)).fetchone()
@@ -10003,6 +10202,19 @@ def api_contract_invoice_plan(cid):
         if _k in d and d[_k] is not None:
             sets.append(_k + '=?')
             params.append(str(d[_k]).strip()[:500])
+    # V11.225: 发票顺序节点计划(全量替换)
+    _has_nodes = 'nodes' in d
+    if _has_nodes:
+        sets.append('updated_at=?')
+        params.append(now())
+        params.append(cid)
+        conn.execute("UPDATE contracts SET " + ', '.join(sets) + " WHERE id=?", params)
+        _save_inv_nodes(conn, cid, d.get('nodes'))
+        conn.commit()
+        _log_txt = '发票回收节点%d个' % (len(d.get('nodes') or []))
+        conn.close()
+        log(session['user_name'], '更新合同发票节点', '%s %s' % (ct['contract_no'], _log_txt))
+        return jsonify({'success': True, 'contract_no': ct['contract_no']})
     if not sets:
         conn.close(); return jsonify({'error': '没有可保存的内容'}), 400
     sets.append('updated_at=?')
@@ -10017,7 +10229,7 @@ def api_contract_invoice_plan(cid):
 
 # ---- V11.203 模块一1.2: 合同发票登记台账 API + 发票节点自动提醒引擎 ----
 def _contract_inv_stats(c, cid):
-    """某合同已收发票张数/已收金额"""
+    """某合同已收发票张数/已收金额(全部登记, 不分节点)"""
     _r = c.execute("SELECT COUNT(*) n, COALESCE(SUM(amount),0) amt FROM contract_invoices WHERE contract_id=?", (cid,)).fetchone()
     return {'received_count': _r['n'], 'received_amount': float(_r['amt'] or 0)}
 
@@ -10031,8 +10243,7 @@ def api_contract_invoices(cid):
         conn.close(); return jsonify({'error': '合同不存在'}), 404
     rows = conn.execute("SELECT * FROM contract_invoices WHERE contract_id=? ORDER BY id DESC", (cid,)).fetchall()
     st = _contract_inv_stats(conn, cid)
-    _plan = {'invoice_clause': ct['invoice_clause'] or '', 'invoice_est_first': ct['invoice_est_first'] or '',
-             'invoice_est_done': ct['invoice_est_done'] or '', 'inv_collect_status': ct['inv_collect_status'] or ''}
+    _plan = _inv_plan_payload(conn, ct)
     conn.close()
     return jsonify({'list': [dict_row(x) for x in rows], 'stats': st,
                     'contract_amount': float(ct['amount'] or 0), 'plan': _plan})
@@ -10041,7 +10252,8 @@ def api_contract_invoices(cid):
 @app.route('/api/contracts/<int:cid>/invoices', methods=['POST'])
 @login_required
 def api_contract_invoice_register(cid):
-    """采购专员登记已收到发票: 号码/金额/类型/收票日期 → 自动更新合同发票台账与回收状态"""
+    """采购专员登记已收到发票: 号码/金额/类型/收票日期 → 自动更新合同发票台账与回收状态
+    V11.225: node_id 可选 — 挂到具体发票回收节点(下拉来自合同发票节点计划)"""
     d = request.json or {}
     no = str(d.get('invoice_no') or '').strip()
     try:
@@ -10052,15 +10264,25 @@ def api_contract_invoice_register(cid):
         return jsonify({'error': '请填写发票号码'}), 400
     if amt <= 0:
         return jsonify({'error': '请填写正确的开票金额'}), 400
+    node_id = None
+    try:
+        _nid = int(d.get('node_id') or 0)
+        node_id = _nid if _nid > 0 else None
+    except Exception:
+        node_id = None
     conn = db()
     ct = conn.execute("SELECT * FROM contracts WHERE id=?", (cid,)).fetchone()
     if not ct:
         conn.close(); return jsonify({'error': '合同不存在'}), 404
-    conn.execute("""INSERT INTO contract_invoices(contract_id,invoice_no,amount,invoice_type,received_date,operator,remark)
-                    VALUES(?,?,?,?,?,?,?)""",
+    if node_id is not None:
+        _n = conn.execute("SELECT id FROM contract_inv_nodes WHERE id=? AND contract_id=?", (node_id, cid)).fetchone()
+        if not _n:
+            conn.close(); return jsonify({'error': '所选发票节点不存在, 请刷新后重试'}), 400
+    conn.execute("""INSERT INTO contract_invoices(contract_id,invoice_no,amount,invoice_type,received_date,operator,remark,node_id)
+                    VALUES(?,?,?,?,?,?,?,?)""",
                  (cid, no, amt, (d.get('invoice_type') or '').strip()[:10],
                   (d.get('received_date') or datetime.date.today().strftime('%Y-%m-%d')).strip()[:10],
-                  session.get('user_name', '系统'), (d.get('remark') or '').strip()[:200]))
+                  session.get('user_name', '系统'), (d.get('remark') or '').strip()[:200], node_id))
     # 登记发票=已收到发票, 自动更新催收状态
     conn.execute("UPDATE contracts SET inv_collect_status='已收到发票', updated_at=? WHERE id=?", (now(), cid))
     conn.commit()
@@ -10091,7 +10313,8 @@ _INV_REMIND_TS = [0.0]
 
 def check_invoice_node_reminders():
     """V11.203 模块一1.2: 按合同发票节点自动提醒对应采购专员(系统内预警+dashboard见另一函数, 此函数负责钉钉推送)
-    due=到了预计首次开票日仍未收到任何发票; overdue=超过预计全部开票完成日仍有未收金额"""
+    V11.225: 优先按发票回收「顺序节点」逐节点提醒(节点约定时间到且该节点未收齐); 老合同无节点回退首次/全部两时间点
+    due=节点(或首次开票日)到期仍未收到该节点发票; overdue=超过约定完成时间仍有未收金额"""
     import time as _time
     if time.time() - _INV_REMIND_TS[0] < 900:
         return []
@@ -10101,15 +10324,38 @@ def check_invoice_node_reminders():
     try:
         c = db()
         rows = c.execute("""SELECT id, contract_no, supplier, amount, invoice_est_first, invoice_est_done
-                            FROM contracts WHERE status='执行中' AND (invoice_est_first!='' OR invoice_est_done!='')""").fetchall()
+                            FROM contracts WHERE status='执行中'""").fetchall()
         for r in rows:
             st = _contract_inv_stats(c, r['id'])
             pend = float(r['amount'] or 0) - st['received_amount']
             kinds = []
-            if r['invoice_est_first'] and _today >= r['invoice_est_first'][:10] and st['received_count'] == 0:
-                kinds.append(('due', '预计首次开票时间%s已到, 尚未收到任何发票' % r['invoice_est_first'][:19]))
-            if r['invoice_est_done'] and _today > r['invoice_est_done'][:10] and pend > 0.01:
-                kinds.append(('overdue', '超过约定开票完成时间%s, 仍未收票¥%.2f' % (r['invoice_est_done'][:19], pend)))
+            # V11.225: 节点计划优先 — 逐个节点判断(约定时间<=今天 且 该节点未收齐 则催)
+            nodes = _inv_nodes(c, r['id'])
+            if nodes:
+                _all_done = True
+                for _n in nodes:
+                    _nst = _node_stats(c, r['id'], _n['id'])
+                    _amt = float(_n['amount'] or 0)
+                    # 完成标准: 约定金额>0 → 该节点已收金额>=约定金额; 未约定金额 → 该节点收到过任意发票
+                    _done = (_amt > 0 and _nst['received_amount'] >= _amt - 0.01) or \
+                            (_amt <= 0 and _nst['received_count'] > 0)
+                    if not _done:
+                        _all_done = False
+                    if _n['plan_date'] and _today >= _n['plan_date'][:10] and not _done:
+                        _why = '第%d节点「%s」约定开票时间%s已到，尚未收回该节点发票' % (
+                            _n['seq'], (_n['trigger_desc'] or '未约定条件')[:60], _n['plan_date'][:10])
+                        if _amt > 0:
+                            _why += '（约定金额¥%.2f，已收¥%.2f）' % (_amt, _nst['received_amount'])
+                        kinds.append(('node%d' % _n['id'], _why))
+                if _all_done:
+                    continue  # 节点全部收齐, 不再按老字段催
+            else:
+                # 老合同回退: 首次/全部两时间点
+                if r['invoice_est_first'] and _today >= r['invoice_est_first'][:10] and st['received_count'] == 0:
+                    kinds.append(('due', '预计首次开票时间%s已到, 尚未收到任何发票' % r['invoice_est_first'][:19]))
+                if r['invoice_est_done'] and _today > r['invoice_est_done'][:10] and pend > 0.01:
+                    kinds.append(('overdue', '超过约定开票完成时间%s, 仍未收票¥%.2f' % (r['invoice_est_done'][:19], pend)))
+ (V11.225 发票回收节点2.0(顺序节点计划): ①每份合同可依序录入N个发票回收节点(节点条件/约定开票金额/约定时间), 生成合同弹窗两步入库, docx正文按节点逐条生成「发票开具与回收条款」(无节点回退旧条款文本), 老合同可补录/全量修改, 补录弹窗提示旧版条款转节点 ②登记发票可选挂对应节点(下拉), 合同详情展示节点状态表(待收/部分/已收齐/已到约定时间未收红标), 发票行加对应节点列 ③提醒引擎按节点逐节点触发(约定时间到且该节点未收齐→钉钉推经办采购员+系统预警, kind=node<id>每日去重), 老合同回退首次/全部两时间点; dashboard发票催收预警节点化(到期橙/超期红) ④统计: 发票台账overdue兼容节点判定, 新API /api/reports/invoice-node-ledger节点级欠票台账, 供应商维度行加📋核对下钻(供应商→合同→节点欠票明细, 一键跳合同详情登记/催办) ⑤迁移20260906_发票回收节点_顺序节点计划.sql(contract_inv_nodes新表+contract_invoices.node_id幂等), check_code全绿+E2E实测(3节点生成→docx条款→登记挂节点→全量替换→提醒node9→ledger→超期标记)零残留)
             for kind, _why in kinds:
                 _ex = c.execute("SELECT 1 FROM contract_inv_reminds WHERE contract_id=? AND remind_date=? AND kind=?",
                                 (r['id'], _today, kind)).fetchone()
