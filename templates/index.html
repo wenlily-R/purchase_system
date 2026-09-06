@@ -3758,14 +3758,16 @@ async function showRepairForm(rid){
   const _editing = rid>0;
   if(__guardOpen('repair:'+(rid||'new')))return;
   window._rpAtts=[];window._rpEditId=rid||0;
+  const _depP=api('/departments').catch(()=>[]);  // V11.222: 申请部门改下拉, 数据源同物资采购(/departments)
   let _pre={},dd=null;
   if(_editing){
     try{dd=await api(`/repairs/${rid}/detail`);_pre=dd.plan||{};window._rpAtts=_pre.attachments?JSON.parse(_pre.attachments):[]}catch(e){}
   }
+  const depts=await _depP;
   id('dmTitle').textContent=_editing?('✏️ 编辑维修计划 '+(_pre.plan_no||'')):'🔧 新建维修计划';
   id('dmBody').innerHTML=`
     <div style="font-size:9px;color:#666;margin-bottom:6px">设备故障报修：提交后由定损角色（机电/机修/生产负责人，系统设置配置）技术判定。带 * 为必填。</div>
-    <div class="fr"><div class="fg"><label class="fl2">申请部门 *</label><input class="fc" id="rpDept" value="${esc(_pre.dept||ME.dept||'')}" placeholder="如: 生产部" list="deptList2"></div>
+    <div class="fr"><div class="fg"><label class="fl2">申请部门 *</label><select class="fc" id="rpDept"><option value="">请选择</option>${depts.map(x=>`<option ${x.name==(_pre.dept||ME.dept_name)?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div>
     <div class="fg"><label class="fl2">紧急等级 *</label><select class="fc" id="rpUrg"><option ${_pre.urgency=='紧急'?'':'selected'}>普通</option><option ${_pre.urgency=='紧急'?'selected':''}>紧急</option></select></div></div>
     <div class="fr"><div class="fg"><label class="fl2">故障设备名称 *</label><input class="fc" id="rpDev" value="${esc(_pre.device_name||'')}" placeholder="如: 3号传送带电机"></div>
     <div class="fg"><label class="fl2">设备编号 *</label><input class="fc" id="rpDevNo" value="${esc(_pre.device_no||'')}" placeholder="如: SB-003"></div></div>
