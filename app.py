@@ -12282,6 +12282,261 @@ def api_doc_delete(biz_type, bid):
     return jsonify({'success': True, 'message': f'单据 {no} 已删除'})
 
 # ---- 报表中心扩充数据 ----
+# ============================================================
+# V11.224 采购优化3.0-模块二: 全业务全维度时间查询
+# 统一时间筛选: 快捷(本年/本月/今日/近7天/近30天) + 自定义范围 + 单点精确到时分秒
+# 覆盖: 全部业务单据主表, 多时间字段可选(创建/业务日期/审批/完成/付款等), 权限过滤复用列表口径
+# ============================================================
+_TQ_DEFS = {
+    # biz_key: (表名, 主显示字段列, 单号列, [可用时间字段(列名,标签)], 行标签)
+    'purchase_request': ('purchase_requests', 'purpose', 'req_no',
+        [('created_at', '创建时间'), ('apply_date', '申请日期'), ('target_date', '目标到货日'), ('updated_at', '最后修改时间')], '采购申请'),
+    'purchase_order': ('purchase_orders', 'item_name', 'order_no',
+        [('created_at', '创建时间'), ('target_date', '目标日期'), ('updated_at', '最后修改时间'), ('settled_at', '结算时间')], '采购订单'),
+    'receiving': ('receivings', 'item_name', 'receive_no',
+        [('created_at', '创建时间'), ('received_at', '入库时间'), ('completed_at', '完成时间'), ('updated_at', '最后修改时间')], '入库单'),
+    'requisition': ('requisitions', 'item_name', 'req_no',
+        [('created_at', '创建时间'), ('issued_at', '出库时间'), ('updated_at', '最后修改时间')], '出库单'),
+    'return_request': ('return_requests', 'reason', 'return_no',
+        [('created_at', '创建时间'), ('finished_at', '完成时间'), ('updated_at', '最后修改时间')], '退库单'),
+    'repair_plan': ('repair_plans', 'device_name', 'plan_no',
+        [('created_at', '创建时间'), ('fault_time', '故障时间'), ('damage_time', '定损时间'), ('actual_finish', '维修完成时间'), ('updated_at', '最后修改时间')], '维修报修单'),
+    'contract': ('contracts', 'contract_name', 'contract_no',
+        [('created_at', '创建时间'), ('sign_date', '签订日期'), ('start_date', '开始日期'), ('end_date', '结束日期'), ('updated_at', '最后修改时间')], '合同'),
+    'payment': ('payment_requests', 'supplier', 'payment_no',
+        [('created_at', '创建时间'), ('paid_at', '付款时间'), ('expect_pay_date', '预计付款日'), ('updated_at', '最后修改时间')], '付款单'),
+    'credit': ('credit_notes', 'supplier', 'credit_no',
+        [('created_at', '创建时间'), ('updated_at', '最后修改时间')], '挂账单'),
+    'invoice': ('invoices', 'supplier', 'invoice_no',
+        [('created_at', '创建时间'), ('invoice_date', '开票日期'), ('updated_at', '最后修改时间')], '发票'),
+    'inventory': ('inventory', 'item_name', 'item_name',
+        [('updated_at', '最后变动时间'), ('last_move_date', '最后变动日期')], '库存物资'),
+    'delivery': ('deliveries', 'item_name', 'delivery_no',
+        [('created_at', '创建时间'), ('delivery_date', '送货日期'), ('sign_time', '签收时间')], '送货单'),
+    'inquiry': ('inquiries', 'title', 'inq_no',
+        [('created_at', '创建时间'), ('deadline', '报价截止'), ('updated_at', '最后修改时间')], '询价单'),
+    'approval': ('approval_instances', 'biz_type', '',
+        [('created_at', '创建时间'), ('processed_at', '处理时间')], '审批节点'),
+    'doclog': ('doc_edit_logs', 'biz_type', 'doc_no',
+        [('created_at', '操作时间')], '单据操作日志'),
+}
+_TQ_SUB = {
+    'purchase_request': ('request_items', 'req_id'),
+    'purchase_order': ('order_items', 'order_id'),
+    'requisition': ('requisition_items', 'requisition_id'),
+    'return_request': ('return_items', 'return_id'),
+    'repair_plan': ('repair_items', 'plan_id'),
+}
+
+
+def _tq_now():
+    import datetime as _dt
+    return _dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+
+def _tq_range(quick):
+    """快捷时间 → (from,to); 无则 None"""
+    import datetime as _dt
+    n = _dt.datetime.now()
+    if quick == 'today':
+        return n.strftime('%Y-%m-%d 00:00:00'), _tq_now()
+    if quick == '7d':
+        return (n - _dt.timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S'), _tq_now()
+    if quick == '30d':
+        return (n - _dt.timedelta(days=30)).strftime('%Y-%m-%d %H:%M:%S'), _tq_now()
+    if quick == 'month':
+        return n.strftime('%Y-%m-01 00:00:00'), _tq_now()
+    if quick == 'year':
+        return n.strftime('%Y-01-01 00:00:00'), _tq_now()
+    return None
+
+
+@app.route('/api/timequery/meta')
+@login_required
+def api_timequery_meta():
+    """模块二: 时间查询元数据(业务类型→可用时间字段)"""
+    return jsonify({'bizs': [{'key': k, 'label': v[4], 'fields': [{'col': f[0], 'label': f[1]} for f in v[3]]}
+                             for k, v in _TQ_DEFS.items()]})
+
+
+@app.route('/api/timequery')
+@login_required
+def api_timequery():
+    """模块二: 全维度时间查询 — biz=业务类型&tf=时间字段&quick=快捷&from=&to=&kw=关键词
+    权限: 列表口径复用(filter_scope), 金额敏感字段脱敏(can_see_price)"""
+    biz = request.args.get('biz', '')
+    tf = request.args.get('tf', 'created_at')
+    quick = request.args.get('quick', '')
+    fr = request.args.get('from', '')
+    to = request.args.get('to', '')
+    kw = request.args.get('kw', '').strip()
+    if biz not in _TQ_DEFS:
+        return jsonify({'error': f'不支持的业务类型: {biz}'}), 400
+    tbl, disp_col, no_col, flds, label = _TQ_DEFS[biz]
+    valid_cols = [f[0] for f in flds]
+    if tf not in valid_cols:
+        tf = 'created_at'
+    if quick:
+        rng = _tq_range(quick)
+        if rng:
+            fr, to = rng
+    role = session.get('user_role')
+    scope = filter_scope(role)
+    c = db()
+    where = []
+    args = []
+    # 时间过滤
+    if fr and to:
+        where.append(f"({tf} >= ? AND {tf} <= ?)")
+        args += [fr, to]
+    elif fr:
+        where.append(f"{tf} >= ?")
+        args.append(fr)
+    elif to:
+        where.append(f"{tf} <= ?")
+        args.append(to)
+    # 关键词
+    if kw:
+        if biz == 'approval':
+            where.append("(biz_type LIKE ? OR role LIKE ? OR approver LIKE ?)")
+            args += [f'%{kw}%'] * 3
+        elif biz == 'doclog':
+            where.append("(action LIKE ? OR operator LIKE ? OR doc_no LIKE ? OR changes LIKE ?)")
+            args += [f'%{kw}%'] * 4
+        else:
+            # 关键词列按表实际列动态构造(避免引用不存在的列)
+            _tcols = {r[1] for r in c.execute(f"PRAGMA table_info({tbl})").fetchall()}
+            _kwcols = [col for col in (no_col, disp_col, 'supplier', 'dept', 'requester', 'item_name', 'contract_name', 'device_name', 'purpose', 'reason', 'content') if col and col in _tcols]
+            _uniq = []
+            for col in _kwcols:
+                if col not in _uniq:
+                    _uniq.append(col)
+            where.append("(" + " OR ".join([f"{col} LIKE ?" for col in _uniq]) + ")")
+            args += [f'%{kw}%'] * len(_uniq)
+    # 数据权限: own 只看自己; 其余按各列表口径(简化为 full 过滤由前端菜单权限已控, 后端按角色最严own)
+    if scope == 'own' and biz in ('purchase_request', 'repair_plan', 'requisition'):
+        where.append(f"requester_id = {session.get('user_id', 0)}")
+    wsql = (' WHERE ' + ' AND '.join(where)) if where else ''
+    limit = min(int(request.args.get('limit', 200)), 500)
+    try:
+        rows = c.execute(f"SELECT * FROM {tbl}{wsql} ORDER BY id DESC LIMIT {limit}", args).fetchall()
+    except Exception as e:
+        c.close()
+        return jsonify({'error': f'查询失败: {e}'}), 400
+    out = []
+    for r in rows:
+        d = dict_row(r)
+        if not can_see_price():
+            d = mask_price(d)
+        # 子表行数(关联联动信息)
+        sub_cnt = 0
+        if biz in _TQ_SUB:
+            t2, fk2 = _TQ_SUB[biz]
+            try:
+                sub_cnt = c.execute(f"SELECT COUNT(*) FROM {t2} WHERE {fk2}=?", (d.get('id'),)).fetchone()[0]
+            except Exception:
+                sub_cnt = 0
+        d['_sub_cnt'] = sub_cnt
+        d['_label'] = label
+        if not no_col and 'biz_type' in d:
+            d['_disp_no'] = f"{d.get('biz_type','')}#{d.get('biz_id','')}"
+            d['_disp_main'] = f"{d.get('action') or d.get('role') or ''} {d.get('operator') or d.get('approver') or ''} {d.get('status','')}"
+        out.append(d)
+    c.close()
+    total = len(out)
+    return jsonify({'rows': out, 'total': total, 'label': label, 'no_col': no_col, 'disp_col': disp_col})
+
+
+@app.route('/api/timequery/export')
+@login_required
+def api_timequery_export():
+    """模块二: 时间查询结果一键导出Excel(与/api/timequery同参数, 独立取数)"""
+    from io import BytesIO as _BI
+    import openpyxl
+    from openpyxl.styles import Font as XLFont2, PatternFill as XLFill2, Alignment as XLAlign2
+    from openpyxl.utils import get_column_letter as _gcl
+    biz = request.args.get('biz', '')
+    tf = request.args.get('tf', 'created_at')
+    quick = request.args.get('quick', '')
+    fr = request.args.get('from', '')
+    to = request.args.get('to', '')
+    kw = request.args.get('kw', '').strip()
+    if biz not in _TQ_DEFS:
+        return jsonify({'error': '不支持的查询类型'}), 400
+    tbl, disp_col, no_col, flds, label = _TQ_DEFS[biz]
+    valid_cols = [f[0] for f in flds]
+    if tf not in valid_cols:
+        tf = 'created_at'
+    if quick:
+        rng = _tq_range(quick)
+        if rng:
+            fr, to = rng
+    c = db()
+    where = []
+    args = []
+    if fr and to:
+        where.append(f"({tf} >= ? AND {tf} <= ?)")
+        args += [fr, to]
+    elif fr:
+        where.append(f"{tf} >= ?")
+        args.append(fr)
+    elif to:
+        where.append(f"{tf} <= ?")
+        args.append(to)
+    if kw:
+        _tcols = {r[1] for r in c.execute(f"PRAGMA table_info({tbl})").fetchall()}
+        _kwcols = [col for col in (no_col, disp_col, 'supplier', 'dept', 'requester', 'item_name', 'contract_name', 'device_name', 'purpose', 'reason', 'content') if col and col in _tcols]
+        _uniq = []
+        for col in _kwcols:
+            if col not in _uniq:
+                _uniq.append(col)
+        where.append("(" + " OR ".join([f"{col} LIKE ?" for col in _uniq]) + ")")
+        args += [f'%{kw}%'] * len(_uniq)
+    if filter_scope(session.get('user_role')) == 'own' and biz in ('purchase_request', 'repair_plan', 'requisition'):
+        where.append(f"requester_id = {session.get('user_id', 0)}")
+    wsql = (' WHERE ' + ' AND '.join(where)) if where else ''
+    rows = c.execute(f"SELECT * FROM {tbl}{wsql} ORDER BY id DESC LIMIT 500", args).fetchall()
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = '查询结果'
+    cols_show = [('no', '单号/编号'), ('main', label + '内容'), ('status', '状态')]
+    for f in flds:
+        cols_show.append((f[0], f[1]))
+    cols_show += [('sub', '明细行数')]
+    hdr = [h[1] for h in cols_show]
+    for ci, htxt in enumerate(hdr, 1):
+        cell = ws.cell(row=1, column=ci, value=htxt)
+        cell.font = XLFont2(bold=True, color='FFFFFF')
+        cell.fill = XLFill2('solid', fgColor='1F6FEB')
+        cell.alignment = XLAlign2(horizontal='center')
+    for ri, r_ in enumerate(rows, 2):
+        rd = dict(r_)
+        no = rd.get(no_col) if no_col else ''
+        if not no and biz in ('approval', 'doclog'):
+            no = f"{rd.get('biz_type','')}#{rd.get('biz_id','')}"
+        if not no and biz == 'inventory':
+            no = rd.get('item_name', '')
+        main = rd.get(disp_col) or rd.get('device_name') or rd.get('purpose') or ''
+        vals = [no, main, rd.get('status') or '']
+        for f in flds:
+            vals.append(str(rd.get(f[0]) or ''))
+        vals.append('')
+        for ci, v in enumerate(vals, 1):
+            ws.cell(row=ri, column=ci, value=v)
+    for ci in range(1, len(cols_show) + 1):
+        ws.column_dimensions[_gcl(ci)].width = 18 if ci > 1 else 24
+    c.close()
+    bio = _BI()
+    wb.save(bio)
+    bio.seek(0)
+    fn = f"{label}时间查询_{now()[:10]}.xlsx"
+    from urllib.parse import quote as _q
+    resp = make_response(bio.getvalue())
+    resp.mimetype = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    resp.headers['Content-Disposition'] = f"attachment; filename*=UTF-8''{_q(fn)}"
+    return resp
+
+
 @app.route('/api/reports2')
 @login_required
 def api_reports2():

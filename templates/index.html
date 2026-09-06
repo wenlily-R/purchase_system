@@ -477,7 +477,8 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <button class="act" onclick="reportTab('buy')">采购报表</button>
     <button onclick="reportTab('stock')">库存报表</button>
     <button onclick="reportTab('traffic')">往来报表</button>
-    <button class="btn btn-w btn-sm" style="margin-left:auto" onclick="showTraceSearch()">🔍 全链路溯源检索</button>
+    <button class="btn btn-w btn-sm" style="margin-left:auto" onclick="tqFromReports()">⏱️ 时间查询</button>
+    <button class="btn btn-w btn-sm" onclick="showTraceSearch()">🔍 全链路溯源检索</button>
   </div>
   <div id="reportBuy">
     <div class="card" style="margin-bottom:6px"><div class="ch"><h3>🧾 发票台账（按合同/供应商统计已开票·未开票·欠票预警）</h3><button class="btn btn-p btn-sm" onclick="loadInvReport()" style="margin-left:auto">🔄 查询</button></div>
@@ -6185,6 +6186,122 @@ async function loadReports2(){
   }catch(e){}
 }
 
+// ================= V11.224 模块二: 全维度时间查询中心 =================
+let _TQ_META = null;
+async function showTimeQuery(preBiz){
+  if(__guardOpen('tq:main'))return;
+  try{
+    if(!_TQ_META)_TQ_META=(await api('/timequery/meta')).bizs||[];
+  }catch(e){}
+  if(!_TQ_META||!_TQ_META.length){alert('时间查询元数据加载失败');return}
+  const preB=(preBiz&&_TQ_META.find(b=>b.key==preBiz))?_TQ_META.find(b=>b.key==preBiz):_TQ_META[0];
+  id('dmTitle').textContent='⏱️ 全维度时间查询';
+  id('dmBody').innerHTML=`
+    <div style="font-size:9px;color:#666;margin-bottom:6px">按 <b>业务类型 + 时间字段 + 时间范围</b> 精准查询全量单据（支持快捷区间 / 自定义起止 / 精确到时分），可查看关联明细、一键导出Excel。金额字段按您的角色权限自动脱敏。</div>
+    <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-bottom:4px">
+      <select id="tqBiz" class="fc" style="width:130px" onchange="tqFieldReload()">${_TQ_META.map(b=>`<option value="${b.key}" ${b.key==preB.key?'selected':''}>${esc(b.label)}</option>`).join('')}</select>
+      <select id="tqField" class="fc" style="width:130px"></select>
+      <span style="font-size:9px;color:#888">快捷:</span>
+      <button class="btn btn-sm ${preB.quick=='today'?'btn-p':''}" id="tqQ_today" onclick="tqQuick('today')">今日</button>
+      <button class="btn btn-sm" id="tqQ_7d" onclick="tqQuick('7d')">近7天</button>
+      <button class="btn btn-sm" id="tqQ_30d" onclick="tqQuick('30d')">近30天</button>
+      <button class="btn btn-sm" id="tqQ_month" onclick="tqQuick('month')">本月</button>
+      <button class="btn btn-sm" id="tqQ_year" onclick="tqQuick('year')">本年</button>
+    </div>
+    <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-bottom:4px">
+      <input type="datetime-local" id="tqFrom" class="fc" style="width:158px" onchange="tqClearQuick()"> <span style="font-size:9px">~</span>
+      <input type="datetime-local" id="tqTo" class="fc" style="width:158px" onchange="tqClearQuick()">
+      <input id="tqKw" class="fc" style="width:120px" placeholder="关键词(单号/名称/供应商)" onkeydown="if(event.key==='Enter')tqSearch()">
+      <button class="btn btn-p btn-sm" onclick="tqSearch()">🔍 查询</button>
+      <button class="btn btn-o btn-sm" onclick="tqExport()">⬇️ 导出Excel</button>
+      <span id="tqCnt" style="font-size:9px;color:#888"></span>
+    </div>
+    <div style="font-size:8.5px;color:#999;margin-bottom:3px">💡 快捷与自定义互斥：点快捷自动清空自定义起止；也可留空时间直接查（=全部时间）。时间精确到「分」，查询时自动按 00:00:00 ~ 59:59 秒边界。</div>
+    <div id="tqRes" style="font-size:9.5px"><div class="loading">请选择条件后点击查询（默认已加载近30天）</div></div>`;
+  id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">关闭</button>';
+  id('detailModal').classList.add('show');
+  window._tqQuick='30d';
+  tqFieldReload();
+  setTimeout(()=>{tqQuick('30d');tqSearch()},150);
+}
+function tqFieldReload(){
+  const biz=id('tqBiz').value;
+  const meta=_TQ_META.find(b=>b.key===biz);
+  if(!meta)return;
+  id('tqField').innerHTML=meta.fields.map(f=>`<option value="${f.col}">按${f.label}</option>`).join('');
+  id('tqKw').placeholder=meta.key=='approval'?'关键词(类型/角色/审批人)':meta.key=='doclog'?'关键词(动作/操作人/单号)':'关键词(单号/名称/供应商)';
+  window._tqLabel=meta.label;window._tqNoCol=(meta.key=='approval'||meta.key=='doclog')?'':(meta.key=='inventory'?'item_name':'');
+}
+function tqQuick(q){
+  window._tqQuick=q;
+  ['today','7d','30d','month','year'].forEach(k=>{const b=id('tqQ_'+k);if(b)b.classList.toggle('btn-p',k===q)});
+  id('tqFrom').value='';id('tqTo').value='';
+}
+function tqClearQuick(){window._tqQuick='';['today','7d','30d','month','year'].forEach(k=>{const b=id('tqQ_'+k);if(b)b.classList.remove('btn-p')})}
+function tqParams(){
+  const biz=id('tqBiz').value,tf=id('tqField').value,kw=id('tqKw').value.trim();
+  const p=new URLSearchParams({biz,tf});
+  if(window._tqQuick)p.set('quick',window._tqQuick);
+  const fr=id('tqFrom').value,to=id('tqTo').value;
+  if(fr){p.set('from',fr.replace('T',' ')+':00')}
+  if(to){p.set('to',to.replace('T',' ')+':59')}
+  if(kw)p.set('kw',kw);
+  return p.toString();
+}
+async function tqSearch(){
+  const box=id('tqRes');if(!box)return;
+  box.innerHTML='<div class="loading">查询中...</div>';
+  const d=await api('/timequery?'+tqParams(),{noCache:true}).catch(e=>({error:(e.error||e.message||'查询失败')}));
+  if(d.error){box.innerHTML=`<div style="color:#c0392b;padding:6px">❌ ${esc(d.error)}</div>`;return}
+  const rows=d.rows||[];const noCol=d.no_col,dispCol=d.disp_col;
+  id('tqCnt').textContent=`共 ${d.total} 条`;
+  if(!rows.length){box.innerHTML='<div style="color:#999;padding:10px;text-align:center">暂无符合条件的数据</div>';return}
+  // 展示列: 编号/内容/状态/时间字段值/明细行数/操作
+  const tf=id('tqField').value;
+  const tfLabel=id('tqField').selectedOptions[0]?.textContent||'时间';
+  let h='<table class="tb" style="font-size:9px"><thead><tr><th>#</th><th>编号</th><th>内容</th><th>状态</th><th>'+esc(tfLabel)+'</th><th>明细</th><th>操作</th></tr></thead><tbody>';
+  rows.forEach((x,i)=>{
+    const no=x._disp_no||x[noCol]||x.id;
+    const main=x._disp_main||x[dispCol]||x.device_name||x.purpose||x.contract_name||x.supplier||x.item_name||x.reason||x.title||'';
+    const biz=id('tqBiz').value;
+    const actBtn=biz=='approval'?'':`<button class="lnk" onclick="tqGoto('${biz}',${x.id})">👁 查看</button>`;
+    h+=`<tr><td>${i+1}</td><td><b>${esc(String(no))}</b></td><td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(String(main).slice(0,60))}</td><td>${x.status?esc(String(x.status)):'—'}</td><td style="font-size:8px">${esc(String(x[tf]||'').slice(0,16))}</td><td>${x._sub_cnt?'<span style="color:#1f6feb">'+x._sub_cnt+'行</span>':'—'}</td><td>${actBtn||''}</td></tr>`;
+  });
+  h+='</tbody></table>';
+  box.innerHTML=h;
+}
+async function tqGoto(biz,bid){
+  // 关联跳转: 打开对应业务详情(复用各模块查看函数); 无详情函数类型弹行数据
+  const map={'purchase_request':'showPRequest','purchase_order':'showOrder','receiving':'showRcvDetail','requisition':'showRequisitionDetail','return_request':'showReturnDetail','repair_plan':'showRepairDetail','contract':'showContract','inquiry':'showInquiry'};
+  const fn=map[biz];
+  if(fn&&typeof window[fn]==='function'){try{await window[fn](bid);return}catch(e){}}
+  // 降级: 展示原始行
+  try{
+    const d=await api('/timequery?'+tqParams(),{noCache:true});
+    const row=(d.rows||[]).find(x=>x.id===bid);
+    if(row){
+      const kvs=Object.entries(row).filter(([k,v])=>!k.startsWith('_')&&v!==null&&v!==''&&!['id'].includes(k)).slice(0,24);
+      showDetail('📄 '+((row._disp_no)||row[d.no_col]||('#id '+bid)),'<div class="c2">'+kvs.map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(String(v).slice(0,80))}</dd></div>`).join('')+'</div>','<button class="btn btn-o" onclick="closeMod()">关闭</button>');
+      return;
+    }
+  }catch(e){}
+  alert('该类型详情暂不支持跳转');
+}
+async function tqExport(){
+  const u='/timequery/export?'+tqParams();
+  const a=document.createElement('a');
+  const r=await fetch('/api'+u,{credentials:'include'}).catch(()=>null);
+  if(!r||!r.ok){alert('导出失败(可能无数据或网络慢)');return}
+  const blob=await r.blob();
+  const fn=(r.headers.get('Content-Disposition')||'').match(/filename\*=UTF-8''([^;]+)/);
+  a.href=URL.createObjectURL(blob);
+  a.download=fn?decodeURIComponent(fn[1]):('时间查询.xlsx');
+  document.body.appendChild(a);a.click();a.remove();
+}
+// 在系统设置页/报表页放统一入口(供 showTraceSearch 旁挂按钮调用)
+function openTimeQueryFor(bizKey){sw('reports');setTimeout(()=>showTimeQuery(bizKey),300)}
+function tqFromReports(){showTimeQuery('purchase_order')}
+
 </script>
-</body>
+ </body>
 </html>
