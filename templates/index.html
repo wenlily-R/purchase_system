@@ -350,7 +350,8 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
 </div>
 <div class="page" id="pprequests"><h2>📝 物资采购申请</h2>
   <div id="preqMat">
-    <div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="showForm('prequest')">+ 新建物资采购申请</button><button class="btn btn-o btn-sm" onclick="showFlowChart('purchase')">📊 采购流程图示</button><button class="btn btn-w btn-sm" onclick="showAddCart()">🛒 加购下单(汇总已通过申请)</button><select id="reqTypeFilter" onchange="loadPRequests()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="物资采购" selected>物资采购</option><option value="">全部类型</option></select><select id="reqStatusFilter" onchange="loadPRequests()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px" title="按状态筛选(参考维修页全部状态下拉)"><option value="">全部状态</option><option>草稿</option><option>待审批</option><option>已通过</option><option>已驳回</option><option>已作废</option></select></div>
+    <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap"><button class="btn btn-p btn-sm" style="margin-left:auto" onclick="showForm('prequest')">+ 新建物资采购申请</button><button class="btn btn-o btn-sm" onclick="showFlowChart('purchase')">📊 采购流程图示</button><button class="btn btn-w btn-sm" onclick="showAddCart()">🛒 加购下单(汇总已通过申请)</button></div>
+    <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap"><select id="reqTypeFilter" onchange="loadPRequests()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="物资采购" selected>物资采购</option><option value="">全部类型</option></select><select id="reqStatusFilter" onchange="loadPRequests()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="">全部状态</option><option>草稿</option><option>待审批</option><option>已通过</option><option>已下单</option><option>已驳回</option><option>已作废</option></select><span style="font-size:9px;color:#999">类型/状态筛选可叠加（与维修页一致）</span></div>
     <div class="card"><div class="cb" id="prequestsTable"><div class="loading">加载中...</div></div></div>
   </div>
 </div>
@@ -359,12 +360,9 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <button class="btn btn-p btn-sm" style="margin-left:auto" onclick="showRepairForm()">➕ 新建维修申请</button>
     <button class="btn btn-o btn-sm" onclick="showFlowChart('repair')">📊 维修流程图示</button>
     <button class="btn btn-o btn-sm" onclick="showDamageStats()">📈 损坏原因统计</button>
-    <button class="btn btn-w btn-sm" id="rpStepsBtn" onclick="rpStepsToggle()">⚡ 环节筛选 ▾</button>
   </div>
-  <div class="tabs" id="rpStepsBar" style="margin-bottom:4px;flex-wrap:wrap;display:none"></div>
   <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap">
     <select id="repairStatusF2" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px" onchange="rpStepClear();loadRepairs2()"><option value="">全部状态</option><option>草稿</option><option>待定损</option><option>定损完成待审批</option><option>审批通过</option><option>待比价</option><option>已选服务商</option><option>委外维修中</option><option>变更待四方确认</option><option>待回厂验收</option><option>验收通过</option><option>待发票登记</option><option>已归档</option><option>定损驳回</option><option>验收不通过返修</option><option>已作废</option></select>
-    <span id="rpStepHint" style="font-size:9px;color:#888;display:none"></span>
   </div>
   <div class="card"><div class="cb" id="repairsTable2"><div class="loading">加载中...</div></div></div>
 </div>
@@ -4024,22 +4022,7 @@ function rpSteps(){
   ];
 }
 function rpStepsRender(list){
-  const bar=id('rpStepsBar');if(!bar)return;
-  const steps=rpSteps();
-  const cntOf={};
-  (list||[]).forEach(x=>{
-    steps.forEach(s=>{if(s.k!=='all'&&(s.st||[]).includes(x.status))cntOf[s.k]=(cntOf[s.k]||0)+1});
-    cntOf['all']=(cntOf['all']||0)+1;
-  });
-  bar.innerHTML=steps.map(s=>{
-    const n=cntOf[s.k]||0;
-    const act=s.k===_rpStep?'act':'';
-    return `<button class="${act}" data-k="${s.k}" onclick="rpStepGo('${s.k}')">${s.t} <span style="font-size:8px;opacity:.7">${n}</span></button>`;
-  }).join('');
-  const hint=id('rpStepHint');if(hint){
-    const cur=steps.find(s=>s.k===_rpStep);
-    hint.textContent=_rpStep==='all'?'点击上面步骤可只看某一环节的单据（②③④⑤⑥为流程中环节）':`当前只看「${cur?cur.t:''}」环节，点「📋 全部」查看所有维修单`;
-  }
+  // 步骤条 UI 已移除(V11.226e); 本函数仅保留空实现兼容旧调用(无页面元素)
 }
 function rpStepGo(k){
   _rpStep=k;
@@ -4047,15 +4030,8 @@ function rpStepGo(k){
   loadRepairs2();
 }
 function rpStepClear(){_rpStep='all';}
-function rpStepsToggle(){
-  const bar=id('rpStepsBar'),hint=id('rpStepHint'),btn=id('rpStepsBtn');
-  if(!bar)return;
-  const show=bar.style.display==='none';
-  bar.style.display=show?'':'none';
-  if(hint)hint.style.display=show?'':'none';
-  if(btn)btn.textContent=show?'⚡ 环节筛选 ▴':'⚡ 环节筛选 ▾';
-}
-// V11.224b: 菜单分步骤入口 — 设步骤→进入维修管理页→列表按该环节过滤并高亮步骤条
+
+// V11.224b: 菜单分步骤入口 — 设步骤→进入维修管理页→列表按该环节过滤(步骤条已移除, 保留列表过滤能力)
 function rpMenuStep(k){
   if(!rpSteps().some(s=>s.k===k))k='all';
   _rpStep=k;
