@@ -12401,26 +12401,63 @@ def api_doc_withdraw(biz_type, bid):
         conn.close(); return jsonify({'error': '单据不存在'}), 404
     status = row['status'] if 'status' in row.keys() else ''
     no = row[no_col] if no_col in row.keys() else str(bid)
-    # 状态校验: 仅 待审批/审批中/已通过 可撤回
+    # 状态校验: 仅 待审批/审批中/已通过 可撤回 (合同执行中可撤=未入库解锁; 询价各推进态可撤)
     if status in ('已驳回', '已作废', '草稿'):
         conn.close(); return jsonify({'error': f'当前状态({status})无需撤回'}), 400
-    # 下游保护
-    if biz_type == 'purchase_request':
-        if conn.execute("SELECT COUNT(*) FROM purchase_orders WHERE req_id=?", (bid,)).fetchone()[0] > 0:
-            conn.close(); return jsonify({'error': '该申请已被订单引用，无法撤回（可先删除订单）'}), 400
-    if biz_type == 'purchase_order':
-        if conn.execute("SELECT COUNT(*) FROM receivings WHERE order_id=?", (bid,)).fetchone()[0] > 0:
-            conn.close(); return jsonify({'error': '该订单已有入库记录，无法撤回（可先作废入库）'}), 400
-        if conn.execute("SELECT COUNT(*) FROM contracts WHERE order_id=?", (bid,)).fetchone()[0] > 0:
-            conn.close(); return jsonify({'error': '该订单已生成合同，无法撤回（可先作废合同）'}), 400
-    # 库存操作保护
-    if biz_type == 'receiving' and status == '已入库':
-        conn.close(); return jsonify({'error': '该入库单已完成入库(已加库存)，请先作废回滚后再撤回'}), 400
     if biz_type == 'requisition' and status == '已出库':
         conn.close(); return jsonify({'error': '该出库单已完成出库(已扣库存)，请先作废回滚后再撤回'}), 400
-    # V11.192: 撤回 = 单据回到"草稿"(提交人可修改), 审批实例留痕作废, 钉钉实例终止; 不自动重新审批
-    # 提交人改完点「再次提交审批」(resubmit) 才重新进入审批流+推钉钉 — 修复: 撤回后一直审批中/无按钮/推不到钉钉
-    conn.execute(f"UPDATE {table} SET status='草稿', updated_at=? WHERE id=?", (now(), bid))
+    # ---- V11.231 撤回回退矩阵(全模块统一): 撤回 ≠ 停留当前环节, 而是撤销当前单据并解锁上游业务环节 ----
+    # 链: 采购申请 →(询价→定标/加购)→ 采购订单 →(生成合同)→ 合同 →(收货)→ 入库 →(领用)→ 出库/退库
+    # 结果单据撤回 → 置"已撤回/已作废"(不再原地重提) + 上游单据回到"可修改/可重新推进"环节
+    # 源头/中间单据撤回 → 回"草稿"可改, 重新提交审批后再推进下游
+    _target_status = '草稿'
+    _msg = f'单据 {no} 已撤回退回草稿。修改确认后请点「🔄 再次提交审批」重新进入审批流'
+    _downstream_guard = False
+    if biz_type == 'contract':
+        # 合同(签约结果): 已入库则需先回滚库存, 否则解锁上游订单 → 审批通过(可修改/重新生成合同→自动再发合同审批)
+        if conn.execute("SELECT COUNT(*) FROM receivings WHERE contract_id=? AND status='已入库'", (bid,)).fetchone()[0] > 0:
+            conn.close(); return jsonify({'error': '该合同已关联入库单且已入库(库存已加)，请先作废对应入库单回滚后再撤回合同'}), 400
+        _target_status = '已撤回'
+        _upd = conn.execute("UPDATE purchase_orders SET status='审批通过', updated_at=? WHERE id=? AND status='已签合同'", (now(), row['order_id']))
+        _msg = '合同已撤回（回退到上游环节）：关联采购订单已解锁为「审批通过」。请到采购订单中修改单据信息，改好后重新生成采购合同，将自动再次发起合同钉钉审批。'
+    elif biz_type == 'purchase_order':
+        # 订单(中间结果): 有有效合同/已入库先处理下游; 否则订单作废 + 解锁上游(申请或询价单)
+        if conn.execute("SELECT COUNT(*) FROM contracts WHERE order_id=? AND status NOT IN ('已作废','已撤回')", (bid,)).fetchone()[0] > 0:
+            conn.close(); return jsonify({'error': '该订单已生成有效合同。请先撤回该合同（撤回合同会自动解锁本订单），再修改订单'}), 400
+        if conn.execute("SELECT COUNT(*) FROM receivings WHERE order_id=? AND status='已入库'", (bid,)).fetchone()[0] > 0:
+            conn.close(); return jsonify({'error': '该订单已有入库且已加库存，请先作废入库单回滚后再撤回订单'}), 400
+        _target_status = '已作废'
+        if row['req_id']:
+            conn.execute("UPDATE purchase_requests SET status='已通过', updated_at=? WHERE id=? AND status='已下单'", (now(), row['req_id']))
+            _msg = '订单已作废（回退到上游环节）：采购申请已解锁为「已通过」。请在采购申请中修改信息（保存后自动重新提交审批），通过后可再次下单生成新订单。'
+        elif row['inquiry_id']:
+            conn.execute("UPDATE inquiries SET status='已作废', remark=COALESCE(remark||'；','')||'订单撤回联动作废' WHERE id=? AND status='已生成订单'", (row['inquiry_id'],))
+            _msg = '订单已作废（回退到上游环节）：原询价单联动作废。请在采购申请中修改后重新提交审批，通过后重新发起询价/下单。'
+    elif biz_type == 'receiving':
+        # 入库单(收货结果): 已入库禁止; 未入库撤回 → 作废 + 解锁订单(待入库→审批通过 可重新发起入库)
+        if status == '已入库':
+            conn.close(); return jsonify({'error': '该入库单已完成入库(已加库存)，请先作废回滚后再撤回'}), 400
+        _target_status = '已作废'
+        conn.execute("UPDATE purchase_orders SET status='审批通过', updated_at=? WHERE id=? AND status='待入库'", (now(), row['order_id']))
+        _msg = '入库单已作废（回退到上游环节）：采购订单已解锁为「审批通过」。可在订单上重新发起入库。'
+    elif biz_type == 'purchase_request':
+        # 采购申请(源头): 自动级联解锁下游(订单/询价引用), 自身回草稿可改; 修改后重新提交审批再推进
+        _child_orders = conn.execute("SELECT id FROM purchase_orders WHERE req_id=? AND status NOT IN ('已作废','已撤回')", (bid,)).fetchall()
+        for _co in _child_orders:
+            if conn.execute("SELECT COUNT(*) FROM contracts WHERE order_id=? AND status NOT IN ('已作废','已撤回')", (_co['id'],)).fetchone()[0] == 0 and \
+               conn.execute("SELECT COUNT(*) FROM receivings WHERE order_id=? AND status='已入库'", (_co['id'],)).fetchone()[0] == 0:
+                conn.execute("UPDATE purchase_orders SET status='已作废', updated_at=? WHERE id=?", (now(), _co['id']))
+        conn.execute("UPDATE inquiries SET status='已作废', remark=COALESCE(remark||'；','')||'申请撤回联动作废' WHERE req_id=? AND status IN ('询价中','待比价','定标审批中')", (bid,))
+        _msg = f'申请已撤回退回草稿（关联的订单/询价单已联动作废解锁）。请在申请中修改信息后重新提交审批，审批通过后重新下单/发起询价。'
+    elif biz_type == 'inquiry':
+        # 三方询价(中间单): 已有订单禁止; 否则询价作废 + 采购申请回草稿(可修改) → 重新提交申请审批 → 通过后重新发起询价
+        if conn.execute("SELECT COUNT(*) FROM purchase_orders WHERE inquiry_id=? AND status NOT IN ('已作废','已撤回')", (bid,)).fetchone()[0] > 0:
+            conn.close(); return jsonify({'error': '该询价已生成采购订单。请先撤回该订单(会自动联动解锁询价/申请)，再撤回询价'}), 400
+        _target_status = '已作废'
+        conn.execute("UPDATE purchase_requests SET status='草稿', updated_at=? WHERE id=? AND status IN ('已通过','已下单')", (now(), row['req_id']))
+        _msg = '询价单已作废（回退到上游环节）：采购申请已退回「草稿」可修改。修改后请重新提交审批，通过后再次发起三方询价。'
+    # ---- V11.192: 撤回 = 单据置目标状态, 审批实例留痕作废, 钉钉实例终止; 修改后重新提交/上游重新推进 ----
+    conn.execute(f"UPDATE {table} SET status=?, updated_at=? WHERE id=?", (_target_status, now(), bid))
     # 审批实例留痕: 待审/已过节点置 withdrawn(撤回), 保留历史可见(审批流转日志仍显示原流程)
     conn.execute("UPDATE approval_instances SET status='rejected', comment='发起人撤回' WHERE biz_type=? AND biz_id=? AND status IN ('pending','approved')", (biz, bid))
     # 钉钉实例终止(若钉钉侧还有 RUNNING) — 避免撤回后钉钉审批人仍能批
@@ -12434,7 +12471,7 @@ def api_doc_withdraw(biz_type, bid):
     conn.execute("DELETE FROM dingtalk_instances WHERE biz_type=? AND biz_id=?", (biz, bid))
     # 撤回操作留痕(审批流转日志统一记录, 申请人/审批人可见)
     log_approval_action(biz_type, bid, 'withdraw', session.get('user_name',''), session.get('user_id',0),
-                        '发起人撤回，单据退回草稿，修改后可再次提交审批', now(), None, 'system', '', conn=conn)
+                        f'发起人撤回 → {_target_status}（V11.231 回退上游环节联动）', now(), None, 'system', '', conn=conn)
     # 撤回次数累计(留痕用, 语义=被打回修改过几次)
     try:
         conn.execute(f"UPDATE {table} SET reject_count=COALESCE(reject_count,0)+1 WHERE id=?", (bid,))
@@ -12445,14 +12482,14 @@ def api_doc_withdraw(biz_type, bid):
         _newr = conn.execute(f"SELECT * FROM {table} WHERE id=?", (bid,)).fetchone()
         _doc_trace(biz_type, bid, '撤回', old_d=None,
                    new_d=dict(_newr) if _newr else None,
-                   old_status=status, new_status='草稿', node='发起人撤回，单据退回草稿，修改后可再次提交审批',
+                   old_status=status, new_status=_target_status, node=f'发起人撤回 → {_target_status}（上游联动解锁）',
                    conn=conn)
     except Exception:
         pass
     conn.commit()
     conn.close()
-    log(session['user_name'], '撤回审批', f'{biz_type}#{bid} {no} 撤回退回草稿(未自动重审)')
-    return jsonify({'success': True, 'message': f'单据 {no} 已撤回退回草稿。修改确认后请点「🔄 再次提交审批」重新进入审批流'})
+    log(session['user_name'], '撤回审批', f'{biz_type}#{bid} {no} 撤回 → {_target_status}(回退上游联动)')
+    return jsonify({'success': True, 'message': _msg})
 
 
 @app.route('/api/docs/<biz_type>/<int:bid>/update', methods=['POST'])
@@ -12822,16 +12859,19 @@ _DELETE_TABLE = {
     'contract': 'contracts', 'receiving': 'receivings',
     'requisition': 'requisitions', 'payment': 'payment_requests',
     'inventory': 'inventory', 'return_request': 'return_requests',
+    'inquiry': 'inquiries',  # V11.231: 三方询价撤回(回退采购申请环节)
 }
 _DELETE_NO_COL = {
     'purchase_request': 'req_no', 'purchase_order': 'order_no', 'contract': 'contract_no',
     'receiving': 'receive_no', 'requisition': 'req_no', 'payment': 'pay_no',
     'inventory': 'item_name', 'return_request': 'return_no',
+    'inquiry': 'inq_no',
 }
 _DELETE_BIZTYPE = {
     'purchase_request': 'purchase_request', 'purchase_order': 'purchase_order', 'contract': 'contract',
     'receiving': 'receiving', 'requisition': 'requisition', 'payment': 'payment',
     'inventory': 'inventory', 'return_request': 'return_request',
+    'inquiry': 'inquiry',  # V11.231 询价撤回(审批实例类型=inquiry)
 }
 
 @app.route('/api/docs/<biz_type>/<int:bid>/delete', methods=['POST'])

@@ -1839,7 +1839,8 @@ async function loadInquiries(){
       return `<td><b>${esc(r.inq_no)}</b></td><td>${esc(r.req_no||('#'+r.req_id))}</td><td>${esc(r.purpose||'')}</td>
       <td>${r.sup_count||0}家</td><td style="color:${(r.quoted_count||0)>0?'#27ae60':'#999'}">${r.quoted_count||0}/${r.sup_count||0} 已报价</td>
       <td>${r.min_price?('¥'+(r.min_price||0).toFixed(0)):'<span style="color:#999">🔒待开标</span>'}</td><td>${tag(r.status)}</td><td>${approvalHtml}</td>
-      <td><button class="lnk" onclick="showInquiry(${r.id})">详情/比价</button></td>`;
+      <td style="white-space:nowrap"><button class="lnk" onclick="showInquiry(${r.id})">详情/比价</button>
+      ${(['询价中','待比价','定标审批中'].includes(r.status)&&(['系统管理员','分管领导','总经理','采购员'].includes(ME.role)||r.created_by===ME.name))?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('inquiry',${r.id},'询价单')">↩️撤回</button>`:''}</td>`;
     });
 }
 async function showInquiryForm(){
@@ -2540,7 +2541,7 @@ async function delDoc(bizType,id,label){
 async function withdrawDoc(bizType,id,label){
   // V11.150: 防连点
   if(__guardOpen('wd:'+bizType+':'+id))return;
-  if(!confirm(`确认撤回该${label}的审批？\n\n撤回后单据退回「草稿」，审批流程终止（审批记录保留留痕）。\n请在单据上修改确认后，点「🔄 再次提交审批」重新进入审批流。`))return;
+  if(!confirm(`确认撤回该${label}？\n\n将按业务链回退到上游环节（审批流程终止、记录留痕），可修改后重新推进并再次发起钉钉审批。`))return;
   const r=await api(`/docs/${bizType}/${id}/withdraw`,{method:'POST',body:'{}'});
   if(r.success){alert('✅ '+r.message);closeMod();refreshAfterDel(bizType)}
   else alert('❌ '+(r.error||'撤回失败'));
@@ -2554,6 +2555,7 @@ function refreshAfterDel(bizType){
     else if(bizType=='requisition')loadReqs();
     else if(bizType=='payment')loadPayments();
     else if(bizType=='inventory')loadInventory();
+    else if(bizType=='inquiry')loadInquiries();
     loadDashboard();
   }catch(e){}
 }
