@@ -5,6 +5,14 @@ cd "$(dirname "$0")"
 
 echo "===== 正成能源采购系统 一键启动 ====="
 
+# 0. 自动同步守护(GitHub双向同步, 30秒轮询, push后公网自动更新)
+if pgrep -f "mac_deploy_watch.sh" >/dev/null; then
+  echo "[已运行] 自动同步守护"
+else
+  nohup bash mac_deploy_watch.sh >> data/auto_sync.log 2>&1 &
+  echo "[启动] 自动同步守护"
+fi
+
 # 1. 代码守护(自动重启系统 + 检测代码变化)
 if pgrep -f "app_watchdog.py" >/dev/null; then
   echo "[已运行] 代码守护"
