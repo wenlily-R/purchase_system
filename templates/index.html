@@ -2493,7 +2493,6 @@ async function genContractInv(oid,settle){
     <div style="margin-top:8px"><label style="font-size:10px;color:#555">📋 其它发票约定补充说明（选填，可留空）</label>
       <textarea id="gcInvClause" style="width:100%;height:44px;border:1px solid #ccc;border-radius:4px;padding:6px;font-size:11px" placeholder="如：发票类型为增值税专用发票、税点承担、随货附发票等其它约定"></textarea></div>
     <div style="font-size:9px;color:#999">填了"约定开票时间"的节点，系统将按节点自动提醒采购专员催收发票（系统内预警+钉钉提醒），收票后在合同详情【登记发票】时挂到对应节点。</div>`,
- (V11.225 发票回收节点2.0(顺序节点计划): ①每份合同可依序录入N个发票回收节点(节点条件/约定开票金额/约定时间), 生成合同弹窗两步入库, docx正文按节点逐条生成「发票开具与回收条款」(无节点回退旧条款文本), 老合同可补录/全量修改, 补录弹窗提示旧版条款转节点 ②登记发票可选挂对应节点(下拉), 合同详情展示节点状态表(待收/部分/已收齐/已到约定时间未收红标), 发票行加对应节点列 ③提醒引擎按节点逐节点触发(约定时间到且该节点未收齐→钉钉推经办采购员+系统预警, kind=node<id>每日去重), 老合同回退首次/全部两时间点; dashboard发票催收预警节点化(到期橙/超期红) ④统计: 发票台账overdue兼容节点判定, 新API /api/reports/invoice-node-ledger节点级欠票台账, 供应商维度行加📋核对下钻(供应商→合同→节点欠票明细, 一键跳合同详情登记/催办) ⑤迁移20260906_发票回收节点_顺序节点计划.sql(contract_inv_nodes新表+contract_invoices.node_id幂等), check_code全绿+E2E实测(3节点生成→docx条款→登记挂节点→全量替换→提醒node9→ledger→超期标记)零残留)
     `<button class="btn btn-o" onclick="genContract(${oid})">← 返回</button><button class="btn btn-p" onclick="doGenContract(${oid},'${settle}')">📄 生成合同并提交审批</button>`);
   addInvNodeRow('gcInvNodes');
   addInvNodeRow('gcInvNodes');
@@ -3189,7 +3188,6 @@ async function showInvPlanModal(cid){
     <button class="lnk" style="color:var(--s)" onclick="addInvNodeRow('ipNodes')">➕ 添加发票节点</button>
     <div style="margin:8px 0 4px"><label style="font-size:10px;color:#555">📋 其它发票约定补充说明</label>
       <textarea id="ipClause" style="width:100%;height:40px;border:1px solid #ccc;border-radius:4px;padding:6px;font-size:11px">${esc(p.invoice_clause||'')}</textarea></div>
- (V11.225 发票回收节点2.0(顺序节点计划): ①每份合同可依序录入N个发票回收节点(节点条件/约定开票金额/约定时间), 生成合同弹窗两步入库, docx正文按节点逐条生成「发票开具与回收条款」(无节点回退旧条款文本), 老合同可补录/全量修改, 补录弹窗提示旧版条款转节点 ②登记发票可选挂对应节点(下拉), 合同详情展示节点状态表(待收/部分/已收齐/已到约定时间未收红标), 发票行加对应节点列 ③提醒引擎按节点逐节点触发(约定时间到且该节点未收齐→钉钉推经办采购员+系统预警, kind=node<id>每日去重), 老合同回退首次/全部两时间点; dashboard发票催收预警节点化(到期橙/超期红) ④统计: 发票台账overdue兼容节点判定, 新API /api/reports/invoice-node-ledger节点级欠票台账, 供应商维度行加📋核对下钻(供应商→合同→节点欠票明细, 一键跳合同详情登记/催办) ⑤迁移20260906_发票回收节点_顺序节点计划.sql(contract_inv_nodes新表+contract_invoices.node_id幂等), check_code全绿+E2E实测(3节点生成→docx条款→登记挂节点→全量替换→提醒node9→ledger→超期标记)零残留)
     <div style="margin-bottom:4px"><label style="font-size:10px;color:#555">催收状态</label><select id="ipStatus" style="width:100%;border:1px solid #ccc;border-radius:4px;padding:4px;font-size:11px">${opts}</select></div>`,
     `<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="saveInvPlan(${cid})">💾 保存</button>`);
   const nds=(p.nodes||[]).length?p.nodes:[{trigger_desc:'',amount:null,plan_date:''}];
