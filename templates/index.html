@@ -1053,7 +1053,8 @@ function buildNav(){
     // V11.224c: 导航按"待办"精简(专业导航: 菜单给"要处理的", 流程视图留页面步骤条) —
     //   4项: 全部/报修待提(草稿+驳回)/待技术定损(红点提醒)/已归档; 定损审批在审批中心-维修, 比价/委外/验收在单据详情推进
     // V11.227: 打通四环节流转视图 — 菜单= 报修待提→待技术定损→设备维修(执行中,新增)→已归档/作废, 与单据自动流转环节一一对应
-    ['设备维修管理',[['repairs','🔧','设备维修','all'],['repairs','📝','报修待提','draft'],['repairs','🔍','待技术定损','damage'],['repairs','🗂','已归档/作废','done']]],
+    // V11.230: 左侧菜单按业务流程大面板重排(消除重复/包含): 报修处理(报修提交+技术定损, 原②③合并)→维修执行中(定损审批/比价/委外/验收/发票)→已归档/作废; 全部视图由维修页状态下拉提供
+    ['设备维修管理',[['repairs','📝','报修处理','todo'],['repairs','🔧','维修执行中','running'],['repairs','🗂','已归档/作废','done']]],
     ['采购管理',[['prequests','📝','采购申请'],['inquiries','🔍','三方询价'],['orders','📋','采购订单'],['contracts','📄','合同管理'],['suppliers','🏢','供应商']]],
     ['仓储库存',[['receivings','📦','入库验收'],['requisitions','📤','出库管理'],['returns','↩️','退库管理'],['inventory','📦','库存查询'],['counts','📋','库存盘点']]],
     ['财务往来',[['payments','💰','付款申请'],['expenses','💸','费用登记'],['settlements','📊','月度对账'],['invoices','🧾','合并开票'],['ledger','🔍','往来台账'],['small','💼','小额台账']]],
@@ -1067,7 +1068,7 @@ function buildNav(){
         // V11.224c: 菜单项第4元素=维修步骤key → 点击进维修管理并定位该环节; 右侧红点显示待办数(仅draft/damage)
         const step=i[3]||'';
         const click=step?`rpMenuStep('${step}')`:`sw('${i[0]}')`;
-        const badge=(step==='draft'||step==='damage')?`<span class="badge rp-bdg" id="rpBdg_${step}" style="display:none"></span>`:'';
+        const badge=(step==='todo')?`<span class="badge rp-bdg" id="rpBdg_${step}" style="display:none"></span>`:'';
         return `<div class="si si-sub" onclick="${click}">${i[1]}${i[2]}${badge}</div>`;
       }).join('');
     if(!items)return '';
@@ -4059,6 +4060,7 @@ let _rpStep='all';
 function rpSteps(){
   return [
     {k:'all', t:'📋 全部'},
+    {k:'todo', t:'报修处理', st:['草稿','定损驳回','待定损','审批驳回']},  // V11.230 菜单合并组(报修提交+技术定损)
     {k:'draft', t:'① 报修待提', st:['草稿','定损驳回']},
     {k:'damage', t:'② 待技术定损', st:['待定损','审批驳回']},
     {k:'appr', t:'③ 定损审批中', st:['定损完成待审批','审批通过']},
@@ -4153,12 +4155,11 @@ async function refreshRpBadges(){
     if(id('loginPage')&&id('loginPage').style.display!=='none')return;
     const list=await api('/repairs',{noCache:true}).catch(()=>null);
     if(!list)return;
-    const cnt={draft:0,damage:0};
+    const cnt={todo:0};
     (list||[]).forEach(x=>{
-      if(x.status==='草稿'||x.status==='定损驳回')cnt.draft++;
-      if(x.status==='待定损')cnt.damage++;
+      if(x.status==='草稿'||x.status==='定损驳回'||x.status==='待定损')cnt.todo++;
     });
-    [['draft',cnt.draft],['damage',cnt.damage]].forEach(([k,n])=>{
+    [['todo',cnt.todo]].forEach(([k,n])=>{
       const el=id('rpBdg_'+k);
       if(el){el.textContent=n>0?n:'';el.style.display=n>0?'inline-block':'none';}
     });
