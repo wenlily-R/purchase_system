@@ -6298,9 +6298,12 @@ def api_inquiry_detail(iid):
                     sd[_k] = ''
             sd['brand_analysis'] = None
             sd['_locked'] = True
+            # V11.229: 开标前仅提示"是否已报价", 不公开金额/明细(依据原记录quote_time/报价金额判断)
+            sd['quoted'] = bool(s['quote_time'] or (s['quote_price'] or 0) > 0)
         else:
             brand_info = search_brand_info(sd.get('supplier_name', ''), '')
             sd['brand_analysis'] = brand_info
+            sd['quoted'] = bool(s['quote_time'] or (s['quote_price'] or 0) > 0)
         supplier_list.append(sd)
     out['suppliers'] = supplier_list
     return jsonify(out)

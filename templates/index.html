@@ -1962,7 +1962,7 @@ async function showInquiry(qid){
       h+=`<tr style="${s.is_selected?'background:#e8f5e9;':''}">
         <td><b>${esc(s.supplier_name)}</b>${s.is_selected?' <span class="tag tg-g">✓已选中</span>':''}${isAdj?' <span class="tag" style="background:#fdecea;color:#c0392b">💰已议价</span>':''}</td>
         <td>${esc(s.contact||'')}${s.phone?'<br><span style="font-size:9px;color:#999">'+esc(s.phone)+'</span>':''}</td>
-        <td style="font-weight:700;color:${effPrice?'#e67e22':'#999'};font-size:13px">${effPrice?('¥'+(effPrice||0).toFixed(2)):'<span style="color:#ccc">未报价</span>'}${oriPriceHtml}${detailHtml}</td>
+        <td style="font-weight:700;color:${d.locked?'#666':(effPrice?'#e67e22':'#999')};font-size:13px">${d.locked?(s.quoted?'<span style="color:#16a34a">✅ 已报价</span> <span style="font-size:9px;color:#b08900">🔒金额开标后可见</span>':'<span style="color:#ccc">未报价</span>'):(effPrice?('¥'+(effPrice||0).toFixed(2)):'<span style="color:#ccc">未报价</span>')}${oriPriceHtml}${detailHtml}</td>
         <td>${s.quote_delivery?esc(s.quote_delivery):'<span style="color:#ccc">-</span>'}</td>
         <td>${s.quote_warranty?esc(s.quote_warranty):'<span style="color:#ccc">-</span>'}</td>
         <td>${esc(s.quote_brand||s.brand||'-')}${brandHtml}</td>
