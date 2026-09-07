@@ -614,6 +614,11 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
         🔗 公网访问：当前地址为免费隧道（不定期轮换），打不开时回到本页查看最新地址；同一网络可用内网地址 http://&lt;本机IP&gt;:5899
       </div>
     </div></div>
+  <div class="card"><div class="ch"><h3>🛠 入库状态修正（V11.230）</h3><button class="btn btn-o btn-sm" onclick="fixPartialOrders()">🔍 检查并一键修正</button></div>
+    <div class="cb" style="font-size:9px;line-height:1.6">
+      <div style="color:#666;margin-bottom:4px">部分入库后订单被误置"已入库"导致剩余数量无法继续录入时，点此一键修正为"部分到货，待继续验收"（只修正确有余量的订单，幂等安全，可重复点）。</div>
+      <div id="fixOrderBox"><div style="color:#bbb">尚未执行检查</div></div>
+    </div></div>
   <div class="card"><div class="ch"><h3>🔎 审批人配置检查（V5.0）</h3><button class="btn btn-o btn-sm" onclick="loadApprConfigCheck()">刷新检查</button></div>
     <div class="cb" style="font-size:9px;line-height:1.6">
       <div style="color:#666;margin-bottom:4px">审批流按 单据类型+金额 分级，每级审批人=对应角色在 users 表中的<b>有效用户</b>；发起钉钉/飞书审批时，该角色必须已绑定通讯录成员ID。下方红标=该级审批人未就绪（角色未启用或未绑定通讯录），需在用户管理中绑定后才可发起外部审批。</div>
@@ -6310,6 +6315,25 @@ async function loadNoticeLogs(){
     const rows=await api('/notices/logs',{noCache:true});
     box.innerHTML=rows.length?rows.map(l=>`<div>${esc(l.created_at)} ｜ <b>${esc(l.operator)}</b> ${esc(l.action)}《${esc(l.title)}》 ${l.detail?('｜ '+esc(l.detail)):''}</div>`).join('')||'<div style="color:#999">暂无操作记录</div>':'<div style="color:#999">暂无操作记录</div>';
   }catch(e){box.innerHTML=''}
+}
+async function fixPartialOrders(){
+  // V11.230: 一键修正"已入库但还有未验收余量"的订单(部分入库卡死修复)
+  const box=id('fixOrderBox');if(!box)return;
+  box.innerHTML='<div class="loading">检查中...</div>';
+  try{
+    const r=await api('/admin/fix-partial-orders',{method:'POST',body:'{}'});
+    if(r&&r.success){
+      if(r.count>0){
+        box.innerHTML=`<div style="color:#16a34a">✅ 已修正 ${r.count} 个订单为"部分到货，待继续验收"，可继续分批入库：</div>
+          <table class="tb" style="font-size:9px;margin-top:4px"><thead><tr><th>订单号</th><th>订单数量</th><th>已入库</th><th>待入库剩余</th></tr></thead><tbody>
+          ${(r.fixed||[]).map(f=>`<tr><td><b>${esc(f.order_no)}</b></td><td>${f.order_total}</td><td>${f.accepted}</td><td style="color:#e65100"><b>${f.pending}</b></td></tr>`).join('')}
+          </tbody></table>`;
+      }else{
+        box.innerHTML='<div style="color:#16a34a">✅ 检查完成：没有需要修正的订单（所有"已入库"订单均已全部到货）</div>';
+      }
+      loadOrders&&loadOrders();
+    }else box.innerHTML='<div style="color:#c0392b">⚠️ '+(r&&r.error?esc(r.error):'操作失败')+'</div>';
+  }catch(e){box.innerHTML='<div style="color:#c0392b">⚠️ 操作异常</div>'}
 }
 async function loadApprConfigCheck(){
   // V5.0: 审批人配置检查 — 每级角色审批人是否有效/绑定通讯录

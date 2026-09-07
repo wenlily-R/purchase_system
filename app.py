@@ -5557,6 +5557,36 @@ def api_orders_execution_list():
     return jsonify({'rows': out, 'total': len(out)})
 
 
+@app.route('/api/admin/fix-partial-orders', methods=['POST'])
+@login_required
+def api_admin_fix_partial_orders():
+    """V11.230 运维工具: 修正被误置'已入库'但仍有未验收余量的订单(部分入库后剩余无法继续的卡死修复)。
+    仅配置管理员(系统管理员/分管领导)可用; 幂等安全 — 只修正确有余量的订单, 状态从'已入库'改回'部分到货，待继续验收'"""
+    if not can_manage_config():
+        return jsonify({'error': '仅系统管理员/分管领导可操作'}), 403
+    d = request.json or {}
+    c = db()
+    q = "SELECT * FROM purchase_orders WHERE status='已入库'"
+    p = []
+    if d.get('order_id'):
+        q += " AND id=?"
+        p.append(int(d['order_id']))
+    rows = c.execute(q, p).fetchall()
+    fixed = []
+    for po in rows:
+        st = _order_rcv_stats(c, po['id'])
+        if st['pending'] > 0.001:
+            c.execute("UPDATE purchase_orders SET status='部分到货，待继续验收',updated_at=? WHERE id=? AND status='已入库'",
+                      (now(), po['id']))
+            fixed.append({'id': po['id'], 'order_no': po['order_no'],
+                          'order_total': st['order_total'], 'accepted': st['accepted'],
+                          'pending': round(st['pending'], 2)})
+    c.commit()
+    c.close()
+    log(session['user_name'], '运维修正', '修正部分入库订单状态 %d 个' % len(fixed))
+    return jsonify({'success': True, 'fixed': fixed, 'count': len(fixed)})
+
+
 @app.route('/api/orders/<int:oid>/receiving-batch', methods=['POST'])
 @login_required
 def api_order_receiving_batch(oid):
