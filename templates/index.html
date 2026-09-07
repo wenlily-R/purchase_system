@@ -1663,7 +1663,7 @@ function edAddItem(bizType, it){
   if(bizType=='purchase_request'){
     cols=`<input placeholder="品名" id="edN${c}" value="${esc(it.item_name||'')}" style="flex:1.6;min-width:70px"><input placeholder="规格" id="edS${c}" value="${esc(it.spec||'')}" style="flex:1;min-width:50px"><input placeholder="数量" id="edQ${c}" type="number" value="${it.quantity||1}" style="width:48px"><select id="edU${c}" style="width:42px"><option>个</option><option>箱</option><option>桶</option><option>条</option></select><input placeholder="单价" id="edP${c}" type="number" value="${it.estimated_price||0}" style="width:55px">`;
   } else if(bizType=='purchase_order'){
-    cols=`<input placeholder="品名" id="edN${c}" value="${esc(it.item_name||'')}" style="flex:1.6;min-width:70px"><input placeholder="规格" id="edS${c}" value="${esc(it.spec||'')}" style="flex:1;min-width:50px"><input placeholder="数量" id="edQ${c}" type="number" value="${it.quantity||1}" style="width:48px"><input placeholder="单价" id="edP${c}" type="number" value="${it.price||0}" style="width:55px"><input placeholder="税率%留空=不开票" id="edT${c}" type="number" value="${it.tax_rate||''}" style="width:45px">`;
+    cols=`<input placeholder="品名" id="edN${c}" value="${esc(it.item_name||'')}" style="flex:1.6;min-width:70px"><input placeholder="规格" id="edS${c}" value="${esc(it.spec||'')}" style="flex:1;min-width:50px"><input placeholder="数量" id="edQ${c}" type="number" value="${it.quantity||1}" style="width:48px"><input placeholder="单价" id="edP${c}" type="number" value="${it.price||0}" style="width:55px"><input placeholder="税率%" id="edT${c}" type="number" value="${it.tax_rate??''}" style="width:45px">`;
   } else if(bizType=='receiving'){
     cols=`<input placeholder="品名" id="edN${c}" value="${esc(it.item_name||'')}" style="flex:1.6;min-width:70px"><input placeholder="规格" id="edS${c}" value="${esc(it.spec||'')}" style="flex:1;min-width:50px"><input placeholder="数量" id="edQ${c}" type="number" value="${it.quantity||1}" style="width:48px"><input placeholder="单位" id="edU${c}" value="${esc(it.unit||'个')}" style="width:42px">`;
   } else if(bizType=='requisition'){
@@ -1695,7 +1695,7 @@ async function saveEditDoc(bizType, bid, label){
     d.items=[];
     document.querySelectorAll('[id^="editm"]').forEach(el=>{
       const c=el.id.replace('editm','');const n=id('edN'+c)?.value;
-      if(n)d.items.push({item_name:n,spec:id('edS'+c)?.value||'',quantity:parseFloat(id('edQ'+c)?.value)||1,price:parseFloat(id('edP'+c)?.value)||0,tax_rate:parseFloat(id('edT'+c)?.value)||0});
+      if(n)d.items.push({item_name:n,spec:id('edS'+c)?.value||'',quantity:parseFloat(id('edQ'+c)?.value)||1,price:parseFloat(id('edP'+c)?.value)||0,tax_rate:(id('edT'+c)?.value==='')?null:parseFloat(id('edT'+c)?.value)});
     });
   } else if(bizType=='contract'){
     d.contract_name=id('edName')?.value;d.supplier=id('edSup')?.value;d.amount=parseFloat(id('edAmt')?.value)||0;
@@ -5397,7 +5397,7 @@ async function showForm(type){
           <input class="fc" style="flex:1.4;min-width:0" placeholder="规格" id="oiS${ii}" value="${esc(it.spec||'')}">
           <input class="fc" style="flex:1;min-width:0" type="number" placeholder="单价" id="oiP${ii}" value="${it.estimated_price||''}" oninput="ordRowCalc(${ii})">
           <input class="fc" style="flex:0.8;min-width:0" type="number" placeholder="数量" id="oiQ${ii}" value="${it.quantity}" oninput="ordRowCalc(${ii})">
-          <input class="fc" style="flex:0.6;min-width:0" type="number" placeholder="税率%留空=不开票" id="oiT${ii}" value="" oninput="ordRowCalc(${ii})">
+          <input class="fc" style="flex:0.6;min-width:0" type="number" placeholder="税率%" id="oiT${ii}" value="13" oninput="ordRowCalc(${ii})">
           <input class="fc" type="number" style="flex:1.2;min-width:0;text-align:right;font-size:10px;padding:4px;background:#f8f9fb" id="oiA${ii}" value="0" oninput="ordRowCalc(${ii},true)" title="金额(含税,可改,自动反推单价)">
           <button class="btn btn-o btn-sm" style="flex:0.4;min-width:0;padding:2px 4px" onclick="delOrdItem(${ii})">✕</button>`;
         box.appendChild(row);
@@ -5650,7 +5650,7 @@ function addOrdItem(){
     <input class="fc" style="flex:1.4;min-width:0" placeholder="规格" id="oiS${i}">
     <input class="fc" style="flex:1;min-width:0" type="number" placeholder="单价" id="oiP${i}" oninput="ordRowCalc(${i})">
     <input class="fc" style="flex:0.8;min-width:0" type="number" placeholder="数量" id="oiQ${i}" value="1" oninput="ordRowCalc(${i})">
-    <input class="fc" style="flex:0.6;min-width:0" type="number" placeholder="税率%留空=不开票" id="oiT${i}" value="" oninput="ordRowCalc(${i})">
+    <input class="fc" style="flex:0.6;min-width:0" type="number" placeholder="税率%" id="oiT${i}" value="13" oninput="ordRowCalc(${i})">
     <input class="fc" type="number" style="flex:1.2;min-width:0;text-align:right;font-size:10px;padding:4px;background:#f8f9fb" id="oiA${i}" value="0" oninput="ordRowCalc(${i},true)" title="金额(含税,可改,自动反推单价)">
     <button class="btn btn-o btn-sm" style="flex:0.4;min-width:0;padding:2px 4px" onclick="delOrdItem(${i})">✕</button>`;
   box.appendChild(row);
@@ -5692,7 +5692,7 @@ async function createOrder(){
     const n=id('oiN'+i),q=id('oiQ'+i),p=id('oiP'+i);
     if(!n||!n.value.trim())return null;
     return {item_name:n.value.trim(),spec:id('oiS'+i)?.value||'',unit:id('oiU'+i)?.value||'个',
-      quantity:parseFloat(q?.value)||1,price:parseFloat(p?.value)||0,tax_rate:parseFloat(id('oiT'+i)?.value)||0};
+      quantity:parseFloat(q?.value)||1,price:parseFloat(p?.value)||0,tax_rate:(id('oiT'+i)?.value==='')?null:parseFloat(id('oiT'+i)?.value)};
   }).filter(Boolean);
   if(!items.length){alert('请至少填写一个商品（物资名称）');return}
   if(!id('fSup').value){alert('请选择供应商');return}
