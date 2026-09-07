@@ -3247,7 +3247,15 @@ def dt_start_instance(biz_type, biz_id):
             return None
         ak = dt_actioner_key(biz_type)
         c = db()
-        if c.execute("SELECT COUNT(*) FROM dingtalk_instances WHERE biz_type=? AND biz_id=? AND status NOT IN ('error','cancelled')", (biz_type, biz_id)).fetchone()[0] > 0:
+        # V11.232修复: 重新提交(驳回重提/编辑后重提)必须触发新一轮钉钉审批待办 —
+        # 原判断把历史实例(terminated驳回终止/completed等)也计入"已有实例"直接跳过,
+        # 导致单据系统内新审批流转、钉钉侧却不产生新待办, 审批人收不到通知。
+        # 改为: ①先终止残留的进行中旧实例(防pending残留阻塞新发起); ②仅当仍存在pending实例才防并发跳过。
+        _nt = now()
+        c.execute("UPDATE dingtalk_instances SET status='terminated', updated_at=? "
+                  "WHERE biz_type=? AND biz_id=? AND status IN ('pending','synced')", (_nt, biz_type, biz_id))
+        c.commit()
+        if c.execute("SELECT COUNT(*) FROM dingtalk_instances WHERE biz_type=? AND biz_id=? AND status='pending'", (biz_type, biz_id)).fetchone()[0] > 0:
             c.close(); return None
         levels = c.execute("SELECT DISTINCT role, approver FROM approval_instances WHERE biz_type=? AND biz_id=? AND status='pending' ORDER BY level_no", (biz_type, biz_id)).fetchall()
         c.close()
