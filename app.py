@@ -7786,7 +7786,14 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
         elif po and po['trade_mode'] == '先款后货':
             c.execute("UPDATE purchase_orders SET status='已核销',updated_at=? WHERE id=?", (now(), rn['order_id']))
         else:
-            c.execute("UPDATE purchase_orders SET status='已入库',updated_at=? WHERE id=?", (now(), rn['order_id']))
+            # 非分批路径(手动/整批入库单)确认入库后: 也按订单累计余量流转 —
+            # 未入完→"部分到货，待继续验收"(可继续分批/补录入库), 全部入完才"已入库"
+            # (V11.230修复: 原逻辑无条件置"已入库", 部分入库(如10入8)后剩余无法继续录入)
+            _stx = _order_rcv_stats(c, rn['order_id'])
+            if _stx['pending'] > 0.001:
+                c.execute("UPDATE purchase_orders SET status='部分到货，待继续验收',updated_at=? WHERE id=?", (now(), rn['order_id']))
+            else:
+                c.execute("UPDATE purchase_orders SET status='已入库',updated_at=? WHERE id=?", (now(), rn['order_id']))
     return total_q
 
 # ---- V6: 入库单下载(生成标准入库单 xlsx) ----
