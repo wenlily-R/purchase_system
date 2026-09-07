@@ -4198,7 +4198,8 @@ async function showRepairForm(rid){
     <div class="fg"><label class="fl2">初步故障判断 *</label><select class="fc" id="rpInitJudge"><option ${_pre.init_judge=='零部件更换维修'?'':'selected'}>设备整机维修</option><option ${_pre.init_judge=='零部件更换维修'?'selected':''}>零部件更换维修</option></select></div></div>
     <div class="fg"><label class="fl2">故障现象描述 *</label><textarea class="fc" id="rpFault" rows="2" placeholder="如: 异响/无法启动/发热">${esc(_pre.fault_desc||'')}</textarea></div>
     <div class="fr"><div class="fg"><label class="fl2">故障发生时间 *</label><input class="fc" id="rpFaultTime" type="datetime-local" step="1" value="${esc((_pre.fault_time||'').replace(' ','T'))}"></div>
-    <div class="fg"><label class="fl2">预估维修费用(元)</label><input class="fc" id="rpEst" type="number" min="0" value="${_pre.est_cost||0}"></div></div>
+    <div class="fg"><label class="fl2">预估维修费用(元)</label><input class="fc" id="rpEst" type="number" min="0" value="${_pre.est_cost||0}"></div>
+    <div class="fg"><label class="fl2">申请人建议定损</label><select class="fc" id="rpSuggest"><option value="">（可跳过，定损时复核确定）</option><option ${_pre.repair_suggest=='建议内部自修'?'selected':''}>建议内部自修</option><option ${_pre.repair_suggest=='建议委外派修'?'selected':''}>建议委外派修</option><option ${_pre.repair_suggest=='建议直接更换新设备'?'selected':''}>建议直接更换新设备</option></select></div></div>
     <div class="fg"><label class="fl2">备注</label><input class="fc" id="rpRem" value="${esc(_pre.remark||'')}"></div>
     <div style="border:1px solid var(--b);border-radius:4px;padding:6px;margin-top:4px"><label class="fl2">故障部件名称 * <span style="font-size:8px;color:#dc2626">(必填, 如: 线圈/壳体/高压胶管/油封/阀门管件)</span></label><div id="rpItems"></div>
       <button class="btn btn-o btn-sm" style="margin-top:4px" onclick="rpAddItem()">+ 添加故障部件</button></div>
@@ -4253,7 +4254,7 @@ function rpAttRender(){
 async function saveRepair(asDraft){
   const items=[];
   document.querySelectorAll('[id^="rpiN"]').forEach(n=>{if(n.value.trim())items.push({part_name:n.value.trim(),fault_note:document.getElementById(n.id.replace('N','F'))?.value||''})});
-  const body={device_name:id('rpDev').value.trim(),device_no:id('rpDevNo').value.trim(),fault_desc:id('rpFault').value.trim(),fault_time:id('rpFaultTime').value,urgency:id('rpUrg').value,init_judge:id('rpInitJudge').value,est_cost:parseFloat(id('rpEst').value)||0,dept:id('rpDept').value.trim(),items,attachments:(window._rpAtts||[]).map(a=>typeof a==='string'?{p:a,kind:'photo'}:a),remark:id('rpRem').value.trim(),item_class:id('rpItemClass')?.value||'小件'};
+  const body={device_name:id('rpDev').value.trim(),device_no:id('rpDevNo').value.trim(),fault_desc:id('rpFault').value.trim(),fault_time:id('rpFaultTime').value,urgency:id('rpUrg').value,init_judge:id('rpInitJudge').value,est_cost:parseFloat(id('rpEst').value)||0,dept:id('rpDept').value.trim(),items,attachments:(window._rpAtts||[]).map(a=>typeof a==='string'?{p:a,kind:'photo'}:a),remark:id('rpRem').value.trim(),item_class:id('rpItemClass')?.value||'小件',repair_suggest:id('rpSuggest')?.value||''};
   if(!asDraft){
     if(!body.dept){alert('请选择申请部门');return}
     if(!body.device_name){alert('请填写故障设备名称');return}
@@ -4297,9 +4298,48 @@ async function submitRepair(rid){
   if(r.success){alert('✅ 报修已提交，待定损');loadRepairs();loadRepairs2&&loadRepairs2()}else alert(r.error||'失败');
 }
 async function voidRepair(rid){
-  if(!confirm('确认作废该维修计划？'))return;
-  const r=await api(`/repairs/${rid}/void`,{method:'POST',body:'{}'});
-  if(r.success){alert(r.message||'已作废');loadRepairs()}else alert(r.error||'失败');
+  // V11.232: 作废原因必填(各审批/流程节点可作废, 留痕归档)
+  const reason=(window.prompt('🗑 填写作废原因（必填）：\n作废后单据标记归档，不再流转')||'').trim();
+  if(!reason)return;
+  if(!confirm(`确认作废该维修计划？\n作废原因：${reason}`))return;
+  const r=await api(`/repairs/${rid}/void`,{method:'POST',body:JSON.stringify({reason})});
+  if(r.success){alert('✅ 已作废归档');loadRepairs();loadRepairs2&&loadRepairs2()}else alert(r.error||'失败');
+}
+// V11.232 说明书: 小额(<1000)线下执行·完工资料回传 — 上传完工照片/票据 → 待发票登记归档
+function rpOfflineDone(rid){
+  window._rpOffFiles=[];window._rpOffRid=rid;
+  showDetail('🔨 小额维修·线下完工回传',
+    `<div style="font-size:10px;color:#666;line-height:1.7">金额小于 1000 元的小额维修允许线下执行（系统留存单据、不强制线上比价/委托流程）。<br>维修完成后请由提报部门上传：<b>①维修完成照片 ②票据凭证</b>，资料回传后单据进入发票登记归档。</div>
+    <div style="margin-top:8px"><label class="fl2">📷 完工照片/票据凭证 *</label><div id="rpOffBox" style="margin:4px 0"></div><input type="file" id="rpOffInp" multiple accept="image/*" style="font-size:10px" onchange="rpOffUp()"></div>
+    <div style="margin-top:6px"><label class="fl2">完工说明</label><input class="fc" id="rpOffNote" placeholder="如: 线下维修完成，费用已付，附收据"></div>`,
+    `<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="rpOfflineDo()">📤 确认完工·回传归档</button>`);
+  id('detailModal').classList.add('show');
+}
+async function rpOffUp(){
+  const inp=id('rpOffInp');
+  for(const f of [...(inp.files||[])]){
+    const fd=new FormData();fd.append('file',f);
+    const r=await fetch('/api/upload',{method:'POST',body:fd,credentials:'include'}).then(x=>x.json()).catch(()=>({}));
+    const _p=r.file_path||r.path;
+    if(_p)window._rpOffFiles.push({p:_p,kind:'photo'});
+  }
+  inp.value='';
+  id('rpOffBox').innerHTML=window._rpOffFiles.map(a=>`<span style="font-size:9px;background:#eef;padding:2px 6px;border-radius:3px;margin-right:4px">📷 ${esc((a.p||'').split('/').pop())}</span>`).join('');
+}
+async function rpOfflineDo(){
+  if(!(window._rpOffFiles||[]).length){alert('请先上传完工照片/票据凭证(至少1张)');return}
+  const r=await api(`/repairs/${window._rpOffRid}/offline-done`,{method:'POST',body:JSON.stringify({files:window._rpOffFiles,note:id('rpOffNote')?.value||''})});
+  if(r.success){alert('✅ 小额线下完工已回传归档，请登记维修发票完成闭环');closeMod();loadRepairs();loadRepairs2&&loadRepairs2()}else alert(r.error||'失败');
+}
+// V11.232 说明书: 原厂维修快捷调取 — 关联历史采购订单自动带出原厂联系方式
+async function rpOrigFactory(rid){
+  const rows=await api(`/repairs/${rid}/orig-factory`).catch(()=>[]);
+  if(!rows||!rows.length){alert('未找到该设备的历史采购订单(原厂信息)。如为新增设备请走服务商比价流程。');return}
+  const body=`<div style="font-size:10px;color:#666;margin-bottom:6px">🏭 以下为该设备历史采购订单对应的原厂/供应商，可直接对接原厂维保或复制联系方式用于报价。</div>
+    <table class="tb" style="font-size:9.5px"><tr><th>原厂/供应商</th><th>联系人</th><th>电话</th><th>关联订单</th><th>下单日期</th></tr>
+    ${rows.map(r=>`<tr><td><b>${esc(r.supplier)}</b></td><td>${esc(r.contact||'-')}</td><td>${esc(r.phone||'-')}</td><td>${esc(r.order_no||'-')}</td><td>${esc(r.order_date||'-')}</td></tr>`).join('')}</table>
+    <div style="font-size:9px;color:#999;margin-top:6px">💡 提示：委外定损后请优先联系原厂报价（原厂配件保障/质保延续）；大件设备仍需≥2家比价留痕。</div>`;
+  showDetail(`🏭 原厂维修调取（维修单#${rid}）`,body,'<button class="btn btn-p" onclick="closeMod()">知道了</button>');
 }
 async function withdrawRepair(rid){
   // V11.214: 撤回已提交报修 → 回草稿可修改(对齐采购申请撤回)
@@ -4318,7 +4358,8 @@ async function showRepairDetail(rid){
   const fmt=v=>v==null||v===''?'—':esc(String(v));
   let h=`<div style="font-size:10.5px;line-height:1.8">
     <div style="font-size:9px;color:#666">${esc(p.plan_no)}${p.entrust_no?` · 委托单 <b>${esc(p.entrust_no)}</b>`:''} · 状态 <b>${esc(p.status)}</b> · 提报 ${esc(p.requester||'')}(${esc(p.dept||'')})</div>
-    <div style="display:flex;gap:4px;margin:3px 0">${p.urgency==='紧急'?`<span class="tag" style="background:#fee2e2;color:#dc2626">⚡${esc(p.urgency)}</span>`:''}${p.repair_type?`<span class="tag" style="background:#fef3e2;color:#b45309">${esc(p.repair_type)}</span>`:''}${p.outer_status?`<span class="tag" style="background:#ede9fe;color:#7c3aed">${esc(p.outer_status)}</span>`:''}${p.accept_result?`<span class="tag" style="background:${p.accept_result=='通过'?'#dcfce7;color:#16a34a':'#fee2e2;color:#dc2626'}">验收${esc(p.accept_result)}</span>`:''}</div>
+    <div style="display:flex;gap:4px;margin:3px 0">${p.urgency==='紧急'?`<span class="tag" style="background:#fee2e2;color:#dc2626">⚡${esc(p.urgency)}</span>`:''}${p.repair_type?`<span class="tag" style="background:#fef3e2;color:#b45309">${esc(p.repair_type)}</span>`:''}${p.repair_suggest?`<span class="tag" style="background:#f3e8ff;color:#7c3aed" title="提报人建议(定损复核参考)">💡 建议:${esc(p.repair_suggest)}</span>`:''}${(p.est_cost||0)<1000&&p.status!=='草稿'?`<span class="tag" style="background:#fffbeb;color:#b45309">小额&lt;1000 可线下</span>`:''}${p.outer_status?`<span class="tag" style="background:#ede9fe;color:#7c3aed">${esc(p.outer_status)}</span>`:''}${p.accept_result?`<span class="tag" style="background:${p.accept_result=='通过'?'#dcfce7;color:#16a34a':'#fee2e2;color:#dc2626'}">验收${esc(p.accept_result)}</span>`:''}</div>
+    ${p.status=='已作废'&&p.void_reason?`<div style="font-size:9px;color:#c0392b;background:#fdeaea;border-radius:4px;padding:3px 8px;margin:2px 0">🗑 作废原因：${esc(p.void_reason)}</div>`:''}
     ${rpFlowGuide(p.status)}
     <p><b>设备:</b> ${fmt(p.device_name)}${p.device_no?`（编号 ${fmt(p.device_no)}）`:''} ｜ <b>故障时间:</b> ${fmt((p.fault_time||'').replace('T',' '))} ｜ <b>初判:</b> ${fmt(p.init_judge)}</p>
     <p><b>故障现象:</b> ${fmt(p.fault_desc)}</p>
@@ -4356,6 +4397,11 @@ async function showRepairDetail(rid){
   // V11.216: 定损分级审批通过后(状态=审批通过) 必须可录报价 — 修复此状态无任何按钮的断链
   if(p.status=='审批通过'&&canBuyer)acts.push(['💰 录入服务商报价','rpQuoteOpen('+rid+')']);
   if(p.status=='定损完成待审批'&&canBuyer)acts.push(['↩️ 撤回','withdrawRepair('+rid+')']);
+  // V11.232 说明书: 小额线下通道(金额<阈值默认1000, 审批通过后免线上比价全流程) / 原厂维修快捷调取
+  const _smTh=1000;
+  const _isSmall=(p.est_cost||0)<_smTh;
+  if(['审批通过','待比价','已选服务商'].includes(p.status)&&canBuyer&&_isSmall)acts.push(['🔨 小额线下执行·完工回传','rpOfflineDone('+rid+')']);
+  if(['定损完成待审批','审批通过','待比价'].includes(p.status)&&canBuyer)acts.push(['🏭 原厂维修调取','rpOrigFactory('+rid+')']);
   // V11.221 2.0缺口①: 加急单线下审批兜底 — 上传纸质签字件归档(草稿/待定损/审批节点可传), 审批节点可一键线下通过
   if(['草稿','待定损','定损完成待审批','审批驳回'].includes(p.status)&&(canLead||canBuyer||canOp))acts.push(['📎 线下签字件归档','rpOfflinePaper('+rid+')']);
   if(p.status=='待比价'&&canBuyer)acts.push(['✅ 比价选定服务商','rpSelectVendor('+rid+')']);
@@ -4373,6 +4419,12 @@ async function showRepairDetail(rid){
 }
 // ===== V11.210 阶段动作: 定损三选一 / 服务商报价 / 选商 / 委托 / 发料 / 进度 / 完工 / 验收 / 处理 / 发票 =====
 async function rpDamageOpen(rid){
+  // V11.232: 复核参考 — 载入提报人建议定损与提报人
+  try{
+    const _pg=await api(`/repairs/${rid}/detail`).catch(()=>null);
+    window._RP_SUG=(_pg&&_pg.plan&&_pg.plan.repair_suggest)||'';
+    window._RP_SUG_BY=(_pg&&_pg.plan&&_pg.plan.requester)||'';
+  }catch(e){window._RP_SUG='';}
   // V11.224 模块六: 定损弹窗加「设备损坏原因」标准化级联(一级+二级, 其他原因可手填)
   const DCATS={
     '设计制造缺陷':['设备设计不合理','原材料/零部件质量缺陷','制造装配错误','出厂自带故障'],
@@ -4390,6 +4442,7 @@ async function rpDamageOpen(rid){
   id('dmTitle').textContent='🔍 技术定损（三选一）';
   id('dmBody').innerHTML=`
     <div style="font-size:10px;line-height:1.7">技术判定后三选一：内部自修 / 外部厂家委外维修 / 建议直接更换新设备（可一键转物资采购申请）。支持驳回报修。</div>
+    ${window._RP_SUG?`<div style="border:1px solid #e9d5ff;background:#faf5ff;border-radius:6px;padding:5px 8px;margin-top:4px;font-size:9.5px;color:#6b21a8">💡 提报人建议定损：<b>${esc(window._RP_SUG)}</b>（提报人 ${esc(window._RP_SUG_BY||'')}）— 复核后正式确定下方结果</div>`:''}
     <div style="border:1px solid #fde3c0;background:#fffdf7;border-radius:6px;padding:6px;margin-top:4px">
       <label style="font-size:10px;font-weight:600;color:#b45309">🔧 设备损坏原因 *（必选，标准化分类）</label>
       <div style="display:flex;gap:4px;margin-top:3px;flex-wrap:wrap">

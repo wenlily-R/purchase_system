@@ -848,6 +848,15 @@ def init_db():
     ]:
         if _c6 not in _rp6:
             conn.execute(f"ALTER TABLE repair_plans ADD COLUMN {_c6} {_d6}")
+    # V11.232 设备维修流程优化说明书: 申请人建议定损三选一 + 作废原因(幂等补列)
+    _rpS = [r[1] for r in conn.execute("PRAGMA table_info(repair_plans)").fetchall()]
+    _addsS = [
+        ('repair_suggest', "TEXT DEFAULT ''"),  # 申请人建议定损: 建议内部自修/建议委外派修/建议直接更换新设备
+        ('void_reason', "TEXT DEFAULT ''"),     # 作废原因(必填)
+    ]
+    for _cS, _dS in _addsS:
+        if _cS not in _rpS:
+            conn.execute(f"ALTER TABLE repair_plans ADD COLUMN {_cS} {_dS}")
     # V11.210 维修变更四方确认: 变更单加 四方确认人/时间/结果(提报人/采购专员/机电厂长/机修车间主任), 永久留痕不可删
     _rc = [r[1] for r in conn.execute("PRAGMA table_info(repair_changes)").fetchall()]
     if 'confirm1_by' not in _rc:
@@ -11588,13 +11597,13 @@ def api_create_repair():
     except Exception:
         prev_gap = 0
     atts = d.get('attachments') or []
-    c.execute("""INSERT INTO repair_plans(plan_no,device_name,device_no,fault_desc,fault_time,urgency,init_judge,est_cost,dept,requester,requester_id,status,attachments,remark,item_class,prev_gap_days)
-                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+    c.execute("""INSERT INTO repair_plans(plan_no,device_name,device_no,fault_desc,fault_time,urgency,init_judge,est_cost,dept,requester,requester_id,status,attachments,remark,item_class,prev_gap_days,repair_suggest)
+                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
               (no, device, dev_no, fault, str(d.get('fault_time') or ''),
                d.get('urgency') or '普通', d.get('init_judge') or '', float(d.get('est_cost') or 0),
                d.get('dept', ''), session['user_name'], session['user_id'],
                '草稿', json.dumps(atts, ensure_ascii=False), str(d.get('remark') or '').strip(),
-               d.get('item_class') or '小件', prev_gap))
+               d.get('item_class') or '小件', prev_gap, str(d.get('repair_suggest') or '').strip()))
     pid = c.execute("SELECT id FROM repair_plans WHERE plan_no=?", (no,)).fetchone()[0]
     for it in (d.get('items') or []):
         if str(it.get('part_name') or '').strip():
@@ -11694,7 +11703,13 @@ def api_repair_damage(rid):
                   (json.dumps(d.get('items') or [], ensure_ascii=False), opinion, now(), est, _rcat, _rsub, _rnote, rid))
         c.commit()
         # 节点3: 按预估金额分级审批 — 必须先提交释放写锁, create_approvals用独立连接
-        create_approvals('repair_plan', rid, est, submitter=r['requester'] or '')
+        # V11.232: 大件设备 或 高金额(≥repair_hi_amount默认10万) 自动升级厂级领导审批; 普通小金额=采购部长1级
+        _eff = est
+        if (r['item_class'] or '小件') == '大件':
+            _hi = float(cfg_get('repair_hi_amount', '100000') or 100000)
+            if _eff < _hi:
+                _eff = _hi  # 大件强制进入高金额档(参数仅用于档位匹配, 不落单据金额)
+        create_approvals('repair_plan', rid, _eff, submitter=r['requester'] or '')
         try: start_instances('repair_plan', rid)
         except Exception: pass
         # V11.227: 审批到人即通知(不依赖OA模板码) — 系统铃铛+钉钉工作通知, 指向维修审批中心
@@ -11826,6 +11841,11 @@ def api_repair_select_vendor(rid):
         _one = str(d.get('company') or '').strip()
         if _one: companies = [_one]
     if not companies: c.close(); return jsonify({'error': '请选择服务商'}), 400
+    # V11.232 需求: 大件设备强制三方比价 — 选商前须至少2家服务商报价; 小件可不比价(1家即可)
+    if (r['item_class'] or '小件') == '大件':
+        _qcnt = c.execute("SELECT COUNT(DISTINCT company) FROM repair_quotes WHERE plan_id=? AND price>0", (rid,)).fetchone()[0]
+        if _qcnt < 2:
+            c.close(); return jsonify({'error': f'大件设备必须执行三方比价后才能选商：当前仅 {_qcnt} 家报价，请至少录 2 家服务商报价'}), 400
     # 金额 = 选中服务商中已录报价的总价合计(从系统供应商直选未报价的计0, 后续录价可更新)
     _marks = ','.join('?' * len(companies))
     _tot = c.execute("SELECT COALESCE(SUM(price),0) s FROM repair_quotes WHERE plan_id=? AND company IN (%s)" % _marks,
@@ -12030,6 +12050,10 @@ def api_repair_accept(rid):
     signs = d.get('signs') or []
     # V11.221: 大件通过必须三方签字齐全(机电部/申请部门领导/采购专员)
     if iclass == '大件' and result == 'pass':
+        # V11.232 需求: 大件为线下现场三方验收 — 必须上传线下签字纸质件照片/扫描件(附件≥1), 否则不允许确认通过
+        _files = d.get('files') or []
+        if not _files:
+            c.close(); return jsonify({'error': '大件三方现场验收通过必须上传「线下三方签字纸质件」照片/扫描件附件(缺附件不允许确认)'}), 400
         need = ['机电部', '申请部门领导', '采购专员']
         got = {str(s.get('role') or '').strip() for s in signs if str(s.get('name') or '').strip() and str(s.get('opinion') or '').strip()}
         missing = [x for x in need if x not in got]
@@ -12110,23 +12134,33 @@ def api_repair_detail(rid):
 @app.route('/api/repairs/<int:rid>/void', methods=['POST'])
 @login_required
 def api_repair_void(rid):
+    d = request.json or {}
+    reason = str(d.get('reason') or '').strip()
+    # V11.232: 作废原因必填(需求: 各审批节点作废需填写原因, 标记归档不再流转)
+    if not reason:
+        return jsonify({'error': '请填写作废原因（必填，将随单据留痕归档）'}), 400
     c = db()
     r = c.execute("SELECT * FROM repair_plans WHERE id=?", (rid,)).fetchone()
     if not r: c.close(); return jsonify({'error': '维修计划不存在'}), 404
     if r['status'] in ('已完成', '待返库'):
         c.close(); return jsonify({'error': '该计划已进入返库/完成, 不可作废'}), 400
-    # V11.218: 删除按钮全状态显示(与物资采购同构), 但仅 草稿/定损驳回/终态前 可作废;
-    # 审批中/流程中(待定损/审批中/委外/验收等)必须先撤回或走完流程 — 防误删真实在办单&产生幽灵审批
-    if r['status'] not in ('草稿', '定损驳回', '已归档', '验收通过', '待发票登记', '已选服务商'):
-        c.close(); return jsonify({'error': f'当前状态({r["status"]})不可删除。请在「详情」操作或先撤回后再删除'}), 400
+    # V11.232: 各审批/流程节点均可作废(需求: 无效单据随时作废归档终止流转); 已回收入库的先作废入库回滚
+    if r['status'] not in ('草稿', '定损驳回', '待定损', '定损完成待审批', '审批通过', '审批驳回', '委外维修中', '变更待四方确认',
+                            '待回厂验收', '验收不通过返修', '验收通过', '待发票登记', '已归档', '已选服务商', '待比价'):
+        c.close(); return jsonify({'error': f'当前状态({r["status"]})不可作废'}), 400
+    if r['handle_type'] == '回收入库':
+        _rc = c.execute("SELECT COUNT(*) FROM receivings WHERE contract_id=? OR (order_id=? AND status='已入库')",
+                        (r.get('contract_id') or -1, r.get('contract_id') or -1)).fetchone()[0]
+        if _rc > 0:
+            c.close(); return jsonify({'error': '该维修设备已回收入库(库存已加)，请先作废对应入库单回滚后再作废'}), 400
     me = c.execute("SELECT * FROM users WHERE id=?", (session.get('user_id', 0),)).fetchone()
     is_admin = me and (me['role'] == '系统管理员' or session.get('user_role') == '分管领导')
     if not is_admin and r['requester'] and me and me['name'] != r['requester']:
         c.close(); return jsonify({'error': '仅提交人或领导可作废'}), 403
-    c.execute("UPDATE repair_plans SET status='已作废', updated_at=? WHERE id=?", (now(), rid))
+    c.execute("UPDATE repair_plans SET status='已作废', void_reason=?, updated_at=? WHERE id=?", (reason, now(), rid))
     c.execute("UPDATE approval_instances SET status='rejected', comment='计划作废' WHERE biz_type='repair_plan' AND biz_id=? AND status IN ('pending','approved')", (rid,))
     c.commit(); c.close()
-    log(session['user_name'], '作废维修计划', f'{r["plan_no"]}')
+    log(session['user_name'], '作废维修计划', f'{r["plan_no"]} 作废原因: {reason}')
     return jsonify({'success': True})
 
 @app.route('/api/repairs/<int:rid>', methods=['PUT'])
@@ -12147,11 +12181,12 @@ def api_repair_update(rid):
     if not device: c.close(); return jsonify({'error': '请填写故障设备名称'}), 400
     # 更新主表(保留 plan_no/requester/status)
     c.execute("""UPDATE repair_plans SET device_name=?, device_no=?, fault_desc=?, fault_time=?, urgency=?,
-                 init_judge=?, est_cost=?, dept=?, attachments=?, remark=?, item_class=?, updated_at=? WHERE id=?""",
+                 init_judge=?, est_cost=?, dept=?, attachments=?, remark=?, item_class=?, repair_suggest=?, updated_at=? WHERE id=?""",
               (device, str(d.get('device_no') or '').strip(), str(d.get('fault_desc') or '').strip(),
                str(d.get('fault_time') or ''), d.get('urgency') or '普通', d.get('init_judge') or '',
                float(d.get('est_cost') or 0), d.get('dept') or r['dept'], json.dumps(d.get('attachments') or [], ensure_ascii=False),
-               str(d.get('remark') or ''), d.get('item_class') or r['item_class'] or '小件', now(), rid))
+               str(d.get('remark') or ''), d.get('item_class') or r['item_class'] or '小件',
+               str(d.get('repair_suggest') or '').strip(), now(), rid))
     # 重建部件明细
     c.execute("DELETE FROM repair_items WHERE plan_id=?", (rid,))
     for it in (d.get('items') or []):
@@ -12324,6 +12359,61 @@ def api_repair_offline_paper(rid):
         c.commit(); c.close()
     log(op_name, '线下签字件归档', f'{r["plan_no"]} 归档{len(files)}件' + (' + 加急线下审批通过' if flowed else ''))
     return jsonify({'success': True, 'flowed': flowed, 'count': len(op)})
+
+@app.route('/api/repairs/<int:rid>/orig-factory')
+@login_required
+def api_repair_orig_factory(rid):
+    """V11.232 原厂维修快捷调取: 按故障设备名匹配历史采购订单, 带出原厂供应商及联系方式(供委外对接原厂维保)"""
+    c = db()
+    r = c.execute("SELECT device_name,device_no FROM repair_plans WHERE id=?", (rid,)).fetchone()
+    if not r:
+        c.close(); return jsonify({'error': '维修单不存在'}), 404
+    out = []
+    try:
+        kw = (r['device_name'] or '').strip()
+        rows = c.execute(
+            """SELECT po.order_no,po.supplier,po.created_at,po.total_amount,s.contact,s.phone
+               FROM purchase_orders po LEFT JOIN suppliers s ON po.supplier=s.name
+               WHERE po.status IN ('已签合同','执行中','已入库') AND po.supplier!='' AND (?='' OR po.item_name LIKE ?)
+               ORDER BY po.id DESC LIMIT 8""", (kw, '%' + kw + '%')).fetchall()
+        for x in rows:
+            out.append({'order_no': x['order_no'], 'supplier': x['supplier'], 'contact': x['contact'] or '',
+                        'phone': x['phone'] or '', 'order_date': (x['created_at'] or '')[:10],
+                        'amount': x['total_amount'] or 0})
+    except Exception:
+        pass
+    c.close()
+    return jsonify(out)
+
+
+@app.route('/api/repairs/<int:rid>/offline-done', methods=['POST'])
+@login_required
+def api_repair_offline_done(rid):
+    """V11.232 小额(<阈值默认1000元)线下执行通道: 免线上比价/委托全流程, 线下维修完成后由提报部门回传完工照片与票据凭证 → 走发票登记归档闭环
+    大额(≥阈值)单据调用此接口将被拒绝(强制线上全流程留痕)"""
+    d = request.json or {}
+    c = db()
+    r = c.execute("SELECT * FROM repair_plans WHERE id=?", (rid,)).fetchone()
+    if not r:
+        c.close(); return jsonify({'error': '维修单不存在'}), 404
+    th = float(cfg_get('repair_small_threshold', '1000') or 1000)
+    est = float(r['est_cost'] or 0)
+    if est >= th:
+        c.close(); return jsonify({'error': f'该维修金额 ¥{est:.0f} ≥ 小额阈值 ¥{th:.0f}，必须走线上完整流程（比价/委托/验收各节点不可跳过）'}), 400
+    if r['status'] not in ('审批通过', '待比价', '已选服务商'):
+        c.close(); return jsonify({'error': f'当前状态({r["status"]})不可线下完工回传（需定损审批通过后操作）'}), 400
+    files = d.get('files') or []
+    note = str(d.get('note') or '').strip()
+    if not files:
+        c.close(); return jsonify({'error': '请上传线下维修完成照片与票据凭证（至少1张，缺附件不允许回传）'}), 400
+    c.execute("UPDATE repair_plans SET outer_status='线下执行', accept_result='通过', accept_opinion=?, accept_files=?, accept_time=?, remark=COALESCE(remark||'；','')||?, status='待发票登记', actual_finish=?, updated_at=? WHERE id=?",
+              ((note or '小额线下执行完成，资料已回传')[:300], json.dumps(files, ensure_ascii=False), now(),
+               ('小额线下执行(¥%.0f): %s' % (est, note))[:200], now(), now(), rid))
+    c.commit()
+    c.close()
+    log(session['user_name'], '小额线下执行完工', f'{r["plan_no"]} 金额¥{est:.0f} 资料回传 → 待发票登记')
+    return jsonify({'success': True})
+
 
 @app.route('/api/repairs/<int:rid>/withdraw', methods=['POST'])
 @login_required
