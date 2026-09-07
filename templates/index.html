@@ -1663,7 +1663,7 @@ function edAddItem(bizType, it){
   if(bizType=='purchase_request'){
     cols=`<input placeholder="品名" id="edN${c}" value="${esc(it.item_name||'')}" style="flex:1.6;min-width:70px"><input placeholder="规格" id="edS${c}" value="${esc(it.spec||'')}" style="flex:1;min-width:50px"><input placeholder="数量" id="edQ${c}" type="number" value="${it.quantity||1}" style="width:48px"><select id="edU${c}" style="width:42px"><option>个</option><option>箱</option><option>桶</option><option>条</option></select><input placeholder="单价" id="edP${c}" type="number" value="${it.estimated_price||0}" style="width:55px">`;
   } else if(bizType=='purchase_order'){
-    cols=`<input placeholder="品名" id="edN${c}" value="${esc(it.item_name||'')}" style="flex:1.6;min-width:70px"><input placeholder="规格" id="edS${c}" value="${esc(it.spec||'')}" style="flex:1;min-width:50px"><input placeholder="数量" id="edQ${c}" type="number" value="${it.quantity||1}" style="width:48px"><input placeholder="单价" id="edP${c}" type="number" value="${it.price||0}" style="width:55px"><input placeholder="税率%" id="edT${c}" type="number" value="${it.tax_rate||13}" style="width:45px">`;
+    cols=`<input placeholder="品名" id="edN${c}" value="${esc(it.item_name||'')}" style="flex:1.6;min-width:70px"><input placeholder="规格" id="edS${c}" value="${esc(it.spec||'')}" style="flex:1;min-width:50px"><input placeholder="数量" id="edQ${c}" type="number" value="${it.quantity||1}" style="width:48px"><input placeholder="单价" id="edP${c}" type="number" value="${it.price||0}" style="width:55px"><input placeholder="税率%留空=不开票" id="edT${c}" type="number" value="${it.tax_rate||''}" style="width:45px">`;
   } else if(bizType=='receiving'){
     cols=`<input placeholder="品名" id="edN${c}" value="${esc(it.item_name||'')}" style="flex:1.6;min-width:70px"><input placeholder="规格" id="edS${c}" value="${esc(it.spec||'')}" style="flex:1;min-width:50px"><input placeholder="数量" id="edQ${c}" type="number" value="${it.quantity||1}" style="width:48px"><input placeholder="单位" id="edU${c}" value="${esc(it.unit||'个')}" style="width:42px">`;
   } else if(bizType=='requisition'){
@@ -1695,7 +1695,7 @@ async function saveEditDoc(bizType, bid, label){
     d.items=[];
     document.querySelectorAll('[id^="editm"]').forEach(el=>{
       const c=el.id.replace('editm','');const n=id('edN'+c)?.value;
-      if(n)d.items.push({item_name:n,spec:id('edS'+c)?.value||'',quantity:parseFloat(id('edQ'+c)?.value)||1,price:parseFloat(id('edP'+c)?.value)||0,tax_rate:parseFloat(id('edT'+c)?.value)||13});
+      if(n)d.items.push({item_name:n,spec:id('edS'+c)?.value||'',quantity:parseFloat(id('edQ'+c)?.value)||1,price:parseFloat(id('edP'+c)?.value)||0,tax_rate:parseFloat(id('edT'+c)?.value)||0});
     });
   } else if(bizType=='contract'){
     d.contract_name=id('edName')?.value;d.supplier=id('edSup')?.value;d.amount=parseFloat(id('edAmt')?.value)||0;
@@ -2279,7 +2279,7 @@ async function showOrder(ordid){
           `<button class="lnk" onclick="updateItemStatus(${it.id},'已发货')">标记发货</button>` :
           it.status==='已发货' ?
           `<button class="lnk" onclick="updateItemStatus(${it.id},'已到货')">标记到货</button>` : '';
-        return `<tr><td>${esc(it.item_name)}</td><td>${esc(it.spec||'')}</td><td>¥${(it.price||0).toFixed(2)}</td><td>${it.quantity}${esc(it.unit||'')}</td><td>${it.tax_rate||13}%</td><td>¥${(it.total_amount||0).toFixed(2)}</td><td><span class="tag ${statusMap[it.status]||'tg-r'}">${esc(it.status||'未联系')}</span></td><td>${statusBtns}</td></tr>`;
+        return `<tr><td>${esc(it.item_name)}</td><td>${esc(it.spec||'')}</td><td>¥${(it.price||0).toFixed(2)}</td><td>${it.quantity}${esc(it.unit||'')}</td><td>${(it.tax_rate||0)>0?it.tax_rate+'%':'—'}</td><td>¥${(it.total_amount||0).toFixed(2)}</td><td><span class="tag ${statusMap[it.status]||'tg-r'}">${esc(it.status||'未联系')}</span></td><td>${statusBtns}</td></tr>`;
       }).join('')}
       <tr style="font-weight:700;background:#f4f7fd"><td colspan="3">合计</td><td>${o.total_qty||o.quantity}</td><td></td><td>¥${(o.total_amount||0).toFixed(2)}</td><td colspan="2"></td></tr></tbody></table>`;
   }
@@ -3347,7 +3347,7 @@ async function showRcvDetail(id){
   if(items.length){
     h+=`<h4 style="font-size:10px;margin:8px 0 3px">📦 商品明细（${items.length}项，累计 ${r.total_qty||r.quantity}${esc(r.unit||'')}）</h4>
       <table class="tb" style="font-size:9px"><thead><tr><th>物资名称</th><th>规格</th><th>单价</th><th>数量</th><th>税率</th><th>金额</th></tr></thead>
-      <tbody>${items.map((it,i)=>`<tr><td>${esc(it.item_name||'')}</td><td>${esc(it.spec||'')}</td><td>¥${(it.price||0).toFixed(2)}</td><td>${it.quantity||0}${esc(it.unit||'')}</td><td>${it.tax_rate||13}%</td><td>¥${(it.total_amount||(it.price||0)*(it.quantity||0)).toFixed(2)}</td></tr>`).join('')}
+      <tbody>${items.map((it,i)=>`<tr><td>${esc(it.item_name||'')}</td><td>${esc(it.spec||'')}</td><td>¥${(it.price||0).toFixed(2)}</td><td>${it.quantity||0}${esc(it.unit||'')}</td><td>${(it.tax_rate||0)>0?it.tax_rate+'%':'—'}</td><td>¥${(it.total_amount||(it.price||0)*(it.quantity||0)).toFixed(2)}</td></tr>`).join('')}
       <tr style="font-weight:700;background:#f4f7fd"><td colspan="3">合计</td><td>${r.total_qty||r.quantity}</td><td></td><td>¥${(r.amount||0).toFixed(2)}</td></tr></tbody></table>`;
   }
   if(r.remark)h+=`<div style="font-size:9px;color:#666;margin-top:6px">备注: ${esc(r.remark)}</div>`;
@@ -5397,7 +5397,7 @@ async function showForm(type){
           <input class="fc" style="flex:1.4;min-width:0" placeholder="规格" id="oiS${ii}" value="${esc(it.spec||'')}">
           <input class="fc" style="flex:1;min-width:0" type="number" placeholder="单价" id="oiP${ii}" value="${it.estimated_price||''}" oninput="ordRowCalc(${ii})">
           <input class="fc" style="flex:0.8;min-width:0" type="number" placeholder="数量" id="oiQ${ii}" value="${it.quantity}" oninput="ordRowCalc(${ii})">
-          <input class="fc" style="flex:0.6;min-width:0" type="number" placeholder="税率%" id="oiT${ii}" value="13" oninput="ordRowCalc(${ii})">
+          <input class="fc" style="flex:0.6;min-width:0" type="number" placeholder="税率%留空=不开票" id="oiT${ii}" value="" oninput="ordRowCalc(${ii})">
           <input class="fc" type="number" style="flex:1.2;min-width:0;text-align:right;font-size:10px;padding:4px;background:#f8f9fb" id="oiA${ii}" value="0" oninput="ordRowCalc(${ii},true)" title="金额(含税,可改,自动反推单价)">
           <button class="btn btn-o btn-sm" style="flex:0.4;min-width:0;padding:2px 4px" onclick="delOrdItem(${ii})">✕</button>`;
         box.appendChild(row);
@@ -5650,24 +5650,24 @@ function addOrdItem(){
     <input class="fc" style="flex:1.4;min-width:0" placeholder="规格" id="oiS${i}">
     <input class="fc" style="flex:1;min-width:0" type="number" placeholder="单价" id="oiP${i}" oninput="ordRowCalc(${i})">
     <input class="fc" style="flex:0.8;min-width:0" type="number" placeholder="数量" id="oiQ${i}" value="1" oninput="ordRowCalc(${i})">
-    <input class="fc" style="flex:0.6;min-width:0" type="number" placeholder="税率%" id="oiT${i}" value="13" oninput="ordRowCalc(${i})">
+    <input class="fc" style="flex:0.6;min-width:0" type="number" placeholder="税率%留空=不开票" id="oiT${i}" value="" oninput="ordRowCalc(${i})">
     <input class="fc" type="number" style="flex:1.2;min-width:0;text-align:right;font-size:10px;padding:4px;background:#f8f9fb" id="oiA${i}" value="0" oninput="ordRowCalc(${i},true)" title="金额(含税,可改,自动反推单价)">
     <button class="btn btn-o btn-sm" style="flex:0.4;min-width:0;padding:2px 4px" onclick="delOrdItem(${i})">✕</button>`;
   box.appendChild(row);
   ordRowCalc(i);
 }
 function ordRowCalc(i, fromAmt){
-  // V6.0: 金额列可编辑 — 直接改金额自动反推单价; 改单价/数量/税率自动重算金额
-  const q=parseFloat(id('oiQ'+i)?.value)||0,tr=parseFloat(id('oiT'+i)?.value)||13;
+  // 方案A(2026-09-07): 单价=商家含税含运报价; 金额=单价×数量=含税总价, 税率不再参与放大(仅合同倒拆展示用)
+  const q=parseFloat(id('oiQ'+i)?.value)||0;
   const a=id('oiA'+i);
   if(fromAmt&&a){
     const amt=parseFloat(a.value)||0;
-    if(q>0){const np=amt/q/(1+tr/100);const pEl=id('oiP'+i);if(pEl)pEl.value=np>0?np.toFixed(2):'';}
+    if(q>0){const np=amt/q;const pEl=id('oiP'+i);if(pEl)pEl.value=np>0?np.toFixed(2):'';}
   }
   const p2=parseFloat(id('oiP'+i)?.value)||0;
   if(a){
-    if(a.tagName=='INPUT')a.value=(p2*q*(1+tr/100)).toFixed(2);
-    else a.textContent='¥'+(p2*q*(1+tr/100)).toFixed(2);
+    if(a.tagName=='INPUT')a.value=(p2*q).toFixed(2);
+    else a.textContent='¥'+(p2*q).toFixed(2);
   }
   ordTotals();
 }
@@ -5675,8 +5675,8 @@ function ordTotals(){
   let q=0,amt=0;
   window._ordIdx.forEach(i=>{
     const n=id('oiN'+i);if(!n||!n.value.trim())return;
-    const p=parseFloat(id('oiP'+i)?.value)||0,qq=parseFloat(id('oiQ'+i)?.value)||0,tr=parseFloat(id('oiT'+i)?.value)||13;
-    q+=qq;amt+=p*qq*(1+tr/100);
+    const p=parseFloat(id('oiP'+i)?.value)||0,qq=parseFloat(id('oiQ'+i)?.value)||0;
+    q+=qq;amt+=p*qq;
   });
   const tq=id('ordTotalQty'),ta=id('ordTotalAmt');
   if(tq)tq.textContent=q;
@@ -5692,7 +5692,7 @@ async function createOrder(){
     const n=id('oiN'+i),q=id('oiQ'+i),p=id('oiP'+i);
     if(!n||!n.value.trim())return null;
     return {item_name:n.value.trim(),spec:id('oiS'+i)?.value||'',unit:id('oiU'+i)?.value||'个',
-      quantity:parseFloat(q?.value)||1,price:parseFloat(p?.value)||0,tax_rate:parseFloat(id('oiT'+i)?.value)||13};
+      quantity:parseFloat(q?.value)||1,price:parseFloat(p?.value)||0,tax_rate:parseFloat(id('oiT'+i)?.value)||0};
   }).filter(Boolean);
   if(!items.length){alert('请至少填写一个商品（物资名称）');return}
   if(!id('fSup').value){alert('请选择供应商');return}
@@ -5839,7 +5839,7 @@ async function showSettlementDetail(sid){
   (d.orders||[]).forEach(o=>{
     h+=`<h4 style="font-size:10px;margin:8px 0 3px">📋 订单 ${esc(o.order_no)}（${esc(o.supplier||'')}）${o.contract_no?` <span style="color:var(--s)">合同 ${esc(o.contract_no)}</span>`:''}</h4>
       <table class="tb" style="font-size:9px"><thead><tr><th>物资名称</th><th>规格</th><th>数量</th><th>单价</th><th>税率</th><th>金额</th></tr></thead>
-      <tbody>${(o.items||[]).map(it=>`<tr><td>${esc(it.item_name)}</td><td>${esc(it.spec||'')}</td><td>${it.quantity}${esc(it.unit||'')}</td><td>¥${(it.price||0).toFixed(2)}</td><td>${it.tax_rate||13}%</td><td>¥${(it.total_amount||0).toFixed(2)}</td></tr>`).join('')||'<tr><td colspan="6" style="color:#999">无明细</td></tr>'}
+      <tbody>${(o.items||[]).map(it=>`<tr><td>${esc(it.item_name)}</td><td>${esc(it.spec||'')}</td><td>${it.quantity}${esc(it.unit||'')}</td><td>¥${(it.price||0).toFixed(2)}</td><td>${(it.tax_rate||0)>0?it.tax_rate+'%':'—'}</td><td>¥${(it.total_amount||0).toFixed(2)}</td></tr>`).join('')||'<tr><td colspan="6" style="color:#999">无明细</td></tr>'}
       <tr style="font-weight:700;background:#f4f7fd"><td colspan="5">订单合计</td><td>¥${(o.total_amount||0).toFixed(2)}</td></tr></tbody></table>`;
   });
   id('dmTitle').textContent='📋 对账单详情';

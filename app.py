@@ -5757,14 +5757,17 @@ def api_create_order():
         qty = float(it.get('quantity',1) or 1)
         price = float(it.get('price',0) or 0)
         _it_rate = it.get('tax_rate')
-        if _it_rate is None or _it_rate == '' or float(_it_rate or 0) == 0:
-            _it_rate = d.get('tax_rate') or _auto_rate
-        else:
-            _it_rate = float(_it_rate)
-        tr = float(_it_rate or 13)
-        amt = qty*price; tax = amt*tr/100
-        total_qty += qty; grand_amt += amt; grand_tax += tax; grand_total += amt+tax
-        rows.append((it.get('item_name',''), it.get('spec','') or '', it.get('unit','个') or '个', qty, price, amt, tr, tax, amt+tax))
+        # 方案A(2026-09-07用户拍板): 录入单价=商家含税含运报价(价税合计口径), 金额=单价×数量即为含税总价,
+        # 系统永不自动加税放大金额; 税率>0时税额仅作价内倒拆展示(合同'总价+税金+不含税'正式样式, 供发票口径);
+        # 税率0/未填=不开票/一口价, 无税段, 合同只写含税含运总价一句
+        if _it_rate is None or _it_rate == '':
+            _it_rate = d.get('tax_rate')
+        tr = float(_it_rate or 0)
+        tr = tr if tr > 0 else 0.0
+        amt = round(qty*price, 2)
+        tax = round(amt - amt/(1+tr/100.0), 2) if tr > 0 else 0.0
+        total_qty += qty; grand_amt += amt; grand_tax += tax; grand_total += amt
+        rows.append((it.get('item_name',''), it.get('spec','') or '', it.get('unit','个') or '个', qty, price, amt, tr, tax, amt))
     first = rows[0]
     conn.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,
         supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
@@ -9092,19 +9095,19 @@ def api_orders_from_requests():
     total_qty = 0.0; grand_amt = 0.0; grand_tax = 0.0; grand_total = 0.0
     for it in rows:
         qty = it[3]; price = it[4]
-        amt = qty*price; tax = amt*0.13
-        total_qty += qty; grand_amt += amt; grand_tax += tax; grand_total += amt+tax
+        amt = round(qty*price, 2); tax = 0.0  # 方案A(2026-09-07): 申请参考价=含税含运口径, 不加税
+        total_qty += qty; grand_amt += amt; grand_tax += tax; grand_total += amt
     first = rows[0]
     conn.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,
         supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (no, used_reqs[0] if used_reqs else None, first[0], first[1], total_qty, first[2], first[4], grand_amt, 13, grand_tax, grand_total,
+        (no, used_reqs[0] if used_reqs else None, first[0], first[1], total_qty, first[2], first[4], grand_amt, 0, 0, grand_amt,
          d.get('supplier',''), session['user_name'], d.get('category','后勤类'), session['user_name'], session['user_id'],
          d.get('target_date',''), tm, '加购: 多申请合并下单', 1 if d.get('urgent') else 0, '[]'))
     oid = conn.execute("SELECT id FROM purchase_orders WHERE order_no=?", (no,)).fetchone()[0]
     for it in rows:
-        qty = it[3]; price = it[4]; amt = qty*price; tax = amt*0.13
+        qty = it[3]; price = it[4]; amt = round(qty*price, 2); tax = 0.0
         conn.execute("INSERT INTO order_items(order_id,item_name,spec,unit,quantity,price,amount,tax_rate,tax_amount,total_amount,remark) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-            (oid, it[0], it[1], it[2], qty, price, amt, 13, tax, amt+tax, ''))
+            (oid, it[0], it[1], it[2], qty, price, amt, 0, tax, amt, ''))
     rno = None
     if tm == '货到付款':
         # V11.152e: 防重复 — 该订单已有任意未入库状态的入库单则不再生成
@@ -10086,43 +10089,32 @@ def api_contract_generate():
         if not os.path.exists(tpl_path):
             conn.close(); return jsonify({'error': '模板文件缺失, 请重新上传'}), 400
         doc = Document(tpl_path)
-        # 明细行(多商品订单取 order_items 汇总)
-        # V11.228 Bug2②: 税金联动兜底 — 明细税额缺失/为0而税率>0时按 金额×税率 补算并写回库,
-        # 再按明细重新汇总订单, 保证合同文档与系统数据一致(修复"税率13%但金额0"/数值丢失置零)
+        # 方案A(2026-09-07用户拍板): 明细金额=含税含运总价(价税合计口径), 合同金额=Σ录入金额, 永不加税放大;
+        # 税率>0时按价内倒拆展示税金/不含税(正式样式, 金额不变); 税率0/未配=一口价, 合同只写总价一句
         if _oi:
-            _dirty = False
-            for _it in _oi:
-                _rate = float(_it['tax_rate'] or 0)
-                _amt = float(_it['amount'] or 0)
-                _tax = float(_it['tax_amount'] or 0)
-                if _rate > 0 and _tax <= 0 and _amt > 0:
-                    _tax = round(_amt * _rate / 100.0, 2)
-                    conn.execute("UPDATE order_items SET tax_amount=?, total_amount=?, updated_at=? WHERE id=?",
-                                 (_tax, round(_amt + _tax, 2), now(), _it['id']))
-                    _dirty = True
-            if _dirty:
-                conn.commit()
-                _oi = conn.execute("SELECT * FROM order_items WHERE order_id=? ORDER BY id", (oid,)).fetchall()
-        if _oi:
-            amt = sum(float(r['amount'] or 0) for r in _oi)
-            tax = sum(float(r['tax_amount'] or 0) for r in _oi)
-            total = sum(float(r['total_amount'] or 0) for r in _oi)
-            tax_rate = float(_oi[0]['tax_rate'] or 13) if _oi else 13
-            if tax <= 0 and amt > 0 and tax_rate > 0:  # 仍为0(明细无税率)时按订单税率兜底
-                tax = round(amt * tax_rate / 100.0, 2); total = round(amt + tax, 2)
+            total = round(sum(float(r['amount'] or 0) for r in _oi), 2)
+            rate = float(_oi[0]['tax_rate'] or 0)
+            if rate > 0:
+                amt = round(total/(1+rate/100.0), 2)
+                tax = round(total - amt, 2)
+            else:
+                amt, tax = total, 0.0
         else:
-            amt = float(o['amount'] or 0)
-            tax_rate = float(o['tax_rate'] or 13)
-            tax = amt * tax_rate / 100.0
-            total = amt + tax
-        # V11.228: 汇总回写订单(金额/税额/价税合计), 保证后续单据与合同取值一致不丢零
+            total = round(float(o['amount'] or 0), 2)
+            rate = float(o['tax_rate'] or 0)
+            if rate > 0:
+                amt = round(total/(1+rate/100.0), 2)
+                tax = round(total - amt, 2)
+            else:
+                amt, tax = total, 0.0
+        # 方案A: 回写订单 金额/价税合计=录入含税总价(修正历史'不含税+13%'自动加税虚增), 税额=价内倒拆
         try:
-            conn.execute("UPDATE purchase_orders SET amount=?, tax_amount=?, total_amount=?, updated_at=? WHERE id=?",
-                         (round(amt, 2), round(tax, 2), round(total, 2), now(), oid))
+            conn.execute("UPDATE purchase_orders SET amount=?, tax_amount=?, total_amount=?, tax_rate=?, updated_at=? WHERE id=?",
+                         (round(total, 2), round(tax, 2), round(total, 2), rate, now(), oid))
             conn.commit()
         except Exception:
             pass
-        mapping['{合计金额}'] = f"¥{total:,.2f}（人民币大写：{rmb_upper(total)}）"  # V11.228: 用联动后的含税合计填充
+        mapping['{合计金额}'] = f"¥{total:,.2f}（人民币大写：{rmb_upper(total)}）"  # 方案A: 总价=录入含税总价
         # 交付天数
         days = ''
         if o['target_date']:
@@ -10135,9 +10127,13 @@ def api_contract_generate():
         # V8.4: 合同文本通用处理(段落+表格共用) — 合计金额中文大写/税率/税金/不含税/收款账户/日期
         def _apply_ct(t):
             if '合计金额：¥' in t:
+                if rate > 0 and tax > 0:
+                    return (f"合计金额：¥{total:,.2f}元（大写金额：人民币{rmb_upper(total)}）。"
+                            f"税金（税率 {rate:.0f}%）为：¥{tax:,.2f}元（大写金额：人民币{rmb_upper(tax)}）；"
+                            f"不含税价款为：¥{amt:,.2f}元（大写金额：人民币{rmb_upper(amt)}）。")
+                # 方案A: 未配税率/不开票 → 一价制, 不出现税金/不含税拆分
                 return (f"合计金额：¥{total:,.2f}元（大写金额：人民币{rmb_upper(total)}）。"
-                        f"税金（税率 {tax_rate:.0f}%）为：¥{tax:,.2f}元（大写金额：人民币{rmb_upper(tax)}）；"
-                        f"不含税价款为：¥{amt:,.2f}元（大写金额：人民币{rmb_upper(amt)}）。")
+                        f"本合同价款为含税含运费等一切费用的总价。")
             reps = [
                 (r'合同签订后\s+日内交付', f'合同签订后{days or "7"}日内交付'),
                 (r'运抵甲方指定地点后\s+日内', '运抵甲方指定地点后1日内'),
@@ -12905,8 +12901,11 @@ def api_doc_update(biz_type, bid):
             conn.execute("DELETE FROM order_items WHERE order_id=?", (bid,))
             for it in items:
                 qty = float(it.get('quantity', 1)); price = float(it.get('price', 0))
-                tr = float(it.get('tax_rate', 13))
-                amt = qty * price; tax = amt * tr / 100; tot = amt + tax
+                tr = float(it.get('tax_rate') or 0)  # 方案A: 默认0=不开票; >0仅价内倒拆展示
+                tr = tr if tr > 0 else 0.0
+                amt = round(qty * price, 2)
+                tax = round(amt - amt/(1+tr/100.0), 2) if tr > 0 else 0.0
+                tot = amt  # 价税合计=录入含税金额, 永不加税放大
                 grand_amt += amt; grand_tax += tax; grand_total += tot
                 conn.execute("INSERT INTO order_items(order_id,item_name,spec,unit,quantity,price,amount,tax_rate,tax_amount,total_amount,remark) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                              (bid, it.get('item_name', ''), it.get('spec', ''), it.get('unit', '个'),
@@ -12914,7 +12913,7 @@ def api_doc_update(biz_type, bid):
             first = items[0]
             conn.execute("UPDATE purchase_orders SET item_name=?, spec=?, quantity=?, unit=?, price=?, amount=?, tax_amount=?, total_amount=?, tax_rate=? WHERE id=?",
                          (first.get('item_name', ''), first.get('spec', ''), sum(float(it.get('quantity', 1)) for it in items),
-                          first.get('unit', '个'), first.get('price', 0), grand_amt, grand_tax, grand_total, first.get('tax_rate', 13), bid))
+                          first.get('unit', '个'), first.get('price', 0), grand_amt, grand_tax, grand_total, float(first.get('tax_rate') or 0), bid))
         elif biz_type == 'requisition':
             total_q = sum(float(it.get('quantity', 0)) for it in items)
             conn.execute("DELETE FROM requisition_items WHERE requisition_id=?", (bid,))
