@@ -4403,7 +4403,7 @@ async function showRepairDetail(rid){
   const acts=[];
   if(p.status=='草稿'&&canOp)acts.push(['📤 提交报修(待定损)','submitRepair('+rid+')']);
   if(p.status=='定损驳回'&&canOp)acts.push(['🔄 修改后重新提交','submitRepair('+rid+')']);
-  if(p.status=='待定损'&&canLead)acts.push(['🔍 技术定损(三选一)','rpDamageOpen('+rid+')']);
+  if(p.status=='待定损'&&canBuyer)acts.push(['🔍 技术定损(三选一)','rpDamageOpen('+rid+')']);
   if(p.status=='定损完成待审批'&&canBuyer)acts.push(['💰 录入服务商报价','rpQuoteOpen('+rid+')']);
   // V11.216: 定损分级审批通过后(状态=审批通过) 必须可录报价 — 修复此状态无任何按钮的断链
   if(p.status=='审批通过'&&canBuyer)acts.push(['💰 录入服务商报价','rpQuoteOpen('+rid+')']);
