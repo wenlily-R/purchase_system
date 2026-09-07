@@ -12020,8 +12020,10 @@ def api_repair_quote(rid):
     c = db()
     r = c.execute("SELECT * FROM repair_plans WHERE id=?", (rid,)).fetchone()
     if not r: c.close(); return jsonify({'error': '维修单不存在'}), 404
-    if r['status'] not in ('审批通过', '定损完成待审批', '已通过', '待比价', '定损通过'):
-        c.close(); return jsonify({'error': f'当前状态({r["status"]})不可录报价'}), 400
+    if r['status'] not in ('审批通过', '已通过', '待比价', '定损通过'):
+        # V11.232修复: 定损审批通过前(定损完成待审批等)禁止录报价 — 原允许导致定损审批中
+        # 录报价即把状态推到'待比价', 绕过定损审批门控, 后续操作全部提前可做
+        c.close(); return jsonify({'error': f'当前状态({r["status"]})不可录报价：须定损审批通过后录入'}), 400
     company = str(d.get('company') or '').strip()
     if not company: c.close(); return jsonify({'error': '请填写维修服务商'}), 400
     # 覆盖式保存该服务商报价(防重复), 保留其他家
