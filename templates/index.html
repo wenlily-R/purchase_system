@@ -4109,7 +4109,7 @@ function rpFlowGuide(st){
     '草稿':'✏️ 可修改草稿，点下方「📤 提交报修」后自动流转到待技术定损',
     '定损驳回':'❌ 定损被驳回（原因见定损意见），修改后点「📤 重新提交」重新进入待技术定损',
     '待定损':'⏳ 已自动流转：等待定损人做技术定损（通知已推送）',
-    '定损完成待审批':'✅ 已自动进入【审批中心→维修审批中心】三级审批',
+    '定损完成待审批':'✅ 已自动进入【审批中心→维修审批中心】审批',
     '审批驳回':'↩️ 审批驳回：单据回到待技术定损，需重新定损或撤回修改',
     '审批通过':'✅ 审批通过，自动进入设备维修：录服务商报价→比价选商',
     '待比价':'🔧 设备维修中：录多家服务商报价后比价选商',
@@ -4779,7 +4779,7 @@ async function rpOfflinePaper(rid){
     <div style="font-size:10px;line-height:1.7">线下签字纸质件（照片/扫描件）上传归档，全程留痕可追溯。${p.urgency=='紧急'?'<b style="color:#dc2626">本单为加急</b>，可在审批节点勾选线下审批通过；':''}普通单据仍须走线上审批流。</div>
     <div class="fg" style="margin-top:6px"><label class="fl2">签字件照片/扫描件 *</label><div id="rpOffBox"></div><input type="file" id="rpOffInp" multiple accept="image/*" style="font-size:10px" onchange="rpOffUp()"></div>
     <div class="fg"><label class="fl2">线下签字说明</label><textarea class="fc" id="rpOffOp" rows="2" placeholder="如: 部门主管/机电厂长/生产厂长线下签字同意，原件已扫描归档"></textarea></div>
-    ${canFlow?'<label style="display:flex;gap:6px;align-items:center;font-size:10px;margin-top:4px"><input type="checkbox" id="rpOffApprove"> 加急线下审批完成（视同三级审批通过，直接流转报价环节）</label>':''}`;
+    ${canFlow?'<label style="display:flex;gap:6px;align-items:center;font-size:10px;margin-top:4px"><input type="checkbox" id="rpOffApprove"> 加急线下审批完成（视同审批通过，直接流转报价环节）</label>':''}`;
   window._rpOffFiles=[];
   id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="rpOfflineDo('+rid+')">💾 上传归档</button>';
 }
