@@ -4325,9 +4325,10 @@ async function showRepairDetail(rid){
   if((d.items||[]).length)h+=`<p style="font-size:10px"><b>定损清单:</b> ${d.items.map(i=>`${esc(i.part_name)}${i.fault_note?'('+esc(i.fault_note)+')':''}`).join('、')}</p>`;
   if(p.internal_note)h+=`<p style="font-size:10px;color:#16a34a"><b>自修处理记录:</b> ${fmt(p.internal_note)}</p>`;
   if(p.convert_req_no)h+=`<p style="font-size:10px;color:#2f6fed"><b>已转物资采购申请:</b> ${esc(p.convert_req_no)}</p>`;
-  if(p.vendor_selected)h+=`<p style="font-size:10px"><b>选定服务商:</b> ${fmt(p.vendor_selected)} ｜ <b>维修费合计:</b> <b style="color:#dc2626">¥${(p.quote_total||0).toFixed(0)}</b> ｜ <b>预估:</b> ¥${(p.est_cost||0).toFixed(0)}</p>`;
+  const _vsel=p.vendor_selected?(()=>{try{const a=JSON.parse(p.vendor_selected);return Array.isArray(a)?a:[p.vendor_selected]}catch(e){return [p.vendor_selected]}})():[];
+  if(p.vendor_selected)h+=`<p style="font-size:10px"><b>选定服务商:</b> ${esc(_vsel.join('、'))}${_vsel.length>1?'<span style="color:#888;font-size:9px">（首家为主维修厂家）</span>':''} ｜ <b>维修费合计:</b> <b style="color:#dc2626">¥${(p.quote_total||0).toFixed(0)}</b> ｜ <b>预估:</b> ¥${(p.est_cost||0).toFixed(0)}</p>`;
   if(p.start_time||p.expect_finish||p.actual_finish)h+=`<p style="font-size:10px"><b>维修进度:</b> 开工 ${fmt((p.start_time||'').slice(0,19))} ｜ 预计完工 ${fmt(p.expect_finish||p.finish_date)} ｜ 实际完工 ${fmt((p.actual_finish||'').slice(0,19))}</p>`;
-  if((d.quotes||[]).length){h+=`<div style="font-size:10px"><b>服务商报价:</b><table class="tb" style="font-size:8.5px;margin-top:2px"><thead><tr><th>服务商</th><th>维修项目</th><th>金额</th><th>工期</th></tr></thead><tbody>${d.quotes.map(q=>`<tr><td><b>${esc(q.company)}</b>${p.vendor_selected===q.company?' ✅选定':''}</td><td>${esc(q.item_name||'维修')}</td><td>¥${(q.price||0).toFixed(0)}</td><td>${esc(q.duration||'')}</td></tr>`).join('')}</tbody></table></div>`}
+  if((d.quotes||[]).length){h+=`<div style="font-size:10px"><b>服务商报价:</b><table class="tb" style="font-size:8.5px;margin-top:2px"><thead><tr><th>服务商</th><th>维修项目</th><th>金额</th><th>工期</th></tr></thead><tbody>${d.quotes.map(q=>`<tr><td><b>${esc(q.company)}</b>${_vsel.includes(q.company)?' ✅选定':''}</td><td>${esc(q.item_name||'维修')}</td><td>¥${(q.price||0).toFixed(0)}</td><td>${esc(q.duration||'')}</td></tr>`).join('')}</tbody></table></div>`}
   if((d.changes||[]).length)h+=`<div style="margin-top:4px"><b style="font-size:10px;color:#b45309">⚠️ 维修变更单（永久留痕 ${p.change_count||0}次）:</b>${d.changes.map(c=>`<div style="font-size:9px;background:#fffaf5;border:1px solid #fde3c0;border-radius:4px;padding:3px 5px;margin-top:2px">
     <b>${esc(c.add_item)}</b> 新增费用 ¥${(c.add_price||0).toFixed(0)} ${c.add_part?`· 配件:${esc(c.add_part)}`:''}${c.add_labor?`· 工时:¥${(c.add_labor||0).toFixed(0)}`:''} · 状态: <b>${esc(c.status)}</b>${c.created_by?' · 发起:'+esc(c.created_by):''}
     <div style="color:#666">四方确认: 提报人[${c.confirm1_by?esc(c.confirm1_by):'待确认'}] 采购专员[${c.confirm2_by?esc(c.confirm2_by):'待确认'}] 机电厂长[${c.confirm3_by?esc(c.confirm3_by):'待确认'}] 机修主任[${c.confirm4_by?esc(c.confirm4_by):'待确认'}]${c.status=='待确认'&&canLead?` <button class="lnk" style="color:#16a34a" onclick="rpChangeVote(${rid},${c.id},'confirm')">✓同意</button> <button class="lnk" style="color:#dc2626" onclick="rpChangeVote(${rid},${c.id},'reject')">✗驳回</button>`:''}</div></div>`).join('')}</div>`;
@@ -4534,23 +4535,27 @@ async function rpQuoteSave(rid){
   if(r.success){alert('✅ 报价已保存，可继续录入其他服务商或比价选商');closeMod();loadRepairs();loadRepairs2&&loadRepairs2()}
   else alert(r.error||'失败');
 }
-// 比价选定服务商
+// 比价选定服务商(V11.228: 支持多家入围/备选, 候选=报价服务商+系统供应商)
 async function rpSelectVendor(rid){
   const d=await api(`/repairs/${rid}/detail`);
   const qs=d.quotes||[];
-  if(!qs.length){alert('暂无报价, 先录入服务商报价');return}
-  id('dmTitle').textContent='✅ 比价选定服务商';
-  id('dmBody').innerHTML=`<div style="font-size:10px;line-height:1.7">各服务商报价对比，选定中标服务商（可比较总价/工期/质保）：</div>
-    <table class="tb" style="font-size:9px"><thead><tr><th></th><th>服务商</th><th>明细</th><th>金额</th><th>工期</th></tr></thead><tbody>
-    ${qs.map(q=>`<tr><td><input type="radio" name="rpV" value="${esc(q.company)}"></td><td><b>${esc(q.company)}</b></td><td style="font-size:8.5px">${esc(q.item_name||'维修')}</td><td>¥${(q.price||0).toFixed(0)}</td><td>${esc(q.duration||'')}</td></tr>`).join('')}
+  const sups=await api('/suppliers',{noCache:true}).catch(()=>[]);
+  const seen={},cands=[];
+  (qs||[]).forEach(q=>{if(q.company&&!seen[q.company]){seen[q.company]=1;cands.push({name:q.company,src:'报价'})}});
+  (sups||[]).forEach(s=>{if(s.name&&!seen[s.name]){seen[s.name]=1;cands.push({name:s.name,src:'供应商库'})}});
+  if(!cands.length){alert('暂无候选服务商, 先录入报价或在供应商管理添加');return}
+  id('dmTitle').textContent='✅ 比价选定服务商(可多选)' ;
+  id('dmBody').innerHTML=`<div style="font-size:10px;line-height:1.7">候选=本单报价服务商+系统供应商库，可<b>勾选多家</b>入围/备选（勾选顺序第一家为主维修厂家）；各家报价金额自动合计：</div>
+    <table class="tb" style="font-size:9px"><thead><tr><th></th><th>服务商</th><th>来源</th><th>本单报价</th><th>工期</th></tr></thead><tbody>
+    ${cands.map(c=>{const q=(qs||[]).filter(x=>x.company===c.name);const amt=q.reduce((s,x)=>s+(x.price||0),0);const dur=q.map(x=>x.duration||'').filter(Boolean).join('/')||'-';return `<tr><td><input type="checkbox" name="rpV" value="${esc(c.name)}"></td><td><b>${esc(c.name)}</b></td><td style="font-size:8.5px;color:#888">${c.src==='报价'?'📋 已报价':'🏢 供应商库'}</td><td>${amt>0?'¥'+amt.toFixed(0):'<span style="color:#bbb">未报价</span>'}</td><td style="font-size:8.5px">${esc(dur)}</td></tr>`}).join('')}
     </tbody></table>`;
-  id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="rpSelectDo('+rid+')">✅ 选定该服务商</button>';
+  id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="rpSelectDo('+rid+')">✅ 选定服务商</button>';
 }
 async function rpSelectDo(rid){
-  const sel=document.querySelector('input[name="rpV"]:checked');
-  if(!sel){alert('请选择服务商');return}
-  const r=await api(`/repairs/${rid}/select-vendor`,{method:'POST',body:JSON.stringify({company:sel.value})});
-  if(r.success){alert('✅ 已选定: '+sel.value);closeMod();loadRepairs();loadRepairs2&&loadRepairs2()}else alert(r.error||'失败');
+  const sels=[...document.querySelectorAll('input[name="rpV"]:checked')].map(x=>x.value);
+  if(!sels.length){alert('请至少选择一家服务商');return}
+  const r=await api(`/repairs/${rid}/select-vendor`,{method:'POST',body:JSON.stringify({companies:sels})});
+  if(r.success){alert('✅ 已选定'+(r.companies||sels).length+'家: '+(r.companies||sels).join('、'));closeMod();loadRepairs();loadRepairs2&&loadRepairs2()}else alert(r.error||'失败');
 }
 async function rpEntrust(rid){
   const r=await api(`/repairs/${rid}/entrust`,{method:'POST',body:'{}'});

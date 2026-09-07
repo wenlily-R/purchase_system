@@ -11809,24 +11809,29 @@ def api_repair_quote(rid):
 @app.route('/api/repairs/<int:rid>/select-vendor', methods=['POST'])
 @login_required
 def api_repair_select_vendor(rid):
-    """节点4b: 比价选定服务商(权限: 采购员/领导) → 可生成委托单/合同"""
+    """节点4b: 比价选定服务商(权限: 采购员/领导) → 可生成委托单/合同
+    V11.228: 支持多家入围/备选 — companies=[...] 多选(可从系统供应商选, 无需报价);
+    vendor_selected 存 JSON 数组, repair_company=首家(主维修厂家)兼容下游单值逻辑"""
     d = request.json or {}
     c = db()
     r = c.execute("SELECT * FROM repair_plans WHERE id=?", (rid,)).fetchone()
     if not r: c.close(); return jsonify({'error': '维修单不存在'}), 404
     if r['status'] != '待比价':
         c.close(); return jsonify({'error': f'当前状态({r["status"]})不可选商'}), 400
-    company = str(d.get('company') or '').strip()
-    if not company: c.close(); return jsonify({'error': '请选择服务商'}), 400
-    q = c.execute("SELECT * FROM repair_quotes WHERE plan_id=? AND company=? ORDER BY id LIMIT 1", (rid, company)).fetchone()
-    if not q: c.close(); return jsonify({'error': '该服务商尚无报价, 先录报价'}), 400
-    # V11.216: 选商落定金额 = 选中服务商报价总价(该家可能多条明细)
-    _tot = c.execute("SELECT SUM(price) s FROM repair_quotes WHERE plan_id=? AND company=?", (rid, company)).fetchone()[0] or 0
+    companies = [str(x).strip() for x in (d.get('companies') or []) if str(x).strip()]
+    if not companies:  # 兼容旧版单值提交
+        _one = str(d.get('company') or '').strip()
+        if _one: companies = [_one]
+    if not companies: c.close(); return jsonify({'error': '请选择服务商'}), 400
+    # 金额 = 选中服务商中已录报价的总价合计(从系统供应商直选未报价的计0, 后续录价可更新)
+    _marks = ','.join('?' * len(companies))
+    _tot = c.execute("SELECT COALESCE(SUM(price),0) s FROM repair_quotes WHERE plan_id=? AND company IN (%s)" % _marks,
+                     (rid,) + tuple(companies)).fetchone()[0] or 0
     c.execute("UPDATE repair_plans SET vendor_selected=?, repair_company=?, quote_total=?, status='已选服务商', updated_at=? WHERE id=?",
-              (company, company, float(_tot), now(), rid))
+              (json.dumps(companies, ensure_ascii=False), companies[0], float(_tot), now(), rid))
     c.commit(); c.close()
-    log(session['user_name'], '比价选定服务商', f'{r["plan_no"]} 选定:{company} ¥{float(_tot):.0f}')
-    return jsonify({'success': True, 'total': float(_tot)})
+    log(session['user_name'], '比价选定服务商', '%s 选定:%s(共%d家) ¥%.0f' % (r['plan_no'], '、'.join(companies), len(companies), float(_tot)))
+    return jsonify({'success': True, 'total': float(_tot), 'companies': companies})
 
 @app.route('/api/repairs/<int:rid>/entrust', methods=['POST'])
 @login_required
