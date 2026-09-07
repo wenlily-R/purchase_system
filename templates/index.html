@@ -3164,7 +3164,7 @@ async function showContract(id){
 async function loadCtAtt(cid){
   const box=id('ctAttBox'+cid); if(!box)return;
   let list=[];
-  try{const all=await api('/contracts'); const c=(all||[]).find(x=>x.id===cid); list=(c&&c.attachments)||[]}catch(e){}
+  try{const all=await api('/contracts',{noCache:true}); const c=(all||[]).find(x=>x.id===cid); list=(c&&c.attachments)||[]}catch(e){}
   const canUp=['采购员','系统管理员','分管领导','总经理'].includes(((typeof ME!=='undefined'&&ME.role)||'')||'');
   const rows=list.map(a=>`<tr><td>${esc(a.file_name)}</td><td><span class="tag" style="background:#f0f7ff;color:#1f6feb">${esc(a.file_kind||'其他')}</span></td><td>${esc(a.uploaded_by||'-')}</td><td style="font-size:9px;color:#888">${esc((a.created_at||'').slice(0,16))}</td>
     <td style="white-space:nowrap"><button class="lnk" onclick="window.open('/uploads/${a.file_path}','_blank')">👁 预览</button>
