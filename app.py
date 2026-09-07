@@ -3007,8 +3007,9 @@ def gen_doc_voucher(biz_type, biz_id, kind, title):
             return None
         fname = f"voucher_{kind}_{no}.xlsx"
         fpath = os.path.join(BASE, 'uploads', fname)
-        if os.path.exists(fpath):
-            return fname
+        # V11.230修复: 明细可能在首次生成凭证后更新过 — 不复用旧凭证文件(旧文件=旧明细,
+        # 导致钉钉审批Excel附件与系统页面商品明细不一致)。每次调下载接口重新生成
+        # (与页面"下载"按钮同一份逻辑, 读当前最新数据), 临时文件原子替换防半截文件。
         # 内部调用现有下载接口(与页面"下载"按钮完全同一份生成逻辑)
         url = {'prequest': f'/api/prequests/{biz_id}/download',
                'order': f'/api/orders/{biz_id}/download',
@@ -3026,13 +3027,21 @@ def gen_doc_voucher(biz_type, biz_id, kind, title):
         resp = client.get(url)
         if resp.status_code != 200 or not resp.data:
             log('系统', '单据凭证生成失败', f'{biz_type}#{biz_id}: 下载接口HTTP {resp.status_code}')
-            return None
+            return fname if os.path.exists(fpath) else None  # 失败回退旧凭证(避免审批无附件)
         os.makedirs(os.path.join(BASE, 'uploads'), exist_ok=True)
-        with open(fpath, 'wb') as f:
+        _tmp = fpath + '.tmp%d' % os.getpid()
+        with open(_tmp, 'wb') as f:
             f.write(resp.data)
+        os.replace(_tmp, fpath)  # 原子替换: Windows下目标存在可覆盖
         return fname
     except Exception as e:
         log('系统', '单据凭证生成失败', f'{biz_type}#{biz_id}: {str(e)[:120]}')
+        # 生成异常时回退旧凭证文件(避免钉钉审批无附件); 下次提交会再次尝试刷新
+        try:
+            if os.path.exists(fpath):
+                return fname
+        except Exception:
+            pass
         return None
 
 
