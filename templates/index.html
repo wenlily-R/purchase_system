@@ -1882,7 +1882,7 @@ async function addIqSup(){
     <select id="iqarch${c}" style="flex:2;min-width:140px;padding:4px 6px;border:1px solid var(--b);border-radius:3px;font-size:10px" onchange="iqPickArch(${c})">${archOpts}</select>
     <input placeholder="供应商名称(必填)" id="iqn${c}" style="flex:2;padding:4px 6px;border:1px solid var(--b);border-radius:3px;font-size:10px">
     <input placeholder="联系人" id="iqc${c}" style="flex:1;padding:4px 6px;border:1px solid var(--b);border-radius:3px;font-size:10px">
-    <input placeholder="电话" id="iqp${c}" style="flex:1;padding:4px 6px;border:1px solid var(--b);border-radius:3px;font-size:10px">
+    <input placeholder="对接手机号(必填,报价登录用)" id="iqp${c}" style="flex:1.2;padding:4px 6px;border:1px solid var(--b);border-radius:3px;font-size:10px">
     <span onclick="this.parentElement.remove()" style="cursor:pointer;color:var(--d);font-size:12px">✕</span></div>`);
   const tip=id('iqSupTip'); if(tip)tip.textContent=`已添加 ${IQ_SUPS}/至少2 家`;
 }
@@ -1899,7 +1899,11 @@ async function createInquiry(){
   const suppliers=[];
   for(let i=1;i<=IQ_SUPS;i++){
     const n=id('iqn'+i)?.value?.trim();
-    if(n)suppliers.push({name:n,contact:id('iqc'+i)?.value?.trim()||'',phone:id('iqp'+i)?.value?.trim()||''});
+    if(n){
+      const p=id('iqp'+i)?.value?.trim()||'';
+      if(!p){alert(`请填写「${n}」的对接手机号（必填，外部报价链接需手机号+访问密码验证，防止报价泄露）`);return}
+      suppliers.push({name:n,contact:id('iqc'+i)?.value?.trim()||'',phone:p});
+    }
   }
   if(!req_id){alert('请选择采购申请');return}
   if(suppliers.length<2||suppliers.length>3){alert('询价供应商需选择2-3家，方可发起询价');return}
@@ -1967,7 +1971,7 @@ async function showInquiry(qid){
       const oriPriceHtml = isAdj?`<div style="font-size:9px;color:#999">厂家原始报价：<span style="text-decoration:line-through">¥${(parseFloat(s.quote_price)||0).toFixed(2)}</span></div>`:'';
       h+=`<tr style="${s.is_selected?'background:#e8f5e9;':''}">
         <td><b>${esc(s.supplier_name)}</b>${s.is_selected?' <span class="tag tg-g">✓已选中</span>':''}${isAdj?' <span class="tag" style="background:#fdecea;color:#c0392b">💰已议价</span>':''}</td>
-        <td>${esc(s.contact||'')}${s.phone?'<br><span style="font-size:9px;color:#999">'+esc(s.phone)+'</span>':''}</td>
+        <td>${esc(s.contact||'')}${s.phone?'<br><span style="font-size:9px;color:#999">📱'+esc(s.phone)+'</span>':''}${s.access_code?'<br><span style="font-size:9px;color:#7c3aed">🔑访问码 '+esc(s.access_code)+'</span>':''}</td>
         <td style="font-weight:700;color:${d.locked?'#666':(effPrice?'#e67e22':'#999')};font-size:13px">${d.locked?(s.quoted?'<span style="color:#16a34a">✅ 已报价</span> <span style="font-size:9px;color:#b08900">🔒金额开标后可见</span>':'<span style="color:#ccc">未报价</span>'):(effPrice?('¥'+(effPrice||0).toFixed(2)):'<span style="color:#ccc">未报价</span>')}${oriPriceHtml}${detailHtml}</td>
         <td>${s.quote_delivery?esc(s.quote_delivery):'<span style="color:#ccc">-</span>'}</td>
         <td>${s.quote_warranty?esc(s.quote_warranty):'<span style="color:#ccc">-</span>'}</td>
@@ -1975,7 +1979,7 @@ async function showInquiry(qid){
         <td style="max-width:120px;word-break:break-all">${esc(s.quote_remark||'')}</td>
         <td style="max-width:150px">${adjRemarkHtml}${canAdjust&&s.quote_price?`<button class="lnk" style="color:#7b241c" onclick="showAdjustModal(${d.id},${s.id},'${esc(s.supplier_name)}')">✏️ 议价</button>`:''}</td>
         <td style="white-space:nowrap">
-          <button class="lnk" onclick="copyInqLink('${s.token}')">📋链接</button>
+          <button class="lnk" onclick="copyInqLink('${s.token}','${s.phone||''}','${s.access_code||''}')">📋链接+密码</button>
           ${(d.status=='询价中'&&effPrice&&!s.is_selected)?`<button class="lnk" style="color:#27ae60;margin-left:4px" onclick="selectInquirySupplier(${d.id},${s.id})">✅选中</button>`:''}
         </td>
       </tr>`;
@@ -2166,7 +2170,7 @@ async function submitInquiryApproval(iid){
     alert(r.error||'提交失败');
   }
 }
-async function copyInqLink(token){
+async function copyInqLink(token,phone,code){
   // V11.202c: 强制实时获取最新公网地址生成链接(隧道守护换址后 public_url.txt 即时更新,
   // 前端缓存 _dtCfg/_basePublicUrl 是登录/加载时的旧地址→复制出死链接, 这是商家打不开的反复根因)
   let base='';
@@ -2178,12 +2182,15 @@ async function copyInqLink(token){
   if(!base&&window._basePublicUrl) base=window._basePublicUrl.replace(/\/+$/,'');
   if(!base) base=location.origin;
   const url=base+'/inq/'+token;
-  const okMsg='✅ 链接已复制到剪贴板，可直接粘贴发送给供应商'+(base!==location.origin?'\n(公网链接, 商家可直接打开)':'');
+  // V11.236: 复制内容带验证信息(手机号+访问密码) — 权限绑供应商身份, 转发他人无密码也无法查看
+  let text=url;
+  if(phone&&code) text=`【供应商报价链接】\n${url}\n\n🔐 打开链接后请完成身份验证：\n手机号：${phone}\n访问密码：${code}\n\n（报价截止前仅可填写/修改贵司报价；截止开标后可查看全部比价。请勿将链接与密码转发他人）`;
+  const okMsg='✅ 链接+验证信息已复制，可直接粘贴发送给供应商'+(base!==location.origin?'\n(公网链接, 商家可直接打开)':'');
   // 方式1: 新版剪贴板API(仅HTTPS/localhost可用)
   try{
     if(navigator.clipboard&&window.isSecureContext){
-      await navigator.clipboard.writeText(url);
-      alert(okMsg+'\n\n'+url);
+      await navigator.clipboard.writeText(text);
+      alert(okMsg+'\n\n'+text);
       return;
     }
     throw new Error('no-clipboard-api');
@@ -2191,15 +2198,15 @@ async function copyInqLink(token){
     // 方式2: 旧版execCommand(HTTP局域网也可用, 兼容方案)
     try{
       const ta=document.createElement('textarea');
-      ta.value=url;ta.style.position='fixed';ta.style.top='-999px';ta.style.opacity='0';
+      ta.value=text;ta.style.position='fixed';ta.style.top='-999px';ta.style.opacity='0';
       document.body.appendChild(ta);
-      ta.focus();ta.select();ta.setSelectionRange(0,url.length);
+      ta.focus();ta.select();ta.setSelectionRange(0,text.length);
       const ok=document.execCommand('copy');
       ta.remove();
-      if(ok){alert(okMsg+'\n\n'+url);return}
+      if(ok){alert(okMsg+'\n\n'+text);return}
       throw new Error('exec-copy-failed');
     }catch(e2){
-      prompt('请手动复制报价链接：',url);
+      prompt('请手动复制报价链接：',text);
     }
   }
 }

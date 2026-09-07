@@ -662,6 +662,11 @@ def init_db():
             UNIQUE(contract_id, remind_date, kind)
         );
     """)
+    # V11.236 三方询价外部链接鉴权(需求: 链接不绑权限, 绑定供应商身份手机号): 访问密码+会话令牌(幂等补列)
+    _iqs = [r[1] for r in conn.execute("PRAGMA table_info(inquiry_suppliers)").fetchall()]
+    for _iqc, _iqd in [('access_code', "TEXT DEFAULT ''"), ('auth_token', "TEXT DEFAULT ''")]:
+        if _iqc not in _iqs:
+            conn.execute(f"ALTER TABLE inquiry_suppliers ADD COLUMN {_iqc} {_iqd}")
     # ---- V11.225 发票回收节点2.0: 合同发票「顺序节点」计划(每合同多节点: 触发条件/约定金额/约定时间) ----
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS contract_inv_nodes (
@@ -6215,9 +6220,16 @@ def api_create_inquiry():
         name = (s.get('name') or '').strip()
         if not name:
             continue
+        phone = str(s.get('phone') or '').strip()
+        # V11.236: 供应商对接手机号必填(外部链接鉴权=手机号+访问密码, 绑定供应商身份防泄密)
+        if not phone:
+            conn.close()
+            return jsonify({'error': f'供应商「{name}」未填对接手机号：外部报价链接鉴权需使用手机号，请补全每家供应商手机号后重试'}), 400
         token = uuid.uuid4().hex
-        conn.execute("INSERT INTO inquiry_suppliers(inquiry_id,supplier_name,contact,phone,token) VALUES(?,?,?,?,?)",
-                     (iid, name, s.get('contact', ''), s.get('phone', ''), token))
+        import random as _rnd
+        access_code = '%06d' % _rnd.randint(0, 999999)  # V11.236 每家分配6位访问密码(短信接口就绪后可换验证码)
+        conn.execute("INSERT INTO inquiry_suppliers(inquiry_id,supplier_name,contact,phone,token,access_code) VALUES(?,?,?,?,?,?)",
+                     (iid, name, s.get('contact', ''), phone, token, access_code))
     conn.commit(); conn.close()
     log(session['user_name'], '发起三方询价', '%s 申请#%s %d家' % (no, req_id, len([x for x in suppliers if (x.get('name') or '').strip()])))
     return jsonify({'success': True, 'inq_no': no, 'id': iid})
@@ -6315,6 +6327,75 @@ def _inq_locked(deadline):
     return bool(_ddt) and datetime.datetime.now() < _ddt
 
 
+# ============ V11.236 三方询价外部链接鉴权: 手机号 + 访问密码(绑定供应商身份, 链接泄露无效) ============
+_VENDOR_AUTH_FAIL = {}  # 内存节流: token -> [失败次数, 首次失败时间戳]
+
+
+def _vendor_auth_ok(s):
+    """外部报价会话校验: cookie inq_auth = <token>:<auth_token>, 与库内令牌一致才放行"""
+    try:
+        raw = request.cookies.get('inq_auth') or ''
+        if ':' not in raw:
+            return False
+        _t, _a = raw.split(':', 1)
+        return bool(_a) and _t == s['token'] and _a == (s['auth_token'] or '')
+    except Exception:
+        return False
+
+
+def _vendor_ensure_code(s, conn=None):
+    """惰性补发访问密码(历史数据无码) — 供内部详情展示, 返回6位码"""
+    if s['access_code']:
+        return s['access_code']
+    import random as _rnd
+    code = '%06d' % _rnd.randint(0, 999999)
+    _c = conn or db()
+    _c.execute("UPDATE inquiry_suppliers SET access_code=? WHERE id=?", (code, s['id']))
+    if conn is None:
+        _c.commit(); _c.close()
+    return code
+
+
+@app.route('/api/inquiry/vendor/<token>/auth', methods=['POST'])
+def inquiry_vendor_auth(token):
+    """V11.236 外部供应商鉴权: 手机号(本单登记) + 访问密码 → 签发会话cookie
+    规则: 仅本询价单登记过的供应商手机号可通过; 其他手机号一律拒绝(统一文案不泄露存在性);
+    密码连续错误节流(同token 10分钟内5次锁定)"""
+    import time as _time
+    d = request.json or {}
+    phone = str(d.get('phone') or '').strip()
+    code = str(d.get('code') or '').strip()
+    conn = db()
+    s = conn.execute("SELECT * FROM inquiry_suppliers WHERE token=?", (token,)).fetchone()
+    if not s:
+        conn.close(); return jsonify({'error': '报价链接无效'}), 404
+    i = conn.execute("SELECT * FROM inquiries WHERE id=?", (s['inquiry_id'],)).fetchone()
+    if not i or i['status'] != '询价中':
+        conn.close(); return jsonify({'error': '该询价已结束，无法访问'}), 403
+    # 节流: 同token连续失败锁定
+    _f = _VENDOR_AUTH_FAIL.get(token)
+    if _f and _f[0] >= 5 and _time.time() - _f[1] < 600:
+        conn.close(); return jsonify({'error': '尝试次数过多，请 10 分钟后再试，或联系采购方'}), 429
+    if not phone or not code:
+        conn.close(); return jsonify({'error': '请输入手机号和访问密码'}), 400
+    if phone == str(s['phone'] or '').strip() and code == str(s['access_code'] or '').strip():
+        _VENDOR_AUTH_FAIL.pop(token, None)
+        import uuid as _uu
+        _at = _uu.uuid4().hex
+        conn.execute("UPDATE inquiry_suppliers SET auth_token=? WHERE id=?", (_at, s['id']))
+        conn.commit(); conn.close()
+        resp = jsonify({'success': True, 'company': s['supplier_name']})
+        resp.set_cookie('inq_auth', '%s:%s' % (token, _at), max_age=60 * 60 * 24 * 30, httponly=True)
+        return resp
+    # 失败计数
+    if _f:
+        _VENDOR_AUTH_FAIL[token] = [_f[0] + 1, _f[1]]
+    else:
+        _VENDOR_AUTH_FAIL[token] = [1, _time.time()]
+    conn.close()
+    return jsonify({'error': '手机号或访问密码不正确（访问密码请向采购方索取；仅本单登记供应商可报价）'}), 403
+
+
 @app.route('/api/inquiries/<int:iid>')
 @login_required
 def api_inquiry_detail(iid):
@@ -6343,6 +6424,11 @@ def api_inquiry_detail(iid):
     supplier_list = []
     for s in sups:
         sd = dict_row(s)
+        # V11.236: 返回每家供应商访问密码(内部采购转发报价链接时告知; 历史无码自动补发, 锁定期亦可见)
+        try:
+            sd['access_code'] = _vendor_ensure_code(s)
+        except Exception:
+            sd['access_code'] = s['access_code'] or ''
         if out['locked']:
             # 开标前对内部账号脱敏报价字段(数值清0/文本清空), 不泄露任何报价信息
             for _k in ('quote_price', 'quote_details', 'quote_remark', 'quote_delivery', 'quote_warranty',
@@ -6362,6 +6448,75 @@ def api_inquiry_detail(iid):
         supplier_list.append(sd)
     out['suppliers'] = supplier_list
     return jsonify(out)
+
+# ============ V11.236 外部页: 鉴权门禁 + 开标后比价公开(只读) ============
+def _inq_gate_html(token):
+    """V11.236 访问门禁: 手机号(本单登记) + 访问密码; 防链接转发泄密(权限绑手机号不绑链接)"""
+    return ('<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            '<title>供应商报价 · 身份验证</title></head><body style="margin:0;background:#eef2f7;font-family:-apple-system,Segoe UI,Microsoft YaHei,sans-serif">'
+            '<div style="max-width:420px;margin:70px auto;background:#fff;border-radius:14px;padding:32px 28px;box-shadow:0 6px 28px rgba(0,0,0,.09)">'
+            '<div style="text-align:center;font-size:40px;margin-bottom:8px">🔐</div>'
+            '<h2 style="margin:0 0 4px;color:#333;font-size:17px;text-align:center">供应商报价 · 身份验证</h2>'
+            '<p style="color:#888;font-size:12.5px;text-align:center;margin:0 0 18px;line-height:1.7">为防止报价信息泄露，请使用本询价单登记的<br><b>对接手机号 + 访问密码</b> 登录（密码向采购方索取）</p>'
+            '<div style="margin-bottom:12px"><label style="font-size:12px;color:#555;display:block;margin-bottom:4px">📱 登记手机号 *</label>'
+            '<input id="ph" type="tel" placeholder="请输入贵司登记的手机号" style="width:100%%;box-sizing:border-box;padding:10px 12px;border:1px solid #d0d7e2;border-radius:8px;font-size:14px"></div>'
+            '<div style="margin-bottom:16px"><label style="font-size:12px;color:#555;display:block;margin-bottom:4px">🔑 访问密码 *</label>'
+            '<input id="cd" type="password" maxlength="12" placeholder="6位访问密码（向采购方索取）" style="width:100%%;box-sizing:border-box;padding:10px 12px;border:1px solid #d0d7e2;border-radius:8px;font-size:14px"></div>'
+            '<button onclick="go()" style="width:100%%;padding:12px;background:#1f6feb;color:#fff;border:none;border-radius:8px;font-size:15px;cursor:pointer">进入报价</button>'
+            '<div id="msg" style="margin-top:12px;font-size:12.5px;color:#e74c3c;text-align:center"></div>'
+            '<div style="margin-top:14px;padding-top:12px;border-top:1px dashed #e5e9f0;font-size:11.5px;color:#999;text-align:center;line-height:1.7">⛔ 仅本询价单登记过的供应商可进入<br>其他手机号将被拒绝访问，请勿转发报价信息</div></div>'
+            '<script>'
+            'window.go=async function(){const ph=(document.getElementById("ph").value||"").trim(),cd=(document.getElementById("cd").value||"").trim();'
+            'if(!ph||!cd){document.getElementById("msg").textContent="请输入手机号和访问密码";return}'
+            'const r=await fetch("/api/inquiry/vendor/%s/auth",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({phone:ph,code:cd})}).then(x=>x.json()).catch(()=>({error:"网络错误"}));'
+            'if(r.success){location.reload()}else{document.getElementById("msg").textContent=r.error||"验证失败"}};'
+            'document.getElementById("ph").addEventListener("keydown",e=>{if(e.key==="Enter")go()});'
+            'document.getElementById("cd").addEventListener("keydown",e=>{if(e.key==="Enter")go()});'
+            '</script></body></html>') % token
+
+
+def _inq_vendor_result(token, s):
+    """V11.236 开标后(截止/全部报完)比价公开页 — 只读展示全部厂商报价, 供参与供应商查看"""
+    import datetime as _d
+    c = db()
+    c.row_factory = sqlite3.Row
+    try:
+        i = c.execute("SELECT * FROM inquiries WHERE id=?", (s['inquiry_id'],)).fetchone()
+        pr = c.execute("SELECT * FROM purchase_requests WHERE id=?", (i['req_id'],)).fetchone()
+        items = c.execute("SELECT * FROM request_items WHERE req_id=?", (i['req_id'],)).fetchall()
+        sups = c.execute("SELECT * FROM inquiry_suppliers WHERE inquiry_id=? ORDER BY (quote_price>0) DESC, quote_price ASC", (s['inquiry_id'],)).fetchall()
+    except Exception:
+        c.close(); return None
+    c.close()
+    _item_head = ''.join('<tr style="background:#f5f8ff"><th style="padding:6px 10px;text-align:left">物资</th><th style="padding:6px 10px;text-align:left">规格</th>'
+                         '<th style="padding:6px 10px;text-align:left">数量</th></tr>' + ''.join(
+        '<tr><td style="padding:5px 10px">%s</td><td style="padding:5px 10px;color:#777;font-size:12px">%s</td><td style="padding:5px 10px">%s %s</td></tr>'
+        % (esc_html(x['item_name']), esc_html(x['spec'] or ''), x['quantity'], esc_html(x['unit'] or '个')) for x in items) if items else '<tr><td style="padding:8px;color:#999">—</td></tr>')
+    _rows = []
+    for _rank, sp in enumerate(sups, 1):
+        _mine = '（贵司）' if sp['token'] == s['token'] else ''
+        _q = (sp['quote_price'] or 0) > 0
+        _row = ('<tr><td style="padding:8px 10px;border-top:1px solid #eef"><b>%d. %s</b>%s</td>'
+                '<td style="padding:8px 10px;border-top:1px solid #eef;text-align:right;font-weight:700;color:%s">%s</td>'
+                '<td style="padding:8px 10px;border-top:1px solid #eef;color:#888;font-size:12px">%s</td></tr>') % (
+            _rank, esc_html(sp['supplier_name']), _mine,
+            '#2e7d32' if _q else '#bbb',
+            ('¥%s' % format(float(sp['quote_price'] or 0), ',.2f')) if _q else '未报价',
+            esc_html(sp['quote_remark'] or '')[:60])
+        _rows.append(_row)
+    _dl = esc_html(i['deadline'] or '')
+    return ('<div style="max-width:760px;margin:40px auto;background:#fff;border-radius:14px;padding:28px;box-shadow:0 6px 28px rgba(0,0,0,.08);font-family:-apple-system,Segoe UI,Microsoft YaHei,sans-serif">'
+            '<h2 style="margin:0 0 4px;color:#1f6feb;font-size:18px">📊 询价比价结果（已开标）</h2>'
+            '<p style="color:#888;font-size:12.5px;margin:0 0 12px">询价单 %s%s · 报价截止后各家报价已公开，供参与供应商核对</p>'
+            '<div style="background:#f0faf0;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:14px;color:#2e7d32"><b>✅ 报价已公开</b> — 本页为比价结果，报价通道已关闭，如需修改请联系采购方</div>'
+            '<div style="margin-bottom:8px;font-size:13px"><b>📦 采购明细</b>（%s）</div>'
+            '<table style="width:100%%;border-collapse:collapse;font-size:13px;margin-bottom:18px">%s</table>'
+            '<div style="margin-bottom:8px;font-size:13px"><b>🏢 各家报价对比</b>（按报价排序，开标后公开）</div>'
+            '<table style="width:100%%;border-collapse:collapse;font-size:13px"><tr style="background:#f8f9fb"><th style="padding:6px 10px;text-align:left">供应商</th><th style="padding:6px 10px;text-align:right">含税含运总价</th><th style="padding:6px 10px;text-align:left">备注</th></tr>%s</table>'
+            '<p style="color:#bbb;font-size:11px;margin-top:14px;text-align:center">询价编号 %s</p></div>') % (
+        esc_html(i['inq_no']), ('（' + _dl + ' 截止）') if _dl else '', esc_html(pr['purpose'] or '')[:60], _item_head, ''.join(_rows), esc_html(i['inq_no']))
+
 
 @app.route('/inq/<token>')
 def inquiry_vendor_page(token):
@@ -6392,11 +6547,27 @@ def inquiry_vendor_page(token):
         _st_txt = {'已生成订单': '该询价已完成定标', '定标审批中': '该询价正在定标审批中', '待定标': '该询价等待定标'}.get(_st, '该询价已结束')
         conn.close()
         return _msg_page('⏳', _st_txt, '本批次询价已结束，无法继续报价。感谢参与，欢迎下次合作。')
-    _deadline = (i['deadline'] or '').strip()
-    # V11.205: 截止精确到分钟 — 到点(含纯日期老数据按当日23:59)后商家页关闭
-    _ddt2 = _inq_deadline_dt(_deadline)
-    if _ddt2 and datetime.datetime.now() >= _ddt2:
+    # V11.236: 鉴权门禁 — 链接不再等于权限, 必须本单登记手机号+访问密码通过后方可进入(报价/查看比价)
+    if not _vendor_auth_ok(s):
         conn.close()
+        return _inq_gate_html(token)
+    _deadline = (i['deadline'] or '').strip()
+    # V11.205: 截止精确到分钟 — 到点(含纯日期老数据按当日23:59)后报价通道关闭
+    _ddt2 = _inq_deadline_dt(_deadline)
+    # V11.217: 全部受邀供应商已报价 → 提前开标(不等截止时间)
+    _all_q2 = False
+    try:
+        _tot2 = conn.execute("SELECT COUNT(*) c FROM inquiry_suppliers WHERE inquiry_id=?", (i['id'],)).fetchone()[0]
+        _qed2 = conn.execute("SELECT COUNT(*) c FROM inquiry_suppliers WHERE inquiry_id=? AND (quote_price IS NULL OR quote_price<=0)", (i['id'],)).fetchone()[0]
+        _all_q2 = _tot2 > 0 and _qed2 == 0
+    except Exception:
+        pass
+    if (_ddt2 and datetime.datetime.now() >= _ddt2) or _all_q2:
+        # V11.236: 开标后 → 比价公开只读页(已鉴权, 各家报价可见; 报价通道关闭)
+        conn.close()
+        _res = _inq_vendor_result(token, s)
+        if _res:
+            return _res
         return _msg_page('⏰', '报价已截止', '该询价已于 %s 截止，无法继续报价/修改。如有疑问请联系采购方。' % _deadline)
     pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (i['req_id'],)).fetchone()
     items = conn.execute("SELECT * FROM request_items WHERE req_id=?", (i['req_id'],)).fetchall()
@@ -6516,6 +6687,9 @@ def inquiry_vendor_quote(token):
     s = conn.execute("SELECT * FROM inquiry_suppliers WHERE token=?", (token,)).fetchone()
     if not s:
         conn.close(); return jsonify({'error': '报价链接无效'}), 404
+    # V11.236: 提交报价须通过手机号鉴权(链接转发无法绕过)
+    if not _vendor_auth_ok(s):
+        conn.close(); return jsonify({'error': '请先完成手机号验证（打开报价链接输入登记手机号+访问密码）'}), 403
     i = conn.execute("SELECT * FROM inquiries WHERE id=?", (s['inquiry_id'],)).fetchone()
     if not i or i['status'] != '询价中':
         conn.close(); return jsonify({'error': '该询价已结束，无法报价'}), 400
