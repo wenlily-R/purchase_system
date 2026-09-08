@@ -12873,7 +12873,7 @@ def api_doc_withdraw(biz_type, bid):
             conn.execute("UPDATE purchase_requests SET status='已通过', updated_at=? WHERE id=? AND status='已下单'", (now(), row['req_id']))
             _msg = '订单已作废（回退到上游环节）：采购申请已解锁为「已通过」。请在采购申请中修改信息（保存后自动重新提交审批），通过后可再次下单生成新订单。'
         elif row['inquiry_id']:
-            conn.execute("UPDATE inquiries SET status='已作废', remark=COALESCE(remark||'；','')||'订单撤回联动作废' WHERE id=? AND status='已生成订单'", (row['inquiry_id'],))
+            conn.execute("UPDATE inquiries SET status='已作废', updated_at=? WHERE id=? AND status='已生成订单'", (now(), row['inquiry_id']))
             _msg = '订单已作废（回退到上游环节）：原询价单联动作废。请在采购申请中修改后重新提交审批，通过后重新发起询价/下单。'
     elif biz_type == 'receiving':
         # 入库单(收货结果): 已入库禁止; 未入库撤回 → 作废 + 解锁订单(待入库→审批通过 可重新发起入库)
@@ -12889,7 +12889,7 @@ def api_doc_withdraw(biz_type, bid):
             if conn.execute("SELECT COUNT(*) FROM contracts WHERE order_id=? AND status NOT IN ('已作废','已撤回')", (_co['id'],)).fetchone()[0] == 0 and \
                conn.execute("SELECT COUNT(*) FROM receivings WHERE order_id=? AND status='已入库'", (_co['id'],)).fetchone()[0] == 0:
                 conn.execute("UPDATE purchase_orders SET status='已作废', updated_at=? WHERE id=?", (now(), _co['id']))
-        conn.execute("UPDATE inquiries SET status='已作废', remark=COALESCE(remark||'；','')||'申请撤回联动作废' WHERE req_id=? AND status IN ('询价中','待比价','定标审批中')", (bid,))
+        conn.execute("UPDATE inquiries SET status='已作废', updated_at=? WHERE req_id=? AND status IN ('询价中','待比价','定标审批中')", (now(), bid))
         _msg = f'申请已撤回退回草稿（关联的订单/询价单已联动作废解锁）。请在申请中修改信息后重新提交审批，审批通过后重新下单/发起询价。'
     elif biz_type == 'inquiry':
         # 三方询价(中间单): 已有订单禁止; 否则询价作废 + 采购申请回草稿(可修改) → 重新提交申请审批 → 通过后重新发起询价
