@@ -9585,6 +9585,106 @@ def _inv_stats_rows(args):
     return {'dim': dim, 'rows': detail, 'summary': summary}
 
 
+@app.route('/api/toolbox/mk-test-chain', methods=['POST'])
+@login_required
+def api_toolbox_mk_test_chain():
+    """V11.246 数据工具箱: 一键生成测试链(采购申请【测试】→订单→暂估入库, 不触发审批/钉钉)
+    仅系统管理员; 解决'加测试数据要上Mac执行'的反复痛点 — 网页直接生成, 可随后在入库列表做发票核对红冲测试"""
+    if session.get('user_role') != '系统管理员':
+        return jsonify({'error': '仅系统管理员可使用数据工具箱'}), 403
+    d = request.json or {}
+    name = (d.get('item_name') or '').strip()
+    if not name:
+        return jsonify({'error': '请填写物料名称'}), 400
+    try:
+        qty = max(int(float(d.get('quantity') or 0)), 1)
+        price = max(float(d.get('price') or 0), 0.01)
+    except Exception:
+        return jsonify({'error': '数量/单价格式不对'}), 400
+    spec = (d.get('spec') or '').strip()
+    unit = (d.get('unit') or '个').strip()
+    supplier = (d.get('supplier') or '').strip() or '测试供应商'
+    dept = (d.get('dept') or '生产部').strip()
+    total = round(qty * price, 2)
+    tag = datetime.datetime.now().strftime('%H%M%S')
+    no = tag + datetime.datetime.now().strftime('%m%d')
+    conn = db()
+    def _cols(t):
+        return [dict(r) for r in conn.execute(f"PRAGMA table_info({t})").fetchall()]
+    def _ins(t, over):
+        vals = {}
+        for x in _cols(t):
+            if x['pk']: continue
+            tt = x['type'].upper()
+            vals[x['name']] = '' if ('CHAR' in tt or 'TEXT' in tt) else (0 if ('INT' in tt or 'REAL' in tt or 'NUM' in tt) else '')
+        vals.update({k: v for k, v in over.items() if k in vals})
+        conn.execute(f"INSERT INTO {t}({','.join(vals.keys())}) VALUES({','.join('?'*len(vals))})", [vals[k] for k in vals])
+        return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    purpose = f"【测试】{name}"
+    pr = _ins('purchase_requests', {'req_no': 'SC' + no, 'purpose': purpose, 'dept': dept,
+                                     'status': '已通过', 'total_estimated': total,
+                                     'created_at': now(), 'updated_at': now(), 'apply_date': datetime.date.today().strftime('%Y-%m-%d')})
+    _ins('request_items', {'req_id': pr, 'item_name': name, 'spec': spec, 'unit': unit,
+                           'quantity': qty, 'estimated_price': price, 'total_price': total,
+                           'category': '办公用品', 'created_at': now()})
+    po = _ins('purchase_orders', {'order_no': 'PO' + no, 'req_id': pr, 'supplier': supplier, 'status': '执行中',
+                                  'quantity': qty, 'total_amount': total, 'created_at': now(), 'updated_at': now(),
+                                  'target_date': datetime.date.today().strftime('%Y-%m-%d')})
+    rv = _ins('receivings', {'receive_no': 'RK' + no, 'order_id': po, 'is_est': 1, 'invoice_no': '',
+                             'est_amount': total, 'status': '已入库', 'quantity': qty,
+                             'received_at': now(), 'created_at': now(), 'updated_at': now()})
+    conn.commit(); conn.close()
+    log(session['user_name'], '工具箱生成测试链', f'{name} {qty}{unit} ¥{total} → RK{no}')
+    return jsonify({'success': True, 'req_no': 'SC' + no, 'order_no': 'PO' + no, 'receive_no': 'RK' + no,
+                    'name': name, 'qty': qty, 'total': total, 'purpose': purpose,
+                    'tip': f'入库列表搜索 {name} 或单号 RK{no}, 点🧾发票核对即可测试红冲'})
+
+
+@app.route('/api/toolbox/cleanup-test', methods=['POST'])
+@login_required
+def api_toolbox_cleanup_test():
+    """V11.246 数据工具箱: 清理【测试】标签数据(仅系统管理员) — 删除该标签申请链(申请/明细/订单/暂估入库)"""
+    if session.get('user_role') != '系统管理员':
+        return jsonify({'error': '仅系统管理员可使用数据工具箱'}), 403
+    conn = db()
+    prs = [r[0] for r in conn.execute("SELECT id FROM purchase_requests WHERE purpose LIKE '【测试】%'").fetchall()]
+    n_rv = n_po = 0
+    for pr in prs:
+        for po in [r[0] for r in conn.execute("SELECT id FROM purchase_orders WHERE req_id=?", (pr,)).fetchall()]:
+            for rv in [r[0] for r in conn.execute("SELECT id FROM receivings WHERE order_id=?", (po,)).fetchall()]:
+                conn.execute("DELETE FROM receivings WHERE id=?", (rv,)); n_rv += 1
+            conn.execute("DELETE FROM purchase_orders WHERE id=?", (po,)); n_po += 1
+        conn.execute("DELETE FROM request_items WHERE req_id=?", (pr,))
+        conn.execute("DELETE FROM purchase_requests WHERE id=?", (pr,))
+    conn.commit(); conn.close()
+    log(session['user_name'], '工具箱清理测试数据', f'删除申请{len(prs)} 订单{n_po} 入库{n_rv}')
+    return jsonify({'success': True, 'requests': len(prs), 'orders': n_po, 'receivings': n_rv})
+
+
+@app.route('/api/toolbox/query', methods=['POST'])
+@login_required
+def api_toolbox_query():
+    """V11.246 数据工具箱: 只读SQL查询(仅系统管理员; 仅允许 SELECT/PRAGMA/WITH, 防写库误操作留痕)"""
+    if session.get('user_role') != '系统管理员':
+        return jsonify({'error': '仅系统管理员可使用数据工具箱'}), 403
+    sql = (request.json or {}).get('sql') or ''
+    s = sql.strip().upper()
+    if not s or not (s.startswith('SELECT') or s.startswith('PRAGMA') or s.startswith('WITH')):
+        return jsonify({'error': '仅允许只读查询(SELECT/PRAGMA/WITH)'}), 400
+    if ';' in sql.rstrip(';') and sql.count(';') > 1:
+        return jsonify({'error': '一次仅一条查询'}), 400
+    conn = db(); conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(sql).fetchall()
+        cols = list(rows[0].keys()) if rows else []
+        out = [[x[c] for c in cols] for x in rows]
+    except Exception as e:
+        conn.close(); return jsonify({'error': f'查询失败: {str(e)[:150]}'}), 400
+    conn.close()
+    log(session['user_name'], '工具箱SQL查询', sql.strip()[:120])
+    return jsonify({'cols': cols, 'rows': out[:300], 'total': len(rows)})
+
+
 @app.route('/api/reports/checkpoints')
 @login_required
 def api_report_checkpoints():
