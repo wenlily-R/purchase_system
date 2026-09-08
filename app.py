@@ -635,6 +635,8 @@ def init_db():
         ('contract_invoices', 'node_id', "ALTER TABLE contract_invoices ADD COLUMN node_id INTEGER DEFAULT 0"),
         # ---- V11.228 合同: 收款账户信息快照(仅系统面板留存, 禁止写入合同正文docx) ----
         ('contracts', 'bank_info', "ALTER TABLE contracts ADD COLUMN bank_info TEXT DEFAULT ''"),
+        # V11.233: 合同模板名称(现结/按月结算/预付款+验收后尾款) — 需求: 合同表记录选用模板, 列表/详情展示
+        ('contracts', 'template_name', "ALTER TABLE contracts ADD COLUMN template_name TEXT DEFAULT ''"),
     ]:
         _cols = [r[1] for r in conn.execute(f"PRAGMA table_info({_tbl})").fetchall()]
         if _col not in _cols:
@@ -10474,6 +10476,19 @@ def api_trace():
     c.close()
     return jsonify(out)
 
+# V11.233: 合同模板文件下拉源 — 扫描 contract_templates/ 目录docx(需求: 固定路径文件即模板, 替换即更新, 不后台导入)
+@app.route('/api/contract-template-files')
+@login_required
+def api_contract_template_files():
+    d = os.path.join(BASE, 'contract_templates')
+    names = []
+    if os.path.isdir(d):
+        for f in sorted(os.listdir(d)):
+            if f.lower().endswith('.docx'):
+                names.append(os.path.splitext(f)[0])
+    return jsonify({'templates': names})
+
+
 # ---- 合同模板管理 ----
 @app.route('/api/contract-templates')
 @login_required
@@ -10598,13 +10613,31 @@ def api_contract_generate():
         conn.close()
         return jsonify({'error': '该订单已生成合同 %s（状态:%s），如需重新生成请先撤回或作废原合同' % (_exist['contract_no'], _exist['status'])}), 400
     sup = conn.execute("SELECT * FROM suppliers WHERE name=?", (o['supplier'],)).fetchone() if o['supplier'] else None
-    tpl = None
-    if d.get('template_id'):
-        tpl = conn.execute("SELECT * FROM contract_templates WHERE id=?", (d['template_id'],)).fetchone()
-    if not tpl:
-        tpl = conn.execute("SELECT * FROM contract_templates WHERE is_default=1 AND status='启用'").fetchone()
-    if not tpl:
-        conn.close(); return jsonify({'error': '未找到启用的合同模板, 请到 系统设置→合同模板管理 上传模板'}), 400
+    # V11.233: 合同模板来源 — 优先读 contract_templates/ 目录下的模板docx(需求: 文件放固定路径, 替换即更新, 不后台导入);
+    # 下拉选项=该目录docx文件名(如 买卖合同-现结), 未指定时回退旧模板表默认模板
+    tpl_name = (d.get('template_name') or '').strip()
+    tpl_path = ''
+    tpl_display = ''
+    if tpl_name:
+        _cand = [os.path.join(BASE, 'contract_templates', tpl_name),
+                 os.path.join(BASE, 'contract_templates', tpl_name + '.docx')]
+        for _pc in _cand:
+            if os.path.exists(_pc):
+                tpl_path = _pc
+                tpl_display = os.path.splitext(os.path.basename(_pc))[0]
+                break
+    if not tpl_path:
+        tpl = None
+        if d.get('template_id'):
+            tpl = conn.execute("SELECT * FROM contract_templates WHERE id=?", (d['template_id'],)).fetchone()
+        if not tpl:
+            tpl = conn.execute("SELECT * FROM contract_templates WHERE is_default=1 AND status='启用'").fetchone()
+        if not tpl:
+            conn.close(); return jsonify({'error': '未找到启用的合同模板, 请到 系统设置→合同模板管理 上传模板'}), 400
+        tpl_path = os.path.join(BASE, 'uploads', tpl['file_path'])
+        tpl_display = tpl['name'] or ''
+    if not os.path.exists(tpl_path):
+        conn.close(); return jsonify({'error': '模板文件缺失(%s), 请检查 contract_templates 目录' % tpl_path}), 400
     # 甲方预设
     cname = cfg_get('company_name', '正成能源有限公司')
     caddr = cfg_get('company_address', '山西省')
@@ -10644,15 +10677,20 @@ def api_contract_generate():
         '{乙方名称}': sup['name'] if sup else (o['supplier'] or ''),
         '{乙方地址}': '', '{乙方联系人}': sup['contact'] if sup else '',
         '{乙方电话}': sup['phone'] if sup else '',
-        # V11.228 Bug2③: 收款账户(开户行/账号)信息禁止写入合同正文docx — 占位一律置空, 段落整体移除
+        # V11.228 Bug2③ 历史占位(旧模板无收款正文需求): 保持置空, 旧模板段落无值将按空壳移除
         '{乙方开户行}': '', '{乙方账号}': '',
+        # V11.233: 收款信息自动填充 — 第八条第3点取自供应商档案渲染进合同正文(需求: 无需人工填写, 允许保存后手动改)
+        '{收款账号名称}': (sup['name'] if sup else (o['supplier'] or '')),
+        '{收款账号}': (sup['account'] if sup and sup['account'] else ''),
+        '{收款银行}': (sup['bank'] if sup and sup['bank'] else ''),
+        '{签订日期}': '',  # 实际值在下方 today_s 计算后回填
         '{下单日期}': (o['created_at'] or '')[:10], '{预计交货日期}': o['target_date'] or '',
         '{结算方式}': settle, '{明细清单}': items_txt,
         '{合计金额}': '',  # V11.228: total 联动计算后填充(见下方覆盖), 修复合同金额/大写取旧订单0值
     }
     try:
         from docx import Document
-        tpl_path = os.path.join(BASE, 'uploads', tpl['file_path'])
+        # tpl_path 已在上方按 template_name/默认模板解析(V11.233); 此处不再覆盖
         if not os.path.exists(tpl_path):
             conn.close(); return jsonify({'error': '模板文件缺失, 请重新上传'}), 400
         doc = Document(tpl_path)
@@ -10691,6 +10729,7 @@ def api_contract_generate():
             except Exception:
                 days = ''
         today_s = datetime.date.today().strftime('%Y年 %m月 %d日')
+        mapping['{签订日期}'] = today_s
         # V8.4: 合同文本通用处理(段落+表格共用) — 合计金额中文大写/税率/税金/不含税/收款账户/日期
         def _apply_ct(t):
             if '合计金额：¥' in t:
@@ -10754,7 +10793,7 @@ def api_contract_generate():
                 t = '乙方：' + (sup['name'] if sup else (o['supplier'] or '')) + '（供应方）'
             t = _apply_ct(t)
             # V11.228: 开户/账号/收款占位替换后无值(空壳标签/残留占位) → 删段, 账户信息不进正文
-            if any(k in orig_t for k in ('开户行', '收款账户', '收款账号', '收款银行', '银行行号', '{乙方账号}', '{乙方开户行}')) and not re.search(r'[0-9A-Za-z¥￥$]', t):
+            if any(k in orig_t for k in ('开户行', '收款账户', '收款账号', '收款银行', '银行行号', '{乙方账号}', '{乙方开户行}')) and not re.search(r'[0-9A-Za-z\u4e00-\u9fff¥￥$]', t):  # V11.233: 填充中文收款信息后保留, 仅空壳删除:
                 _acc_drop.append(para)
                 continue
             if t != para.text:
@@ -10779,7 +10818,7 @@ def api_contract_generate():
                                     _nt = _nt.replace(_k, _v)
                             _nt = _apply_ct(_nt)
                             # V11.228: 单元格收款账户空标签(无值) → 清空, 不进正文
-                            if any(k in _nt0 for k in ('开户行', '收款账户', '收款账号', '收款银行', '银行行号', '{乙方账号}', '{乙方开户行}')) and not re.search(r'[0-9A-Za-z¥￥$]', _nt):
+                            if any(k in _nt0 for k in ('开户行', '收款账户', '收款账号', '收款银行', '银行行号', '{乙方账号}', '{乙方开户行}')) and not re.search(r'[0-9A-Za-z\u4e00-\u9fff¥￥$]', _nt):
                                 _p.text = ''
                                 continue
                             if _nt != _p.text:
@@ -10936,11 +10975,11 @@ def api_contract_generate():
                                  'bank': (sup['bank'] if sup and sup['bank'] else '')}, ensure_ascii=False)
     except Exception:
         _bank_json = ''
-    conn.execute("""INSERT INTO contracts(contract_no,order_id,contract_name,supplier,amount,sign_date,start_date,end_date,content,file_path,status,remark,created_at,updated_at,invoice_clause,invoice_est_first,invoice_est_done,bank_info)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+    conn.execute("""INSERT INTO contracts(contract_no,order_id,contract_name,supplier,amount,sign_date,start_date,end_date,content,file_path,status,remark,created_at,updated_at,invoice_clause,invoice_est_first,invoice_est_done,bank_info,template_name)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (cno, oid, f"{o['item_name']}采购合同", o['supplier'] or '', round(total, 2), (o['created_at'] or '')[:10],
          (o['created_at'] or '')[:10], o['target_date'], full_text, fname, '待审批', f"由订单{o['order_no']}自动生成", datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-         inv_clause, inv_first, inv_done, _bank_json))
+         inv_clause, inv_first, inv_done, _bank_json, tpl_display))
     cid = conn.execute("SELECT id FROM contracts WHERE contract_no=?", (cno,)).fetchone()[0]
     # V11.225: 发票回收顺序节点随合同一并入库(生成弹窗录入; 未录=空)
     if inv_nodes:

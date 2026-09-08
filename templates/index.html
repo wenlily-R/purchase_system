@@ -2567,48 +2567,49 @@ function collectInvNodes(boxId){
   }).filter(Boolean);
 }
 async function genContract(oid){
-  // V11.150: 防连点(连点会叠两个结算方式弹窗)
+  // V11.150: 防连点
   if(__guardOpen('gc:'+oid))return;
-  showDetail('📄 生成采购合同',`
-    <div style="font-size:11px;margin-bottom:10px">请选择本次合同的结算方式：</div>
-    <div style="display:flex;gap:8px">
-      <div style="flex:1;border:2px solid var(--s);border-radius:8px;padding:14px;text-align:center;cursor:pointer;background:#f0faf5" onclick="genContractInv(${oid},'现结')">
-        <div style="font-size:16px">⚡</div><div style="font-size:12px;font-weight:bold;color:var(--s)">现结</div>
-        <div style="font-size:9px;color:#888;margin-top:4px">一单一结<br>生成合同后立即付款</div>
-      </div>
-      <div style="flex:1;border:2px solid #e67e22;border-radius:8px;padding:14px;text-align:center;cursor:pointer;background:#fef9f0" onclick="genContractInv(${oid},'月结')">
-        <div style="font-size:16px">📅</div><div style="font-size:12px;font-weight:bold;color:#e67e22">月结</div>
-        <div style="font-size:9px;color:#888;margin-top:4px">月底按厂家汇总<br>统一生成月度合同</div>
-      </div>
-    </div>
-    <div style="font-size:9px;color:#999;margin-top:8px">选择后下一步可填写本合同的发票回收节点条款（可留空，生成后也可在合同详情补录）</div>`,
-    `<button class="btn btn-o" onclick="closeMod()">取消</button>`);
+  showDetail('📄 生成采购合同','<div class="loading">加载合同模板...</div>');
+  let tpls=[];
+  try{tpls=(await api('/contract-template-files',{noCache:true})).templates||[]}catch(e){}
+  if(!tpls.length){id('dmBody').innerHTML='<div style="padding:20px;text-align:center;color:#c0392b;font-size:11px">⚠️ 未找到合同模板文件(contract_templates/目录)，请联系管理员放置模板docx</div>';return}
+  // V11.233: 三套模板选择(现结/按月结算/预付款+验收后尾款) — 第八条付款结算随模板不同
+  const meta={'买卖合同-现结':['⚡','现结：一单一结，验收后付全款','var(--s)','#f0faf5'],
+              '买卖合同-按月结算':['📅','按月结算：对账后按约定周期付款','#e67e22','#fef9f0'],
+              '买卖合同-预付款+验收后尾款':['💳','预付30%，验收合格后付尾款70%','#7c3aed','#f6f0fe']};
+  const cards=tpls.map(t=>{const m=meta[t]||['📄',t,'#33475c','#f4f6f8'];return `<div style="flex:1;min-width:170px;border:2px solid ${m[2]};border-radius:8px;padding:12px;text-align:center;cursor:pointer;background:${m[3]}" onclick="genContractInv(${oid},'${t}')">
+      <div style="font-size:16px">${m[0]}</div><div style="font-size:12px;font-weight:bold;color:${m[2]};margin-top:2px">${t.replace('买卖合同-','')}</div>
+      <div style="font-size:9px;color:#888;margin-top:4px">${m[1]}</div></div>`}).join('');
+  id('dmTitle').textContent='📄 生成采购合同';
+  id('dmBody').innerHTML=`<div style="font-size:11px;margin-bottom:8px">请选择本次合同的<b>结算模板</b>（第八条付款、结算条款随模板自动带入，其余条款一致）：</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">${cards}</div>
+    <div style="font-size:9px;color:#999;margin-top:8px">甲方、乙方、合同编号、标的表格、金额及收款账号信息将自动填充；选择后下一步可填写发票回收节点条款（可留空）。</div>`;
+  id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">取消</button>';
 }
-async function genContractInv(oid,settle){
-  // V11.203 模块一1.1: 发票条款编辑; V11.225: 升级为「顺序节点」计划(不同合同开票节点不同: 预付30%/按付款进度/验收后全额等)
+async function genContractInv(oid,tpl){
   showDetail('📄 生成采购合同 — 发票回收节点',`
-    <div style="font-size:10px;color:#666;margin-bottom:6px">结算方式：<b>${settle}</b>。不同合同的开票节点不一样（如：预付30%到账后开票 / 按付款进度开票 / 验收合格后开全额票），请按本合同实际约定<b>依顺序录入节点</b>；不填则按模板默认"验收合格后开具全额发票"。</div>
+    <div style="font-size:10px;color:#666;margin-bottom:6px">合同模板：<b>${tpl}</b>。不同合同的开票节点不一样（如：预付30%到账后开票 / 按付款进度开票 / 验收合格后开全额票），请按本合同实际约定<b>依顺序录入节点</b>；不填则按模板默认"验收合格后开具全额发票"。</div>
     <div class="invnd-box" id="gcInvNodes"></div>
     <button class="lnk" style="color:var(--s)" onclick="addInvNodeRow('gcInvNodes')">➕ 添加发票节点</button>
     <div style="margin-top:8px"><label style="font-size:10px;color:#555">📋 其它发票约定补充说明（选填，可留空）</label>
       <textarea id="gcInvClause" style="width:100%;height:44px;border:1px solid #ccc;border-radius:4px;padding:6px;font-size:11px" placeholder="如：发票类型为增值税专用发票、税点承担、随货附发票等其它约定"></textarea></div>
     <div style="font-size:9px;color:#999">填了"约定开票时间"的节点，系统将按节点自动提醒采购专员催收发票（系统内预警+钉钉提醒），收票后在合同详情【登记发票】时挂到对应节点。</div>`,
-    `<button class="btn btn-o" onclick="genContract(${oid})">← 返回</button><button class="btn btn-p" onclick="doGenContract(${oid},'${settle}')">📄 生成合同并提交审批</button>`);
+    `<button class="btn btn-o" onclick="genContract(${oid})">← 返回</button><button class="btn btn-p" onclick="doGenContract(${oid},'${tpl}')">📄 生成合同并提交审批</button>`);
   addInvNodeRow('gcInvNodes');
   addInvNodeRow('gcInvNodes');
 }
-async function doGenContract(oid,settle){
-  // V11.150: 防连点(连点会叠确认框/重复生成合同)
-  if(__guardOpen('dgc:'+oid+':'+settle))return;
+async function doGenContract(oid,tpl){
+  // V11.150: 防连点
+  if(__guardOpen('dgc:'+oid+':'+tpl))return;
   closeMod();
-  if(!confirm('调用默认合同模板生成采购合同并进入合同审批？（结算方式：'+settle+'）'))return;
+  if(!confirm(`按模板「${tpl}」生成采购合同并进入合同审批？`))return;
   const _ic=(id('gcInvClause')&&id('gcInvClause').value||'').trim();
   const _nodes=collectInvNodes('gcInvNodes');
-  const _body={order_id:oid,settle_type:settle};
+  const _body={order_id:oid,template_name:tpl};
   if(_nodes&&_nodes.length){_body.nodes=_nodes}
   if(_ic){_body.invoice_clause=_ic}
   const r=await api('/contracts/generate',{method:'POST',body:JSON.stringify(_body)});
-  if(r.success){alert(`✅ 合同 ${r.contract_no} 已生成（${settle}），可在 合同管理 查看并审批`);loadOrders();loadContracts()}
+  if(r.success){alert(`✅ 合同 ${r.contract_no} 已生成（${tpl}），可在 合同管理 查看并审批`);loadOrders();loadContracts()}
   else alert(r.error||'生成失败');
 }
 // 作废通用
@@ -3210,7 +3211,7 @@ async function genMonthlyContract(supplier){
   if(r.success){alert(`✅ 月度合同 ${r.contract_no} 已生成(汇总${r.count}单, ¥${(r.amount||0).toFixed(0)}), 已进入合同审批`);loadContracts()}
   else alert(r.error||'生成失败');
 }
-async function loadContracts(){const c=await api('/contracts');id('contractsTable').innerHTML=groupRnder(c, r=>r.created_at,['编号','名称','供应商','金额','状态','驳回','操作'],r=>`<td><b>${esc(r.contract_no)}</b></td><td>${esc(r.contract_name)}</td><td>${esc(r.supplier)}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}</td>${rejCell(r)}
+async function loadContracts(){const c=await api('/contracts');id('contractsTable').innerHTML=groupRnder(c, r=>r.created_at,['编号','名称','供应商','模板','金额','状态','驳回','操作'],r=>`<td><b>${esc(r.contract_no)}</b></td><td>${esc(r.contract_name)}</td><td>${esc(r.supplier)}</td><td>${r.template_name?`<span class="tag" style="background:#eef2ff;color:#4338ca">${esc(r.template_name.replace('买卖合同-',''))}</span>`:'<span style="color:#ccc">-</span>'}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}</td>${rejCell(r)}
   <td style="white-space:nowrap"><button class="lnk" onclick="showContract(${r.id})">查看</button>${r.file_path?` <button class="lnk" style="color:var(--s)" onclick="window.open('/uploads/${esc(r.file_path)}','_blank')">📄下载</button>`:''} <button class="lnk" style="color:#b08900" onclick="editDoc('contract',${r.id},'合同')">✏️修改</button> ${(r.status=='待审批'||r.status=='已通过'||r.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('contract',${r.id},'合同')">↩️撤回</button>`:''}${(r.status=='待审批'||r.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('contract',${r.id},'合同')">🗑️删除</button>`:''}</td>`)}
 async function showContract(id){
   // V11.150: 防连点 + 最新打开者优先
@@ -3219,7 +3220,7 @@ async function showContract(id){
   const c=(await api('/contracts')).find(x=>x.id===id);
   if(!c){if(my!==__dmSeq)return;alert('未找到该合同(可能已被删除), 请刷新后重试');return}
   let h=`<div class="c2"><div><dt>合同号</dt><dd><b>${esc(c.contract_no)}</b></dd><dt>名称</dt><dd>${esc(c.contract_name)}</dd><dt>供应商</dt><dd>${esc(c.supplier)}</dd><dt>金额</dt><dd>¥${(c.amount||0).toFixed(2)}（大写：${c.amount_upper||''}）</dd></div>
-    <div><dt>状态</dt><dd>${tag(c.status)}${(c.reject_count||0)>0?` <span style="font-size:9px;color:#c0392b;background:#fdeaea;border-radius:3px;padding:1px 5px">已驳回${c.reject_count}次</span>`:''}</dd><dt>签订日期</dt><dd>${esc(c.sign_date||'-')}</dd><dt>关联订单</dt><dd>#${c.order_id||'-'}</dd></div></div>`;
+    <div><dt>状态</dt><dd>${tag(c.status)}${(c.reject_count||0)>0?` <span style="font-size:9px;color:#c0392b;background:#fdeaea;border-radius:3px;padding:1px 5px">已驳回${c.reject_count}次</span>`:''}${c.template_name?`<span class="tag" style="background:#eef2ff;color:#4338ca;margin-left:4px">📄 ${esc(c.template_name.replace('买卖合同-',''))}</span>`:''}</dd><dt>签订日期</dt><dd>${esc(c.sign_date||'-')}</dd><dt>关联订单</dt><dd>#${c.order_id||'-'}</dd></div></div>`;
   if(c.file_path)h+=`<div style="margin-top:8px"><button class="btn btn-p btn-sm" onclick="window.open('/uploads/${esc(c.file_path)}','_blank')">📄 打开/下载合同文件</button> <button class="btn btn-w btn-sm" onclick="editContract(${id})">✏️ 编辑合同文本</button></div>`;
   h+=`<div style="margin-top:6px"><button class="btn btn-o btn-sm" style="color:#b08900;border-color:#b08900" onclick="editDoc('contract',${id},'合同')">✏️ 修改合同信息</button>
     <button class="lnk" style="color:#7c5cff" onclick="showDocOps('contract',${id},'合同 ${esc(c.contract_no)}')">🕘 操作记录</button>
