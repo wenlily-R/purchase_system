@@ -6748,11 +6748,22 @@ def inquiry_vendor_page(token):
     _already = bool(s['quote_price'] and s['quote_price'] > 0)
     # ---------- 明细行表单(含税单价/总价/交付/质保/品牌/备注, 已报价则回显) ----------
     _rows_html = []
+    _has_fixed = False
     for idx, it in enumerate(items):
         _pv = _prev.get(idx, {}) or {}
         _v_price = esc_html(_pv.get('unit_price') or '')
         _qty = it['quantity'] or 0
+        # V11.246: 指定品牌(采购员在申请/询价中指定, 商家只能按此品牌报)
+        _sb = str(it['brand_param'] or '').strip() if 'brand_param' in it.keys() and it['brand_param'] else ''
+        _fixed = bool(_sb and _sb != '不限')
+        if _fixed:
+            _has_fixed = True
         _ref = ('<span style="color:#bbb;font-size:11px">(参考¥%.0f)</span>' % ((it['total_price'] or 0) / _qty if _qty else 0))
+        _brand_cell = ('<td style="padding:6px 8px;border-bottom:1px solid #eef"><b style="color:#b7791f;background:#fff8e6;'
+                       'border:1px solid #f0dcae;border-radius:4px;padding:2px 6px;white-space:nowrap">指定品牌：%s</b>'
+                       '<input type="hidden" id="br%d" value="%s"></td>' % (esc_html(_sb), idx, esc_html(_sb))) if _fixed else \
+                      ('<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="品牌(可自报)" id="br%d" value="%s" '
+                       'style="width:88px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>' % (idx, esc_html(_pv.get('brand') or '')))
         _rows_html.append(
             '<tr>'
             '<td style="padding:6px 8px;text-align:left;border-bottom:1px solid #eef">%s</td>'
@@ -6763,7 +6774,7 @@ def inquiry_vendor_page(token):
             '<td style="padding:6px 8px;border-bottom:1px solid #eef;text-align:right;font-weight:600;color:#2e7d32;white-space:nowrap">¥<span id="ut%d">0.00</span></td>'
             '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="如7天" id="dl%d" value="%s" style="width:52px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
             '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="如3个月" id="wr%d" value="%s" style="width:56px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
-            '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="品牌" id="br%d" value="%s" style="width:80px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
+            + _brand_cell +
             '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="备注" id="rm%d" value="%s" style="width:64px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
             '</tr>' % (
                 esc_html(it['item_name']), esc_html(it['spec'] or ''),
@@ -6771,7 +6782,6 @@ def inquiry_vendor_page(token):
                 str(_qty), idx, _v_price,
                 idx, idx, esc_html(_pv.get('delivery') or ''),
                 idx, esc_html(_pv.get('warranty') or ''),
-                idx, esc_html(_pv.get('brand') or ''),
                 idx, esc_html(_pv.get('remark') or '')))
     _item_rows = ''.join(_rows_html)
     # ---------- 头部提示 ----------
@@ -6779,12 +6789,14 @@ def inquiry_vendor_page(token):
     if _deadline:
         _dl_txt = '<div style="background:#fff3cd;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px;border:1px solid #ffeeba"><b>⏰ 报价截止：%s</b></div>' % esc_html(_deadline)
     _head_note = ('<p style="color:#2e7d32;font-size:13px;margin:0 0 10px">✅ 贵司已报价，可修改后重新提交（将覆盖原报价；报价金额开标前不对外显示）</p>') if _already else ''
+    _brand_note = ('<div style="background:#fff8e6;border:1px solid #f0dcae;border-radius:8px;padding:8px 12px;font-size:12.5px;margin-bottom:10px;color:#8a6d3b">'
+                   '🏷️ <b>本单部分物资已由采购方指定品牌</b>：标黄行请严格按【指定品牌】报价，更换品牌视为无效报价；未标注品牌的行可自报品牌。</div>') if _has_fixed else ''
     _ship_val = '' if _already else esc_html(s['quote_price'])  # V11.217: 已报价回显不再带金额(不显示具体价格)
     _remark_val = esc_html(s['quote_remark'] or '')
     body = ('<div style="max-width:860px;margin:40px auto;background:#fff;border-radius:12px;padding:28px;'
             'box-shadow:0 4px 24px rgba(0,0,0,.08);font-family:-apple-system,Segoe UI,Microsoft YaHei,sans-serif">'
             '<h2 style="margin:0 0 4px;color:#1f6feb">📋 采购询价单</h2>'
-            '<p style="color:#888;font-size:13px;margin:0 0 10px">尊敬的 %s，请逐项填写含税单价，总价自动计算；交付日期/质保时间按实际填写</p>%s%s'
+            '<p style="color:#888;font-size:13px;margin:0 0 10px">尊敬的 %s，请逐项填写含税单价，总价自动计算；交付日期/质保时间按实际填写</p>%s%s%s'
             '<div style="background:#f5f8ff;border-radius:8px;padding:12px 16px;font-size:13px;margin-bottom:14px">'
             '<b>%s</b><br><span style="color:#888">询价编号：%s</span></div>'
             '<div style="overflow-x:auto"><table style="width:100%%;border-collapse:collapse;font-size:13px;margin-bottom:10px;min-width:700px">'
@@ -6830,7 +6842,7 @@ def inquiry_vendor_page(token):
             'catch(err){alert("网络异常，请重试");if(btn){btn.disabled=false;btn.style.opacity=1;btn.textContent="提交报价"}}};'
             'window.addEventListener("load",function(){try{window.calc()}catch(e){}});'
             '</script></div>') % (
-                esc_html(s['supplier_name']), _head_note, _dl_txt,
+                esc_html(s['supplier_name']), _head_note, _brand_note, _dl_txt,
                 esc_html(pr['purpose'] if pr else ''), esc_html(i['inq_no']),
                 _item_rows, _ship_val, _remark_val, '/api/inquiry/vendor/%s/quote' % token)
     return body
@@ -6867,6 +6879,20 @@ def inquiry_vendor_quote(token):
             conn.close(); return jsonify({'error': '该询价已开标（全部受邀厂家已报价），报价通道已关闭，如需修改请联系采购方'}), 400
     except Exception:
         pass
+    # V11.246: 指定品牌硬校验 — 申请/询价已指定品牌(非"不限")的行, 商家提交品牌必须一致, 否则拒绝(换品牌视为无效报价)
+    if details:
+        try:
+            _ritems = conn.execute("SELECT * FROM request_items WHERE req_id=? ORDER BY id", (i['req_id'],)).fetchall()
+            for _xi, _x in enumerate(details):
+                if _xi < len(_ritems):
+                    _sb = str(_ritems[_xi]['brand_param'] or '').strip() if 'brand_param' in _ritems[_xi].keys() and _ritems[_xi]['brand_param'] else ''
+                    if _sb and _sb != '不限':
+                        _xb = str(_x.get('brand') or '').strip()
+                        if _xb != _sb:
+                            conn.close()
+                            return jsonify({'error': '第%d行「%s」指定品牌为「%s」，请按指定品牌报价（更换品牌视为无效）' % (_xi + 1, _ritems[_xi]['item_name'], _sb)}), 400
+        except Exception:
+            pass
     # V11.41: 行明细报价(每行单价+备注), 合计=Σ单价×数量; 兼容旧版总价提交
     # V11.162: 含运总价=商家填的 quote_price(整单含运费), 明细合计只作参考不再覆盖
     _final_price = price
