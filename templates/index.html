@@ -2364,6 +2364,8 @@ async function showOrder(ordid){
       <div style="font-size:9px;font-weight:bold;color:#e65100;margin:5px 0 2px">🟠 暂估入库批次（${estB.length}）</div>${rowsOf(estB)}
       <div style="font-size:9px;font-weight:bold;color:#2e7d32;margin:5px 0 2px">🟢 正式入库批次（${fmB.length}）</div>${rowsOf(fmB)}
       ${(openSt&&!doneAll&&isWarehouseB)?`<div style="margin-top:6px"><button class="btn btn-p btn-sm" onclick="showRcvBatchForm(${ordid})">➕ 新增验收批次</button> <span style="font-size:8px;color:#888">当前待验收待定 ${fmtN(st.pending)} 件，可继续分批验收</span></div>`:(doneAll?'<div style="font-size:8px;color:#2e7d32;margin-top:4px">✅ 全部数量已验收完成，新增验收入口已关闭</div>':'')}
+      ${(!o.is_sealed&&openSt&&!doneAll&&['系统管理员','库管员','部门负责人','分管领导','总经理','采购员'].includes(ME.role))?`<div style="margin-top:6px"><button class="btn btn-w btn-sm" onclick="sealOrder(${ordid})">🔒 封单(剩余不再供货)</button> <span style="font-size:8px;color:#888">封单=按实到 ${fmtN(st.accepted)}/${fmtN(st.order_total)} 闭环, 剩余不再验收(需填原因)</span></div>`:''}
+      ${o.is_sealed?`<div style="margin-top:6px;background:#fffaf0;border:1px solid #e6d9b8;border-radius:6px;padding:6px 10px;font-size:10px;line-height:1.7">🔒 <b>已封单</b> ${esc(o.seal_at||'')} by ${esc(o.seal_by||'')}<br>原因: ${esc(o.seal_remark||'')}<br>按实际到货闭环(实到 <b>${fmtN(st.accepted)}/${fmtN(st.order_total)}</b>)，已封单不能再新增验收批次。${['系统管理员','分管领导','总经理'].includes(ME.role)?`<button class="lnk" style="color:#0d9488" onclick="unsealOrder(${ordid})">↩️ 取消封单</button>`:''}</div>`:''}
     </div>`;
   }
   let btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button>
@@ -2384,6 +2386,22 @@ async function showOrder(ordid){
   loadRejectLogs('purchase_order',ordid,'rejectLogsBox');
 }
 // V11.224 模块四: 订单执行明细表 — 全生命周期节点时间轴(创建/审批/合同/入库/发票/付款/留痕)
+// V11.248 封单/取消封单
+async function sealOrder(ordid){
+  const reason=prompt('🔒 封单原因（如: 剩余物料供应商不再供货，按实际到货闭环）：');
+  if(reason===null)return;
+  if(!(reason||'').trim()){alert('必须填写封单原因');return}
+  if(!confirm('确认封单？封单后该订单剩余数量不再验收，按实际到货数量闭环（不影响已入库/红冲/付款）。'))return;
+  const r=await api(`/orders/${ordid}/seal`,{method:'POST',body:JSON.stringify({remark:reason.trim()})});
+  if(r.success){alert(`✅ 已封单: ${r.order_no}\n剩余 ${r.pending_closed} 件不再验收, 按实到闭环。`);showOrder(ordid)}
+  else alert('操作失败: '+(r.error||''));
+}
+async function unsealOrder(ordid){
+  if(!confirm('确认取消封单？取消后可继续分批验收该订单剩余数量。'))return;
+  const r=await api(`/orders/${ordid}/unseal`,{method:'POST',body:'{}'});
+  if(r.success){alert('✅ 已取消封单');showOrder(ordid)}
+  else alert('操作失败: '+(r.error||''));
+}
 async function showOrderExec(oid){
   if(__guardOpen('oexec:'+oid))return;
   showDetail('📋 订单执行明细','<div class="loading">加载中...</div>','<button class="btn btn-o" onclick="closeMod()">关闭</button>');

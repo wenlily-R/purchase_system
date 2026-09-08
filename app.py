@@ -746,6 +746,12 @@ def init_db():
     for _cc, _cd in (('conv_from_id', 'INTEGER DEFAULT NULL'), ('is_conv', 'INTEGER DEFAULT 0')):
         if _cc not in _rcvcols:
             conn.execute(f"ALTER TABLE receivings ADD COLUMN {_cc} {_cd}")
+    # V11.248 封单: 订单剩余不再供货→按实到闭环(is_sealed 不影响库存/付款, 仅终止继续验收)
+    _pocols = [r[1] for r in conn.execute("PRAGMA table_info(purchase_orders)").fetchall()]
+    for _cc, _cd in (('is_sealed', 'INTEGER DEFAULT 0'), ('seal_at', "TEXT DEFAULT ''"),
+                     ('seal_by', "TEXT DEFAULT ''"), ('seal_remark', "TEXT DEFAULT ''")):
+        if _cc not in _pocols:
+            conn.execute(f"ALTER TABLE purchase_orders ADD COLUMN {_cc} {_cd}")
     # ---- V11.206 集体验收: 标记是否需集体验收 + 验收状态(空=常规, 1=需集体验收; collect_status: 空/待集体验收/已集体验收) ----
     if 'collect_accept' not in _rcvcols:
         conn.execute("ALTER TABLE receivings ADD COLUMN collect_accept INTEGER DEFAULT 0")
@@ -5663,6 +5669,56 @@ def api_admin_fix_partial_orders():
     return jsonify({'success': True, 'fixed': fixed, 'count': len(fixed)})
 
 
+@app.route('/api/orders/<int:oid>/seal', methods=['POST'])
+@login_required
+def api_order_seal(oid):
+    """V11.248 封单(会议纪要场景2): 订单剩余数量不再供货 → 封单按实际到货闭环。
+    允许 采购员/库管员/部门负责人/分管领导/总经理/管理员; 已封单订单不能再新增验收批次,
+    不影响已有批次红冲/库存/付款; 留痕 seal_at/seal_by/seal_remark。"""
+    if session.get('user_role') not in ('采购员', '库管员', '部门负责人', '分管领导', '总经理', '系统管理员'):
+        return jsonify({'error': '无权限：封单仅限采购员/库管/领导'}), 403
+    d = request.json or {}
+    remark = (d.get('remark') or '').strip()
+    if not remark:
+        return jsonify({'error': '请填写封单原因(如: 剩余物料供应商不再供货)'}), 400
+    conn = db()
+    po = conn.execute("SELECT * FROM purchase_orders WHERE id=?", (oid,)).fetchone()
+    if not po:
+        conn.close(); return jsonify({'error': '订单不存在'}), 404
+    if po['status'] in ('已作废', '已取消', '已撤回', '草稿'):
+        conn.close(); return jsonify({'error': f'订单状态({po["status"]})不可封单'}), 400
+    if po['is_sealed']:
+        conn.close(); return jsonify({'error': '该订单已封单'}), 400
+    # 剩余量 = 订购 - 物理已入库(排除红冲转正单)
+    _q = conn.execute("SELECT COALESCE(SUM(quantity),0) FROM receivings WHERE order_id=? AND status='已入库' AND COALESCE(is_conv,0)=0", (oid,)).fetchone()[0]
+    pending = round(float(po['quantity'] or 0) - float(_q or 0), 2)
+    if pending <= 0:
+        conn.close(); return jsonify({'error': f'该订单已全部到货(实到{po["quantity"]})，无需封单'}), 400
+    conn.execute("UPDATE purchase_orders SET is_sealed=1, seal_at=?, seal_by=?, seal_remark=? WHERE id=?",
+                 (now(), session['user_name'], remark[:200], oid))
+    conn.commit(); conn.close()
+    log(session['user_name'], '订单封单', f'{po["order_no"]} 剩余{pending}不再供货 原因:{remark[:100]}')
+    return jsonify({'success': True, 'order_no': po['order_no'], 'pending_closed': pending, 'sealed_at': now()})
+
+
+@app.route('/api/orders/<int:oid>/unseal', methods=['POST'])
+@login_required
+def api_order_unseal(oid):
+    """V11.248 取消封单(仅 管理员/分管领导/总经理) — 恢复可继续验收"""
+    if session.get('user_role') not in ('系统管理员', '分管领导', '总经理'):
+        return jsonify({'error': '无权限：取消封单仅限高层'}), 403
+    conn = db()
+    po = conn.execute("SELECT * FROM purchase_orders WHERE id=?", (oid,)).fetchone()
+    if not po:
+        conn.close(); return jsonify({'error': '订单不存在'}), 404
+    if not po['is_sealed']:
+        conn.close(); return jsonify({'error': '该订单未封单'}), 400
+    conn.execute("UPDATE purchase_orders SET is_sealed=0, seal_remark=COALESCE(seal_remark,'')||' [已取消封单:' || ? || ']' WHERE id=?", (session['user_name'], oid))
+    conn.commit(); conn.close()
+    log(session['user_name'], '取消封单', po['order_no'])
+    return jsonify({'success': True, 'order_no': po['order_no']})
+
+
 @app.route('/api/orders/<int:oid>/receiving-batch', methods=['POST'])
 @login_required
 def api_order_receiving_batch(oid):
@@ -5678,6 +5734,9 @@ def api_order_receiving_batch(oid):
         conn.close(); return jsonify({'error': '订单不存在'}), 404
     if po['status'] in ('草稿', '待审批', '已驳回', '已作废', '已取消', '已入库', '已核销', '全部已验收'):
         conn.close(); return jsonify({'error': f'订单当前状态({po["status"]})不可新增验收批次'}), 400
+    # V11.248 封单: 剩余不再供货的订单禁止继续验收(按实到闭环)
+    if po['is_sealed']:
+        conn.close(); return jsonify({'error': f'订单已封单(原因:{po["seal_remark"] or "剩余不再供货"})，不能再新增验收批次'}), 400
     st = _order_rcv_stats(conn, oid)
     if st['pending'] <= 0.001:
         conn.close(); return jsonify({'error': '该订单已全部验收完成，无需再新增批次'}), 400
@@ -8559,6 +8618,11 @@ def api_create_requisition():
 def api_create_receiving():
     """新建入库单(不依赖订单): 多商品明细, 提交走审批, 审批通过自动加库存"""
     d = request.json; conn = db()
+    # V11.248 封单: 关联订单已封单(剩余不再供货)时禁止按该订单继续入库
+    if d.get('order_id'):
+        _op = conn.execute("SELECT is_sealed FROM purchase_orders WHERE id=?", (d.get('order_id'),)).fetchone()
+        if _op and _op['is_sealed']:
+            conn.close(); return jsonify({'error': '关联订单已封单(剩余不再供货)，不能按该订单继续入库'}), 400
     items = d.get('items') or []
     if not items and d.get('item_name'):
         items = [{'item_name': d.get('item_name'), 'spec': d.get('spec'), 'unit': d.get('unit', '个'),
@@ -9740,7 +9804,7 @@ def api_report_checkpoints():
                pr.req_no, pr.purpose,
                COALESCE((SELECT SUM(r.quantity) FROM receivings r WHERE r.order_id=po.id AND r.status='已入库' AND COALESCE(r.is_conv,0)=0),0) AS in_qty
         FROM purchase_orders po LEFT JOIN purchase_requests pr ON pr.id=po.req_id
-        WHERE po.status NOT IN ('已作废','已撤回','已取消','草稿')
+        WHERE po.status NOT IN ('已作废','已撤回','已取消','草稿') AND COALESCE(po.is_sealed,0)=0
           AND po.quantity > COALESCE((SELECT SUM(r.quantity) FROM receivings r WHERE r.order_id=po.id AND r.status='已入库' AND COALESCE(r.is_conv,0)=0),0)
         ORDER BY po.target_date IS NULL, po.target_date, po.id DESC LIMIT 200""").fetchall()]
     # ③ 已入库但暂估未回票(发票未回未核对红冲)
@@ -10584,9 +10648,15 @@ def api_contract_generate():
                     t = re.sub(pat, repx, t)
             # V11.228 Bug2③: 收款账户信息禁止进入合同正文 — 段落区整体移除(见下方 _acc_drop), 此处不再注入任何账户值
             # V11.144: 结算方式注入 — 付款条款段(甲方自收到发票后...)前插入现结/月结说明
-            if ('甲方自收到发票后' in t) and _settle_choice in ('现结', '月结'):
-                _sline = '现结：一单一结，验收合格后立即付款；' if _settle_choice == '现结' else '月结：月底按厂家汇总对账，统一生成月度合同后付款；'
-                t = t.replace('甲方自收到发票后', _sline + '甲方自收到发票后')
+            # V11.248: 强制据实结算条款(会议纪要第9条: 合同模板强制写据实结算) — 无论现结/月结/其他均注入
+            if ('甲方自收到发票后' in t) and '据实结算约定' not in t:
+                _pre = '据实结算约定：本合同按实际到货及验收数量与约定单价据实结算，最终结算金额以发票核对红冲后的正式入库金额为准。'
+                _sline = ''
+                if _settle_choice == '现结':
+                    _sline = '现结：一单一结，验收合格后立即付款；'
+                elif _settle_choice == '月结':
+                    _sline = '月结：月底按厂家汇总对账，统一生成月度合同后付款；'
+                t = t.replace('甲方自收到发票后', _pre + _sline + '甲方自收到发票后')
             elif re.search(r'20\d\d年\s*\d+\s*月\s*\d+日', t):
                 t = re.sub(r'20\d\d年\s*\d+\s*月\s*\d+日', today_s, t)
             return t
