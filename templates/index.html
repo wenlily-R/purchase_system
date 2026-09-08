@@ -524,6 +524,16 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
         </div>
         <div id="estTableWrap"><div style="color:#999;font-size:10px">点击上方标签查看各表明细</div></div>
       </div></div>
+    <div class="card" style="margin-bottom:6px"><div class="ch"><h3>🚦 业务卡点排查（①已审批未采购 ②已采购未到货 ③已入库未回票）</h3><button class="btn btn-p btn-sm" onclick="loadCheckpoints()" style="margin-left:auto">🔄 刷新</button></div>
+      <div class="cb">
+        <div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+          <span class="tag" id="ckA" style="background:#fff3e0;color:#e65100;font-size:11px">① 加载中...</span>
+          <span class="tag" id="ckB" style="background:#fff8e1;color:#f9a825;font-size:11px">② 加载中...</span>
+          <span class="tag" id="ckC" style="background:#fce4ec;color:#c62828;font-size:11px">③ 加载中...</span>
+          <span style="flex:1"></span><button class="btn btn-o btn-sm" onclick="ckExport()">⬇️ 导出Excel</button>
+        </div>
+        <div id="ckWrap"><div style="color:#999;font-size:10px">加载中...</div></div>
+      </div></div>
     <div class="kpi" id="reportKpi"><div class="loading">加载中...</div></div>
     <div class="card"><div class="ch"><h3>📈 月度采购趋势（近12个月）</h3></div>
       <div class="cb"><div class="chart-placeholder" id="reportChart" style="height:150px"><div class="loading">加载中...</div></div></div></div>
@@ -3889,7 +3899,7 @@ async function doSupSave(oid){
   const r=await api(oid?'/suppliers/'+oid:'/suppliers',{method:'POST',body:JSON.stringify(d)});
   if(r.success){alert(oid?'✅ 已保存':'✅ 已新增');closeMod();loadSuppliers()}else alert(r.error||'失败');
 }
-async function loadReports(){loadReports2();loadEstView();loadInvReport&&loadInvReport();
+async function loadReports(){loadCheckpoints();loadReports2();loadEstView();loadInvReport&&loadInvReport();
   try{
     const r=await api('/reports');
     const t=r.todo||{};
@@ -7074,6 +7084,54 @@ function estTab(kind){
   id('estTableWrap').innerHTML=`<table class="tb" style="font-size:10px"><tr style="background:#f0f4ff"><th>入库单号</th><th>物资</th><th>规格</th><th>数量</th><th>金额(元)</th><th>发票号</th><th>日期</th></tr>`+
     list.map(x=>`<tr><td><b>${esc(x.receive_no)}</b></td><td>${esc(x.item_name)}</td><td>${esc(x.spec)}</td><td>${x.quantity}${esc(x.unit)}</td><td>¥${(x.amount||0).toFixed(0)}</td><td>${x.invoice_no?esc(x.invoice_no):'<span style="color:#c0392b">未回</span>'}</td><td>${esc(x.date)}</td></tr>`).join('')+
     `</table>`;
+}
+// V11.244: 业务卡点排查(①已审批未采购 ②已采购未到货 ③已入库未回票) — 报表中心面板
+let _ckCache=null;
+function _ckTab(list, cols){ // 通用渲染: list=行数组, cols=[{k,label}]
+  if(!list||!list.length) return '<div style="color:#999;font-size:11px">无该类型卡点 ✅</div>';
+  let h='<table style="width:100%;font-size:10px;border-collapse:collapse"><tr style="background:#f7f9fc">';
+  cols.forEach(c=>h+=`<th style="padding:3px;border:1px solid #eee;text-align:left">${c.label}</th>`);
+  h+='</tr>';
+  list.slice(0,60).forEach(r=>{
+    h+='<tr>';
+    cols.forEach(c=>{let v=r[c.k]; if(v===null||v===undefined)v=''; h+=`<td style="padding:3px;border:1px solid #eee">${esc(String(v))}</td>`});
+    h+='</tr>';
+  });
+  if(list.length>60) h+=`<tr><td colspan="${cols.length}" style="padding:3px;color:#999">…共 ${list.length} 条,已显示前60条</td></tr>`;
+  return h+'</table>';
+}
+async function loadCheckpoints(){
+  ['ckA','ckB','ckC'].forEach(i=>{const el=id(i); if(el) el.textContent=el.textContent.replace('加载中','查询中')});
+  const d=await api('/api/reports/checkpoints');
+  if(!d||d.error){const w=id('ckWrap'); if(w) w.innerHTML=`<div style="color:#c62828;font-size:11px">加载失败: ${esc(d?.error||'')}</div>`; return}
+  _ckCache=d;
+  const A=(d.approved_no_purchase||[]), B=(d.purchased_no_goods||[]), C=(d.stored_no_invoice||[]);
+  if(id('ckA')) id('ckA').textContent=`① 已审批未采购: ${A.length} 单`;
+  if(id('ckB')) id('ckB').textContent=`② 已采购未到货: ${B.length} 单`;
+  if(id('ckC')) id('ckC').textContent=`③ 已入库未回票: ${C.length} 单`;
+  const h=
+   `<div style="margin-bottom:4px;font-size:11px;color:#e65100">■ ① 已审批采购申请、尚未发起采购(${A.length}) — 对应单据: 采购申请</div>`+
+   _ckTab(A,[{k:'req_no',label:'申请单号'},{k:'purpose',label:'采购事由'},{k:'dept',label:'部门'},{k:'apply_date',label:'申请日期'},{k:'total_estimated',label:'预估金额'}])+
+   `<div style="margin:8px 0 4px;font-size:11px;color:#f9a825">■ ② 已采购、货物未回(${B.length}) — 待验收待定余量&gt;0(对应单据: 采购订单, 可在订单内分批验收/封单)</div>`+
+   _ckTab(B,[{k:'order_no',label:'订单号'},{k:'supplier',label:'供应商'},{k:'req_no',label:'申请单号'},{k:'purpose',label:'采购事由'},{k:'order_qty',label:'订购数'},{k:'in_qty',label:'已入库数'},{k:'target_date',label:'目标日期'}])+
+   `<div style="margin:8px 0 4px;font-size:11px;color:#c62828">■ ③ 已入库、发票未回未核对(${C.length}) — 暂估挂账中(对应单据: 入库单, 收到发票后点单号旁🧾发票核对红冲转正式)</div>`+
+   _ckTab(C,[{k:'receive_no',label:'入库单号'},{k:'order_no',label:'订单号'},{k:'supplier',label:'供应商'},{k:'req_no',label:'申请单号'},{k:'purpose',label:'采购事由'},{k:'quantity',label:'入库数'}]);
+  const w=id('ckWrap'); if(w) w.innerHTML=h;
+}
+function ckExport(){
+  if(!_ckCache){alert('请先点击「🔄 刷新」加载数据');return}
+  // 组装CSV三块
+  const rows=[['== ① 已审批未采购 ==']];
+  (_ckCache.approved_no_purchase||[]).forEach(x=>rows.push([x.req_no,x.purpose,x.dept,x.apply_date,x.total_estimated??'']));
+  rows.push(['== ② 已采购未到货 ==']);
+  (_ckCache.purchased_no_goods||[]).forEach(x=>rows.push([x.order_no,x.supplier,x.purpose,x.order_qty,x.in_qty,x.target_date]));
+  rows.push(['== ③ 已入库未回票 ==']);
+  (_ckCache.stored_no_invoice||[]).forEach(x=>rows.push([x.receive_no,x.order_no,x.supplier,x.purpose,x.quantity]));
+  const csv='\ufeff'+rows.map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\r\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+  a.download=`业务卡点排查_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
 }
 async function loadReports2(){
   try{

@@ -9564,6 +9564,48 @@ def _inv_stats_rows(args):
     return {'dim': dim, 'rows': detail, 'summary': summary}
 
 
+@app.route('/api/reports/checkpoints')
+@login_required
+def api_report_checkpoints():
+    """V11.244 业务卡点三类排查(会议纪要: 采购及入库流程优化—定期排查卡点避免业务停滞):
+    ①已审批采购申请但尚未发起采购 ②已采购但货物未回(分批验收后仍有待验收待定余量) ③货物已入库但发票未回未核对(暂估未红冲)
+    金额字段按 can_see_price 权限脱敏"""
+    _can_price = can_see_price()
+    c = db()
+    # ① 已通过申请 → 无任何采购订单(尚未发起采购)
+    _a = [dict(r) for r in c.execute("""
+        SELECT pr.id, pr.req_no, pr.purpose, pr.dept, pr.apply_date, pr.total_estimated, pr.created_at
+        FROM purchase_requests pr
+        WHERE pr.status='已通过'
+          AND NOT EXISTS (SELECT 1 FROM purchase_orders po WHERE po.req_id=pr.id)
+        ORDER BY pr.id DESC LIMIT 200""").fetchall()]
+    # ② 有采购订单但分批验收未收齐(总订量>已验收入库量), 且单据未终结
+    _b = [dict(r) for r in c.execute("""
+        SELECT po.id, po.order_no, po.supplier, po.status, po.target_date, po.quantity AS order_qty,
+               pr.req_no, pr.purpose,
+               COALESCE((SELECT SUM(r.quantity) FROM receivings r WHERE r.order_id=po.id AND r.status='已入库'),0) AS in_qty
+        FROM purchase_orders po LEFT JOIN purchase_requests pr ON pr.id=po.req_id
+        WHERE po.status NOT IN ('已作废','已撤回','已取消','草稿')
+          AND po.quantity > COALESCE((SELECT SUM(r.quantity) FROM receivings r WHERE r.order_id=po.id AND r.status='已入库'),0)
+        ORDER BY po.target_date IS NULL, po.target_date, po.id DESC LIMIT 200""").fetchall()]
+    # ③ 已入库但暂估未回票(发票未回未核对红冲)
+    _c = [dict(r) for r in c.execute("""
+        SELECT r.id, r.receive_no, r.quantity, r.received_at, r.created_at,
+               po.order_no, po.supplier, pr.req_no, pr.purpose
+        FROM receivings r
+        LEFT JOIN purchase_orders po ON po.id=r.order_id
+        LEFT JOIN purchase_requests pr ON pr.id=po.req_id
+        WHERE r.status='已入库' AND r.is_est=1 AND (r.invoice_no IS NULL OR r.invoice_no='')
+        ORDER BY r.id DESC LIMIT 200""").fetchall()]
+    c.close()
+    if not _can_price:
+        for x in _a: x['total_estimated'] = None
+    return jsonify({
+        'approved_no_purchase': _a,
+        'purchased_no_goods': _b,
+        'stored_no_invoice': _c,
+    })
+
 @app.route('/api/reports/invoice-stats')
 @login_required
 def api_invoice_stats():
