@@ -8782,6 +8782,20 @@ def api_feishu_instances():
     c.close()
     return jsonify([dict_row(r) for r in rows])
 
+# V11.239: 版本探测端点 — 返回当前部署的 git HEAD(短哈希), 供双机自动部署核验: 推送到GitHub后, 刷 http://<公网>/api/version 看到新提交号即=Mac已同步生效
+import subprocess as _sp
+_version_cache = {'t': 0.0, 'sha': ''}
+@app.route('/api/version')
+def api_version():
+    if time.time() - _version_cache['t'] > 30:
+        try:
+            _r = _sp.run(['git', 'rev-parse', '--short', 'HEAD'], cwd=BASE, capture_output=True, text=True, timeout=10)
+            _version_cache['sha'] = (_r.stdout or '').strip()
+        except Exception:
+            _version_cache['sha'] = _version_cache['sha'] or 'unknown'
+        _version_cache['t'] = time.time()
+    return jsonify({'version': _version_cache['sha'] or 'unknown'})
+
 @app.route('/api/public-url')
 def api_public_url():
     """当前公网地址(由守护脚本写入 public_url.txt; 隧道重启地址变化后自动更新)"""
