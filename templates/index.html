@@ -1789,9 +1789,9 @@ async function editPRequest(oid){
     ${((r.status=='已驳回'||(r.status=='草稿'&&(r.reject_count||0)>0))&&r.rejected_reason)?`<div style="font-size:9px;color:var(--d);padding:4px 8px;background:#fff5f5;border-radius:4px;margin:4px 0">❌ 驳回原因：${esc(r.rejected_reason)}${r.rejected_by?`（${esc(r.rejected_by)} ${esc((r.rejected_at||'').slice(5,16))}）`:''}</div>`:''}
     <div style="border:1px solid var(--b);border-radius:4px;padding:6px;margin-top:4px">
       <label class="fl2">采购物资明细（可修改）</label>
-      <div style="font-size:9px;color:#8a6d3b;background:#fff8e6;border-radius:4px;padding:3px 6px;margin:2px 0">✏️ <b>品牌列由采购员指定</b>（如 联想/格力，或填"不限"）——发起三方询价后商家按指定品牌报价；类别/用途/备注/附图点行内 <b>▾</b> 展开。</div>
-      <div style="overflow-x:auto"><table class="tb" style="font-size:10px;min-width:780px;margin-top:3px"><thead><tr>
-        <th style="width:24px">#</th><th style="min-width:120px">物品名称 *</th><th style="min-width:84px">规格型号</th><th style="width:48px">单位</th><th style="width:62px">库存</th><th style="width:72px">请购数量 *</th><th style="min-width:140px">品牌（指定）</th><th style="width:58px">操作</th>
+      <div style="font-size:9px;color:#8a6d3b;background:#fff8e6;border-radius:4px;padding:3px 6px;margin:2px 0">✏️ <b>品牌由采购员指定</b>（如 联想/格力，或填"不限"）——发起询价后商家按指定品牌报价；填品名自动带出库存；用途见上方"用途说明"。表格较宽可左右滑动。</div>
+      <div style="overflow-x:auto"><table class="tb" style="font-size:10px;min-width:930px;margin-top:3px"><thead><tr>
+        <th style="width:22px">#</th><th style="min-width:100px">物品名称 *</th><th style="min-width:62px">规格型号</th><th style="width:38px">单位</th><th style="width:56px">库存</th><th style="width:64px">请购数量 *</th><th style="min-width:106px">品牌（指定）</th><th style="width:84px">采购类别</th><th style="min-width:72px">备注</th><th style="min-width:128px">到货日/附图</th>
       </tr></thead><tbody id="reqItemList"></tbody></table></div>
       <div style="margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button class="btn btn-o btn-sm" onclick="addReqItem()">+ 添加一行</button><button class="btn btn-o btn-sm" onclick="reqPasteFromExcel()">📋 从Excel粘贴</button><span style="color:#999;font-size:9px">粘贴识别 品牌/名称/规格/数量 等列</span></div>
     </div>`;
@@ -5440,9 +5440,9 @@ async function showForm(type){
       <div id="reqAttList" style="font-size:9px;color:#666;margin-top:2px"></div>
       <div style="border:1px solid var(--b);border-radius:4px;padding:6px;margin-top:4px">
         <label class="fl2">采购物资明细</label>
-        <div style="font-size:9px;color:#8a6d3b;background:#fff8e6;border-radius:4px;padding:3px 6px;margin:2px 0">✏️ <b>品牌列由采购员指定</b>（如 联想/格力，或填"不限"）——发起三方询价后商家按指定品牌报价；填品名自动带出库存；类别/用途/备注/附图点行内 <b>▾</b> 展开。</div>
-        <div style="overflow-x:auto"><table class="tb" style="font-size:10px;min-width:780px;margin-top:3px"><thead><tr>
-          <th style="width:24px">#</th><th style="min-width:120px">物品名称 *</th><th style="min-width:84px">规格型号</th><th style="width:48px">单位</th><th style="width:62px">库存</th><th style="width:72px">请购数量 *</th><th style="min-width:140px">品牌（指定）</th><th style="width:58px">操作</th>
+        <div style="font-size:9px;color:#8a6d3b;background:#fff8e6;border-radius:4px;padding:3px 6px;margin:2px 0">✏️ <b>品牌由采购员指定</b>（如 联想/格力，或填"不限"）——发起询价后商家按指定品牌报价；填品名自动带出库存；用途见上方"用途说明"。表格较宽可左右滑动。</div>
+        <div style="overflow-x:auto"><table class="tb" style="font-size:10px;min-width:930px;margin-top:3px"><thead><tr>
+          <th style="width:22px">#</th><th style="min-width:100px">物品名称 *</th><th style="min-width:62px">规格型号</th><th style="width:38px">单位</th><th style="width:56px">库存</th><th style="width:64px">请购数量 *</th><th style="min-width:106px">品牌（指定）</th><th style="width:84px">采购类别</th><th style="min-width:72px">备注</th><th style="min-width:128px">到货日/附图</th>
         </tr></thead><tbody id="reqItemList"></tbody></table></div>
         <div style="margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button class="btn btn-o btn-sm" onclick="addReqItem()">+ 添加一行</button><button class="btn btn-o btn-sm" onclick="reqPasteFromExcel()">📋 从Excel粘贴</button><span style="color:#999;font-size:9px">粘贴识别 品牌/名称/规格/数量 等列</span></div>
       </div>`;
@@ -5578,7 +5578,7 @@ async function showForm(type){
 }
 let reqItemCount=0;
 const REQ_CATS=['固定资产','行政办公','酒店日耗','工程采购','基础材料','备品备件','维修耗材'];
-// V11.245: 采购申请物资明细表格化(列与《物资采购申请单》Excel一致); 库存列只读自动回填; 用途=行级usage; 请购数量必填>0
+// V11.248: 一行式明细(用途整单已填故去掉行级; 取消▾展开, 全部字段直接一行; 列=物品/规格/单位/库存/数量/品牌/类别/备注/到货附图)
 function addReqItem(it){
   const c=++reqItemCount;
   const _it=it||{};
@@ -5586,47 +5586,27 @@ function addReqItem(it){
   const cats=REQ_CATS.includes(_cat)?REQ_CATS:REQ_CATS.concat([_cat]); // 历史旧值不在预设列表也保留回显
   const _q=_it.quantity!=null?_it.quantity:1;
   id('reqItemList').insertAdjacentHTML('beforeend',
-    `<tr id="ritem${c}" data-c="${c}">
+    `<tr id="ritem${c}">
       <td class="rn" style="text-align:center;color:#999">${c}</td>
-      <td><input placeholder="物资名称 *" id="rin${c}" value="${esc(_it.item_name||'')}" style="width:100%;min-width:110px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px" onchange="checkStock(this,${c})"></td>
-      <td><input placeholder="规格型号" id="ris${c}" value="${esc(_it.spec||'')}" style="width:100%;min-width:72px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px"></td>
-      <td><input placeholder="单位" id="riu${c}" value="${esc(_it.unit||'个')}" style="width:40px;padding:2px;border:1px solid var(--b);border-radius:3px;font-size:10px"></td>
+      <td><input placeholder="物资名称 *" id="rin${c}" value="${esc(_it.item_name||'')}" style="width:100%;min-width:96px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px" onchange="checkStock(this,${c})"></td>
+      <td><input placeholder="规格型号" id="ris${c}" value="${esc(_it.spec||'')}" style="width:100%;min-width:60px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px"></td>
+      <td><input placeholder="单位" id="riu${c}" value="${esc(_it.unit||'个')}" style="width:32px;padding:2px;border:1px solid var(--b);border-radius:3px;font-size:10px"></td>
       <td style="text-align:center"><span id="rstk${c}" style="font-size:9px;color:#999;white-space:nowrap">—</span></td>
-      <td><input type="number" min="1" step="any" id="riq${c}" value="${_q}" style="width:58px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px" title="请购数量(必填, 须大于0)"></td>
-      <td><input placeholder="指定品牌，如 联想 / 不限" id="rib${c}" value="${esc(_it.brand_param||'')}" style="width:100%;min-width:120px;padding:2px 4px;border:1px solid #c9a86a;border-radius:3px;font-size:10px;background:#fffdf5" title="品牌由采购员指定，发起询价后商家按此品牌报价"></td>
-      <td style="white-space:nowrap;text-align:center">
+      <td><input type="number" min="1" step="any" id="riq${c}" value="${_q}" style="width:52px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px" title="请购数量(必填, 须大于0)"></td>
+      <td><input placeholder="指定品牌，如 联想 / 不限" id="rib${c}" value="${esc(_it.brand_param||'')}" style="width:100%;min-width:104px;padding:2px 4px;border:1px solid #c9a86a;border-radius:3px;font-size:10px;background:#fffdf5" title="品牌由采购员指定，发起询价后商家按此品牌报价"></td>
+      <td><select id="ric${c}" style="width:82px;padding:2px;border:1px solid var(--b);border-radius:3px;font-size:10px"><option value="">采购类别</option>${cats.map(x=>`<option ${x==_cat?'selected':''}>${esc(x)}</option>`).join('')}</select></td>
+      <td><input placeholder="备注(选填)" id="rir${c}" value="${esc(_it.remark||'')}" style="width:100%;min-width:66px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px"></td>
+      <td style="white-space:nowrap">
         <input type="hidden" id="rip${c}" value="${_it.estimated_price!=null?_it.estimated_price:0}">
-        <span onclick="toggleReqSub(${c})" id="rbtn${c}" style="cursor:pointer;font-size:11px;color:#7c5cff" title="展开/收起 类别/用途/备注/到货/附图">▾</span>
-        <span onclick="delReqItem(this)" style="cursor:pointer;color:var(--d);font-size:12px;margin-left:5px" title="删除本行">✕</span>
-      </td>
-    </tr>
-    <tr id="rsub${c}" data-sub="${c}" style="display:none;background:#fafbff">
-      <td></td>
-      <td colspan="7" style="padding:3px 4px">
-        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:10px">
-          <select id="ric${c}" style="width:96px;padding:2px;border:1px solid var(--b);border-radius:3px;font-size:10px"><option value="">采购类别</option>${cats.map(x=>`<option ${x==_cat?'selected':''}>${esc(x)}</option>`).join('')}</select>
-          <input placeholder="用途(选填)" id="ruse${c}" value="${esc(_it.usage||'')}" style="width:110px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px">
-          <input placeholder="备注(选填)" id="rir${c}" value="${esc(_it.remark||'')}" style="width:120px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px">
-          <input type="date" id="ria${c}" value="${esc(_it.arrival_date||'')}" title="需到货日期" style="width:100px;padding:1px 2px;border:1px solid var(--b);border-radius:3px;font-size:9px">
-          <label style="font-size:11px;color:#666;cursor:pointer" title="该行附图(打印时显示在备注栏)">📎附图<input type="file" id="ria_${c}" style="display:none" onchange="uploadRowAtt(this,${c})"></label>
-          <span id="riatt${c}" style="font-size:9px;color:#2e7d32">${_it.attach?('✅已附图'):''}</span>
-        </div>
+        <input type="date" id="ria${c}" value="${esc(_it.arrival_date||'')}" title="需到货日期(选填)" style="width:94px;padding:1px 2px;border:1px solid var(--b);border-radius:3px;font-size:9px">
+        <label style="font-size:11px;color:#666;cursor:pointer" title="该行附图(打印时显示在备注栏)">📎<input type="file" id="ria_${c}" style="display:none" onchange="uploadRowAtt(this,${c})"></label>
+        <span id="riatt${c}" style="font-size:8px;color:#2e7d32">${_it.attach?('✅'):''}</span>
+        <span onclick="delReqItem(this)" style="cursor:pointer;color:var(--d);font-size:12px;margin-left:4px" title="删除本行">✕</span>
       </td>
     </tr>`);
   if(_it.attach){const _sp=id('riatt'+c);_sp.textContent='✅ '+String(_it.attach).split('/').pop();_sp.dataset.attach=_it.attach;_sp.title=_it.attach}
-  // 回显有补充字段(类别/用途/备注/到货/附图)的行自动展开, 便于编辑确认
-  if((_it.category||_it.usage||_it.remark||_it.arrival_date||_it.attach))toggleReqSub(c);
 }
-function toggleReqSub(c){
-  const sub=id('rsub'+c);if(!sub)return;
-  sub.style.display=(sub.style.display==='none')?'':'none';
-  const b=id('rbtn'+c);if(b)b.textContent=(sub.style.display==='none')?'▾':'▴';
-}
-function delReqItem(btn){
-  const tr=btn.closest('tr');if(!tr)return;
-  const c=tr.getAttribute('data-c');if(c){const sub=id('rsub'+c);if(sub)sub.remove()}
-  tr.remove();renumberReqRows();
-}
+function delReqItem(btn){const tr=btn.closest('tr');if(tr)tr.remove();renumberReqRows()}
 function renumberReqRows(){const tb=id('reqItemList');if(!tb)return;tb.querySelectorAll('tr[id^="ritem"]').forEach((tr,i)=>{const t=tr.querySelector('td.rn');if(t)t.textContent=i+1})}
 // V11.38/49b/245: 填物资名称后自动查实时库存 → 填入"库存"列(只读, 非悬浮)
 async function checkStock(inp,c){
