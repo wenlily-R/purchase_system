@@ -6966,7 +6966,10 @@ def api_inquiry_select(iid):
     if i['deadline']:
         _ddt4 = _inq_deadline_dt(i['deadline'])
         if _ddt4 and datetime.datetime.now() < _ddt4:
-            conn.close(); return jsonify({'error': '报价尚未开标（截止 %s），请等待统一开标后再定标选择供应商' % i['deadline']}), 400
+            # V11.244修复: 与V11.217一致 — 全部受邀供应商已报价视为提前开标(否则询价中+全报齐+未到截止 会被自己挡住)
+            _noq4 = conn.execute("SELECT COUNT(*) FROM inquiry_suppliers WHERE inquiry_id=? AND (quote_price IS NULL OR quote_price=0)", (iid,)).fetchone()[0]
+            if _noq4 > 0:
+                conn.close(); return jsonify({'error': '报价尚未开标（截止 %s），请等待统一开标后再定标选择供应商' % i['deadline']}), 400
     s = conn.execute("SELECT * FROM inquiry_suppliers WHERE id=? AND inquiry_id=?", (sid, iid)).fetchone()
     if not s:
         conn.close(); return jsonify({'error': '供应商不在该询价单中'}), 400
@@ -7084,8 +7087,12 @@ def api_inquiry_split_select(iid):
     if i['status'] not in ('询价中', '待定标'):
         conn.close(); return jsonify({'error': '当前状态不可分项定标（仅询价中/待定标可操作）'}), 400
     # V11.205: 统一开标 — 截止前禁止分项定标(报价不可见阶段)
+    # V11.244修复: 与详情/提交审批/导出一致 — 全部受邀供应商已报价 → 提前开标放行
+    # (原漏加豁免: 领导批'按最低价择优采购'→状态待定标 后, 全报齐但未到截止的单被自己拦截, 无法生成订单)
     if _inq_locked(i['deadline']):
-        conn.close(); return jsonify({'error': '报价未开标（截止 %s），请等待统一开标后再分项定标' % (i['deadline'] or '')}), 400
+        _noq5 = conn.execute("SELECT COUNT(*) FROM inquiry_suppliers WHERE inquiry_id=? AND (quote_price IS NULL OR quote_price=0)", (iid,)).fetchone()[0]
+        if _noq5 > 0:
+            conn.close(); return jsonify({'error': '报价未开标（截止 %s），请等待统一开标后再分项定标' % (i['deadline'] or '')}), 400
     pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (i['req_id'],)).fetchone()
     if not pr:
         conn.close(); return jsonify({'error': '来源申请缺失'}), 400
