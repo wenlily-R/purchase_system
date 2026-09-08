@@ -2868,14 +2868,26 @@ def dt_build_detail(biz_type, r, c):
         lines['需求到货'] = str(r['target_date'] or '')[:10]
         lines['预估总金额'] = f"¥{float(r['total_estimated'] or 0):,.2f}"
         lines['紧急等级'] = '🚨加急' if r['urgent'] else '普通'
-        # 明细子表
+        # 明细子表 (V11.245: 全套字段输出 — 类别/厂家品牌参数/规格/单位/请购数量/用途/实时库存/备注, 与页面表格同源)
         its = c.execute("SELECT * FROM request_items WHERE req_id=? ORDER BY id", (r['id'],)).fetchall()
+        _stk = {}
+        for _iv in c.execute("SELECT item_name, quantity FROM inventory WHERE quantity>0").fetchall():
+            _stk[_iv['item_name']] = _stk.get(_iv['item_name'], 0) + _iv['quantity']
         if its:
             lines['商品明细'] = ''
             for i, it in enumerate(its, 1):
-                extra = ' '.join(x for x in [it['category'] if 'category' in it.keys() else '', it['brand_param'] if 'brand_param' in it.keys() else ''] if x)
-                arr = it['arrival_date'] if 'arrival_date' in it.keys() and it['arrival_date'] else ''
-                lines['商品明细'] += f"{i}. {it['item_name']} {it['spec'] or ''} x{it['quantity']}{it['unit'] or ''} 单价¥{float(it['estimated_price'] or 0):.2f} 小计¥{float(it['total_price'] or 0):.2f}" + (f" ({extra})" if extra else '') + (f" 到货:{arr}" if arr else '') + "\n"
+                _cat = it['category'] if 'category' in it.keys() and it['category'] else ''
+                _brand = it['brand_param'] if 'brand_param' in it.keys() and it['brand_param'] else ''
+                _use = it['usage'] if 'usage' in it.keys() and it['usage'] else ''
+                _rmk = it['remark'] if 'remark' in it.keys() and it['remark'] else ''
+                _sp = it['spec'] if 'spec' in it.keys() and it['spec'] else ''
+                _u = it['unit'] or '个'
+                _q = float(it['quantity'] or 0)
+                _fmt = lambda v: ('%g' % v) if float(v or 0) == int(float(v or 0)) else ('%.2f' % float(v))
+                lines['商品明细'] += (f"{i}. {it['item_name']}{('(' + str(_sp) + ')') if _sp else ''} "
+                                      f"×{_fmt(_q)}{_u} 类别:{_cat or '-'} 厂家/参数:{_brand or '-'} "
+                                      f"用途:{_use or '-'} 库存:{_fmt(_stk.get(it['item_name'] or '', 0))}{_u} "
+                                      f"备注:{_rmk or '-'} 单价¥{float(it['estimated_price'] or 0):.2f} 小计¥{float(it['total_price'] or 0):.2f}\n")
         if r['remark']: lines['备注'] = r['remark']
     elif biz_type == 'contract':
         lines['合同编号'] = r['contract_no']; lines['单据类型'] = '采购合同'
@@ -5019,11 +5031,11 @@ def api_generic_resubmit(biz_type, biz_id):
             for it in items:
                 _tp = float(it.get('quantity', 1) or 1) * float(it.get('estimated_price', 0) or 0)
                 _tot += _tp
-                conn.execute("INSERT INTO request_items(req_id,item_name,spec,unit,quantity,estimated_price,total_price,remark,category,brand_param,arrival_date,attach) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                conn.execute("INSERT INTO request_items(req_id,item_name,spec,unit,quantity,estimated_price,total_price,remark,category,brand_param,arrival_date,attach,usage) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                              (biz_id, it.get('item_name',''), it.get('spec',''), it.get('unit','个'), float(it.get('quantity',1)),
                               float(it.get('estimated_price',0)), _tp, it.get('remark',''),
                               it.get('category',''), it.get('brand_param',''), it.get('arrival_date',''),
-                              it.get('attach','') or ''))
+                              it.get('attach','') or '', it.get('usage','') or ''))
             amount = _tot
             conn.execute(f"UPDATE {tbl} SET total_estimated=?, updated_at=? WHERE id=?", (_tot, now(), biz_id))
         # 重提: 状态回待审批 + 清驳回标记 + 次数+1
@@ -5214,8 +5226,17 @@ def api_prequest(rid):
     pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (rid,)).fetchone()
     items = conn.execute("SELECT * FROM request_items WHERE req_id=?", (rid,)).fetchall()
     approvals = conn.execute("SELECT * FROM approval_instances WHERE biz_type='purchase_request' AND biz_id=? ORDER BY level_no", (rid,)).fetchall()
+    # V11.245: 每项附实时库存(按品名汇总) — 详情/审批/导出库存列同源
+    _stk = {}
+    for _inv in conn.execute("SELECT item_name, quantity FROM inventory WHERE quantity>0").fetchall():
+        _stk[_inv['item_name']] = _stk.get(_inv['item_name'], 0) + _inv['quantity']
     conn.close()
-    return jsonify({'request':dict_row(pr),'items':[dict_row(i) for i in items],'approvals':[dict_row(a) for a in approvals]})
+    out = []
+    for i in items:
+        d = dict_row(i)
+        d['stock_qty'] = _stk.get(d['item_name'] or '', 0)
+        out.append(d)
+    return jsonify({'request': dict_row(pr), 'items': out, 'approvals': [dict_row(a) for a in approvals]})
 
 @app.route('/api/prequests', methods=['POST'])
 @login_required
@@ -5252,11 +5273,11 @@ def api_create_prequest():
     prid = conn.execute("SELECT id FROM purchase_requests WHERE req_no=?", (no,)).fetchone()[0]
     for it in items:
         tp = float(it.get('quantity',1)) * float(it.get('estimated_price',0))
-        conn.execute("INSERT INTO request_items(req_id,item_name,spec,unit,quantity,estimated_price,total_price,remark,category,brand_param,arrival_date,attach) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+        conn.execute("INSERT INTO request_items(req_id,item_name,spec,unit,quantity,estimated_price,total_price,remark,category,brand_param,arrival_date,attach,usage) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                      (prid, it.get('item_name',''), it.get('spec',''), it.get('unit','个'), float(it.get('quantity',1)),
                       float(it.get('estimated_price',0)), tp, it.get('remark',''),
                       it.get('category',''), it.get('brand_param',''), it.get('arrival_date',''),
-                      it.get('attach','') or ''))
+                      it.get('attach','') or '', it.get('usage','') or ''))
     conn.commit()
     # V11.154: 草稿不创建审批实例(采购员检查后手动提交)
     if not d.get('draft'):
@@ -5362,11 +5383,11 @@ def api_resubmit_prequest(rid):
         conn.execute("DELETE FROM request_items WHERE req_id=?", (rid,))
         for it in items:
             tp = float(it.get('quantity',1)) * float(it.get('estimated_price',0))
-            conn.execute("INSERT INTO request_items(req_id,item_name,spec,unit,quantity,estimated_price,total_price,remark,category,brand_param,arrival_date,attach) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            conn.execute("INSERT INTO request_items(req_id,item_name,spec,unit,quantity,estimated_price,total_price,remark,category,brand_param,arrival_date,attach,usage) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                          (rid, it.get('item_name',''), it.get('spec',''), it.get('unit','个'), float(it.get('quantity',1)),
                           float(it.get('estimated_price',0)), tp, it.get('remark',''),
                           it.get('category',''), it.get('brand_param',''), it.get('arrival_date',''),
-                          it.get('attach','') or ''))
+                          it.get('attach','') or '', it.get('usage','') or ''))
     if d.get('draft'):
         # V11.187: 存草稿 — 保留现有审批实例记录(驳回历史仍在), 不进审批流不发钉钉
         # V11.224 模块一: 草稿保存留痕
@@ -11252,7 +11273,8 @@ def api_prequest_download(rid):
     from openpyxl.drawing.image import Image as XLImage
     import os as _os
     for i, it in enumerate(items, 1):
-        use = (it['remark'] or '').strip() or (pr['purpose'] or '')
+        # V11.245: 用途独立列(usage)优先, 历史行回退 remark/整单用途
+        use = ((it['usage'] if 'usage' in it.keys() and it['usage'] else '') or (it['remark'] or '')).strip() or (pr['purpose'] or '')
         cat = it['category'] if 'category' in it.keys() and it['category'] else ''
         brand = it['brand_param'] if 'brand_param' in it.keys() and it['brand_param'] else ''
         # V11.46: 行级附件图片(备注列插图)
