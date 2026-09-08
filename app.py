@@ -4253,11 +4253,49 @@ def api_dingtalk_status():
     bound = c.execute("SELECT COUNT(*) FROM users WHERE dingtalk_userid IS NOT NULL AND dingtalk_userid!=''").fetchone()[0]
     insts = c.execute("SELECT COUNT(*) FROM dingtalk_instances").fetchone()[0]
     pend = c.execute("SELECT COUNT(*) FROM dingtalk_instances WHERE status='pending'").fetchone()[0]
+    errn = c.execute("SELECT COUNT(*) FROM dingtalk_instances WHERE status='error'").fetchone()[0]
+    # V11.243: 逐环节覆盖矩阵 — 每个走钉钉OA审批的业务: 模板码是否配齐 + 审批流各节点审批人是否绑定钉钉ID
+    codes = dt_approval_codes() or {}
+    _flow_rows = c.execute("SELECT biz_type, level_no, role, approver, label FROM approval_flow_config ORDER BY biz_type, min_amount, level_no").fetchall()
+    _usr_rows = c.execute("SELECT name,username,role,dingtalk_userid FROM users WHERE is_active=1").fetchall()
+    users = {u['name']: dict(u) for u in _usr_rows}
+    users |= {u['username']: dict(u) for u in _usr_rows}
+    coverage, seen = [], set()
+    for fr in _flow_rows:
+        bt = fr['biz_type']
+        if bt not in seen:
+            seen.add(bt)
+            nodes = []
+            for f2 in _flow_rows:
+                if f2['biz_type'] != bt: continue
+                ap = (f2['approver'] or '').strip()
+                u = users.get(ap) if ap else None
+                # 运行时语义: 优先节点指定人; 未指定按角色解析有效绑定用户
+                role_bound = bool(ap) and bool(u and u.get('dingtalk_userid'))
+                if not role_bound:
+                    role_bound = any(ru.get('role') == f2['role'] and ru.get('dingtalk_userid')
+                                     for ru in users.values())
+                nodes.append({'level': f2['level_no'], 'role': f2['role'],
+                              'approver': ap or f"(按角色:{f2['role']})",
+                              'bound': role_bound})
+            coverage.append({'biz_type': bt, 'label': fr['label'] or '',
+                             'proc_code': bool(codes.get(bt, '')),
+                             'nodes': nodes})
     c.close()
+    # 可疑钉钉ID(非纯数字, 可能是误绑定)
+    c2 = db()
+    sus = [{'name': u['name'], 'username': u['username'], 'role': u['role'], 'uid': u['dingtalk_userid']}
+           for u in c2.execute("SELECT name,username,role,dingtalk_userid FROM users WHERE dingtalk_userid IS NOT NULL AND dingtalk_userid!=''").fetchall()
+           if not str(u['dingtalk_userid']).isdigit()]
+    c2.close()
     return jsonify({
         'enabled': dingtalk_enabled(), 'config_ok': bool(cfg_get('dingtalk_app_key') and cfg_get('dingtalk_app_secret')),
         'token_ok': bool(_DT_TOKEN['t']), 'bound_users': bound, 'instances': insts, 'pending_sync': pend,
-        'codes': dt_approval_codes(), 'agent_ok': dt_agent_id() > 0, 'public_url': dt_public_url(),
+        'error_instances': errn,
+        'codes': codes, 'agent_ok': dt_agent_id() > 0, 'public_url': dt_public_url(),
+        'coverage': coverage,
+        'suspicious_userids': sus,
+        'missing_codes': [bt for bt in sorted(set(f['biz_type'] for f in _flow_rows)) if not codes.get(bt, '')],
     })
 
 @app.route('/api/dingtalk/remind-now', methods=['POST'])
