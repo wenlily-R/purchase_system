@@ -6167,7 +6167,7 @@ def api_inquiries_eligible():
             (SELECT SUM(COALESCE(ri.total_price,0)) FROM request_items ri WHERE ri.req_id=pr.id) AS item_total
         FROM purchase_requests pr
         WHERE pr.status='已通过'
-          AND NOT EXISTS (SELECT 1 FROM inquiries i WHERE i.req_id=pr.id AND i.status!='已取消')
+          AND NOT EXISTS (SELECT 1 FROM inquiries i WHERE i.req_id=pr.id AND i.status NOT IN ('已取消','已作废','已撤回'))
           AND NOT EXISTS (SELECT 1 FROM purchase_orders po WHERE po.req_id=pr.id)
         ORDER BY pr.id DESC LIMIT 50
     """).fetchall()
@@ -6195,8 +6195,8 @@ def api_create_inquiry():
         conn.close(); return jsonify({'error': '申请不存在'}), 400
     if pr['status'] != '已通过':
         conn.close(); return jsonify({'error': '申请当前状态(%s)不可询价' % pr['status']}), 400
-    if conn.execute("SELECT COUNT(*) FROM inquiries WHERE req_id=? AND status!='已取消'", (req_id,)).fetchone()[0] > 0:
-        conn.close(); return jsonify({'error': '该申请已发起过询价'}), 400
+    if conn.execute("SELECT COUNT(*) FROM inquiries WHERE req_id=? AND status NOT IN ('已取消','已作废','已撤回')", (req_id,)).fetchone()[0] > 0:
+        conn.close(); return jsonify({'error': '该申请已有进行中的询价'}), 400
     if conn.execute("SELECT COUNT(*) FROM purchase_orders WHERE req_id=?", (req_id,)).fetchone()[0] > 0:
         conn.close(); return jsonify({'error': '该申请已下单，无需询价'}), 400
     no = gen_no('XJ', 'inquiries', 'inq_no', conn)
