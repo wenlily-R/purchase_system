@@ -3469,7 +3469,8 @@ async function loadReceivings(){
                   : x.status=='入库中'?'<span class="tag" style="background:#fff8e1;color:#f57f17">🚚 入库中</span>'
                   : tag(x.status);
       // V11.54/V11.153: 暂估/红冲/正式标签(有发票号=已红冲优先; 无发票号且is_est=暂估; 都无=正式)
-      const estTag = x.invoice_no?'<span class="tag" style="background:#e8f5e9;color:#2e7d32">已红冲</span>'
+      const estTag = x.conv_from_id||x.is_conv?'<span class="tag" style="background:#e8f5e9;color:#2e7d32" title="发票核对红冲自动生成的正式入库单,不重复计库存">红冲转正式</span>'
+                   : x.invoice_no?'<span class="tag" style="background:#e8f5e9;color:#2e7d32">已红冲</span>'
                    : x.is_est?'<span class="tag" style="background:#fff3e0;color:#e65100">暂估</span>'
                    : '';
       // V11.152: 恢复旧版完整展示(加粗单号/部门绿标签/物资名+N项标签/加急/数量带单位) + 保留到货提醒/暂估红冲
@@ -3538,7 +3539,7 @@ async function doInvMatch(rid){
   const r=await api(`/receivings/${rid}/invoice-match`,{method:'POST',body:JSON.stringify({invoice_no:no,amount:amt})});
   if(r.success){
     const d=((r.diff||0)>0?'+':'')+(r.diff||0).toFixed(2);
-    alert(`✅ 红冲完成: ${r.receive_no} 已转正式入库\n发票类型: ${r.invoice_type}\n暂估额 ¥${(r.est_amount||0).toFixed(2)} → 发票额 ¥${(r.invoice_amount||0).toFixed(2)}\n差价: ${d} 元`);
+    alert(`✅ 红冲完成: ${r.receive_no} 已转正式入库\n自动生成正式入库单: ${r.formal_receive_no||''}\n发票类型: ${r.invoice_type}\n暂估额 ¥${(r.est_amount||0).toFixed(2)} → 发票额 ¥${(r.invoice_amount||0).toFixed(2)}\n差价: ${d} 元\n(原暂估单保留标记已红冲, 新正式单不重复计库存)`);
     closeMod();loadReceivings();
   }
   else alert('操作失败: '+(r.error||''));

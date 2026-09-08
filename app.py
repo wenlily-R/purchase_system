@@ -742,6 +742,10 @@ def init_db():
     _rcvcols = [r[1] for r in conn.execute("PRAGMA table_info(receivings)").fetchall()]
     if 'batch_no' not in _rcvcols:
         conn.execute("ALTER TABLE receivings ADD COLUMN batch_no TEXT DEFAULT ''")
+    # V11.247: 发票核对红冲→自动转正式单据(防双计标记: is_conv=1 的转正单不重复计入库存/验收量)
+    for _cc, _cd in (('conv_from_id', 'INTEGER DEFAULT NULL'), ('is_conv', 'INTEGER DEFAULT 0')):
+        if _cc not in _rcvcols:
+            conn.execute(f"ALTER TABLE receivings ADD COLUMN {_cc} {_cd}")
     # ---- V11.206 集体验收: 标记是否需集体验收 + 验收状态(空=常规, 1=需集体验收; collect_status: 空/待集体验收/已集体验收) ----
     if 'collect_accept' not in _rcvcols:
         conn.execute("ALTER TABLE receivings ADD COLUMN collect_accept INTEGER DEFAULT 0")
@@ -6090,13 +6094,13 @@ def api_dashboard():
         trend.append({'month': mm, 'amount': round(s or 0, 2)})
     cat_ratio = c.execute("""SELECT po.category, COALESCE(SUM(po.total_amount),0) amt FROM purchase_orders po
         WHERE po.total_amount>0 GROUP BY po.category ORDER BY amt DESC LIMIT 8""").fetchall()
-    in_total = c.execute("SELECT COUNT(*) FROM receivings WHERE status='已入库'").fetchone()[0]
+    in_total = c.execute("SELECT COUNT(*) FROM receivings WHERE status='已入库' AND COALESCE(is_conv,0)=0").fetchone()[0]
     in_ontime = 0
     if in_total:
         try: c.execute("ALTER TABLE receivings ADD COLUMN completed_at TEXT")
         except Exception: pass
         in_ontime = c.execute("""SELECT COUNT(*) FROM receivings r JOIN purchase_orders po ON r.order_id=po.id
-            WHERE r.status='已入库' AND po.target_date!='' AND (r.completed_at IS NULL OR r.completed_at<=po.target_date)""").fetchone()[0]
+            WHERE r.status='已入库' AND COALESCE(r.is_conv,0)=0 AND po.target_date!='' AND (r.completed_at IS NULL OR r.completed_at<=po.target_date)""").fetchone()[0]
     ontime_rate = round(in_ontime * 100.0 / in_total, 1) if in_total else None
     avg_h = c.execute("""SELECT AVG((julianday(processed_at)-julianday(created_at))*24) FROM approval_instances
         WHERE status IN ('approved','rejected') AND processed_at IS NOT NULL""").fetchone()[0]
@@ -8030,6 +8034,9 @@ def _order_rcv_stats(c, oid):
     batches = []
     has_active_full_doc = False   # 存在未作废的老整批单(待入库/入库中/待检验/草稿/已驳回/待审批)
     for doc in docs:
+        # V11.247: 红冲自动转正单(is_conv=1)不参与实物验收量/批次台账(实物已在原暂估单计过)
+        if doc.get('is_conv'):
+            continue
         doc['_qty'] = _rcv_doc_qty(doc)
         in_stock = doc['status'] == '已入库'
         doc['_in_stock'] = in_stock
@@ -9727,13 +9734,14 @@ def api_report_checkpoints():
           AND NOT EXISTS (SELECT 1 FROM purchase_orders po WHERE po.req_id=pr.id)
         ORDER BY pr.id DESC LIMIT 200""").fetchall()]
     # ② 有采购订单但分批验收未收齐(总订量>已验收入库量), 且单据未终结
+    # (V11.247: 转正单 is_conv=1 不重复计已入库量)
     _b = [dict(r) for r in c.execute("""
         SELECT po.id, po.order_no, po.supplier, po.status, po.target_date, po.quantity AS order_qty,
                pr.req_no, pr.purpose,
-               COALESCE((SELECT SUM(r.quantity) FROM receivings r WHERE r.order_id=po.id AND r.status='已入库'),0) AS in_qty
+               COALESCE((SELECT SUM(r.quantity) FROM receivings r WHERE r.order_id=po.id AND r.status='已入库' AND COALESCE(r.is_conv,0)=0),0) AS in_qty
         FROM purchase_orders po LEFT JOIN purchase_requests pr ON pr.id=po.req_id
         WHERE po.status NOT IN ('已作废','已撤回','已取消','草稿')
-          AND po.quantity > COALESCE((SELECT SUM(r.quantity) FROM receivings r WHERE r.order_id=po.id AND r.status='已入库'),0)
+          AND po.quantity > COALESCE((SELECT SUM(r.quantity) FROM receivings r WHERE r.order_id=po.id AND r.status='已入库' AND COALESCE(r.is_conv,0)=0),0)
         ORDER BY po.target_date IS NULL, po.target_date, po.id DESC LIMIT 200""").fetchall()]
     # ③ 已入库但暂估未回票(发票未回未核对红冲)
     _c = [dict(r) for r in c.execute("""
@@ -9982,10 +9990,32 @@ def api_receiving_invoice_match(rid):
     _inv_amt = amount if amount > 0 else rn['est_amount']
     conn.execute("UPDATE receivings SET is_est=1, invoice_no=?, est_amount=?, invoice_type=?, invoice_amount=? WHERE id=?",
                  (invoice_no, rn['est_amount'] or 0, _typ, _inv_amt, rid))
+    # V11.247: 红冲完成自动生成"正式入库"单据(is_est=0, 金额=发票额, 标记 is_conv=1 防库存/验收双计)
+    # 账务可见: 原暂估单(已红冲) + 新正式单 同时存在, 分别进入月底红冲表/正式(白入)表
+    import uuid as _uu2
+    _fno = gen_no('RK', 'receivings', 'receive_no', conn)
+    _conv_vals = {}
+    _cols2 = [dict(x) for x in conn.execute("PRAGMA table_info(receivings)").fetchall()]
+    for _x in _cols2:
+        if _x['pk']: continue
+        _tt = _x['type'].upper()
+        _conv_vals[_x['name']] = '' if ('CHAR' in _tt or 'TEXT' in _tt) else (0 if ('INT' in _tt or 'REAL' in _tt or 'NUM' in _tt) else '')
+    _copy_map = {'order_id': rn['order_id'], 'item_name': rn['item_name'] or '', 'spec': rn['spec'] or '',
+                 'unit': rn['unit'] or '个', 'quantity': rn['quantity'] or 0, 'dept': rn['dept'] if 'dept' in rn.keys() else '',
+                 'items_json': rn['items_json'] if 'items_json' in rn.keys() and rn['items_json'] else '',
+                 'attachments': rn['attachments'] if 'attachments' in rn.keys() and rn['attachments'] else '',
+                 'inspector': session.get('user_name', '')}
+    _conv_vals.update({k: v for k, v in _copy_map.items() if k in _conv_vals})
+    _conv_vals.update({'receive_no': _fno, 'status': '已入库', 'is_est': 0, 'invoice_no': invoice_no,
+                       'invoice_type': _typ, 'invoice_amount': round(_inv_amt, 2), 'est_amount': 0,
+                       'is_conv': 1, 'conv_from_id': rid, 'received_at': now(), 'created_at': now(), 'updated_at': now(),
+                       'remark': f'发票核对红冲自动转正式(来源{rn["receive_no"]},发票{invoice_no})'})
+    conn.execute(f"INSERT INTO receivings({','.join(_conv_vals.keys())}) VALUES({','.join('?' * len(_conv_vals))})",
+                 [_conv_vals[k] for k in _conv_vals])
     conn.commit(); conn.close()
     _diff = round(_inv_amt - (rn['est_amount'] or 0), 2)
-    log(session['user_name'], '发票核对红冲', f'{rn["receive_no"]} 发票{invoice_no}({_typ}) 暂估{rn["est_amount"]}→发票{_inv_amt} 差价{_diff}')
-    return jsonify({'success': True, 'receive_no': rn['receive_no'], 'invoice_type': _typ,
+    log(session['user_name'], '发票核对红冲', f'{rn["receive_no"]} 发票{invoice_no}({_typ}) 暂估{rn["est_amount"]}→发票{_inv_amt} 差价{_diff}; 自动转正式单{_fno}')
+    return jsonify({'success': True, 'receive_no': rn['receive_no'], 'formal_receive_no': _fno, 'invoice_type': _typ,
                     'est_amount': round(float(rn['est_amount'] or 0), 2),
                     'invoice_amount': round(_inv_amt, 2), 'diff': _diff})
 
