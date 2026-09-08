@@ -6768,7 +6768,7 @@ def inquiry_vendor_page(token):
                        '<input type="hidden" id="br%d" value="%s"></td>' % (esc_html(_sb), idx, esc_html(_sb))) if _fixed else \
                       ('<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="品牌(可自报)" id="br%d" value="%s" '
                        'style="width:88px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>' % (idx, esc_html(_pv.get('brand') or '')))
-        _rows_html.append(
+        _rows_html.append((
             '<tr>'
             '<td style="padding:6px 8px;text-align:left;border-bottom:1px solid #eef">%s</td>'
             '<td style="padding:6px 8px;text-align:left;border-bottom:1px solid #eef;color:#888;font-size:12px">%s</td>'
@@ -6780,7 +6780,7 @@ def inquiry_vendor_page(token):
             '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="如3个月" id="wr%d" value="%s" style="width:56px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
             + _brand_cell +
             '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="备注" id="rm%d" value="%s" style="width:64px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
-            '</tr>' % (
+            '</tr>') % (
                 esc_html(it['item_name']), esc_html(it['spec'] or ''),
                 str(_qty) + esc_html(it['unit'] or '个'), _ref,
                 str(_qty), idx, _v_price,
