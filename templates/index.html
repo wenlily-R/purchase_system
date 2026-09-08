@@ -1283,8 +1283,13 @@ function __pageAllowed(name){
   return rl.includes(ME.role);
 }
 
-function closeMod(){id('detailModal').classList.remove('show')}
-id('detailModal')?.addEventListener('click',e=>{if(e.target===id('detailModal'))closeMod()});
+function closeMod(){ if(window.__prDraftOn){try{prSaveDraftNow()}catch(e){}} window.__prDraftOn=false; id('detailModal').classList.remove('show') }
+// V11.237: 遮罩关闭防误触 — 只有"按下与松开都在遮罩空白处"才关闭; 在面板内按下(拖动滚动条/选中文字)滑到遮罩上松开不再误关
+const __dmEl0=id('detailModal');let __dmInCard=false;
+if(__dmEl0){
+  __dmEl0.addEventListener('pointerdown',e=>{__dmInCard=(e.target!==__dmEl0)},{passive:true});
+  __dmEl0.addEventListener('click',e=>{if(e.target===__dmEl0&&!__dmInCard)closeMod()});
+}
 // V11.159: 点击页面其他区域关闭消息通知下拉
 document.addEventListener('click',e=>{
   const nb=id('notifBox');
@@ -1729,6 +1734,7 @@ async function saveEditDoc(bizType, bid, label){
   else alert('❌ '+(r.error||'保存失败'));
 }
 async function editPRequest(oid){
+  window.__prDraftOn=false; // V11.237: 编辑已有申请不写本地草稿
   // V11.187: 修改采购申请 = 新建申请同一套表单(布局/字段/明细行/附件/加急/类型完全一致), 仅预填当前值
   const d=await api(`/prequests/${oid}`),r=d.request,items=d.items||[];
   id('dmTitle').textContent='📝 修改采购申请 '+r.req_no;
@@ -5323,6 +5329,7 @@ async function reqNoByDept(){
 
 // Forms
 async function showForm(type){
+  window.__prDraftOn=false; // V11.237: 仅"新建采购申请"分支内开启本地草稿
   const sups=await api('/suppliers');const cats=await api('/categories');const depts=await api('/departments');
   const supOpts=sups.map(s=>`<option>${esc(s.name)}</option>`).join('');const d=new Date();d.setDate(d.getDate()+14);
   if(type=='prequest'){
@@ -5353,9 +5360,14 @@ async function showForm(type){
     // 申请单号(前缀随部门, 序号当天总序) + 当日日期 自动带出
     reqNoByDept();
     const _td=new Date();id('fReqApplyDate').value=_td.getFullYear()+'年'+( _td.getMonth()+1)+'月'+_td.getDate()+'日';
+    // V11.237: 新建采购申请 开启本地草稿 — 输入自动保存, 误关/误滑后再打开自动恢复
+    window.__prDraftOn=true;
+    prTryRestore();
     // Load budgets
     api('/budgets').then(bs=>{
       id('fReqBud').innerHTML='<option value="">无</option>'+bs.map(b=>`<option value="${b.code}">${esc(b.name)} (¥${(b.annual_budget||0).toFixed(0)})</option>`).join('');
+      // V11.237: 预算科目异步加载后回填草稿值
+      try{const _rd=JSON.parse(localStorage.getItem('prDraft')||'null');if(_rd&&_rd.d&&_rd.d.budget_code)id('fReqBud').value=_rd.d.budget_code}catch(e){}
     });
   } else if(type=='order'){
     window._ordReqId=null;
@@ -5550,6 +5562,52 @@ async function uploadRowAtt(inp,c){
   inp.value='';
 }
 
+// ── V11.237: 采购申请新建表单 本地草稿自动保存(防误关/误滑后重新填写) ──
+let __prT=null;
+function prCollect(){
+  if(!id('reqItemList'))return null; // 非申请表单(详情/其他单据)不采集
+  try{
+    const d={};
+    d.dept=id('fReqDept')?.value||'';d.budget_code=id('fReqBud')?.value||'';
+    d.purpose=id('fReqPurp')?.value||'';d.target_date=id('fReqDate')?.value||'';
+    d.remark=id('fReqRem')?.value||'';d.urgent=id('fReqUrgent')?.checked?1:0;
+    const items=[];
+    id('reqItemList').querySelectorAll('[id^="ritem"]').forEach(r=>{
+      const idx=r.id.replace('ritem','');const n=id('rin'+idx)?.value;
+      if(n)items.push({item_name:n,category:id('ric'+idx)?.value||'',brand_param:id('rib'+idx)?.value||'',spec:id('ris'+idx)?.value||'',quantity:parseFloat(id('riq'+idx)?.value)||1,unit:id('riu'+idx)?.value||'个',arrival_date:id('ria'+idx)?.value||'',estimated_price:parseFloat(id('rip'+idx)?.value)||0,remark:id('rir'+idx)?.value||'',attach:id('riatt'+idx)?.dataset?.attach||''});
+    });
+    d.items=items;d.reqAtts=(typeof reqAtts!=='undefined'&&reqAtts)?reqAtts.slice():[];
+    return d;
+  }catch(e){return null}
+}
+function prSaveDraftNow(){
+  if(!window.__prDraftOn)return;
+  const d=prCollect();if(!d)return;
+  const has=Object.values(d).some(v=>Array.isArray(v)?v.length>0:(v!==''&&v!==0&&v!=null));
+  try{if(has)localStorage.setItem('prDraft',JSON.stringify({ts:Date.now(),d}));else localStorage.removeItem('prDraft')}catch(e){}
+}
+function __prSchedule(){clearTimeout(__prT);__prT=setTimeout(prSaveDraftNow,600)}
+function prTryRestore(){
+  if(!window.__prDraftOn)return;
+  let raw=null;try{raw=localStorage.getItem('prDraft')}catch(e){}
+  if(!raw)return;
+  let o=null;try{o=JSON.parse(raw)}catch(e){}
+  if(!o||!o.d)return;
+  const d=o.d;
+  if(d.dept&&id('fReqDept'))id('fReqDept').value=d.dept;
+  if(id('fReqPurp'))id('fReqPurp').value=d.purpose||'';
+  if(id('fReqDate'))id('fReqDate').value=d.target_date||'';
+  if(id('fReqRem'))id('fReqRem').value=d.remark||'';
+  if(d.urgent&&id('fReqUrgent'))id('fReqUrgent').checked=true;
+  if(d.items&&d.items.length){id('reqItemList').innerHTML='';d.items.forEach(it=>addReqItem(it))}
+  if(d.reqAtts&&d.reqAtts.length){try{reqAtts=d.reqAtts.slice();id('reqAttList').innerHTML=reqAtts.map(a=>'📎 '+a.split('/').pop()).join(' ')}catch(e){}}
+  toast('📝 已恢复上次未提交的草稿(提交或存草稿成功后自动清除)');
+}
+window.__prDraftOn=false;
+id('dmBody').addEventListener('input',()=>{if(window.__prDraftOn)__prSchedule()});
+id('dmBody').addEventListener('change',()=>{if(window.__prDraftOn)__prSchedule()});
+id('dmBody').addEventListener('click',()=>{if(window.__prDraftOn)__prSchedule()});
+
 // V11.61: 申请类型提示(物资采购/设备维修)
 function reqTypeTip(){
   const t=id('fReqType')?.value||'物资采购';
@@ -5591,7 +5649,7 @@ async function createPRequest(asDraft){
     }
     const d={dept:id('fReqDept').value,budget_code:id('fReqBud').value,purpose:id('fReqPurp').value,target_date:id('fReqDate').value,remark:id('fReqRem').value,items,urgent:id('fReqUrgent')?.checked?1:0,attachments:reqAtts,apply_date:(id('fReqApplyDate')?.value||'').replace(/年/g,'-').replace(/月/g,'-').replace(/日/g,''),req_type:id('fReqType')?.value||'物资采购',draft:asDraft||false};
     const r=await api('/prequests',{method:'POST',body:JSON.stringify(d)});
-    if(r.success){toast(asDraft?'✅ 已存草稿(可稍后在列表继续编辑提交)':('✅ 已提交'+(r.req_no?(' '+r.req_no):'')));closeMod();reqAtts=[];loadPRequests();loadDashboard()}
+    if(r.success){window.__prDraftOn=false;try{localStorage.removeItem('prDraft')}catch(e){}toast(asDraft?'✅ 已存草稿(可稍后在列表继续编辑提交)':('✅ 已提交'+(r.req_no?(' '+r.req_no):'')));closeMod();reqAtts=[];loadPRequests();loadDashboard()}
     else if(r.error){alert('保存失败: '+r.error)}
   }catch(e){alert('保存失败,请重试')}
   finally{if(btn){btn.disabled=false;btn.textContent=asDraft?'💾 存草稿':'提交申请'}}
