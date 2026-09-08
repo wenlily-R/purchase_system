@@ -10169,16 +10169,27 @@ def api_receiving_invoice_match(rid):
         _copy_map['quantity'] = _conv_qty
         _copy_map['item_name'] = (_conv_items[0]['item_name'] + ' 等%d项' % len(_conv_items)) if len(_conv_items) > 1 else (_conv_items[0]['item_name'] if _conv_items else rn['item_name'])
     _conv_vals.update({k: v for k, v in _copy_map.items() if k in _conv_vals})
+    # V11.251: 发票影像留证 — 前端上传的发票照片/PDF合并存入转正单 attachments(与验收留证并存, 详情可查)
+    _inv_imgs = d.get('attachments') or []
+    if _inv_imgs and isinstance(_inv_imgs, list):
+        try:
+            _old_atts = json.loads(rn['attachments']) if (rn['attachments'] and 'attachments' in rn.keys()) else []
+        except Exception:
+            _old_atts = []
+        if not isinstance(_old_atts, list): _old_atts = []
+        _conv_vals['attachments'] = json.dumps(_old_atts + [str(x) for x in _inv_imgs], ensure_ascii=False)
+        _conv_vals['remark'] = f'发票核对红冲自动转正式(来源{rn["receive_no"]},发票{invoice_no},含发票影像{len(_inv_imgs)}张)'
     _conv_vals.update({'receive_no': _fno, 'status': '已入库', 'is_est': 0, 'invoice_no': invoice_no,
                        'invoice_type': _typ, 'invoice_amount': round(_inv_amt, 2), 'est_amount': 0,
                        'is_conv': 1, 'conv_from_id': rid, 'received_at': now(), 'created_at': now(), 'updated_at': now(),
-                       'remark': f'发票核对红冲自动转正式(来源{rn["receive_no"]},发票{invoice_no})'})
-    conn.execute(f"INSERT INTO receivings({','.join(_conv_vals.keys())}) VALUES({','.join('?' * len(_conv_vals))})",
+                       'remark': _conv_vals.get('remark') or f'发票核对红冲自动转正式(来源{rn["receive_no"]},发票{invoice_no})'})
+    _cur = conn.execute(f"INSERT INTO receivings({','.join(_conv_vals.keys())}) VALUES({','.join('?' * len(_conv_vals))})",
                  [_conv_vals[k] for k in _conv_vals])
+    _formal_id = _cur.lastrowid
     conn.commit(); conn.close()
     _diff = round(_inv_amt - (rn['est_amount'] or 0), 2)
-    log(session['user_name'], '发票核对红冲', f'{rn["receive_no"]} 发票{invoice_no}({_typ}) 暂估{rn["est_amount"]}→发票{_inv_amt} 差价{_diff}; 自动转正式单{_fno}')
-    return jsonify({'success': True, 'receive_no': rn['receive_no'], 'formal_receive_no': _fno, 'invoice_type': _typ,
+    log(session['user_name'], '发票核对红冲', f'{rn["receive_no"]} 发票{invoice_no}({_typ}) 暂估{rn["est_amount"]}→发票{_inv_amt} 差价{_diff}; 自动转正式单{_fno}' + (f'; 发票影像{len(_inv_imgs)}张' if _inv_imgs else ''))
+    return jsonify({'success': True, 'receive_no': rn['receive_no'], 'formal_receive_no': _fno, 'formal_id': _formal_id, 'invoice_type': _typ,
                     'est_amount': round(float(rn['est_amount'] or 0), 2),
                     'invoice_amount': round(_inv_amt, 2), 'diff': _diff})
 
