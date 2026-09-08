@@ -9761,14 +9761,54 @@ def api_invoice_node_ledger():
     return jsonify({'list': out, 'today': today})
 
 
+@app.route('/api/receivings/<int:rid>/invoice-context', methods=['GET'])
+@login_required
+def api_receiving_invoice_context(rid):
+    """V11.245 发票核对上下文 — 自动带出该暂估入库对应的申请/订单明细(采购员核对用, 只读)
+    返回: 入库单信息 + 上游链(req/order/supplier/事由) + 明细行清单 + 前期发票类型约定(专票/普票)"""
+    conn = db()
+    rn = conn.execute("SELECT * FROM receivings WHERE id=?", (rid,)).fetchone()
+    if not rn:
+        conn.close(); return jsonify({'error': '入库单不存在'}), 404
+    po = conn.execute("SELECT * FROM purchase_orders WHERE id=?", (rn['order_id'],)).fetchone() if rn['order_id'] else None
+    pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (po['req_id'],)).fetchone() if (po and po['req_id']) else None
+    items = []
+    if pr:
+        for it in conn.execute("SELECT item_name,spec,quantity,unit,total_price,estimated_price FROM request_items WHERE req_id=? ORDER BY id", (pr['id'],)).fetchall():
+            items.append({'item_name': it['item_name'], 'spec': it['spec'] or '',
+                          'qty': it['quantity'], 'unit': it['unit'] or '个',
+                          'amount': round(float(it['total_price'] or it['estimated_price'] or 0), 2)})
+    conn.close()
+    # 发票类型前期约定: 优先申请/订单已登记; 系统暂未设字段时默认专票(会议纪要: 专/普票采购前期确定, 不在此环节录入)
+    _typ = ''
+    if po and po.keys() and 'invoice_type' in po.keys() and po['invoice_type']:
+        _typ = po['invoice_type']
+    elif pr and 'invoice_type' in pr.keys() and pr['invoice_type']:
+        _typ = pr['invoice_type']
+    if not _typ:
+        _typ = '增值税专用发票'
+    return jsonify({'id': rn['id'], 'receive_no': rn['receive_no'],
+                    'est_amount': round(float(rn['est_amount'] or 0), 2),
+                    'is_est': bool(rn['is_est']), 'invoice_no': rn['invoice_no'] or '',
+                    'req_no': pr['req_no'] if pr else '', 'order_no': po['order_no'] if po else '',
+                    'supplier': po['supplier'] if po else '', 'purpose': pr['purpose'] if pr else '',
+                    'invoice_type': _typ, 'items': items})
+
+
 @app.route('/api/receivings/<int:rid>/invoice-match', methods=['POST'])
 @login_required
 def api_receiving_invoice_match(rid):
-    """V11.53: 采购发票核对 — 暂估入库单收到发票后, 填发票号/金额 → 红冲转正式入库"""
+    """V11.53/245: 采购发票核对 — 暂估入库单收到发票后核对红冲转正式
+    会议纪要落地(V11.245): ①仅录发票号+发票金额(允许尾差微调); 发票类型不在此环节录入(采购前期已约定, 由上游带出)
+    ②执行人限 采购员/财务/部门负责人/分管领导/管理员/总经理(库管负责实物与数量, 不做红冲)
+    ③结果返回 暂估额/发票额/差价, 供前端展示核对结果"""
+    _ALLOW = ('采购员', '财务', '系统管理员', '分管领导', '总经理', '部门负责人')
+    if session.get('user_role') not in _ALLOW:
+        conn = db(); conn.close()
+        return jsonify({'error': '无权限：发票核对红冲由采购员/财务执行'}), 403
     d = request.json or {}
     invoice_no = (d.get('invoice_no') or '').strip()
     amount = float(d.get('amount') or 0)
-    invoice_type = d.get('invoice_type') or '增值税专用发票'
     if not invoice_no:
         return jsonify({'error': '请填写发票号'}), 400
     conn = db()
@@ -9779,6 +9819,13 @@ def api_receiving_invoice_match(rid):
         conn.close(); return jsonify({'error': '该入库单不是暂估单,无需红冲'}), 400
     if rn['invoice_no']:
         conn.close(); return jsonify({'error': f'该暂估单已红冲(发票{rn["invoice_no"]})'}), 400
+    # 发票类型: 不手工录入 — 沿用前期约定(上游订单/申请, 缺省专票)
+    _typ = '增值税专用发票'
+    po = conn.execute("SELECT * FROM purchase_orders WHERE id=?", (rn['order_id'],)).fetchone() if rn['order_id'] else None
+    pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (po['req_id'],)).fetchone() if (po and po['req_id']) else None
+    for _row in (po, pr):
+        if _row and 'invoice_type' in _row.keys() and _row['invoice_type']:
+            _typ = _row['invoice_type']; break
     # 红冲: 暂估→已红冲(V11.153: 保留is_est=1表示"暂估已红冲", 月底红冲表判定 is_est=1 AND invoice_no; 正式入库才是is_est=0)
     # V11.153: 发票金额单独存invoice_amount, 暂估价est_amount保留, 差价=invoice_amount-est_amount可体现
     try: conn.execute("ALTER TABLE receivings ADD COLUMN invoice_type TEXT DEFAULT ''")
@@ -9787,10 +9834,13 @@ def api_receiving_invoice_match(rid):
     except Exception: pass
     _inv_amt = amount if amount > 0 else rn['est_amount']
     conn.execute("UPDATE receivings SET is_est=1, invoice_no=?, est_amount=?, invoice_type=?, invoice_amount=? WHERE id=?",
-                 (invoice_no, rn['est_amount'] or 0, invoice_type, _inv_amt, rid))
+                 (invoice_no, rn['est_amount'] or 0, _typ, _inv_amt, rid))
     conn.commit(); conn.close()
-    log(session['user_name'], '发票核对红冲', f'{rn["receive_no"]} 发票{invoice_no} 暂估{rn["est_amount"]}→发票{_inv_amt} 差价{_inv_amt-(rn["est_amount"] or 0):.2f}')
-    return jsonify({'success': True, 'receive_no': rn['receive_no']})
+    _diff = round(_inv_amt - (rn['est_amount'] or 0), 2)
+    log(session['user_name'], '发票核对红冲', f'{rn["receive_no"]} 发票{invoice_no}({_typ}) 暂估{rn["est_amount"]}→发票{_inv_amt} 差价{_diff}')
+    return jsonify({'success': True, 'receive_no': rn['receive_no'], 'invoice_type': _typ,
+                    'est_amount': round(float(rn['est_amount'] or 0), 2),
+                    'invoice_amount': round(_inv_amt, 2), 'diff': _diff})
 
 @app.route('/api/invoices')
 @login_required

@@ -3456,30 +3456,48 @@ async function loadReceivings(){
     <td>${ops}${ops2}
       ${isWarehouse?`<button class="lnk" style="color:#b08900" onclick="editDoc('receiving',${x.id},'入库单')">✏️修改</button>`:''} <button class="lnk" onclick="window.open('/api/receivings/${x.id}/download','_blank')">⬇️ 下载</button> ${isWarehouse&&x.status=='已入库'?`<button class="lnk" style="color:var(--d)" onclick="voidRcv(${x.id})">作废</button>`:''} ${isWarehouse&&(x.status=='待审批'||x.status=='已通过'||x.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('receiving',${x.id},'入库单')">↩️撤回</button>`:''}${isWarehouse&&(x.status=='待审批'||x.status=='待入库'||x.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('receiving',${x.id},'入库单')">🗑️删除</button>`:''}</td>`;
     })}
-// V11.54: 发票核对红冲弹窗(采购对暂估入库单填发票号/金额 → 红冲转正式)
+// V11.54/245: 发票核对红冲弹窗(采购对暂估入库单核对 — 会议纪要落地: 自动带出申请明细, 仅录发票号+金额(尾差可调), 专/普票类型前期已约定不再选择)
 async function showInvMatch(rid, rno){
   id('dmTitle').textContent='🧾 发票核对（红冲暂估）';
+  id('dmBody').innerHTML=`<div style="font-size:11px;color:#999">正在自动带出该暂估入库的申请明细...</div>`;
+  id('dmFooter').innerHTML=`<button class="btn btn-o" onclick="closeMod()">取消</button>`;
+  id('detailModal').classList.add('show');
+  let ctx=null;
+  try{ ctx=await api(`/receivings/${rid}/invoice-context`); }catch(e){ ctx=null; }
+  if(!ctx||ctx.error){ id('dmBody').innerHTML=`<div style="color:#c62828;font-size:12px">加载明细失败: ${esc(ctx?.error||'')}</div>`; return }
+  const items=ctx.items||[];
+  const itHtml=items.length?`<table style="width:100%;font-size:10px;border-collapse:collapse"><tr style="background:#f7f9fc"><th style="border:1px solid #eee;padding:3px;text-align:left">物料</th><th style="border:1px solid #eee;padding:3px">规格</th><th style="border:1px solid #eee;padding:3px">数量</th><th style="border:1px solid #eee;padding:3px;text-align:right">金额</th></tr>`+
+    items.map(x=>`<tr><td style="border:1px solid #eee;padding:3px">${esc(x.item_name)}</td><td style="border:1px solid #eee;padding:3px">${esc(x.spec)}</td><td style="border:1px solid #eee;padding:3px;text-align:center">${x.qty}${esc(x.unit)}</td><td style="border:1px solid #eee;padding:3px;text-align:right">¥${(x.amount||0).toFixed(2)}</td></tr>`).join('')+'</table>'
+    :'<div style="color:#999;font-size:10px">(未取到明细行, 请直接核对金额)</div>';
+  const typTxt=ctx.invoice_type==='增值税普通发票'?'普票(不可抵税)':'专票(可抵税)';
   id('dmBody').innerHTML=`
     <div style="font-size:11px;line-height:1.8">
       <p style="color:#e65100;background:#fff3e0;padding:6px 8px;border-radius:4px;margin-bottom:8px">
-        📋 该入库单为<b>暂估入库</b>（货到发票未到）。收到发票后在此核对，红冲转正式入库。</p>
-      <div class="fg"><label class="fl2">入库单号</label><input class="fc" value="${esc(rno)}" readonly></div>
+        📋 暂估入库（货到票未到）收到发票后在此核对：系统自动带出申请明细，核对通过即<b>红冲转正式</b>。</p>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+        <div class="fg" style="flex:1;min-width:140px"><label class="fl2">入库单号</label><input class="fc" value="${esc(rno)}" readonly></div>
+        <div class="fg" style="flex:1;min-width:150px"><label class="fl2">申请单号(溯源)</label><input class="fc" value="${esc(ctx.req_no||'-')}" readonly></div>
+      </div>
+      <div style="font-size:10px;color:#555;margin-bottom:6px">订单: ${esc(ctx.order_no||'-')} ｜ 供应商: ${esc(ctx.supplier||'-')}<br>事由: ${esc(ctx.purpose||'-')}</div>
+      <div style="margin-bottom:6px"><div style="font-size:10px;color:#555;margin-bottom:3px">📋 申请明细（自动带出·只读核对）</div>${itHtml}</div>
       <div class="fg"><label class="fl2">发票号 *</label><input class="fc" id="invMatchNo" placeholder="如: 04435021"></div>
-      <div class="fg"><label class="fl2">发票类型 *</label><select class="fc" id="invMatchType"><option value="增值税专用发票">专票(可抵税)</option><option value="增值税普通发票">普票(不可抵税)</option></select></div>
-      <div class="fg"><label class="fl2">发票金额(元) *</label><input class="fc" id="invMatchAmt" type="number" min="0" placeholder="按发票实际金额填写"></div>
-      <p style="font-size:9px;color:#999">专票可抵扣进项税(省钱), 普票不能抵。核对后该单转"正式入库", 月底计入红字冲销明细表。</p>
+      <div class="fg"><label class="fl2">发票金额(元) *<span style="font-weight:normal;color:#999">（预填暂估额，允许按发票尾差微调）</span></label><input class="fc" id="invMatchAmt" type="number" min="0" step="0.01" value="${ctx.est_amount||''}" placeholder="按发票实际金额填写"></div>
+      <div class="fg"><label class="fl2">发票类型（前期已约定,自动带出）</label><input class="fc" value="${esc(typTxt)}" readonly style="background:#f5f7fa"></div>
+      <p style="font-size:9px;color:#999">专/普票类型在采购前期确定，此处不重复选择；核对后该单转正式入库（月底计入红字冲销明细表），暂估额与发票额的差额将留痕展示。</p>
     </div>`;
   id('dmFooter').innerHTML=`<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="doInvMatch(${rid})">✅ 确认红冲</button>`;
-  id('detailModal').classList.add('show');
 }
 async function doInvMatch(rid){
   const no=id('invMatchNo').value.trim(), amt=parseFloat(id('invMatchAmt').value)||0;
-  const itype=id('invMatchType')?.value||'增值税专用发票';
   if(!no){alert('请填写发票号');return}
   if(amt<=0){alert('请填写发票金额');return}
-  if(!confirm(`确认该暂估入库单已收到发票 ${no}(${amt}元, ${itype==='增值税专用发票'?'专票可抵税':'普票不可抵税'})?\n红冲后转为正式入库, 不可撤销。`))return;
-  const r=await api(`/receivings/${rid}/invoice-match`,{method:'POST',body:JSON.stringify({invoice_no:no,amount:amt,invoice_type:itype})});
-  if(r.success){alert('✅ 红冲完成: '+r.receive_no+' 已转正式入库');closeMod();loadReceivings()}
+  if(!confirm(`确认该暂估入库单已收到发票 ${no}（金额 ${amt.toFixed(2)} 元）？\n红冲后转为正式入库，不可撤销。`))return;
+  const r=await api(`/receivings/${rid}/invoice-match`,{method:'POST',body:JSON.stringify({invoice_no:no,amount:amt})});
+  if(r.success){
+    const d=((r.diff||0)>0?'+':'')+(r.diff||0).toFixed(2);
+    alert(`✅ 红冲完成: ${r.receive_no} 已转正式入库\n发票类型: ${r.invoice_type}\n暂估额 ¥${(r.est_amount||0).toFixed(2)} → 发票额 ¥${(r.invoice_amount||0).toFixed(2)}\n差价: ${d} 元`);
+    closeMod();loadReceivings();
+  }
   else alert('操作失败: '+(r.error||''));
 }
 async function showRcvForm(){
