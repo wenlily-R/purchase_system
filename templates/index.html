@@ -1767,9 +1767,11 @@ async function editPRequest(oid){
     <div id="reqAttList" style="font-size:9px;color:#666;margin-top:2px"></div>
     ${((r.status=='已驳回'||(r.status=='草稿'&&(r.reject_count||0)>0))&&r.rejected_reason)?`<div style="font-size:9px;color:var(--d);padding:4px 8px;background:#fff5f5;border-radius:4px;margin:4px 0">❌ 驳回原因：${esc(r.rejected_reason)}${r.rejected_by?`（${esc(r.rejected_by)} ${esc((r.rejected_at||'').slice(5,16))}）`:''}</div>`:''}
     <div style="border:1px solid var(--b);border-radius:4px;padding:6px;margin-top:4px">
-      <label class="fl2">采购物资明细(可修改)</label>
-      <div id="reqItemList"></div>
-      <button class="btn btn-o btn-sm" style="margin-top:4px" onclick="addReqItem()">+ 添加一行</button>
+      <label class="fl2">采购物资明细（可修改；表格与《物资采购申请单》Excel一致）</label>
+      <div style="overflow-x:auto"><table class="tb" style="font-size:10px;min-width:1080px;margin-top:3px"><thead><tr>
+        <th style="width:26px">#</th><th>采购类别</th><th style="min-width:110px">物品名称</th><th>厂家/品牌/技术参数</th><th>规格型号</th><th>单位</th><th>用途</th><th>库存</th><th>请购数量</th><th>备注</th><th style="min-width:150px">到货日/附图</th>
+      </tr></thead><tbody id="reqItemList"></tbody></table></div>
+      <div style="margin-top:4px;display:flex;gap:6px;align-items:center"><button class="btn btn-o btn-sm" onclick="addReqItem()">+ 添加一行</button><button class="btn btn-o btn-sm" onclick="reqPasteFromExcel()">📋 从Excel粘贴</button><span style="color:#999;font-size:9px">复制Excel明细区域，点此粘贴自动成行</span></div>
     </div>`;
   id('detailModal').classList.add('show');
   id('dmFooter').innerHTML=`<button class="btn btn-o" onclick="closeMod()">取消</button>
@@ -1792,12 +1794,18 @@ async function doResubmit(oid){
 }
 async function doSavePReq(asDraft,oid){
   // asDraft=true 存草稿(不进审批); false 保存并提交审批
-  const items=[];
+  const items=[];let _bad=null;
   document.querySelectorAll('#reqItemList [id^="ritem"]').forEach(d=>{
     const i=d.id.replace('ritem','');
     const n=id('rin'+i)?.value;
-    if(n)items.push({item_name:n,spec:id('ris'+i)?.value||'',quantity:parseFloat(id('riq'+i)?.value)||1,unit:id('riu'+i)?.value||'个',estimated_price:parseFloat(id('rip'+i)?.value)||0,category:id('ric'+i)?.value||'',brand_param:id('rib'+i)?.value||'',arrival_date:id('ria'+i)?.value||'',remark:id('rir'+i)?.value||'',attach:id('riatt'+i)?.dataset?.attach||''});
+    if(n){
+      const _q=parseFloat(id('riq'+i)?.value)||0;
+      // V11.245: 请购数量必填且>0
+      if(!(_q>0)){if(!_bad)_bad='「'+n+'」请购数量必须大于0';return}
+      items.push({item_name:n,spec:id('ris'+i)?.value||'',quantity:_q,unit:id('riu'+i)?.value||'个',estimated_price:parseFloat(id('rip'+i)?.value)||0,category:id('ric'+i)?.value||'',brand_param:id('rib'+i)?.value||'',arrival_date:id('ria'+i)?.value||'',usage:id('ruse'+i)?.value||'',remark:id('rir'+i)?.value||'',attach:id('riatt'+i)?.dataset?.attach||''});
+    }
   });
+  if(_bad){alert(_bad);return}
   if(!items.length){alert('请填至少一行物资');return}
   const body={purpose:id('fReqPurp').value,dept:id('fReqDept')?.value||'',budget_code:id('fReqBud')?.value||'',
     target_date:id('fReqDate').value,remark:id('fReqRem')?.value||'',req_type:id('fReqType')?.value||'物资采购',
@@ -1820,11 +1828,22 @@ async function showPRequest(pid){
   try{window.__rejItems=(r.rejected_items||'')=='__all__'?items.map(x=>String(x.id)):(JSON.parse(r.rejected_items||'[]')||[]).map(String)}catch(e){}
   let h=`<div class="c2"><div><dt>编号</dt><dd><b>${esc(r.req_no)}</b></dd><dt>部门</dt><dd>${esc(r.dept)}</dd><dt>申请人</dt><dd>${esc(r.requester)}</dd><dt>预算科目</dt><dd>${esc(r.budget_code||'-')}</dd></div>
     <div><dt>用途</dt><dd>${esc(r.purpose)}</dt><dt>目标日</dt><dd>${r.target_date||'-'}</dd><dt>状态</dt><dd>${tag(r.status)}${(r.reject_count||0)>0?` <span style="font-size:9px;color:#c0392b;background:#fdeaea;border-radius:3px;padding:1px 5px">已驳回${r.reject_count}次</span>`:''}</dd></div></div>
-    <h4 style="font-size:10px;margin:6px 0 3px">📋 物资明细</h4><div style="font-size:9px">`;
-  items.forEach(i=>{
+    <h4 style="font-size:10px;margin:6px 0 3px">📋 物资明细（与《物资采购申请单》Excel一致）</h4>
+    <div style="overflow-x:auto"><table class="tb" style="font-size:10px;min-width:980px"><thead><tr><th>#</th><th>采购类别</th><th>物品名称</th><th>厂家/品牌/技术参数</th><th>规格型号</th><th>单位</th><th>用途</th><th>库存</th><th>请购数量</th><th>备注</th></tr></thead><tbody>`;
+  items.forEach((i,ix)=>{
     const isRej=window.__rejItems.includes(String(i.id));
-    h+=`<div style="padding:2px 0;border-bottom:1px solid var(--b);${isRej?'background:#fdeaea;border-radius:3px;padding:3px 6px;margin:2px -4px':''}">${isRej?'❌':''} ${esc(i.item_name)} ${esc(i.spec||'')} x${i.quantity}${esc(i.unit)}${isRej?`<span style="color:#c0392b;font-size:8px;margin-left:6px;font-weight:700">已驳回</span>`:''}${i.attach?` <a href="/uploads/${esc(i.attach)}" target="_blank" style="color:#3370ff;font-size:8px;margin-left:4px" title="查看该物资附图">📎附图</a> <img src="/uploads/${esc(i.attach)}" onerror="this.style.display='none'" onclick="window.open('/uploads/${esc(i.attach)}','_blank')" style="max-width:90px;max-height:60px;vertical-align:middle;border:1px solid #dfe6f0;border-radius:3px;margin:2px 0 2px 6px;cursor:zoom-in">`:''}</div>`});
-  h+=`</div>`;
+    const _f=v=>(v===null||v===undefined||String(v).trim()==='')?'—':v;
+    h+=`<tr style="${isRej?'background:#fdeaea;':''}">
+      <td style="text-align:center;color:#999">${ix+1}</td>
+      <td>${esc(_f(i.category))}</td>
+      <td>${isRej?'❌ ':''}<b>${esc(i.item_name)}</b>${isRej?`<span style="color:#c0392b;font-size:8px;margin-left:4px;font-weight:700">已驳回</span>`:''}</td>
+      <td>${esc(_f(i.brand_param))}</td><td>${esc(_f(i.spec))}</td><td>${esc(_f(i.unit))}</td>
+      <td>${esc(_f(i.usage))}</td>
+      <td style="text-align:center;color:${(i.stock_qty||0)>0?'#16a34a':'#c0392b'};font-weight:600;white-space:nowrap">${(i.stock_qty||0)>0?i.stock_qty:'无货'}</td>
+      <td style="text-align:center;font-weight:700">${i.quantity}</td>
+      <td>${esc(_f(i.remark))}${i.attach?`<br><a href="/uploads/${esc(i.attach)}" target="_blank" style="color:#3370ff;font-size:9px" title="查看该物资附图">📎附图</a> <img src="/uploads/${esc(i.attach)}" onerror="this.style.display='none'" onclick="window.open('/uploads/${esc(i.attach)}','_blank')" style="max-width:80px;max-height:52px;vertical-align:middle;border:1px solid #dfe6f0;border-radius:3px;margin-top:2px;cursor:zoom-in">`:''}</td>
+    </tr>`});
+  h+=`</tbody></table></div>`;
   // V11.184: 审批进度统一由 approvalFlowBox 的 loadApprovalFlow 渲染(含同意/驳回+附件), 不再内联
   if(r.urgent)h='<div style="background:#fff5f5;border:1px solid #f5c6c6;color:#e74c3c;font-weight:700;font-size:10px;padding:4px 8px;border-radius:4px;margin-bottom:6px">🚨 加急审批</div>'+h;
   if(r.attachments){
@@ -5376,9 +5395,11 @@ async function showForm(type){
       <div class="fg"><label class="fl2">附件上传</label><input class="fc" id="fReqFiles" type="file" multiple onchange="uploadReqAtt(this)"></div></div>
       <div id="reqAttList" style="font-size:9px;color:#666;margin-top:2px"></div>
       <div style="border:1px solid var(--b);border-radius:4px;padding:6px;margin-top:4px">
-        <label class="fl2">采购物资明细</label>
-        <div id="reqItemList"></div>
-        <button class="btn btn-o btn-sm" style="margin-top:4px" onclick="addReqItem()">+ 添加一行</button>
+        <label class="fl2">采购物资明细（表格与《物资采购申请单》Excel一致；填品名自动带出库存，请购数量必填&gt;0）</label>
+        <div style="overflow-x:auto"><table class="tb" style="font-size:10px;min-width:1080px;margin-top:3px"><thead><tr>
+          <th style="width:26px">#</th><th>采购类别</th><th style="min-width:110px">物品名称</th><th>厂家/品牌/技术参数</th><th>规格型号</th><th>单位</th><th>用途</th><th>库存</th><th>请购数量</th><th>备注</th><th style="min-width:150px">到货日/附图</th>
+        </tr></thead><tbody id="reqItemList"></tbody></table></div>
+        <div style="margin-top:4px;display:flex;gap:6px;align-items:center"><button class="btn btn-o btn-sm" onclick="addReqItem()">+ 添加一行</button><button class="btn btn-o btn-sm" onclick="reqPasteFromExcel()">📋 从Excel粘贴</button><span style="color:#999;font-size:9px">复制Excel明细区域，点此粘贴自动成行</span></div>
       </div>`;
     id('detailModal').classList.add('show');
     id('dmFooter').innerHTML=`<button class="btn btn-o" onclick="closeMod()">取消</button>
@@ -5511,56 +5532,95 @@ async function showForm(type){
   }
 }
 let reqItemCount=0;
+const REQ_CATS=['固定资产','行政办公','酒店日耗','工程采购','基础材料','备品备件','维修耗材'];
+// V11.245: 采购申请物资明细表格化(列与《物资采购申请单》Excel一致); 库存列只读自动回填; 用途=行级usage; 请购数量必填>0
 function addReqItem(it){
   const c=++reqItemCount;
-  const d=new Date();d.setDate(d.getDate()+14);
   const _it=it||{};
-  id('reqItemList').insertAdjacentHTML('beforeend',`<div style="display:flex;gap:4px;margin:2px 0;align-items:center;flex-wrap:wrap" id="ritem${c}">
-    <span style="position:relative;flex:1.4;min-width:80px;display:inline-flex;align-items:center">
-      <input placeholder="物资名称" id="rin${c}" value="${esc(_it.item_name||'')}" style="flex:1;min-width:70px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px" onchange="checkStock(this,${c})">
-      <span id="rstk${c}" style="position:absolute;right:0;top:-1px;font-size:7px;padding:0 2px;border-radius:2px;white-space:nowrap;display:none;pointer-events:none"></span>
-    </span>
-    <select id="ric${c}" style="width:64px;padding:2px;border:1px solid var(--b);border-radius:3px;font-size:9px"><option value="">类别</option><option>固定资产</option><option>行政办公</option><option>酒店日耗</option><option>工程采购</option><option>基础材料</option><option>备品备件</option></select>
-    <input placeholder="厂家/品牌/参数" id="rib${c}" value="${esc(_it.brand_param||'')}" style="flex:1.2;min-width:70px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px">
-    <input placeholder="规格" id="ris${c}" value="${esc(_it.spec||'')}" style="flex:0.9;min-width:50px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px">
-    <input type="number" placeholder="数量" id="riq${c}" value="${_it.quantity!=null?_it.quantity:1}" style="width:48px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px">
-    <select id="riu${c}" style="width:42px;padding:2px;border:1px solid var(--b);border-radius:3px;font-size:9px"><option>个</option><option>箱</option><option>桶</option><option>条</option></select>
-    <input type="date" id="ria${c}" value="${esc(_it.arrival_date||'')}" style="width:100px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px" title="到货日期(选填)">
-    <input type="hidden" id="rip${c}" value="${_it.estimated_price!=null?_it.estimated_price:0}">
-    <input placeholder="备注" id="rir${c}" value="${esc(_it.remark||'')}" style="width:80px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:9px">
-    <label style="font-size:8px;color:#666;cursor:pointer" title="上传该行物资的附图(打印时显示在备注栏)">📎<input type="file" id="ria_${c}" style="display:none" onchange="uploadRowAtt(this,${c})"></label>
-    <span id="riatt${c}" style="font-size:8px;color:#2e7d32">${_it.attach?('✅ 已附图'):''}</span>
-    <span onclick="this.parentElement.remove()" style="cursor:pointer;color:var(--d);font-size:12px">✕</span>
-  </div>`);
-  // V11.187: 预填类别/单位/附图路径(编辑回显)
-  const _selC=id('ric'+c); if(_it.category){for(const o of _selC.options){if(o.value==_it.category||o.text==_it.category){_selC.value=o.value;break}}}
-  const _selU=id('riu'+c); if(_it.unit){for(const o of _selU.options){if(o.text==_it.unit){_selU.value=o.text;break}}}
-  if(_it.attach){const _span=id('riatt'+c);_span.textContent='✅ '+String(_it.attach).split('/').pop();_span.dataset.attach=_it.attach;_span.title=_it.attach}
+  const _cat=(_it.category||'').toString();
+  const cats=REQ_CATS.includes(_cat)?REQ_CATS:REQ_CATS.concat([_cat]); // 历史旧值不在预设列表也保留回显
+  const _q=_it.quantity!=null?_it.quantity:1;
+  id('reqItemList').insertAdjacentHTML('beforeend',
+    `<tr id="ritem${c}">
+      <td class="rn" style="text-align:center;color:#999">${c}</td>
+      <td><select id="ric${c}" style="width:84px;padding:2px;border:1px solid var(--b);border-radius:3px;font-size:10px"><option value="">类别</option>${cats.map(x=>`<option ${x==_cat?'selected':''}>${esc(x)}</option>`).join('')}</select></td>
+      <td><input placeholder="物资名称 *" id="rin${c}" value="${esc(_it.item_name||'')}" style="width:100%;min-width:100px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px" onchange="checkStock(this,${c})"></td>
+      <td><input placeholder="品牌/厂家/参数" id="rib${c}" value="${esc(_it.brand_param||'')}" style="width:100%;min-width:96px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px"></td>
+      <td><input placeholder="规格型号" id="ris${c}" value="${esc(_it.spec||'')}" style="width:100%;min-width:66px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px"></td>
+      <td><input placeholder="单位" id="riu${c}" value="${esc(_it.unit||'个')}" style="width:36px;padding:2px;border:1px solid var(--b);border-radius:3px;font-size:10px"></td>
+      <td><input placeholder="用途(选填)" id="ruse${c}" value="${esc(_it.usage||'')}" style="width:100%;min-width:70px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px"></td>
+      <td style="text-align:center"><span id="rstk${c}" style="font-size:9px;color:#999;white-space:nowrap">—</span></td>
+      <td><input type="number" min="1" step="any" id="riq${c}" value="${_q}" style="width:56px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px" title="请购数量(必填, 须大于0)"></td>
+      <td><input placeholder="备注(选填)" id="rir${c}" value="${esc(_it.remark||'')}" style="width:100%;min-width:70px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px"></td>
+      <td style="white-space:nowrap">
+        <input type="hidden" id="rip${c}" value="${_it.estimated_price!=null?_it.estimated_price:0}">
+        <input type="date" id="ria${c}" value="${esc(_it.arrival_date||'')}" title="需到货日期" style="width:98px;padding:1px 2px;border:1px solid var(--b);border-radius:3px;font-size:9px">
+        <label style="font-size:11px;color:#666;cursor:pointer" title="该行附图(打印时显示在备注栏)">📎<input type="file" id="ria_${c}" style="display:none" onchange="uploadRowAtt(this,${c})"></label>
+        <span id="riatt${c}" style="font-size:8px;color:#2e7d32">${_it.attach?('✅已附图'):''}</span>
+        <span onclick="delReqItem(this)" style="cursor:pointer;color:var(--d);font-size:12px;margin-left:2px" title="删除本行">✕</span>
+      </td>
+    </tr>`);
+  if(_it.attach){const _sp=id('riatt'+c);_sp.textContent='✅ '+String(_it.attach).split('/').pop();_sp.dataset.attach=_it.attach;_sp.title=_it.attach}
 }
-// V11.38: 填物资名称后自动查库存(采购员不用跑库房)
-// V11.49b: 提示改为悬浮小标签(不占行空间, 行保持整齐)
+function delReqItem(btn){const tr=btn.closest('tr');if(tr)tr.remove();renumberReqRows()}
+function renumberReqRows(){const tb=id('reqItemList');if(!tb)return;tb.querySelectorAll('tr').forEach((tr,i)=>{const t=tr.querySelector('td.rn');if(t)t.textContent=i+1})}
+// V11.38/49b/245: 填物资名称后自动查实时库存 → 填入"库存"列(只读, 非悬浮)
 async function checkStock(inp,c){
   const name=(inp.value||'').trim();
   const el=id('rstk'+c);
-  if(!name){el.style.display='none';return}
+  if(!name){if(el){el.textContent='—';el.style.color='#999'}return}
   try{
     const r=await api('/inventory/stock-check?name='+encodeURIComponent(name));
-    el.style.display='inline';
+    if(!el)return;
     if(r.found){
-      const m=r.matches[0];
-      if((r.total_qty||0)>0){
-        el.textContent=`🔵 库存${r.total_qty}${m.unit}`;
-        el.style.background='#e8f5e9';el.style.color='#2e7d32';
-      }else{
-        el.textContent='🔴 无货';
-        el.style.background='#fdecea';el.style.color='#c0392b';
-      }
-      if(m.supplier)el.title='最近供应商:'+m.supplier;
+      const m=r.matches[0]||{};const u=m.unit||'';
+      if((r.total_qty||0)>0){el.textContent=`${r.total_qty}${u}`;el.style.color='#16a34a';el.title=m.supplier?('最近供应商:'+m.supplier):''}
+      else{el.textContent='无货';el.style.color='#c0392b'}
+    }else{el.textContent='新物资';el.style.color='#b7791f'}
+  }catch(e){if(el){el.textContent='—';el.style.color='#999'}}
+}
+// V11.245: 从Excel粘贴批量成行(弹窗textarea — http非安全上下文无剪贴板API, 用粘贴框最稳)
+const REQ_HDR_MAP={'采购类别':'category','类别':'category','物品名称':'name','物资名称':'name','品名':'name','名称':'name','厂家/品牌/技术参数':'brand','厂家/品牌':'brand','厂家':'brand','品牌':'brand','技术参数':'brand','规格型号':'spec','规格':'spec','型号':'spec','单位':'unit','请购数量':'qty','数量':'qty','用途':'usage','备注':'remark','库存':'stock'};
+function reqPasteFromExcel(){
+  showDetail('📋 从Excel粘贴批量录入',
+    `<div style="font-size:11px;color:#666;margin-bottom:6px">① 在Excel/下载的申请单里选中明细区域复制 ② 回到本框按 <b>Ctrl+V(Mac:⌘V)</b> 粘贴，自动识别列并生成多行 ③ 点"确认生成"。<br><span style="color:#999;font-size:10px">识别列：采购类别/物品名称/厂家品牌技术参数/规格型号/单位/数量(请购数量)/用途/备注；序号、库存列自动跳过。</span></div>
+    <textarea id="reqPasteBox" rows="6" style="width:100%;box-sizing:border-box;font-size:11px;border:1px solid var(--b);border-radius:4px;padding:4px" placeholder="在此粘贴(支持整块Excel区域)..."></textarea>`,
+    `<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="reqPasteApply()">✅ 确认生成</button>`);
+  const ta=id('reqPasteBox');if(ta)setTimeout(()=>ta.focus(),150);
+}
+function reqPasteApply(){
+  const ta=id('reqPasteBox');if(!ta)return;
+  const txt=(ta.value||'').replace(/\r/g,'');
+  const lines=txt.split('\n').map(l=>l.replace(/\s+$/,'')).filter(l=>l.trim()!=='');
+  if(!lines.length){alert('未粘贴到内容');return}
+  let hdrIdx=null;
+  const first=lines[0].split('\t').map(x=>x.trim());
+  const hits=first.filter(x=>Object.keys(REQ_HDR_MAP).some(k=>x.includes(k)&&k.length>=2));
+  if(hits.length>=2&&hits.length>=first.length*0.4){hdrIdx={};first.forEach((h,i)=>{for(const k in REQ_HDR_MAP){if(h.includes(k)&&!hdrIdx[REQ_HDR_MAP[k]]){hdrIdx[REQ_HDR_MAP[k]]=i;break}}});lines.shift()}
+  let added=0;
+  lines.forEach(line=>{
+    const cells=line.split('\t').map(x=>x.trim());
+    if(!cells.some(x=>x!==''))return;
+    const o={};
+    if(hdrIdx){
+      for(const f in hdrIdx){const v=cells[hdrIdx[f]];if(v!==undefined&&v!=='')o[f]=v}
+    }else if(cells.length===1){
+      o.name=cells[0];
     }else{
-      el.textContent='🆕 新物资';
-      el.style.background='#fff8e1';el.style.color='#b7791f';
+      let off=(cells.length>=5&&/^\d+$/.test(cells[0]))?1:0; // 带序号列则偏移
+      o.category=cells[0+off]||'';o.name=cells[1+off]||'';
+      o.brand=cells[2+off]||'';o.spec=cells[3+off]||'';
+      o.unit=cells[4+off]||'';
+      const q1=cells[5+off],q2=cells[8+off];
+      o.qty=(q1&&q1!=='-'&&q1!=='')?q1:((q2&&q2!=='-'&&q2!=='')?q2:'');
+      o.usage=cells[6+off]||'';o.remark=cells[9+off]||'';
     }
-  }catch(e){el.style.display='none'}
+    if(!o.name||o.name==='-')return;
+    addReqItem({item_name:o.name,category:o.category||'',brand_param:o.brand||'',spec:o.spec||'',unit:o.unit||'个',quantity:parseFloat(o.qty)||1,usage:o.usage||'',remark:o.remark||''});
+    added++;
+  });
+  if(added){closeMod();renumberReqRows();toast('✅ 已生成 '+added+' 行，请核对品名/数量/单位后提交')}
+  else alert('未识别到有效行：请确认粘贴内容包含"物品名称"列');
 }
 
 // Submit functions
@@ -5602,7 +5662,7 @@ function prCollect(){
     const items=[];
     id('reqItemList').querySelectorAll('[id^="ritem"]').forEach(r=>{
       const idx=r.id.replace('ritem','');const n=id('rin'+idx)?.value;
-      if(n)items.push({item_name:n,category:id('ric'+idx)?.value||'',brand_param:id('rib'+idx)?.value||'',spec:id('ris'+idx)?.value||'',quantity:parseFloat(id('riq'+idx)?.value)||1,unit:id('riu'+idx)?.value||'个',arrival_date:id('ria'+idx)?.value||'',estimated_price:parseFloat(id('rip'+idx)?.value)||0,remark:id('rir'+idx)?.value||'',attach:id('riatt'+idx)?.dataset?.attach||''});
+      if(n)items.push({item_name:n,category:id('ric'+idx)?.value||'',brand_param:id('rib'+idx)?.value||'',spec:id('ris'+idx)?.value||'',quantity:parseFloat(id('riq'+idx)?.value)||1,unit:id('riu'+idx)?.value||'个',arrival_date:id('ria'+idx)?.value||'',estimated_price:parseFloat(id('rip'+idx)?.value)||0,usage:id('ruse'+idx)?.value||'',remark:id('rir'+idx)?.value||'',attach:id('riatt'+idx)?.dataset?.attach||''});
     });
     d.items=items;d.reqAtts=(typeof reqAtts!=='undefined'&&reqAtts)?reqAtts.slice():[];
     return d;
@@ -5655,18 +5715,22 @@ async function createPRequest(asDraft){
   if(btn){btn.disabled=true;btn.textContent='保存中...'}
   try{
     const items=[];
+    let _badQty=null;
     const divs=id('reqItemList').querySelectorAll('[id^="ritem"]');
     divs.forEach(d=>{
       const idx=d.id.replace('ritem','');
       const n=id('rin'+idx)?.value;
       if(n){
         const _u=id('riu'+idx)?.value||'个';
-        const _q=parseFloat(id('riq'+idx)?.value)||1;
+        const _q=parseFloat(id('riq'+idx)?.value)||0;
         const _p=parseFloat(id('rip'+idx)?.value)||0;
         const _at=id('riatt'+idx)?.dataset?.attach||'';
-        items.push({item_name:n,spec:id('ris'+idx)?.value||'',quantity:_q,unit:_u,estimated_price:_p,category:id('ric'+idx)?.value||'',brand_param:id('rib'+idx)?.value||'',arrival_date:id('ria'+idx)?.value||'',remark:id('rir'+idx)?.value||'',attach:_at});
+        // V11.245: 请购数量必填且>0
+        if(!(_q>0)){if(!_badQty)_badQty='「'+n+'」请购数量必须大于0';return}
+        items.push({item_name:n,spec:id('ris'+idx)?.value||'',quantity:_q,unit:_u,estimated_price:_p,category:id('ric'+idx)?.value||'',brand_param:id('rib'+idx)?.value||'',arrival_date:id('ria'+idx)?.value||'',usage:id('ruse'+idx)?.value||'',remark:id('rir'+idx)?.value||'',attach:_at});
       }
     });
+    if(_badQty){if(btn){btn.disabled=false;btn.textContent=asDraft?'💾 存草稿':'提交申请'}alert(_badQty);return}
     if(!items.length){alert('请添加至少一行物资');return}
     // V11.199: 提交审批前必填校验(采购事由/部门) — 空事由会导致钉钉必填控件820001发起失败
     const _purp=(id('fReqPurp')?.value||'').trim();
