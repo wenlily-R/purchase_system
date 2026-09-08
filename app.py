@@ -664,7 +664,8 @@ def init_db():
     """)
     # V11.236 三方询价外部链接鉴权(需求: 链接不绑权限, 绑定供应商身份手机号): 访问密码+会话令牌(幂等补列)
     _iqs = [r[1] for r in conn.execute("PRAGMA table_info(inquiry_suppliers)").fetchall()]
-    for _iqc, _iqd in [('access_code', "TEXT DEFAULT ''"), ('auth_token', "TEXT DEFAULT ''")]:
+    for _iqc, _iqd in [('access_code', "TEXT DEFAULT ''"), ('auth_token', "TEXT DEFAULT ''"),
+                       ('sms_code', "TEXT DEFAULT ''"), ('sms_exp', "TEXT DEFAULT ''"), ('sms_sent_at', "TEXT DEFAULT ''")]:
         if _iqc not in _iqs:
             conn.execute(f"ALTER TABLE inquiry_suppliers ADD COLUMN {_iqc} {_iqd}")
     # ---- V11.225 发票回收节点2.0: 合同发票「顺序节点」计划(每合同多节点: 触发条件/约定金额/约定时间) ----
@@ -6359,10 +6360,86 @@ def _vendor_ensure_code(s, conn=None):
     return code
 
 
+def _inq_sms_cfg():
+    """短信通道配置(sys_config): sms_enabled/access_key_id/access_key_secret/sign_name/template_code(阿里云短信)"""
+    _c = db()
+    _cfg = {}
+    for _k in ('sms_enabled', 'sms_access_key_id', 'sms_access_key_secret', 'sms_sign_name', 'sms_template_code'):
+        _r = _c.execute("SELECT value FROM sys_config WHERE key=?", (_k,)).fetchone()
+        _cfg[_k] = (_r[0] if _r else '') or ''
+    _c.close()
+    return _cfg
+
+
+def _inq_sms_send(phone, code):
+    """阿里云短信 SendSms(V2017-05-25)。返回 (ok, message)。未开通/未配置 → (False, 原因)"""
+    import hmac
+    import urllib.parse as _up
+    cfg = _inq_sms_cfg()
+    if cfg['sms_enabled'] not in ('1', 'true', 'True'):
+        return False, '短信通道未开通'
+    ak, sk, sn, tc = cfg['sms_access_key_id'], cfg['sms_access_key_secret'], cfg['sms_sign_name'], cfg['sms_template_code']
+    if not (ak and sk and sn and tc):
+        return False, '短信通道未配置完整(缺AccessKey/签名/模板)'
+    try:
+        params = {'AccessKeyId': ak, 'Action': 'SendSms', 'Format': 'JSON', 'PhoneNumbers': phone,
+                  'RegionId': 'cn-hangzhou', 'SignName': sn, 'SignatureMethod': 'HMAC-SHA1',
+                  'SignatureNonce': uuid.uuid4().hex, 'SignatureVersion': '1.0', 'TemplateCode': tc,
+                  'TemplateParam': json.dumps({'code': code}, ensure_ascii=False),
+                  'Timestamp': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+                  'Version': '2017-05-25'}
+        qs = _up.urlencode(sorted(params.items()))
+        string_to_sign = 'GET&%2F&' + _up.quote(qs, safe='~')
+        sig = base64.b64encode(hmac.new((sk + '&').encode(), string_to_sign.encode(), hashlib.sha1).digest()).decode()
+        with urllib.request.urlopen('https://dysmsapi.aliyuncs.com/?' + qs + '&Signature=' + _up.quote(sig, safe='~'), timeout=15) as r:
+            j = json.loads(r.read().decode())
+        return (j.get('Code') == 'OK'), j.get('Message') or j.get('Code') or '发送失败'
+    except Exception as e:
+        return False, str(e)[:120]
+
+
+@app.route('/api/inquiry/vendor/<token>/send-code', methods=['POST'])
+def inquiry_vendor_send_code(token):
+    """V11.240 发送短信验证码到本单登记的供应商手机号(陌生手机号直接拦截不发码; 60s冷却; 5分钟有效)"""
+    d = request.json or {}
+    phone = str(d.get('phone') or '').strip()
+    conn = db()
+    s = conn.execute("SELECT * FROM inquiry_suppliers WHERE token=?", (token,)).fetchone()
+    if not s:
+        conn.close(); return jsonify({'error': '报价链接无效'}), 404
+    i = conn.execute("SELECT * FROM inquiries WHERE id=?", (s['inquiry_id'],)).fetchone()
+    if not i or i['status'] != '询价中':
+        conn.close(); return jsonify({'error': '该询价已结束，无法获取验证码'}), 403
+    if phone != str(s['phone'] or '').strip():
+        conn.close(); return jsonify({'error': '该手机号不在本询价单登记名单内，无法接收验证码（请联系采购方核对登记手机号）'}), 403
+    cfg = _inq_sms_cfg()
+    if cfg['sms_enabled'] not in ('1', 'true', 'True') or not cfg['sms_access_key_id']:
+        conn.close(); return jsonify({'error': '短信通道暂未开通：请使用采购方发送给贵司的访问密码登录'}), 400
+    _now = datetime.datetime.now()
+    try:
+        if s['sms_sent_at']:
+            _last = datetime.datetime.strptime(s['sms_sent_at'], '%Y-%m-%d %H:%M:%S')
+            if (_now - _last).total_seconds() < 60:
+                conn.close(); return jsonify({'error': '发送过于频繁，请 60 秒后再试'}), 429
+    except Exception:
+        pass
+    import random as _rnd2
+    code = '%06d' % _rnd2.randint(0, 999999)
+    exp = (_now + datetime.timedelta(minutes=5)).strftime('%Y-%m-%d %H:%M:%S')
+    ok, msg = _inq_sms_send(phone, code)
+    if not ok:
+        conn.close(); return jsonify({'error': '验证码发送失败（%s）：请联系采购方获取访问密码' % msg}), 502
+    conn.execute("UPDATE inquiry_suppliers SET sms_code=?, sms_exp=?, sms_sent_at=? WHERE id=?",
+                 (code, exp, _now.strftime('%Y-%m-%d %H:%M:%S'), s['id']))
+    conn.commit(); conn.close()
+    return jsonify({'success': True, 'msg': '验证码已发送至登记手机号，5分钟内有效'})
+
+
 @app.route('/api/inquiry/vendor/<token>/auth', methods=['POST'])
 def inquiry_vendor_auth(token):
-    """V11.236 外部供应商鉴权: 手机号(本单登记) + 访问密码 → 签发会话cookie
-    规则: 仅本询价单登记过的供应商手机号可通过; 其他手机号一律拒绝(统一文案不泄露存在性);
+    """V11.236/240 外部供应商鉴权: 手机号(本单登记) + 验证码
+    验证码二选一: ①短信验证码(sms_code,5分钟内有效) ②访问密码(access_code, 短信通道未开通时的降级模式);
+    仅本询价单登记过的供应商手机号可通过; 其他手机号一律拒绝(统一文案不泄露存在性);
     密码连续错误节流(同token 10分钟内5次锁定)"""
     import time as _time
     d = request.json or {}
@@ -6380,12 +6457,23 @@ def inquiry_vendor_auth(token):
     if _f and _f[0] >= 5 and _time.time() - _f[1] < 600:
         conn.close(); return jsonify({'error': '尝试次数过多，请 10 分钟后再试，或联系采购方'}), 429
     if not phone or not code:
-        conn.close(); return jsonify({'error': '请输入手机号和访问密码'}), 400
-    if phone == str(s['phone'] or '').strip() and code == str(s['access_code'] or '').strip():
+        conn.close(); return jsonify({'error': '请输入手机号和验证码'}), 400
+    _reg_ph = (phone == str(s['phone'] or '').strip())
+    # 短信验证码校验(5分钟内有效)
+    _sms_ok = False
+    try:
+        if s['sms_code'] and code == str(s['sms_code'] or '').strip() and s['sms_exp']:
+            if datetime.datetime.strptime(s['sms_exp'], '%Y-%m-%d %H:%M:%S') >= datetime.datetime.now():
+                _sms_ok = True
+    except Exception:
+        pass
+    if _reg_ph and (_sms_ok or code == str(s['access_code'] or '').strip()):
         _VENDOR_AUTH_FAIL.pop(token, None)
         import uuid as _uu
         _at = _uu.uuid4().hex
-        conn.execute("UPDATE inquiry_suppliers SET auth_token=? WHERE id=?", (_at, s['id']))
+        # 短信验证码一次性使用; 访问密码模式保留
+        conn.execute("UPDATE inquiry_suppliers SET auth_token=?, sms_code=CASE WHEN ?=1 THEN '' ELSE sms_code END WHERE id=?",
+                     (_at, 1 if _sms_ok else 0, s['id']))
         conn.commit(); conn.close()
         resp = jsonify({'success': True, 'company': s['supplier_name']})
         resp.set_cookie('inq_auth', '%s:%s' % (token, _at), max_age=60 * 60 * 24 * 30, httponly=True)
@@ -6396,7 +6484,7 @@ def inquiry_vendor_auth(token):
     else:
         _VENDOR_AUTH_FAIL[token] = [1, _time.time()]
     conn.close()
-    return jsonify({'error': '手机号或访问密码不正确（访问密码请向采购方索取；仅本单登记供应商可报价）'}), 403
+    return jsonify({'error': '手机号或验证码不正确（请核对登记手机号；短信验证码5分钟内有效，或使用采购方发送的访问密码）'}), 403
 
 
 @app.route('/api/inquiries/<int:iid>')
@@ -6454,29 +6542,40 @@ def api_inquiry_detail(iid):
 
 # ============ V11.236 外部页: 鉴权门禁 + 开标后比价公开(只读) ============
 def _inq_gate_html(token):
-    """V11.236 访问门禁: 手机号(本单登记) + 访问密码; 防链接转发泄密(权限绑手机号不绑链接)"""
+    """V11.236/240 访问门禁: 手机号(本单登记) + 验证码(短信验证码优先; 短信通道未开通时可用采购方分配的访问密码)
+    防链接转发泄密(权限绑手机号不绑链接); 陌生手机号直接拦截不发码"""
     return ('<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1">'
             '<title>供应商报价 · 身份验证</title></head><body style="margin:0;background:#eef2f7;font-family:-apple-system,Segoe UI,Microsoft YaHei,sans-serif">'
             '<div style="max-width:420px;margin:70px auto;background:#fff;border-radius:14px;padding:32px 28px;box-shadow:0 6px 28px rgba(0,0,0,.09)">'
             '<div style="text-align:center;font-size:40px;margin-bottom:8px">🔐</div>'
             '<h2 style="margin:0 0 4px;color:#333;font-size:17px;text-align:center">供应商报价 · 身份验证</h2>'
-            '<p style="color:#888;font-size:12.5px;text-align:center;margin:0 0 18px;line-height:1.7">为防止报价信息泄露，请使用本询价单登记的<br><b>对接手机号 + 访问密码</b> 登录（密码向采购方索取）</p>'
+            '<p style="color:#888;font-size:12.5px;text-align:center;margin:0 0 18px;line-height:1.7">为防止报价信息泄露，仅本询价单登记的<br><b>对接手机号</b>可获取验证码进入报价</p>'
             '<div style="margin-bottom:12px"><label style="font-size:12px;color:#555;display:block;margin-bottom:4px">📱 登记手机号 *</label>'
             '<input id="ph" type="tel" placeholder="请输入贵司登记的手机号" style="width:100%%;box-sizing:border-box;padding:10px 12px;border:1px solid #d0d7e2;border-radius:8px;font-size:14px"></div>'
-            '<div style="margin-bottom:16px"><label style="font-size:12px;color:#555;display:block;margin-bottom:4px">🔑 访问密码 *</label>'
-            '<input id="cd" type="password" maxlength="12" placeholder="6位访问密码（向采购方索取）" style="width:100%%;box-sizing:border-box;padding:10px 12px;border:1px solid #d0d7e2;border-radius:8px;font-size:14px"></div>'
+            '<div style="margin-bottom:16px"><label style="font-size:12px;color:#555;display:block;margin-bottom:4px">🔑 验证码 *</label>'
+            '<div style="display:flex;gap:8px"><input id="cd" type="text" maxlength="8" placeholder="短信验证码/访问密码" style="flex:1;min-width:0;box-sizing:border-box;padding:10px 12px;border:1px solid #d0d7e2;border-radius:8px;font-size:14px">'
+            '<button id="btnCd" onclick="sendCode()" style="white-space:nowrap;padding:10px 12px;background:#eef3fd;color:#1f6feb;border:1px solid #c9dbf7;border-radius:8px;font-size:13px;cursor:pointer">获取验证码</button></div></div>'
             '<button onclick="go()" style="width:100%%;padding:12px;background:#1f6feb;color:#fff;border:none;border-radius:8px;font-size:15px;cursor:pointer">进入报价</button>'
             '<div id="msg" style="margin-top:12px;font-size:12.5px;color:#e74c3c;text-align:center"></div>'
-            '<div style="margin-top:14px;padding-top:12px;border-top:1px dashed #e5e9f0;font-size:11.5px;color:#999;text-align:center;line-height:1.7">⛔ 仅本询价单登记过的供应商可进入<br>其他手机号将被拒绝访问，请勿转发报价信息</div></div>'
+            '<div style="margin-top:14px;padding-top:12px;border-top:1px dashed #e5e9f0;font-size:11.5px;color:#999;text-align:center;line-height:1.7">⛔ 仅本询价单登记过的供应商可进入，验证码仅发送至登记手机号<br>其他手机号将被拦截，请勿转发报价信息</div></div>'
             '<script>'
+            'let _cdT=null;'
+            'function setCdBtn(s){const b=document.getElementById("btnCd");if(b){b.disabled=!!s;b.textContent=s||"获取验证码"}}'
+            'window.sendCode=async function(){const ph=(document.getElementById("ph").value||"").trim();'
+            'if(!/^1\\d{10}$/.test(ph)){document.getElementById("msg").textContent="请输入11位手机号";return}'
+            'setCdBtn("发送中...");document.getElementById("msg").textContent="";'
+            'const r=await fetch("/api/inquiry/vendor/%s/send-code",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({phone:ph})}).then(x=>x.json()).catch(()=>({error:"网络错误"}));'
+            'if(r.success){document.getElementById("msg").style.color="#2e7d32";document.getElementById("msg").textContent=r.msg||"验证码已发送，5分钟内有效";'
+            'let n=60;_cdT=setInterval(()=>{n--;if(n<=0){clearInterval(_cdT);setCdBtn("重新获取")}else setCdBtn(n+"s")},1000)}'
+            'else{document.getElementById("msg").style.color="#e74c3c";document.getElementById("msg").textContent=r.error||"发送失败";setCdBtn("重新获取")}};'
             'window.go=async function(){const ph=(document.getElementById("ph").value||"").trim(),cd=(document.getElementById("cd").value||"").trim();'
-            'if(!ph||!cd){document.getElementById("msg").textContent="请输入手机号和访问密码";return}'
+            'if(!ph||!cd){document.getElementById("msg").textContent="请输入手机号和验证码";return}'
             'const r=await fetch("/api/inquiry/vendor/%s/auth",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({phone:ph,code:cd})}).then(x=>x.json()).catch(()=>({error:"网络错误"}));'
-            'if(r.success){location.reload()}else{document.getElementById("msg").textContent=r.error||"验证失败"}};'
+            'if(r.success){location.reload()}else{document.getElementById("msg").style.color="#e74c3c";document.getElementById("msg").textContent=r.error||"验证失败"}};'
             'document.getElementById("ph").addEventListener("keydown",e=>{if(e.key==="Enter")go()});'
             'document.getElementById("cd").addEventListener("keydown",e=>{if(e.key==="Enter")go()});'
-            '</script></body></html>') % token
+            '</script></body></html>') % (token, token)
 
 
 def _inq_vendor_result(token, s):
