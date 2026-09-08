@@ -6701,6 +6701,14 @@ def inquiry_vendor_quote(token):
         _ddt3 = _inq_deadline_dt(i['deadline'])
         if _ddt3 and datetime.datetime.now() >= _ddt3:
             conn.close(); return jsonify({'error': '该询价已于 %s 截止，无法继续报价/修改报价' % i['deadline']}), 400
+    # V11.238: 提前开标后(全部受邀供应商已报价)报价通道关闭 — 与外部公开页提示一致, 防开标后改价/串标
+    try:
+        _uq3 = conn.execute("SELECT COUNT(*) c FROM inquiry_suppliers WHERE inquiry_id=? AND (quote_price IS NULL OR quote_price<=0)", (s['inquiry_id'],)).fetchone()[0]
+        _tot3 = conn.execute("SELECT COUNT(*) c FROM inquiry_suppliers WHERE inquiry_id=?", (s['inquiry_id'],)).fetchone()[0]
+        if _tot3 > 0 and _uq3 == 0:
+            conn.close(); return jsonify({'error': '该询价已开标（全部受邀厂家已报价），报价通道已关闭，如需修改请联系采购方'}), 400
+    except Exception:
+        pass
     # V11.41: 行明细报价(每行单价+备注), 合计=Σ单价×数量; 兼容旧版总价提交
     # V11.162: 含运总价=商家填的 quote_price(整单含运费), 明细合计只作参考不再覆盖
     _final_price = price
