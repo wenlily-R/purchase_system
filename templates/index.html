@@ -3529,36 +3529,68 @@ async function showInvMatch(rid, rno){
   try{ ctx=await api(`/receivings/${rid}/invoice-context`); }catch(e){ ctx=null; }
   if(!ctx||ctx.error){ id('dmBody').innerHTML=`<div style="color:#c62828;font-size:12px">加载明细失败: ${esc(ctx?.error||'')}</div>`; return }
   const items=ctx.items||[];
-  const itHtml=items.length?`<table style="width:100%;font-size:10px;border-collapse:collapse"><tr style="background:#f7f9fc"><th style="border:1px solid #eee;padding:3px;text-align:left">物料</th><th style="border:1px solid #eee;padding:3px">规格</th><th style="border:1px solid #eee;padding:3px">数量</th><th style="border:1px solid #eee;padding:3px;text-align:right">金额</th></tr>`+
-    items.map(x=>`<tr><td style="border:1px solid #eee;padding:3px">${esc(x.item_name)}</td><td style="border:1px solid #eee;padding:3px">${esc(x.spec)}</td><td style="border:1px solid #eee;padding:3px;text-align:center">${x.qty}${esc(x.unit)}</td><td style="border:1px solid #eee;padding:3px;text-align:right">¥${(x.amount||0).toFixed(2)}</td></tr>`).join('')+'</table>'
-    :'<div style="color:#999;font-size:10px">(未取到明细行, 请直接核对金额)</div>';
+  const _estSum=items.reduce((s,x)=>s+parseFloat(x.amount||0),0);
+  const itHtml=items.length?`<table style="width:100%;font-size:10px;border-collapse:collapse"><tr style="background:#f7f9fc"><th style="border:1px solid #eee;padding:3px;width:24px">✓</th><th style="border:1px solid #eee;padding:3px;text-align:left">物料</th><th style="border:1px solid #eee;padding:3px">规格</th><th style="border:1px solid #eee;padding:3px">暂估数量</th><th style="border:1px solid #eee;padding:3px;text-align:right">暂估金额</th><th style="border:1px solid #eee;padding:3px">发票数量</th><th style="border:1px solid #eee;padding:3px;text-align:right">发票金额(元)</th></tr>`+
+    items.map((x,ix)=>`<tr><td style="border:1px solid #eee;padding:3px;text-align:center"><input type="checkbox" id="imc${ix}" checked onchange="invRecalc()"></td><td style="border:1px solid #eee;padding:3px">${esc(x.item_name)}</td><td style="border:1px solid #eee;padding:3px">${esc(x.spec)}</td><td style="border:1px solid #eee;padding:3px;text-align:center">${x.qty}${esc(x.unit)}</td><td style="border:1px solid #eee;padding:3px;text-align:right">¥${(x.amount||0).toFixed(2)}</td><td style="border:1px solid #eee;padding:3px"><input type="number" id="imq${ix}" value="${x.qty}" min="0" step="any" style="width:56px;padding:1px 3px;border:1px solid #d0d7e2;border-radius:3px" oninput="invRecalc()"></td><td style="border:1px solid #eee;padding:3px"><input type="number" id="ima${ix}" value="${x.amount||''}" min="0" step="0.01" style="width:88px;padding:1px 3px;border:1px solid #d0d7e2;border-radius:3px;text-align:right" oninput="invRecalc()"></td></tr>`).join('')+'</table>'
+    :'<div style="color:#999;font-size:10px">(未取到明细行, 请直接填写发票号与金额)</div>';
   const typTxt=ctx.invoice_type==='增值税普通发票'?'普票(不可抵税)':'专票(可抵税)';
   id('dmBody').innerHTML=`
     <div style="font-size:11px;line-height:1.8">
       <p style="color:#e65100;background:#fff3e0;padding:6px 8px;border-radius:4px;margin-bottom:8px">
-        📋 暂估入库（货到票未到）收到发票后在此核对：系统自动带出申请明细，核对通过即<b>红冲转正式</b>。</p>
+        📋 暂估入库（货到票未到）收到发票后在此核对：<b>逐行勾选本发票覆盖的物资</b>，数量/金额可按发票微调，确认红冲即转正式入库。</p>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
         <div class="fg" style="flex:1;min-width:140px"><label class="fl2">入库单号</label><input class="fc" value="${esc(rno)}" readonly></div>
         <div class="fg" style="flex:1;min-width:150px"><label class="fl2">申请单号(溯源)</label><input class="fc" value="${esc(ctx.req_no||'-')}" readonly></div>
       </div>
       <div style="font-size:10px;color:#555;margin-bottom:6px">订单: ${esc(ctx.order_no||'-')} ｜ 供应商: ${esc(ctx.supplier||'-')}<br>事由: ${esc(ctx.purpose||'-')}</div>
-      <div style="margin-bottom:6px"><div style="font-size:10px;color:#555;margin-bottom:3px">📋 申请明细（自动带出·只读核对）</div>${itHtml}</div>
-      <div class="fg"><label class="fl2">发票号 *</label><input class="fc" id="invMatchNo" placeholder="如: 04435021"></div>
-      <div class="fg"><label class="fl2">发票金额(元) *<span style="font-weight:normal;color:#999">（预填暂估额，允许按发票尾差微调）</span></label><input class="fc" id="invMatchAmt" type="number" min="0" step="0.01" value="${ctx.est_amount||''}" placeholder="按发票实际金额填写"></div>
+      <div style="margin-bottom:6px"><div style="font-size:10px;color:#555;margin-bottom:3px">📋 物资明细（勾选=本发票覆盖；暂估合计 ¥${_estSum.toFixed(2)}）</div>${itHtml}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+        <div class="fg" style="flex:1;min-width:150px"><label class="fl2">发票号 *</label><input class="fc" id="invMatchNo" placeholder="如: 04435021"></div>
+        <div class="fg" style="flex:1;min-width:150px"><label class="fl2">本次核销合计(元)</label><input class="fc" id="invMatchSum" readonly style="background:#eef7ee;color:#16a34a;font-weight:700" value="0.00"></div>
+      </div>
       <div class="fg"><label class="fl2">发票类型（前期已约定,自动带出）</label><input class="fc" value="${esc(typTxt)}" readonly style="background:#f5f7fa"></div>
-      <p style="font-size:9px;color:#999">专/普票类型在采购前期确定，此处不重复选择；核对后该单转正式入库（月底计入红字冲销明细表），暂估额与发票额的差额将留痕展示。</p>
+      <p style="font-size:9px;color:#999">💡 合计自动=勾选行发票金额之和（与暂估额 ¥${_estSum.toFixed(2)} 比对，差额红冲后留痕展示）；未勾选行不转入正式单。</p>
     </div>`;
+  if(items.length)invRecalc();
   id('dmFooter').innerHTML=`<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="doInvMatch(${rid})">✅ 确认红冲</button>`;
 }
+// V11.250: 发票核对勾选合计联动
+function invRecalc(){
+  const sumEl=id('invMatchSum');if(!sumEl)return;
+  let s=0;
+  document.querySelectorAll('[id^="imc"]').forEach((bx,ix)=>{
+    if(bx.checked)s+=(parseFloat(id('ima'+ix)?.value)||0);
+  });
+  sumEl.value=s.toFixed(2);
+}
 async function doInvMatch(rid){
-  const no=id('invMatchNo').value.trim(), amt=parseFloat(id('invMatchAmt').value)||0;
+  const no=id('invMatchNo').value.trim();
   if(!no){alert('请填写发票号');return}
-  if(amt<=0){alert('请填写发票金额');return}
-  if(!confirm(`确认该暂估入库单已收到发票 ${no}（金额 ${amt.toFixed(2)} 元）？\n红冲后转为正式入库，不可撤销。`))return;
-  const r=await api(`/receivings/${rid}/invoice-match`,{method:'POST',body:JSON.stringify({invoice_no:no,amount:amt})});
+  const rows=[];let bad=false;
+  const boxs=document.querySelectorAll('[id^="imc"]');
+  if(!boxs.length){ // 无明细行时退回整单核销
+    const amt=parseFloat(id('invMatchSum')?.value)||parseFloat(id('invMatchAmt')?.value)||0;
+    if(amt<=0){alert('请填写发票金额');return}
+    const r=await api(`/receivings/${rid}/invoice-match`,{method:'POST',body:JSON.stringify({invoice_no:no,amount:amt})});
+    if(r.success){alert(`✅ 红冲完成: ${r.receive_no} 已转正式入库\n自动生成正式入库单: ${r.formal_receive_no||''}\n发票类型: ${r.invoice_type}\n暂估额 ¥${(r.est_amount||0).toFixed(2)} → 发票额 ¥${(r.invoice_amount||0).toFixed(2)}\n差价: ${((r.diff||0)>0?'+':'')+(r.diff||0).toFixed(2)} 元\n(原暂估单保留标记已红冲, 新正式单不重复计库存)`);closeMod();loadReceivings()}
+    else alert('操作失败: '+(r.error||''));
+    return;
+  }
+  boxs.forEach((bx,ix)=>{
+    if(!bx.checked)return;
+    const q=parseFloat(id('imq'+ix)?.value)||0;
+    const a=parseFloat(id('ima'+ix)?.value)||0;
+    if(!(q>0)||!(a>0))bad=true;
+    rows.push({qty:q,amount:a});
+  });
+  if(!rows.length){alert('请至少勾选一行本发票对应的物资');return}
+  if(bad){alert('勾选行需填写有效的发票数量与金额（均须大于0）');return}
+  if(rows.length<boxs.length&&!confirm('有物资行未勾选：未勾选行将不转入正式入库单（若该部分物资另开发票，可后续另行处理）。确认对勾选行红冲？'))return;
+  const amt=rows.reduce((s,r)=>s+r.amount,0);
+  const r=await api(`/receivings/${rid}/invoice-match`,{method:'POST',body:JSON.stringify({invoice_no:no,rows})});
   if(r.success){
     const d=((r.diff||0)>0?'+':'')+(r.diff||0).toFixed(2);
-    alert(`✅ 红冲完成: ${r.receive_no} 已转正式入库\n自动生成正式入库单: ${r.formal_receive_no||''}\n发票类型: ${r.invoice_type}\n暂估额 ¥${(r.est_amount||0).toFixed(2)} → 发票额 ¥${(r.invoice_amount||0).toFixed(2)}\n差价: ${d} 元\n(原暂估单保留标记已红冲, 新正式单不重复计库存)`);
+    alert(`✅ 红冲完成: ${r.receive_no}（核销${rows.length}行 合计¥${amt.toFixed(2)}）\n自动生成正式入库单: ${r.formal_receive_no||''}\n发票类型: ${r.invoice_type}\n暂估额 ¥${(r.est_amount||0).toFixed(2)} → 发票额 ¥${(r.invoice_amount||0).toFixed(2)}\n差价: ${d} 元\n(原暂估单保留标记已红冲, 新正式单不重复计库存)`);
     closeMod();loadReceivings();
   }
   else alert('操作失败: '+(r.error||''));

@@ -10106,6 +10106,18 @@ def api_receiving_invoice_match(rid):
         conn.close(); return jsonify({'error': '该入库单不是暂估单,无需红冲'}), 400
     if rn['invoice_no']:
         conn.close(); return jsonify({'error': f'该暂估单已红冲(发票{rn["invoice_no"]})'}), 400
+    # V11.250: 逐行核销 — 前端按发票勾选行并提交 rows[{qty,amount}] (行级数量/金额可按票微调)
+    # 未传 rows = 旧版整单核销(兼容)
+    rows = d.get('rows') or []
+    _inv_amt = 0.0
+    _use_rows = bool(rows)
+    if _use_rows:
+        rows = [r for r in rows if float(r.get('qty') or 0) > 0]
+        if not rows:
+            conn.close(); return jsonify({'error': '请勾选本发票对应的物资并填写数量（数量须大于0）'}), 400
+        _inv_amt = round(sum(float(r.get('amount') or 0) for r in rows), 2)
+        if _inv_amt <= 0:
+            conn.close(); return jsonify({'error': '请填写有效的发票金额（勾选行合计须大于0）'}), 400
     # 发票类型: 不手工录入 — 沿用前期约定(上游订单/申请, 缺省专票)
     _typ = '增值税专用发票'
     po = conn.execute("SELECT * FROM purchase_orders WHERE id=?", (rn['order_id'],)).fetchone() if rn['order_id'] else None
@@ -10119,7 +10131,9 @@ def api_receiving_invoice_match(rid):
     except Exception: pass
     try: conn.execute("ALTER TABLE receivings ADD COLUMN invoice_amount REAL DEFAULT 0")
     except Exception: pass
-    _inv_amt = amount if amount > 0 else rn['est_amount']
+    # V11.250: rows(逐行核销)已在上方算好 _inv_amt; 旧版整单核销在此兜底
+    if not _use_rows:
+        _inv_amt = amount if amount > 0 else (rn['est_amount'] or 0)
     conn.execute("UPDATE receivings SET is_est=1, invoice_no=?, est_amount=?, invoice_type=?, invoice_amount=? WHERE id=?",
                  (invoice_no, rn['est_amount'] or 0, _typ, _inv_amt, rid))
     # V11.247: 红冲完成自动生成"正式入库"单据(is_est=0, 金额=发票额, 标记 is_conv=1 防库存/验收双计)
@@ -10137,6 +10151,21 @@ def api_receiving_invoice_match(rid):
                  'items_json': rn['items_json'] if 'items_json' in rn.keys() and rn['items_json'] else '',
                  'attachments': rn['attachments'] if 'attachments' in rn.keys() and rn['attachments'] else '',
                  'inspector': session.get('user_name', '')}
+    # V11.250: 逐行核销 — 转正单只含勾选行(数量/金额按发票行), 未勾选行不转入
+    if _use_rows:
+        _src_rows = conn.execute("SELECT item_name,spec,unit FROM request_items WHERE req_id=? ORDER BY id",
+                                 (pr['id'],)).fetchall() if (pr and pr['id']) else []
+        _conv_items = []
+        for _idx, _r in enumerate(rows):
+            _s = _src_rows[_idx] if _idx < len(_src_rows) else None
+            _q = float(_r.get('qty') or 0); _a = float(_r.get('amount') or 0)
+            _conv_items.append({'item_name': _s['item_name'] if _s else (rn['item_name'] or ''),
+                                'spec': _s['spec'] if _s else '', 'quantity': _q,
+                                'unit': _s['unit'] if _s else '个', 'price': round(_a / _q, 2) if _q else 0})
+        _conv_qty = round(sum(float(r.get('qty') or 0) for r in rows), 2)
+        _copy_map['items_json'] = json.dumps(_conv_items, ensure_ascii=False)
+        _copy_map['quantity'] = _conv_qty
+        _copy_map['item_name'] = (_conv_items[0]['item_name'] + ' 等%d项' % len(_conv_items)) if len(_conv_items) > 1 else (_conv_items[0]['item_name'] if _conv_items else rn['item_name'])
     _conv_vals.update({k: v for k, v in _copy_map.items() if k in _conv_vals})
     _conv_vals.update({'receive_no': _fno, 'status': '已入库', 'is_est': 0, 'invoice_no': invoice_no,
                        'invoice_type': _typ, 'invoice_amount': round(_inv_amt, 2), 'est_amount': 0,
