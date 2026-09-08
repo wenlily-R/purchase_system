@@ -9737,6 +9737,69 @@ def api_toolbox_mk_test_chain():
                     'tip': f'入库列表搜索 {name} 或单号 RK{no}, 点🧾发票核对即可测试红冲'})
 
 
+@app.route('/api/toolbox/mk-contract-chain', methods=['POST'])
+@login_required
+def api_toolbox_mk_contract_chain():
+    """V11.249 数据工具箱: 一键生成测试合同链(采购申请【测试】→订单→合同·待审批, 不触发钉钉)
+    仅系统管理员; 生成后可到 合同-待审批 列表直接测试审批/查看流程"""
+    if session.get('user_role') != '系统管理员':
+        return jsonify({'error': '仅系统管理员可使用数据工具箱'}), 403
+    d = request.json or {}
+    name = (d.get('item_name') or '').strip()
+    if not name:
+        return jsonify({'error': '请填写物料名称'}), 400
+    try:
+        qty = max(int(float(d.get('quantity') or 0)), 1)
+        price = max(float(d.get('price') or 0), 0.01)
+    except Exception:
+        return jsonify({'error': '数量/单价格式不对'}), 400
+    spec = (d.get('spec') or '').strip()
+    unit = (d.get('unit') or '个').strip()
+    supplier = (d.get('supplier') or '').strip() or '测试供应商'
+    total = round(qty * price, 2)
+    no = datetime.datetime.now().strftime('%H%M%S') + datetime.datetime.now().strftime('%m%d')
+    conn = db()
+    def _cols(t):
+        return [dict(r) for r in conn.execute(f"PRAGMA table_info({t})").fetchall()]
+    def _ins(t, over):
+        vals = {}
+        for x in _cols(t):
+            if x['pk']: continue
+            tt = x['type'].upper()
+            vals[x['name']] = '' if ('CHAR' in tt or 'TEXT' in tt) else (0 if ('INT' in tt or 'REAL' in tt or 'NUM' in tt) else '')
+        vals.update({k: v for k, v in over.items() if k in vals})
+        conn.execute(f"INSERT INTO {t}({','.join(vals.keys())}) VALUES({','.join('?'*len(vals))})", [vals[k] for k in vals])
+        return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    purpose = f"【测试】{name}"
+    pr = _ins('purchase_requests', {'req_no': 'SC' + no, 'purpose': purpose, 'dept': d.get('dept') or '生产部',
+                                     'status': '已通过', 'total_estimated': total,
+                                     'created_at': now(), 'updated_at': now(), 'apply_date': datetime.date.today().strftime('%Y-%m-%d')})
+    _ins('request_items', {'req_id': pr, 'item_name': name, 'spec': spec, 'unit': unit,
+                           'quantity': qty, 'estimated_price': price, 'total_price': total,
+                           'category': '办公用品', 'created_at': now()})
+    po = _ins('purchase_orders', {'order_no': 'PO' + no, 'req_id': pr, 'supplier': supplier, 'status': '已签合同',
+                                  'quantity': qty, 'total_amount': total, 'created_at': now(), 'updated_at': now(),
+                                  'target_date': datetime.date.today().strftime('%Y-%m-%d')})
+    ht = _ins('contracts', {'contract_no': 'HT' + no, 'order_id': po, 'contract_name': f'{name}采购合同（测试）',
+                            'supplier': supplier, 'amount': total, 'status': '待审批',
+                            'created_at': now(), 'updated_at': now()})
+    # 审批实例: 挂 合同 流程首个节点审批人(未配置则系统管理员), 仅系统内可见(不推钉钉)
+    _appr = '温丽'
+    try:
+        _n = conn.execute("SELECT approver FROM approval_flow_config WHERE biz_type='contract' AND status!='disabled' ORDER BY level_no LIMIT 1").fetchone()
+        if _n and _n['approver']:
+            _appr = _n['approver']
+    except Exception:
+        pass
+    _ins('approval_instances', {'biz_type': 'contract', 'biz_id': ht, 'level_no': 1, 'approver': _appr,
+                                'status': 'pending', 'created_at': now()})
+    conn.commit(); conn.close()
+    log(session['user_name'], '工具箱生成测试合同链', f'{name} {qty}{unit} ¥{total} → HT{no} 待审批')
+    return jsonify({'success': True, 'contract_no': 'HT' + no, 'req_no': 'SC' + no, 'order_no': 'PO' + no,
+                    'name': name, 'total': total, 'approver': _appr,
+                    'tip': f'合同列表搜索 {name} 或单号 HT{no}，状态=待审批'})
+
+
 @app.route('/api/toolbox/cleanup-test', methods=['POST'])
 @login_required
 def api_toolbox_cleanup_test():
@@ -9745,17 +9808,22 @@ def api_toolbox_cleanup_test():
         return jsonify({'error': '仅系统管理员可使用数据工具箱'}), 403
     conn = db()
     prs = [r[0] for r in conn.execute("SELECT id FROM purchase_requests WHERE purpose LIKE '【测试】%'").fetchall()]
-    n_rv = n_po = 0
+    n_rv = n_po = n_ht = 0
     for pr in prs:
-        for po in [r[0] for r in conn.execute("SELECT id FROM purchase_orders WHERE req_id=?", (pr,)).fetchall()]:
+        _pos = [r[0] for r in conn.execute("SELECT id FROM purchase_orders WHERE req_id=?", (pr,)).fetchall()]
+        for po in _pos:
             for rv in [r[0] for r in conn.execute("SELECT id FROM receivings WHERE order_id=?", (po,)).fetchall()]:
                 conn.execute("DELETE FROM receivings WHERE id=?", (rv,)); n_rv += 1
+            # V11.249: 测试合同链清理(合同+其审批实例)
+            for ht in [r[0] for r in conn.execute("SELECT id FROM contracts WHERE order_id=?", (po,)).fetchall()]:
+                conn.execute("DELETE FROM approval_instances WHERE biz_type='contract' AND biz_id=?", (ht,))
+                conn.execute("DELETE FROM contracts WHERE id=?", (ht,)); n_ht += 1
             conn.execute("DELETE FROM purchase_orders WHERE id=?", (po,)); n_po += 1
         conn.execute("DELETE FROM request_items WHERE req_id=?", (pr,))
         conn.execute("DELETE FROM purchase_requests WHERE id=?", (pr,))
     conn.commit(); conn.close()
-    log(session['user_name'], '工具箱清理测试数据', f'删除申请{len(prs)} 订单{n_po} 入库{n_rv}')
-    return jsonify({'success': True, 'requests': len(prs), 'orders': n_po, 'receivings': n_rv})
+    log(session['user_name'], '工具箱清理测试数据', f'删除申请{len(prs)} 订单{n_po} 入库{n_rv} 合同{n_ht}')
+    return jsonify({'success': True, 'requests': len(prs), 'orders': n_po, 'receivings': n_rv, 'contracts': n_ht})
 
 
 @app.route('/api/toolbox/query', methods=['POST'])

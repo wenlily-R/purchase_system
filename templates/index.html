@@ -545,6 +545,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
           <select id="tbUnit" class="fc" style="width:60px"><option>支</option><option>个</option><option>盒</option><option>箱</option><option>台</option><option>套</option></select>
           <input id="tbSup" class="fc" style="width:110px" placeholder="供应商(默认测试供应商)">
           <button class="btn btn-p btn-sm" onclick="mkTestChain()">⚡ 生成测试链(暂估入库)</button>
+          <button class="btn btn-p btn-sm" style="background:#7c5cff;border-color:#7c5cff" onclick="mkTestContract()">📄 生成测试合同(待审批)</button>
           <button class="btn btn-w btn-sm" onclick="cleanTest()">🧹 清理全部【测试】数据</button>
         </div>
         <div style="color:#888;margin:4px 0">只读SQL查询(仅SELECT/PRAGMA/WITH, 留痕):</div>
@@ -7291,8 +7292,19 @@ async function mkTestChain(){
   if(r.success){id('tbOut').innerHTML=`<div style="color:#2e7d32">✅ 已生成: 申请 ${r.req_no} → 订单 ${r.order_no} → <b>入库单 ${r.receive_no}</b>（暂估已入库 ¥${r.total}）<br>${r.tip}</div>`;alert('✅ 测试链已生成\n入库单 '+r.receive_no+'\n去 入库 列表可点🧾发票核对测试红冲')}
   else alert('失败: '+(r.error||''));
 }
+// V11.249: 生成测试合同链(合同·待审批)
+async function mkTestContract(){
+  const name=(id('tbName').value||'').trim();
+  if(!name){alert('请填物料名');return}
+  if(!confirm(`生成测试合同链: ${name} × ${id('tbQty').value||10} ${id('tbUnit').value} @ ¥${id('tbPrice').value||50}？\n将创建 采购申请→订单→合同(待审批), 审批人挂合同流程首节点, 不触发钉钉。`))return;
+  const r=await api('/api/toolbox/mk-contract-chain',{method:'POST',body:JSON.stringify({
+    item_name:name,quantity:parseFloat(id('tbQty').value)||10,price:parseFloat(id('tbPrice').value)||0,
+    spec:id('tbSpec').value||'',unit:id('tbUnit').value||'个',supplier:id('tbSup').value||''})});
+  if(r.success){id('tbOut').innerHTML=`<div style="color:#2e7d32">✅ 已生成测试合同: <b>${r.contract_no}</b>(${r.name} ¥${r.total}, 待审批, 审批人:${r.approver})<br>${r.tip}</div>`;alert('✅ 测试合同已生成\n合同号 '+r.contract_no+'\n去 合同管理-待审批 列表查看/测试审批')}
+  else alert('失败: '+(r.error||''));
+}
 async function cleanTest(){
-  if(!confirm('确认删除全部【测试】标签数据(申请/订单/入库)？此操作不可恢复!'))return;
+  if(!confirm('确认删除全部【测试】标签数据(申请/订单/入库/合同)?此操作不可恢复!'))return;
   if(!confirm('再确认一次: 只删【测试】开头的数据, 生产真实数据不受影响。确认清理?'))return;
   const r=await api('/api/toolbox/cleanup-test',{method:'POST',body:'{}'});
   if(r.success){id('tbOut').innerHTML=`<div style="color:#2e7d32">✅ 已清理: 申请${r.requests} 订单${r.orders} 入库${r.receivings}</div>`;alert('✅ 已清理测试数据 '+r.requests+' 申请 / '+r.receivings+' 入库');loadReceivings&&loadReceivings()}
