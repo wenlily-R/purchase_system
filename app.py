@@ -7703,9 +7703,14 @@ def api_budgets():
 def api_contracts():
     # V11.159: 合同列表 — 员工仅看自己相关的(通过订单的发起人关联)
     # V11.228: 附带合同附件列表 + 收款账户快照(仅面板展示用)
+    # V11.251: 支持 ?trace= 按溯源编号过滤检索
     _ws, _args = '', ()
+    f_trace = (request.args.get('trace') or '').strip()
     if session.get('user_role') == '员工':
         _ws, _args = ' WHERE po.requester_id=?', (session.get('user_id', 0),)
+    if f_trace:
+        _ws = (_ws + ' AND ' if _ws else ' WHERE ') + "(c.trace_no=? OR po.order_no=?)"
+        _args = _args + (f_trace, f_trace)
     conn = db()
     rows = conn.execute("SELECT c.*,po.order_no FROM contracts c LEFT JOIN purchase_orders po ON c.order_id=po.id" + _ws + " ORDER BY c.id DESC LIMIT 50", _args).fetchall()
     _atts = {}
@@ -7882,13 +7887,16 @@ def api_receivings():
     # V11.64: 入库单 — 库管员/采购员/财务/领导/管理员可见(采购要发票核对+跟到货, 财务对账); 员工不看
     if session.get('user_role') == '员工':
         return jsonify([])
-    # V11.29: 部门/类别筛选; V11.202: 入库类型筛选(est=暂估入库/formal=正式入库)
+    # V11.29: 部门/类别筛选; V11.202: 入库类型筛选(est=暂估入库/formal=正式入库); V11.251: trace溯源号检索
     f_dept = (request.args.get('dept') or '').strip()
     f_cat = (request.args.get('cat') or '').strip()
     f_type = (request.args.get('type') or '').strip()
+    f_trace = (request.args.get('trace') or '').strip()
     conn = db()
     sql = "SELECT r.*, po.trade_mode, po.order_no, po.supplier FROM receivings r LEFT JOIN purchase_orders po ON r.order_id=po.id"
     where = []; args = []
+    if f_trace:
+        where.append("(r.trace_no=? OR po.order_no=?)"); args += [f_trace, f_trace]
     if f_dept:
         where.append("r.dept=?"); args.append(f_dept)
     if f_cat:
@@ -9932,6 +9940,62 @@ def api_trace_query(trace_no):
         return jsonify({'error': '查询失败: %s' % str(e)[:100]}), 500
     conn.close()
     return jsonify(out)
+
+
+@app.route('/api/admin/backfill-trace', methods=['POST'])
+@login_required
+def api_admin_backfill_trace():
+    """V11.251 存量溯源补录: 扫描历史单据中 trace_no 为空但有订单关联的记录, 用订单号回填
+    覆盖: receivings(含分批单按订单号)/contracts/inquiries/requisition_items(经库存流水反查)/inventory_flows
+    仅配置管理员可执行; 幂等(只补空); 操作留痕"""
+    if not can_manage_config():
+        return jsonify({'error': '仅系统管理员/分管领导可操作'}), 403
+    conn = db()
+    r = {'receivings': 0, 'contracts': 0, 'inquiries': 0, 'flows': 0, 'requisition_items': 0, 'inventory': 0}
+    try:
+        # 1. 入库单: 空trace但有order_id → 订单号(分批单批次号由已有生成逻辑保留; 历史分批按 batch 顺序补 -NN)
+        rows = conn.execute("SELECT r.id, r.order_id, po.order_no, r.batch_no FROM receivings r JOIN purchase_orders po ON po.id=r.order_id WHERE (r.trace_no IS NULL OR r.trace_no='')").fetchall()
+        for x in rows:
+            _t = x['order_no']
+            if x['batch_no']:
+                import re as _re
+                m = _re.search(r'(\d+)', x['batch_no'])
+                if m:
+                    _t = '%s-%02d' % (x['order_no'], int(m.group(1)))
+            conn.execute("UPDATE receivings SET trace_no=? WHERE id=? AND (trace_no IS NULL OR trace_no='')", (_t, x['id']))
+            r['receivings'] += 1
+        # 2. 合同
+        rows = conn.execute("SELECT c.id, po.order_no FROM contracts c JOIN purchase_orders po ON po.id=c.order_id WHERE (c.trace_no IS NULL OR c.trace_no='')").fetchall()
+        for x in rows:
+            conn.execute("UPDATE contracts SET trace_no=? WHERE id=? AND (trace_no IS NULL OR trace_no='')", (x['order_no'], x['id']))
+            r['contracts'] += 1
+        # 3. 询价: 有订单来源(inquiry_id链)的按订单回填
+        rows = conn.execute("SELECT i.id, po.order_no FROM inquiries i JOIN purchase_orders po ON po.inquiry_id=i.id WHERE (i.trace_no IS NULL OR i.trace_no='')").fetchall()
+        for x in rows:
+            conn.execute("UPDATE inquiries SET trace_no=? WHERE id=? AND (trace_no IS NULL OR trace_no='')", (x['order_no'], x['id']))
+            r['inquiries'] += 1
+        # 4. 库存流水: 入库流水空trace → 按 doc_id 关联入库单的 trace
+        rows = conn.execute("SELECT f.id, rc.trace_no FROM inventory_flows f JOIN receivings rc ON rc.id=f.doc_id WHERE f.doc_type='receiving' AND (f.trace_no IS NULL OR f.trace_no='') AND rc.trace_no<>''").fetchall()
+        for x in rows:
+            conn.execute("UPDATE inventory_flows SET trace_no=? WHERE id=? AND (trace_no IS NULL OR trace_no='')", (x['trace_no'], x['id']))
+            r['flows'] += 1
+        # 5. 库存台账: 空trace → 取该物料最近入库流水trace
+        rows = conn.execute("SELECT DISTINCT item_name, spec, warehouse FROM inventory WHERE (trace_no IS NULL OR trace_no='')").fetchall()
+        for x in rows:
+            _f = conn.execute("SELECT trace_no FROM inventory_flows WHERE item_name=? AND spec=? AND trace_no<>'' ORDER BY id DESC LIMIT 1",
+                              (x['item_name'], x['spec'] or '')).fetchone()
+            if _f:
+                conn.execute("UPDATE inventory SET trace_no=? WHERE item_name=? AND spec=? AND warehouse=? AND (trace_no IS NULL OR trace_no='')",
+                             (_f['trace_no'], x['item_name'], x['spec'] or '', x['warehouse']))
+                r['inventory'] += 1
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': '补录失败: %s' % str(e)[:120]}), 500
+    conn.close()
+    log(session['user_name'], '存量溯源补录', 'receivings:%d contracts:%d inquiries:%d flows:%d inventory:%d' % (r['receivings'], r['contracts'], r['inquiries'], r['flows'], r['inventory']))
+    return jsonify({'success': True, 'backfilled': r})
 
 
 @app.route('/api/reports/checkpoints')

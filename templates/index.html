@@ -524,6 +524,16 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
         </div>
         <div id="estTableWrap"><div style="color:#999;font-size:10px">点击上方标签查看各表明细</div></div>
       </div></div>
+    <div class="card" style="margin-bottom:6px"><div class="ch"><h3>🔍 商品溯源穿透查询（V11.251）</h3></div>
+      <div class="cb" style="font-size:9px;line-height:1.7">
+        <div style="color:#666;margin-bottom:4px">输入<b>溯源编号</b>（采购订单号，如 CG-202609-0001；分批入库可用 订单号-批次 如 CG-202609-0001-01），一次性查看整条链路：采购订单 → 询价 → 合同 → 入库明细 → 库存流水 → 出库领用。</div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <input id="traceQ" placeholder="输入溯源编号/采购订单号" style="width:240px;padding:5px 8px;border:1px solid var(--b);border-radius:4px;font-size:11px" onkeydown="if(event.key==='Enter')traceQuery()">
+          <button class="btn btn-p btn-sm" onclick="traceQuery()">🔍 查询全链路</button>
+          ${ME&&ME.can_config?`<button class="btn btn-o btn-sm" onclick="backfillTrace()" title="扫描历史单据(入库/合同/询价/流水/库存)空溯源号, 按关联订单批量回填">🛠 存量溯源补录</button>`:''}
+        </div>
+        <div id="traceBox" style="margin-top:6px"></div>
+      </div></div>
     <div class="card" style="margin-bottom:6px"><div class="ch"><h3>🚦 业务卡点排查（①已审批未采购 ②已采购未到货 ③已入库未回票）</h3><button class="btn btn-p btn-sm" onclick="loadCheckpoints()" style="margin-left:auto">🔄 刷新</button></div>
       <div class="cb">
         <div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap">
@@ -3211,7 +3221,7 @@ async function genMonthlyContract(supplier){
   if(r.success){alert(`✅ 月度合同 ${r.contract_no} 已生成(汇总${r.count}单, ¥${(r.amount||0).toFixed(0)}), 已进入合同审批`);loadContracts()}
   else alert(r.error||'生成失败');
 }
-async function loadContracts(){const c=await api('/contracts');id('contractsTable').innerHTML=groupRnder(c, r=>r.created_at,['编号','名称','供应商','模板','金额','状态','驳回','操作'],r=>`<td><b>${esc(r.contract_no)}</b></td><td>${esc(r.contract_name)}</td><td>${esc(r.supplier)}</td><td>${r.template_name?`<span class="tag" style="background:#eef2ff;color:#4338ca">${esc(r.template_name.replace('买卖合同-',''))}</span>`:'<span style="color:#ccc">-</span>'}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}</td>${rejCell(r)}
+async function loadContracts(){const c=await api('/contracts');id('contractsTable').innerHTML=groupRnder(c, r=>r.created_at,['编号','名称','供应商','模板','溯源号','金额','状态','驳回','操作'],r=>`<td><b>${esc(r.contract_no)}</b></td><td>${esc(r.contract_name)}</td><td>${esc(r.supplier)}</td><td>${r.template_name?`<span class="tag" style="background:#eef2ff;color:#4338ca">${esc(r.template_name.replace('买卖合同-',''))}</span>`:'<span style="color:#ccc">-</span>'}</td><td style="font-size:8px;color:#0d9488">${r.trace_no?`<a style="cursor:pointer" onclick="openTrace('${esc(r.trace_no)}')">${esc(r.trace_no)}</a>`:'<span style="color:#ccc">-</span>'}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}</td>${rejCell(r)}
   <td style="white-space:nowrap"><button class="lnk" onclick="showContract(${r.id})">查看</button>${r.file_path?` <button class="lnk" style="color:var(--s)" onclick="window.open('/uploads/${esc(r.file_path)}','_blank')">📄下载</button>`:''} <button class="lnk" style="color:#b08900" onclick="editDoc('contract',${r.id},'合同')">✏️修改</button> ${(r.status=='待审批'||r.status=='已通过'||r.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('contract',${r.id},'合同')">↩️撤回</button>`:''}${(r.status=='待审批'||r.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('contract',${r.id},'合同')">🗑️删除</button>`:''}</td>`)}
 async function showContract(id){
   // V11.150: 防连点 + 最新打开者优先
@@ -3220,7 +3230,7 @@ async function showContract(id){
   const c=(await api('/contracts')).find(x=>x.id===id);
   if(!c){if(my!==__dmSeq)return;alert('未找到该合同(可能已被删除), 请刷新后重试');return}
   let h=`<div class="c2"><div><dt>合同号</dt><dd><b>${esc(c.contract_no)}</b></dd><dt>名称</dt><dd>${esc(c.contract_name)}</dd><dt>供应商</dt><dd>${esc(c.supplier)}</dd><dt>金额</dt><dd>¥${(c.amount||0).toFixed(2)}（大写：${c.amount_upper||''}）</dd></div>
-    <div><dt>状态</dt><dd>${tag(c.status)}${(c.reject_count||0)>0?` <span style="font-size:9px;color:#c0392b;background:#fdeaea;border-radius:3px;padding:1px 5px">已驳回${c.reject_count}次</span>`:''}${c.template_name?`<span class="tag" style="background:#eef2ff;color:#4338ca;margin-left:4px">📄 ${esc(c.template_name.replace('买卖合同-',''))}</span>`:''}</dd><dt>签订日期</dt><dd>${esc(c.sign_date||'-')}</dd><dt>关联订单</dt><dd>#${c.order_id||'-'}</dd></div></div>`;
+    <div><dt>状态</dt><dd>${tag(c.status)}${(c.reject_count||0)>0?` <span style="font-size:9px;color:#c0392b;background:#fdeaea;border-radius:3px;padding:1px 5px">已驳回${c.reject_count}次</span>`:''}${c.template_name?`<span class="tag" style="background:#eef2ff;color:#4338ca;margin-left:4px">📄 ${esc(c.template_name.replace('买卖合同-',''))}</span>`:''}${c.trace_no?`<span class="tag" style="background:#ccfbf1;color:#0f766e;margin-left:4px;cursor:pointer" onclick="openTrace('${esc(c.trace_no)}')" title="点击查看全链路溯源">🔗 ${esc(c.trace_no)}</span>`:''}</dd><dt>签订日期</dt><dd>${esc(c.sign_date||'-')}</dd><dt>关联订单</dt><dd>#${c.order_id||'-'}</dd></div></div>`;
   if(c.file_path)h+=`<div style="margin-top:8px"><button class="btn btn-p btn-sm" onclick="window.open('/uploads/${esc(c.file_path)}','_blank')">📄 打开/下载合同文件</button> <button class="btn btn-w btn-sm" onclick="editContract(${id})">✏️ 编辑合同文本</button></div>`;
   h+=`<div style="margin-top:6px"><button class="btn btn-o btn-sm" style="color:#b08900;border-color:#b08900" onclick="editDoc('contract',${id},'合同')">✏️ 修改合同信息</button>
     <button class="lnk" style="color:#7c5cff" onclick="showDocOps('contract',${id},'合同 ${esc(c.contract_no)}')">🕘 操作记录</button>
@@ -7219,6 +7229,45 @@ function estTab(kind){
   id('estTableWrap').innerHTML=`<table class="tb" style="font-size:10px"><tr style="background:#f0f4ff"><th>入库单号</th><th>物资</th><th>规格</th><th>数量</th><th>金额(元)</th><th>发票号</th><th>日期</th></tr>`+
     list.map(x=>`<tr><td><b>${esc(x.receive_no)}</b></td><td>${esc(x.item_name)}</td><td>${esc(x.spec)}</td><td>${x.quantity}${esc(x.unit)}</td><td>¥${(x.amount||0).toFixed(0)}</td><td>${x.invoice_no?esc(x.invoice_no):'<span style="color:#c0392b">未回</span>'}</td><td>${esc(x.date)}</td></tr>`).join('')+
     `</table>`;
+}
+// V11.251: 溯源号点击 → 跳到报表中心并查询全链路
+async function openTrace(t){
+  try{sw('reports')}catch(e){}
+  setTimeout(()=>{const q=id('traceQ');if(q){q.value=t;traceQuery();window.scrollTo(0,document.body.scrollHeight)}},350);
+}
+// V11.251: 溯源穿透查询 — 输入溯源编号查看整条链路
+async function traceQuery(){
+  const box=id('traceBox');if(!box)return;
+  const t=(id('traceQ').value||'').trim();
+  if(!t){alert('请输入溯源编号');return}
+  box.innerHTML='<div class="loading">查询全链路中...</div>';
+  try{
+    const d=await api('/trace/'+encodeURIComponent(t));
+    if(!d||d.error){box.innerHTML='<div style="color:#c0392b">⚠️ '+(d&&d.error?esc(d.error):'查询失败')+'</div>';return}
+    let h=`<div style="font-size:10px;background:#f0f7ff;border:1px solid #d6e8ff;border-radius:6px;padding:6px 8px;margin-bottom:6px">🔗 溯源编号 <b>${esc(d.trace_no)}</b>（根订单 ${esc(d.root_order_no)}）— 全链路 ${d.order?'含采购订单':''}${d.inquiries.length?'/询价':''}${d.contracts.length?'/合同':''}${d.receivings.length?'/入库':''}${d.flows.length?'/库存流水':''}${d.requisitions.length?'/出库':''}</div>`;
+    const sec=(title,rows,cols,fmt)=>rows&&rows.length?`<div style="margin-top:6px"><b style="font-size:10px">${title}（${rows.length}）</b>
+      <table class="tb" style="font-size:8.5px;margin-top:2px"><tr>${cols.map(c=>`<th style="text-align:left">${c}</th>`).join('')}</tr>${rows.map(fmt).join('')}</table></div>`:'';
+    if(d.order)h+=sec('📋 采购订单(溯源根)',[d.order],['单号','物资','数量','供应商','状态','金额'],x=>`<tr><td><b>${esc(x.order_no)}</b></td><td>${esc(x.item_name)}</td><td>${x.quantity}${esc(x.unit||'')}</td><td>${esc(x.supplier||'-')}</td><td>${tag(x.status)}</td><td>¥${(x.total_amount||0).toFixed(0)}</td></tr>`);
+    h+=sec('🔍 三方询价',d.inquiries,['询价单号','标题','状态','溯源号'],x=>`<tr><td><b>${esc(x.inq_no)}</b></td><td>${esc(x.title||'-')}</td><td>${tag(x.status)}</td><td style="font-size:8px">${esc(x.trace_no||'-')}</td></tr>`);
+    h+=sec('📄 采购合同',d.contracts,['合同号','名称','金额','模板','状态'],x=>`<tr><td><b>${esc(x.contract_no)}</b></td><td>${esc(x.contract_name||'-')}</td><td>¥${(x.amount||0).toFixed(0)}</td><td style="font-size:8px">${esc((x.template_name||'').replace('买卖合同-','')||'-')}</td><td>${tag(x.status)}</td></tr>`);
+    h+=sec('📦 入库单',d.receivings,['入库单号','物资','数量','批次','溯源号','状态'],x=>`<tr><td><b>${esc(x.receive_no)}</b></td><td>${esc(x.item_name||'-')}</td><td>${x.quantity}</td><td>${esc(x.batch_no||'整批')}</td><td style="font-size:8px">${esc(x.trace_no||'-')}</td><td>${tag(x.status)}</td></tr>`);
+    h+=sec('🏢 库存流水',d.flows,['时间','物资','类型','数量','结存','单据','溯源号'],x=>`<tr><td style="font-size:8px">${esc((x.created_at||'').slice(5,16))}</td><td>${esc(x.item_name)}</td><td>${esc(x.flow_type)}</td><td>${x.qty}</td><td>${x.balance_after}</td><td style="font-size:8px">${esc(x.doc_no||'-')}</td><td style="font-size:8px">${esc(x.trace_no||'-')}</td></tr>`);
+    h+=sec('🚚 出库领用',d.requisitions,['出库单','物资','数量','领取人','部门','溯源号'],x=>`<tr><td><b>${esc(x.req_no||('-#'+x.requisition_id))}</b></td><td>${esc(x.item_name)}</td><td>${x.quantity}${esc(x.unit||'')}</td><td>${esc(x.requester||'-')}</td><td>${esc(x.receive_dept||'-')}</td><td style="font-size:8px">${esc(x.trace_no||'-')}</td></tr>`);
+    box.innerHTML=h;
+  }catch(e){box.innerHTML='<div style="color:#c0392b">⚠️ 查询异常</div>'}
+}
+// V11.251: 存量历史数据溯源补录(仅配置管理员) — 空溯源号按关联订单批量回填
+async function backfillTrace(){
+  const box=id('traceBox');if(!box)return;
+  if(!confirm('将扫描全部历史单据(入库单/合同/询价/库存流水/库存台账)中溯源编号为空且有关联订单的记录，按关联采购订单批量回填溯源编号。继续？'))return;
+  box.innerHTML='<div class="loading">补录中...</div>';
+  try{
+    const r=await api('/admin/backfill-trace',{method:'POST',body:'{}'});
+    if(r&&r.success){
+      const b=r.backfilled||{};
+      box.innerHTML=`<div style="color:#16a34a">✅ 存量溯源补录完成：入库单 <b>${b.receivings||0}</b>、合同 <b>${b.contracts||0}</b>、询价 <b>${b.inquiries||0}</b>、库存流水 <b>${b.flows||0}</b>、库存台账 <b>${b.inventory||0}</b> 条已回填</div>`;
+    }else box.innerHTML='<div style="color:#c0392b">⚠️ '+(r&&r.error?esc(r.error):'补录失败')+'</div>';
+  }catch(e){box.innerHTML='<div style="color:#c0392b">⚠️ 补录异常</div>'}
 }
 // V11.244: 业务卡点排查(①已审批未采购 ②已采购未到货 ③已入库未回票) — 报表中心面板
 let _ckCache=null;
