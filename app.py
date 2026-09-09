@@ -2391,6 +2391,8 @@ def dt_poll_loop():
              无pending时60秒慢轮询(平时不耗API); 兼顾同步速度与API配额"""
     while True:
         try:
+            if _dt_quota_blocked():
+                time.sleep(60); continue  # V11.261: 配额熔断期暂停一切钉钉自动轮询(到期自动恢复)
             if dingtalk_enabled():
                 _pend = dt_pending_count()
                 dt_poll_results()
@@ -2524,6 +2526,44 @@ def dt_new_token():
     _DT_TOKEN_NEW['t'] = t; _DT_TOKEN_NEW['exp'] = time.time() + int(d.get('expireIn', 7200))
     return _DT_TOKEN_NEW['t']
 
+_DT_QUOTA_KEY = 'dingtalk_quota_blocked_until'
+
+def _dt_quota_hit(resp):
+    """钉钉企业API配额超限判定(额度用尽返回: errcode 88 / 90020 / ApiCountLimit)"""
+    if not isinstance(resp, dict):
+        return False
+    try:
+        _s = json.dumps(resp, ensure_ascii=False)[:400]
+    except Exception:
+        _s = str(resp)[:400]
+    return ('ApiCountLimit' in _s or '调用量已超过限制' in _s or '90020' in _s
+            or resp.get('errcode') == 88 or resp.get('code') == 'Forbidden.AccessDenied.ApiCountLimitForOrg')
+
+def _dt_quota_block_until(seconds=7200):
+    """V11.261: 配额熔断 — 钉钉API月额度超限后暂停自动轮询/重试/补发2小时(到期自动试探恢复);
+    防止额度爆掉后系统仍每15-60秒重试狂烧API并堆积错误行"""
+    try:
+        _until = (datetime.datetime.now() + datetime.timedelta(seconds=seconds)).strftime('%Y-%m-%d %H:%M:%S')
+        c = db()
+        c.execute("INSERT OR REPLACE INTO sys_config(key,value) VALUES(?,?)", (_DT_QUOTA_KEY, _until))
+        c.commit(); c.close()
+        log('系统', '钉钉配额熔断', f'钉钉API调用量超限, 钉钉自动同步/重试暂停至 {_until}（期间单据系统内审批不受影响）')
+    except Exception:
+        pass
+
+def _dt_quota_blocked():
+    """当前是否处于配额熔断期(熔断期间钉钉侧自动动作全部暂停)"""
+    try:
+        c = db()
+        v = c.execute("SELECT value FROM sys_config WHERE key=?", (_DT_QUOTA_KEY,)).fetchone()
+        c.close()
+        if not v or not v[0]:
+            return False
+        return datetime.datetime.now() < datetime.datetime.strptime(str(v[0]).strip(), '%Y-%m-%d %H:%M:%S')
+    except Exception:
+        return False
+
+
 def dt_new_post(path, payload, timeout=12):
     """新版接口 POST, 返回 (err_code, resp)"""
     url = DT_NEW_API + path
@@ -2537,10 +2577,14 @@ def dt_new_post(path, payload, timeout=12):
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             d = json.loads(r.read().decode('utf-8'))
+        if _dt_quota_hit(d):
+            _dt_quota_block_until()
         return 0, d
     except urllib.error.HTTPError as e:
         try:
             d = json.loads(e.read().decode('utf-8'))
+            if _dt_quota_hit(d):
+                _dt_quota_block_until()
             return 1, d
         except Exception:
             return 1, {'msg': f'HTTP {e.code}'}
@@ -2561,10 +2605,14 @@ def dt_post(path, payload, timeout=12):
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             d = json.loads(r.read().decode('utf-8'))
+        if _dt_quota_hit(d):
+            _dt_quota_block_until()
         return d.get('errcode', -1), d
     except urllib.error.HTTPError as e:
         try:
             d = json.loads(e.read().decode('utf-8'))
+            if _dt_quota_hit(d):
+                _dt_quota_block_until()
             return d.get('errcode', 1), d
         except Exception:
             return 1, {'msg': f'HTTP {e.code}'}
@@ -3321,6 +3369,18 @@ def dt_start_instance(biz_type, biz_id):
     """单据进入待审批后, 同步发起钉钉审批实例(新版接口); 成功返回instance_id, 失败返回None"""
     try:
         if not dingtalk_enabled(): return None
+        if _dt_quota_blocked():
+            # V11.261: 配额熔断期不发起(避免每次提交都触发失败+烧API), 留待恢复后由自动重试补发
+            try:
+                c = db()
+                c.execute("DELETE FROM dingtalk_instances WHERE biz_type=? AND biz_id=? AND instance_code LIKE 'ERR-quota%'", (biz_type, biz_id))
+                c.execute("INSERT INTO dingtalk_instances(instance_code,biz_type,biz_id,status,error,created_at) VALUES(?,?,?,?,?,?)",
+                          (f'ERR-quota-{biz_type}-{biz_id}-{int(time.time())}', biz_type, biz_id, 'error',
+                           '{"err":"钉钉API配额熔断中, 待额度恢复后自动补发"}', now()))
+                c.commit(); c.close()
+            except Exception:
+                pass
+            return None
         code = dt_approval_code(biz_type)
         if not code:
             # V11.202: 缺模板码时留痕, 不再静默(用户查"为何没推到钉钉"有据可依)
@@ -3842,11 +3902,14 @@ def dt_poll_results():
 def dt_retry_failed_instances():
     """error 状态的钉钉实例自动重试(表单错误等修复后无需人工操作); 已过3分钟的才重试
     V11.182: 单单据error记录超5条(重试超5轮)则放弃 — 审批人无效等配置问题不再无限重试烧API"""
+    if _dt_quota_blocked():
+        return  # V11.261: 配额熔断期不重试(重试无用且烧API)
     try:
         c = db()
-        # 只挑 error 次数≤5 的单据重试(同单已重试过多=配置问题, 放弃等人工修复)
+        # 只挑 error 次数≤5 且非配额超限类的单据重试(配额类错误=等额度恢复, 自动重试无意义)
         rows = c.execute("""SELECT d.id, d.biz_type, d.biz_id FROM dingtalk_instances d
             WHERE d.status='error' AND d.created_at <= datetime('now','localtime','-3 minutes')
+            AND (d.error IS NULL OR (d.error NOT LIKE '%调用量已超过限制%' AND d.error NOT LIKE '%ApiCountLimit%' AND d.error NOT LIKE '%90020%' AND d.error NOT LIKE '%quota%'))
             AND (SELECT COUNT(*) FROM dingtalk_instances e WHERE e.biz_type=d.biz_type AND e.biz_id=d.biz_id AND e.status='error') <= 5
             ORDER BY d.id LIMIT 5""").fetchall()
         c.close()
