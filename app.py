@@ -5077,7 +5077,7 @@ def api_generic_resubmit(biz_type, biz_id):
             for it in items:
                 _tp = float(it.get('quantity', 1) or 1) * float(it.get('estimated_price', 0) or 0)
                 _tot += _tp
-                conn.execute("INSERT INTO request_items(req_id,item_name,spec,unit,quantity,estimated_price,total_price,remark,category,brand_param,arrival_date,attach,usage) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                conn.execute("INSERT INTO request_items(req_id,item_name,spec,unit,quantity,estimated_price,total_price,remark,category,brand_param,warranty_param,arrival_date,attach,usage) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                              (biz_id, it.get('item_name',''), it.get('spec',''), it.get('unit','个'), float(it.get('quantity',1)),
                               float(it.get('estimated_price',0)), _tp, it.get('remark',''),
                               it.get('category',''), it.get('brand_param',''), it.get('warranty_param',''), it.get('arrival_date',''),
@@ -5462,7 +5462,7 @@ def api_resubmit_prequest(rid):
         conn.execute("DELETE FROM request_items WHERE req_id=?", (rid,))
         for it in items:
             tp = float(it.get('quantity',1)) * float(it.get('estimated_price',0))
-            conn.execute("INSERT INTO request_items(req_id,item_name,spec,unit,quantity,estimated_price,total_price,remark,category,brand_param,arrival_date,attach,usage) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            conn.execute("INSERT INTO request_items(req_id,item_name,spec,unit,quantity,estimated_price,total_price,remark,category,brand_param,warranty_param,arrival_date,attach,usage) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                          (rid, it.get('item_name',''), it.get('spec',''), it.get('unit','个'), float(it.get('quantity',1)),
                           float(it.get('estimated_price',0)), tp, it.get('remark',''),
                           it.get('category',''), it.get('brand_param',''), it.get('warranty_param',''), it.get('arrival_date',''),
