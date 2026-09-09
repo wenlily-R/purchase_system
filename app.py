@@ -207,15 +207,15 @@ def gen_req_no(dept=None, c=None):
     if not c: conn.close()
     return f"{prefix}{m}{cur+1:02d}"
 
-def gen_contract_no(c=None):
-    """合同编码规则(55.docx需求7): HQZC-SBCG-份号-年份, 如 HQZC-SBCG-019-2026
-    份号=当年合同序号, 年份=签订年份; 取最大份号+1(并发安全)
-    V11.254修复: 原MAX(contract_no)文本排序会把'-TEST-'等后缀测试链(如HQZC-SBCG-003-TEST-2026)
-    排到最大→序号解析失败归零→生成001撞已存在正式合同→UNIQUE 500; 改为正则仅识别正式格式提取份号"""
+def gen_contract_no(c=None, company='HQZC', category='SBCG'):
+    """合同编码规则(需求): 公司简码-类目编码-类目年度序号-年份, 如 HQZC-CLCG-001-2026
+    类目: 材料CLCG/维修WXHT/工程GCJS/工程物资GCWZ/技术服务JSFW/设备SBCG/其他QTHT/修理修缮XLXS
+    每公司每类目独立年度计数(001重置); 兼容历史 HQZC-SBCG 格式
+    V11.254修复: 原MAX文本排序被'-TEST-'后缀测试链干扰→序号归零撞号; 正则仅识别正式格式"""
     import re as _re
     conn = c if c else db()
     year = datetime.date.today().strftime('%Y')
-    _pfx = 'HQZC-SBCG'
+    _pfx = '%s-%s' % (str(company or 'HQZC').strip().upper()[:4], str(category or 'SBCG').strip().upper()[:4])
     rows = conn.execute("SELECT contract_no FROM contracts WHERE contract_no LIKE ?", (f'{_pfx}-%-{year}',)).fetchall()
     if not c: conn.close()
     _used = set()
@@ -228,6 +228,34 @@ def gen_contract_no(c=None):
     while n in _used:  # 兜底: 中间号被删除重排后仍不撞号
         n += 1
     return f'{_pfx}-{n:03d}-{year}'
+
+# ---- V11.254 合同编号: 公司/类目配置 ----
+# 类目对照表(需求): 材料采购/维修合同/工程建设/工程物资/技术服务/设备采购/其他(运输洗选)/修理修缮
+CONTRACT_CATEGORIES = {'CLCG': '材料采购', 'WXHT': '维修合同', 'GCJS': '工程建设', 'GCWZ': '工程物资',
+                       'JSFW': '技术服务', 'SBCG': '设备采购', 'QTHT': '其他合同', 'XLXS': '修理修缮'}
+
+
+def company_codes():
+    """公司列表: sys_config.company_codes = {公司名: 简码}; 无配置默认 河曲正成HQZC
+    需求: 后续新增公司后台维护简码(默认取名称前两字拼音首字母, 冲突时手工改)"""
+    try:
+        _c = db()
+        _m = _c.execute("SELECT value FROM sys_config WHERE key='company_codes'").fetchone()
+        _c.close()
+        if _m and _m['value']:
+            _ov = json.loads(_m['value'])
+            if isinstance(_ov, dict) and _ov:
+                return _ov
+    except Exception:
+        pass
+    return {'河曲正成': 'HQZC'}
+
+
+def company_default():
+    """默认公司简码(首个)"""
+    _m = company_codes()
+    return list(_m.values())[0] if _m else 'HQZC'
+
 
 def log(op, action, detail, c=None):
     if c: c.execute("INSERT INTO logs(operator,action,detail,created_at) VALUES(?,?,?,?)", (op,action,detail,now()))
@@ -8166,7 +8194,7 @@ def api_contracts():
 @login_required
 def api_create_contract():
     d = request.json; conn = db()
-    no = gen_contract_no(conn)
+    no = gen_contract_no(conn, company=str(d.get('company') or '').strip() or company_default(), category=str(d.get('category') or '').strip() or 'CLCG')
     # V4.1: 合同创建后进入审批流(待审批→审批通过→执行中), 审批通过前不能挂账
     conn.execute("INSERT INTO contracts(contract_no,order_id,contract_name,supplier,amount,sign_date,start_date,end_date,content,status,remark,urgent,attachment) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (no,d.get('order_id'),d.get('contract_name',''),d.get('supplier',''),float(d.get('amount',0)),
@@ -8229,7 +8257,7 @@ def api_monthly_generate():
     content = '\n'.join(lines)
     order_nos = '、'.join(o['order_no'] for o in orders)
     # 生成月度合同(关联第一张单, 明细在content, 关联单号在remark)
-    no = gen_contract_no(conn)
+    no = gen_contract_no(conn, company=company_default(), category='CLCG')
     y = datetime.date.today().strftime('%Y%m')
     conn.execute("""INSERT INTO contracts(contract_no,order_id,contract_name,supplier,amount,sign_date,start_date,end_date,content,status,remark,urgent,attachment)
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
@@ -11142,6 +11170,44 @@ def api_trace():
     c.close()
     return jsonify(out)
 
+# V11.254(需求): 合同编号公司/类目下拉源 + 公司简码维护
+@app.route('/api/contract-meta')
+@login_required
+def api_contract_meta():
+    """合同编号构成下拉: 公司列表(名+简码, sys_config维护) + 8类目(固定) + 默认值"""
+    _cs = company_codes()
+    return jsonify({'companies': [{'name': k, 'code': v} for k, v in _cs.items()],
+                    'categories': [{'code': k, 'name': v} for k, v in CONTRACT_CATEGORIES.items()],
+                    'default_company': company_default()})
+
+
+@app.route('/api/admin/company-codes', methods=['POST'])
+@login_required
+def api_admin_company_codes():
+    """公司简码维护: {公司名: 简码} 存 sys_config.company_codes; 新增公司在此登记, 冲突手工改(需求)"""
+    if not can_manage_config():
+        return jsonify({'error': '仅配置管理员可操作'}), 403
+    d = request.json or {}
+    mp = d.get('map') or {}
+    clean = {}
+    for _k, _v in mp.items():
+        _kk = str(_k).strip()
+        _vv = str(_v).strip().upper()
+        if _kk and _vv:
+            clean[_kk] = _vv[:4]
+    _conn2 = db()
+    if clean:
+        _ex = _conn2.execute("SELECT 1 FROM sys_config WHERE key='company_codes'").fetchone()
+        if _ex:
+            _conn2.execute("UPDATE sys_config SET value=? WHERE key='company_codes'", (json.dumps(clean, ensure_ascii=False),))
+        else:
+            _conn2.execute("INSERT INTO sys_config(key,value) VALUES('company_codes',?)", (json.dumps(clean, ensure_ascii=False),))
+        _conn2.commit()
+    _conn2.close()
+    log(session['user_name'], '维护公司简码', json.dumps(clean, ensure_ascii=False)[:120])
+    return jsonify({'success': True})
+
+
 # V11.233: 合同模板文件下拉源 — 扫描 contract_templates/ 目录docx(需求: 固定路径文件即模板, 替换即更新, 不后台导入)
 @app.route('/api/contract-template-files')
 @login_required
@@ -11360,7 +11426,7 @@ def api_contract_generate():
         caddr = cfg_get('company_address', '山西省')
         ccontact = cfg_get('company_contact', '采购部')
         cphone = cfg_get('company_phone', '')
-        cno = gen_contract_no(conn)
+        cno = gen_contract_no(conn, company=str(d.get('company') or '').strip() or company_default(), category=str(d.get('category') or '').strip() or 'CLCG')
         # V11.144: 结算方式由采购员在生成合同时选择(现结/月结), 覆盖订单默认值
         _settle_choice = (d.get('settle_type') or '').strip()
         if _settle_choice in ('现结', '月结'):

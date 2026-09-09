@@ -651,7 +651,11 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     </div></div>
   <div class="card"><div class="ch"><h3>🔢 部门单号前缀维护（V11.254）</h3><button class="btn btn-o btn-sm" onclick="deptPrefixCard()">🔄 加载</button> <button class="btn btn-p btn-sm" onclick="saveDeptPrefix()">💾 保存</button></div>
       <div class="cb" style="font-size:9px"><div style="color:#666;margin-bottom:4px">采购申请单号前缀随申请部门自动生成（需求: 生产SC/维修WX/后勤HQ/综合办ZB/财务CW/工程GC/信息XX）。新增部门或前缀重复冲突时在此改前缀，立即生效。</div>
-        <div id="deptPrefixBox" style="color:#bbb">点击「加载」查看</div></div></div>
+        <div id="deptPrefixBox" style="color:#bbb">点击「加载」查看
+    <div class="card"><div class="ch"><h3>🏢 公司简码维护（V11.254）</h3><button class="btn btn-o btn-sm" onclick="companyCodesCard()">🔄 加载</button> <button class="btn btn-p btn-sm" onclick="saveCompanyCodes()">💾 保存</button></div>
+      <div class="cb" style="font-size:9px"><div style="color:#666;margin-bottom:4px">合同编号=公司简码-类目-年度序号（如 HQZC-CLCG-001-2026）。新增公司在此登记简码（默认取名称拼音首字母，重复冲突时手工改），生成合同时下拉选择公司+类目自动拼接编号。</div>
+        <div id="companyCodesBox" style="color:#bbb">点击「加载」查看</div></div></div>
+    </div></div></div>
     <div class="card"><div class="ch"><h3>🔎 审批人配置检查（V5.0）</h3><button class="btn btn-o btn-sm" onclick="loadApprConfigCheck()">刷新检查</button></div>
     <div class="cb" style="font-size:9px;line-height:1.6">
       <div style="color:#666;margin-bottom:4px">审批流按 单据类型+金额 分级，每级审批人=对应角色在 users 表中的<b>有效用户</b>；发起钉钉/飞书审批时，该角色必须已绑定通讯录成员ID。下方红标=该级审批人未就绪（角色未启用或未绑定通讯录），需在用户管理中绑定后才可发起外部审批。</div>
@@ -2808,7 +2812,12 @@ async function genContract(oid){
 }
 async function genContractInv(oid,tpl){
   showDetail('📄 生成采购合同 — 发票回收节点',`
-    <div style="font-size:10px;color:#666;margin-bottom:6px">合同模板：<b>${tpl}</b>。不同合同的开票节点不一样（如：预付30%到账后开票 / 按付款进度开票 / 验收合格后开全额票），请按本合同实际约定<b>依顺序录入节点</b>；不填则按模板默认"验收合格后开具全额发票"。</div>
+    <div style="font-size:10px;color:#666;margin-bottom:6px">合同模板：<b>${tpl}</b>。</div>
+    <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+      <div style="font-size:10px"><label style="color:#555">🏢 公司</label> <select id="gcCompany" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option>加载中...</option></select></div>
+      <div style="font-size:10px"><label style="color:#555">📁 合同类目</label> <select id="gcCategory" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="CLCG">材料采购(CLCG)</option><option value="SBCG">设备采购(SBCG)</option><option value="WXHT">维修合同(WXHT)</option><option value="GCJS">工程建设(GCJS)</option><option value="GCWZ">工程物资(GCWZ)</option><option value="JSFW">技术服务(JSFW)</option><option value="QTHT">其他合同(QTHT)</option><option value="XLXS">修理修缮(XLXS)</option></select></div>
+    </div>
+    <div style="font-size:10px;color:#666;margin-bottom:6px">不同合同的开票节点不一样（如：预付30%到账后开票 / 按付款进度开票 / 验收合格后开全额票），请按本合同实际约定<b>依顺序录入节点</b>；不填则按模板默认"验收合格后开具全额发票"。</div>
     <div class="invnd-box" id="gcInvNodes"></div>
     <button class="lnk" style="color:var(--s)" onclick="addInvNodeRow('gcInvNodes')">➕ 添加发票节点</button>
     <div style="margin-top:8px"><label style="font-size:10px;color:#555">📋 其它发票约定补充说明（选填，可留空）</label>
@@ -2817,6 +2826,10 @@ async function genContractInv(oid,tpl){
     `<button class="btn btn-o" onclick="genContract(${oid})">← 返回</button><button class="btn btn-p" onclick="doGenContract(${oid},'${tpl}')">📄 生成合同并提交审批</button>`);
   addInvNodeRow('gcInvNodes');
   addInvNodeRow('gcInvNodes');
+  (async()=>{try{const m=await api('/contract-meta',{noCache:true});
+    const csel=id('gcCompany');
+    if(csel&&m&&m.companies&&m.companies.length){csel.innerHTML=m.companies.map(c=>`<option value="${esc(c.code)}">${esc(c.name)}(${esc(c.code)})</option>`).join('')}
+  }catch(e){}})();
 }
 async function doGenContract(oid,tpl){
   // V11.150: 防连点
@@ -2826,6 +2839,9 @@ async function doGenContract(oid,tpl){
   const _ic=(id('gcInvClause')&&id('gcInvClause').value||'').trim();
   const _nodes=collectInvNodes('gcInvNodes');
   const _body={order_id:oid,template_name:tpl};
+  const _gc=id('gcCompany');const _gcat=id('gcCategory');
+  if(_gc&&_gc.value)_body.company=_gc.value;
+  if(_gcat&&_gcat.value)_body.category=_gcat.value;
   if(_nodes&&_nodes.length){_body.nodes=_nodes}
   if(_ic){_body.invoice_clause=_ic}
   const r=await api('/contracts/generate',{method:'POST',body:JSON.stringify(_body)});
@@ -7553,6 +7569,32 @@ async function toggleInqAccess(iid, unlock){
   const r=await api(`/inquiry/${iid}/access-unlock`,{method:'POST',body:JSON.stringify({unlock:!!unlock})});
   if(r&&r.success){alert(unlock?'✅ 已解锁: 各供应商访问码现在可见, 可复制转发':'🔒 已恢复保密');showInquiry(iid)}
   else alert((r&&r.error)||'操作失败');
+}
+// V11.254(需求): 公司简码维护 — 加载公司列表可编辑保存
+async function companyCodesCard(){
+  const box=id('companyCodesBox');if(!box)return;
+  box.innerHTML='<div class="loading">加载中...</div>';
+  try{
+    const m=await api('/contract-meta',{noCache:true});
+    const cur={};
+    try{const d=await api('/admin/dept-prefix');}catch(e){}
+    box.innerHTML=`<table class="tb" style="font-size:9px"><thead><tr><th>公司名称</th><th>简码(≤4位)</th></tr></thead><tbody>
+      ${(m.companies||[]).map(x=>`<tr><td>${esc(x.name)}</td><td><input value="${esc(x.code)}" style="width:70px;padding:3px 6px;border:1px solid #ccc;border-radius:4px;text-align:center" data-company="${esc(x.name)}" maxlength="4"></td></tr>`).join('')}
+      <tr><td><input id="ncName" placeholder="新增公司名称" style="width:90%;padding:3px 6px;border:1px solid #ccc;border-radius:4px"></td><td><input id="ncCode" placeholder="简码" style="width:70px;padding:3px 6px;border:1px solid #ccc;border-radius:4px" maxlength="4"></td></tr>
+      </tbody></table>
+      <div style="color:#888;margin-top:4px">默认公司=列表第一家。修改保存后，新生成的合同编号按新简码。历史合同编号不变。</div>`;
+  }catch(e){box.innerHTML='<div style="color:#c0392b">加载失败</div>'}
+}
+async function saveCompanyCodes(){
+  const box=id('companyCodesBox');if(!box)return;
+  const mp={};
+  box.querySelectorAll('input[data-company]').forEach(inp=>{const v=(inp.value||'').trim().toUpperCase();if(v)mp[inp.dataset.company]=v});
+  const nn=id('ncName'),nc=id('ncCode');
+  if(nn&&nc&&(nn.value||'').trim()&&(nc.value||'').trim().toUpperCase())mp[nn.value.trim()]=(nc.value||'').trim().toUpperCase();
+  if(!Object.keys(mp).length){alert('无修改');return}
+  if(!confirm('保存公司简码？'))return;
+  const r=await api('/admin/company-codes',{method:'POST',body:JSON.stringify({map:mp})});
+  if(r&&r.success){alert('✅ 已保存');companyCodesCard()}else alert((r&&r.error)||'保存失败');
 }
 // V11.251: 溯源穿透查询 — 输入溯源编号查看整条链路
 async function traceQuery(){
