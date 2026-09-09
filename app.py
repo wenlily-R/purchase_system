@@ -5520,6 +5520,8 @@ def api_prequest_repair_direct(rid):
         conn.close(); return jsonify({'error': '仅设备维修类申请可登记直接委托'}), 400
     if pr['status'] != '已通过':
         conn.close(); return jsonify({'error': '仅审批通过的维修申请可登记委托（当前%s）' % pr['status']}), 400
+    if (pr['repair_done_date'] if 'repair_done_date' in pr.keys() else ''):
+        conn.close(); return jsonify({'error': '该维修已完工登记，不能再登记委托'}), 400
     if pr['repair_entrust_type'] if 'repair_entrust_type' in pr.keys() else '':
         conn.close(); return jsonify({'error': '该申请已登记过委托方式，勿重复登记'}), 400
     conn.execute("UPDATE purchase_requests SET repair_vendor=?, repair_amount=?, repair_entrust_type='direct', updated_at=? WHERE id=?",
@@ -5543,6 +5545,8 @@ def api_prequest_convert_material(rid):
         conn.close(); return jsonify({'error': '仅设备维修类申请可变更业务类型'}), 400
     if pr['status'] in ('草稿', '已驳回', '已作废'):
         conn.close(); return jsonify({'error': '当前状态不可变更业务类型（%s）' % pr['status']}), 400
+    if (pr['repair_done_date'] if 'repair_done_date' in pr.keys() else ''):
+        conn.close(); return jsonify({'error': '该维修已完工登记，不能再变更业务类型'}), 400
     if (pr['repair_converted'] if 'repair_converted' in pr.keys() else 0):
         conn.close(); return jsonify({'error': '该申请已变更为物资采购，勿重复操作'}), 400
     _ocnt = conn.execute("SELECT COUNT(*) FROM purchase_orders WHERE req_id=?", (rid,)).fetchone()[0]
@@ -5556,6 +5560,94 @@ def api_prequest_convert_material(rid):
     conn.commit(); conn.close()
     log(session['user_name'], '维修转物资采购', f'申请#{rid} 定损不可修转物资采购' + (f'；作废维修询价{_cnt}张' if _cnt else '') + (f'：{note}' if note else ''))
     return jsonify({'success': True, 'message': '已变更为物资采购（维修痕迹保留），可发起物资询价采购新设备' + (f'；已作废维修询价{_cnt}张' if _cnt else '')})
+
+@app.route('/api/prequests/<int:rid>/repair-append-items', methods=['POST'])
+@login_required
+def api_prequest_repair_append(rid):
+    """V11.258: 维修类申请-补充厂家定损项目清单(询价前补录; 已通过状态保持, 不重新走审批)
+    厂家拆解定损 → 维修项目/备件+估价 追加到申请明细(不删旧行), 供发起维修询价; 支持定损单附图"""
+    d = request.json or {}
+    items = d.get('items') or []
+    items = [it for it in items if (it.get('item_name') or '').strip() and float(it.get('quantity', 0) or 0) > 0]
+    if not items:
+        return jsonify({'error': '请至少填写一行定损项目（维修项目/备件名称+数量）'}), 400
+    conn = db()
+    pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (rid,)).fetchone()
+    if not pr:
+        conn.close(); return jsonify({'error': '申请不存在'}), 404
+    if (pr['req_type'] or '') != '设备维修':
+        conn.close(); return jsonify({'error': '仅设备维修类申请可补充定损清单'}), 400
+    if pr['status'] != '已通过':
+        conn.close(); return jsonify({'error': '仅审批通过的维修申请可补充定损清单（当前%s，需先审批通过）' % pr['status']}), 400
+    if (pr['repair_converted'] if 'repair_converted' in pr.keys() else 0):
+        conn.close(); return jsonify({'error': '该申请已转物资采购，无需补维修清单'}), 400
+    if (pr['repair_done_date'] if 'repair_done_date' in pr.keys() else ''):
+        conn.close(); return jsonify({'error': '该维修已完工登记，不能补清单'}), 400
+    _ocnt = conn.execute("SELECT COUNT(*) FROM purchase_orders WHERE req_id=?", (rid,)).fetchone()[0]
+    if _ocnt > 0:
+        conn.close(); return jsonify({'error': '该申请已生成维修订单（已按清单定标），不能再补清单；如需追加维修项请与维修商确认并在线下留痕'}), 400
+    _iq = conn.execute("SELECT COUNT(*) FROM inquiries WHERE req_id=? AND status='询价中'", (rid,)).fetchone()[0]
+    if _iq > 0:
+        conn.close(); return jsonify({'error': '该申请已有进行中的询价（商家正按当前清单报价），不能再补清单；如需调整请先撤回/作废该询价，补充清单后重新发起'}), 400
+    _add_amt = 0.0
+    for it in items:
+        _tp = float(it.get('quantity', 1)) * float(it.get('estimated_price', 0) or 0)
+        _add_amt += _tp
+        conn.execute("INSERT INTO request_items(req_id,item_name,spec,unit,quantity,estimated_price,total_price,remark,category,brand_param,warranty_param,arrival_date,attach,usage) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                     (rid, str(it.get('item_name', '')).strip(), str(it.get('spec', '') or ''), it.get('unit', '项'),
+                      float(it.get('quantity', 1)), float(it.get('estimated_price', 0) or 0), _tp, (str(it.get('remark', '') or '') or '定损补充'),
+                      it.get('category', ''), '', '', '', '', ''))
+    _old_amt = float(pr['total_estimated'] or 0)
+    _new_amt = round(_old_amt + _add_amt, 2)
+    conn.execute("UPDATE purchase_requests SET total_estimated=?, updated_at=? WHERE id=?", (_new_amt, now(), rid))
+    try:
+        _at = json.loads(pr['attachments'] or '[]') if (pr['attachments'] if 'attachments' in pr.keys() else '') else []
+        _add_at = [str(a) for a in (d.get('attachments') or []) if a]
+        if _add_at:
+            conn.execute("UPDATE purchase_requests SET attachments=?, updated_at=? WHERE id=?",
+                         (json.dumps(_at + _add_at, ensure_ascii=False), now(), rid))
+    except Exception:
+        pass
+    conn.commit(); conn.close()
+    log(session['user_name'], '补充定损清单', f'申请#{rid} 追加定损维修项目{len(items)}项 ¥{_add_amt:.2f}（累计估算¥{_new_amt:.2f}）')
+    return jsonify({'success': True, 'message': f'已补充定损项目{len(items)}项（估算+¥{_add_amt:.2f}），可发起维修询价'})
+
+@app.route('/api/prequests/<int:rid>/repair-done', methods=['POST'])
+@login_required
+def api_prequest_repair_done(rid):
+    """V11.258: 维修完工登记(直接委托/维修订单通用, 维修件不进库存) — 记录实际完工日期+维修结果, 申请详情闭环显示"""
+    d = request.json or {}
+    conn = db()
+    pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (rid,)).fetchone()
+    if not pr:
+        conn.close(); return jsonify({'error': '申请不存在'}), 404
+    if (pr['req_type'] or '') != '设备维修':
+        conn.close(); return jsonify({'error': '仅设备维修类申请可登记完工'}), 400
+    if pr['status'] not in ('已通过', '已下单'):
+        conn.close(); return jsonify({'error': '仅审批通过的维修申请可登记完工（当前%s）' % pr['status']}), 400
+    if (pr['repair_converted'] if 'repair_converted' in pr.keys() else 0):
+        conn.close(); return jsonify({'error': '该申请已转物资采购，走采购流程'}), 400
+    if (pr['repair_done_date'] if 'repair_done_date' in pr.keys() else ''):
+        conn.close(); return jsonify({'error': '该维修已登记完工（%s），勿重复登记' % pr['repair_done_date']}), 400
+    _ent = pr['repair_entrust_type'] if 'repair_entrust_type' in pr.keys() else ''
+    _ocnt = conn.execute("SELECT COUNT(*) FROM purchase_orders WHERE req_id=?", (rid,)).fetchone()[0]
+    if not _ent and _ocnt == 0:
+        conn.close(); return jsonify({'error': '请先确定维修方式（🤝小额直接委托 或 维修询价定标成单），再登记完工'}), 400
+    _dt = str(d.get('done_date') or '').strip()[:10]
+    try:
+        import datetime as _dtm2
+        if not _dt:
+            _dt = _dtm2.date.today().strftime('%Y-%m-%d')
+        else:
+            _dtm2.datetime.strptime(_dt, '%Y-%m-%d')
+    except Exception:
+        _dt = today()
+    _res = str(d.get('result') or '').strip() or '维修完成'
+    conn.execute("UPDATE purchase_requests SET repair_done_date=?, repair_result=?, updated_at=? WHERE id=?",
+                 (_dt, _res[:500], now(), rid))
+    conn.commit(); conn.close()
+    log(session['user_name'], '维修完工登记', f'申请#{rid} 完工日期{_dt} 结果:{_res[:60]}')
+    return jsonify({'success': True, 'message': '✅ 已登记完工（%s）：%s' % (_dt, _res[:40])})
 
 # ============================================================
 # ── ORDERS ──
@@ -5574,8 +5666,14 @@ def api_orders():
             d['item_count'] = cnt[0] or 1
             d['total_qty'] = cnt[1] or r['quantity']
             d['progress'] = 'none'
+            # V11.258: 来源申请类型(维修委托订单进度=完工登记, 不走入库)
+            _rrq = conn.execute("SELECT req_type,repair_done_date FROM purchase_requests WHERE id=?", (r['req_id'],)).fetchone() if (r['req_id'] if 'req_id' in r.keys() else None) else None
+            d['req_type'] = (_rrq['req_type'] if _rrq and _rrq['req_type'] else '物资采购')
+            d['repair_done'] = 1 if (_rrq and _rrq['repair_done_date']) else 0
             _ost = d.get('status')
-            if _ost in ('草稿', '待审批', '已驳回'):
+            if d['req_type'] == '设备维修':
+                d['progress'] = 'done' if d['repair_done'] else 'warn'
+            elif _ost in ('草稿', '待审批', '已驳回'):
                 d['progress'] = 'none'
             else:
                 _rc = conn.execute("SELECT 1 FROM receivings WHERE order_id=? AND status IN ('已入库','待检验','待入库','已挂账','已核销') LIMIT 1", (r['id'],)).fetchone()
@@ -5591,9 +5689,15 @@ def api_orders():
         d['item_count'] = cnt[0] or 1
         d['total_qty'] = cnt[1] or r['quantity']
         # V11.126: 订单采购进度(与申请列表V11.49同语义: 红=未联系厂家/黄=已下单在途/绿=已到货)
+        # V11.258: 维修委托订单进度=是否已完工登记(不走入库)
+        _rrq = conn.execute("SELECT req_type,repair_done_date FROM purchase_requests WHERE id=?", (r['req_id'],)).fetchone() if (r['req_id'] if 'req_id' in r.keys() else None) else None
+        d['req_type'] = (_rrq['req_type'] if _rrq and _rrq['req_type'] else '物资采购')
+        d['repair_done'] = 1 if (_rrq and _rrq['repair_done_date']) else 0
         d['progress'] = 'none'
         _ost = d.get('status')
-        if _ost in ('草稿', '待审批', '已驳回'):
+        if d['req_type'] == '设备维修':
+            d['progress'] = 'done' if d['repair_done'] else 'warn'
+        elif _ost in ('草稿', '待审批', '已驳回'):
             d['progress'] = 'none'
         elif _ost == '已入库' or conn.execute("SELECT 1 FROM receivings WHERE order_id=? AND status='已入库' LIMIT 1", (r['id'],)).fetchone():
             d['progress'] = 'arrived'
@@ -5615,6 +5719,10 @@ def api_orders():
 def api_order(oid):
     conn = db()
     o = conn.execute("SELECT * FROM purchase_orders WHERE id=?", (oid,)).fetchone()
+    # V11.258: 订单来源申请类型(维修委托订单: 前端按此区分 完工登记/禁入库)
+    _oreq = None
+    if o and (o['req_id'] if 'req_id' in o.keys() else None):
+        _oreq = conn.execute("SELECT req_no,req_type,repair_done_date,repair_result,repair_vendor,repair_amount,repair_entrust_type FROM purchase_requests WHERE id=?", (o['req_id'],)).fetchone()
     approvals = conn.execute("SELECT * FROM approval_instances WHERE biz_type='purchase_order' AND biz_id=? ORDER BY level_no", (oid,)).fetchall()
     pcs = conn.execute("SELECT * FROM price_comparisons WHERE order_id=?", (oid,)).fetchall()
     items = conn.execute("SELECT * FROM order_items WHERE order_id=? ORDER BY id", (oid,)).fetchall()
@@ -5631,6 +5739,11 @@ def api_order(oid):
     conn.close()
     _od = dict_row(o)
     _od['has_contract'] = _has_ct
+    if _oreq:
+        _od['req_no'] = _oreq['req_no'] or ''
+        _od['req_type'] = _oreq['req_type'] or '物资采购'
+        _od['repair_done_date'] = _oreq['repair_done_date'] or ''
+        _od['repair_result'] = _oreq['repair_result'] or ''
     return jsonify({'order': _od, 'items': [dict_row(i) for i in items],
                     'approvals': [dict_row(a) for a in approvals],
                     'comparisons': [dict_row(p) for p in pcs],
@@ -6449,6 +6562,10 @@ def api_create_inquiry():
         conn.close(); return jsonify({'error': '该申请已有进行中的询价'}), 400
     if conn.execute("SELECT COUNT(*) FROM purchase_orders WHERE req_id=?", (req_id,)).fetchone()[0] > 0:
         conn.close(); return jsonify({'error': '该申请已下单，无需询价'}), 400
+    # V11.258: 维修类申请发起询价前置 — 必须先补录厂家定损项目清单(维修商按清单报价)
+    if (pr['req_type'] if 'req_type' in pr.keys() else '') == '设备维修':
+        if conn.execute("SELECT COUNT(*) FROM request_items WHERE req_id=?", (req_id,)).fetchone()[0] == 0:
+            conn.close(); return jsonify({'error': '维修类申请请先在详情页点【📎 补充定损清单】录入厂家拆解出的维修项目/备件及估价，再发起维修询价（维修商需按清单逐项报价）'}), 400
     no = gen_no('XJ', 'inquiries', 'inq_no', conn)
     title = (pr['purpose'] or '')[:80]
     # V11.24: 报价截止时间 — V11.205 精确到分钟(统一开标): 传 deadline(YYYY-MM-DD 或 YYYY-MM-DD HH:MM)
@@ -8792,6 +8909,10 @@ def api_create_receiving():
         _op = conn.execute("SELECT is_sealed FROM purchase_orders WHERE id=?", (d.get('order_id'),)).fetchone()
         if _op and _op['is_sealed']:
             conn.close(); return jsonify({'error': '关联订单已封单(剩余不再供货)，不能按该订单继续入库'}), 400
+        # V11.258: 维修委托订单禁止入库 — 维修项目非库存物资, 收尾走申请详情【✅ 登记完工】(不进库存)
+        _rrq = conn.execute("SELECT pr.req_type FROM purchase_orders po LEFT JOIN purchase_requests pr ON po.req_id=pr.id WHERE po.id=?", (d.get('order_id'),)).fetchone()
+        if _rrq and (_rrq['req_type'] or '') == '设备维修':
+            conn.close(); return jsonify({'error': '维修委托订单不走入库流程（维修项目不是库存物资，入库会把维修件混进库存）。请到该维修申请详情点【✅ 登记完工】完成收尾（不进库存）'}), 400
     # V11.251 溯源强校验: 入库单必须关联采购订单(溯源根), 溯源编号为空禁止保存提交
     _oid = d.get('order_id')
     _trace = ''
