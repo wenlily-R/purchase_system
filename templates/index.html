@@ -348,29 +348,16 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <div class="ch"><h3>📢 系统公告</h3></div>
     <div class="cb" id="dashNotice"><div class="loading">加载中...</div></div></div>
 </div>
-<div class="page" id="pprequests"><h2>📝 物资采购申请</h2>
+<div class="page" id="pprequests"><h2>📝 采购申请 <span style="font-size:10px;color:#999;font-weight:normal">(📦物资采购 / 🔧设备维修 统一入口)</span></h2>
   <div id="preqMat">
-    <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap"><button class="btn btn-p btn-sm" style="margin-left:auto" onclick="showForm('prequest')">+ 新建物资采购申请</button><button class="btn btn-o btn-sm" onclick="showFlowChart('purchase')">📊 采购流程图示</button><button class="btn btn-w btn-sm" onclick="showAddCart()">🛒 加购下单(汇总已通过申请)</button></div>
-    <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap"><select id="reqTypeFilter" onchange="loadPRequests()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="物资采购" selected>物资采购</option><option value="">全部类型</option></select><select id="reqStatusFilter" onchange="loadPRequests()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="">全部状态</option><option>草稿</option><option>待审批</option><option>已通过</option><option>已下单</option><option>已驳回</option><option>已作废</option></select><span style="font-size:9px;color:#999">类型/状态筛选可叠加（与维修页一致）</span></div>
+    <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap"><button class="btn btn-p btn-sm" style="margin-left:auto" onclick="showForm('prequest')">+ 新建采购申请（物资/维修）</button><button class="btn btn-o btn-sm" onclick="showFlowChart('purchase')">📊 采购流程图示</button><button class="btn btn-w btn-sm" onclick="showAddCart()">🛒 加购下单(汇总已通过申请)</button></div>
+    <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap"><select id="reqTypeFilter" onchange="loadPRequests()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="" selected>全部类型</option><option value="物资采购">📦 物资采购</option><option value="设备维修">🔧 设备维修</option></select><select id="reqStatusFilter" onchange="loadPRequests()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="">全部状态</option><option>草稿</option><option>待审批</option><option>已通过</option><option>已下单</option><option>已驳回</option><option>已作废</option></select><span style="font-size:9px;color:#999">类型/状态筛选可叠加；🛠=维修 📦=物资</span></div>
     <div class="card"><div class="cb" id="prequestsTable"><div class="loading">加载中...</div></div></div>
   </div>
 </div>
-<div class="page" id="prepairs">
-  <div style="background:#fff3cd;border:1px solid #ffe08a;color:#7d6608;font-size:10px;padding:5px 10px;border-radius:4px;margin-bottom:4px">⚠️ <b>旧版维修流程（仅历史单据与在办业务）</b>：新维修业务请到【采购申请】发起，业务类型选「🔧 设备维修」——维修并入采购申请全流程办理（审批/定损询价/选商一站式）。本页存量单据照常处理。</div>
-  <h2>🔧 设备维修（历史流程）</h2>
-  <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap">
-    <button class="btn btn-p btn-sm" style="margin-left:auto" onclick="sw('prequests')">➡️ 去采购申请发起维修</button>
-    <button class="btn btn-o btn-sm" onclick="showFlowChart('repair')">📊 维修流程图示</button>
-    <button class="btn btn-o btn-sm" onclick="showDamageStats()">📈 损坏原因统计</button>
-  </div>
-  <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap">
-    <select id="repairStatusF2" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px" onchange="rpStepClear();loadRepairs2()"><option value="">全部状态</option><option>草稿</option><option>待定损</option><option>定损完成待审批</option><option>审批通过</option><option>待比价</option><option>已选服务商</option><option>委外维修中</option><option>变更待四方确认</option><option>待回厂验收</option><option>验收通过</option><option>待发票登记</option><option>已归档</option><option>定损驳回</option><option>验收不通过返修</option><option>已作废</option></select>
-  </div>
-  <div class="card"><div class="cb" id="repairsTable2"><div class="loading">加载中...</div></div></div>
-</div>
 <div class="page" id="pinquiries"><h2>🔍 三方询价</h2><div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="showInquiryForm()">+ 发起三方询价</button><button class="btn btn-w btn-sm" onclick="loadInquiries()">🔄 刷新</button></div><div class="card"><div class="cb" id="inquiriesTable"><div class="loading">加载中...</div></div></div></div>
 <div class="page" id="porders"><h2>📋 采购订单</h2><div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="showForm('order')">+ 新建订单</button><button class="btn btn-o btn-sm" onclick="showOrderExecList()">📋 订单执行明细表</button></div><div class="card"><div class="cb" id="ordersTable"><div class="loading">加载中...</div></div></div></div>
-<div class="page" id="papprovals"><h2>✅ 审批中心 <span style="font-size:10px;color:#999;font-weight:normal">(采购/维修 双中心独立)</span></h2>
+<div class="page" id="papprovals"><h2>✅ 审批中心 <span style="font-size:10px;color:#999;font-weight:normal">(维修定损等存量单据审批请在🔧维修审批中心办理收尾)</span></h2>
   <div class="tabs" id="apprCenterTabs" style="margin-bottom:4px">
     <button class="act" data-c="buy" onclick="apprCenter('buy')">📦 采购审批中心</button>
     <button data-c="repair" onclick="apprCenter('repair')">🔧 维修审批中心</button>
@@ -1102,7 +1089,6 @@ function buildNav(){
     //   4项: 全部/报修待提(草稿+驳回)/待技术定损(红点提醒)/已归档; 定损审批在审批中心-维修, 比价/委外/验收在单据详情推进
     // V11.227: 打通四环节流转视图 — 菜单= 报修待提→待技术定损→设备维修(执行中,新增)→已归档/作废, 与单据自动流转环节一一对应
     // V11.230: 左侧菜单按业务流程大面板重排(消除重复/包含): 报修处理(报修提交+技术定损, 原②③合并)→维修执行中(定损审批/比价/委外/验收/发票)→已归档/作废; 全部视图由维修页状态下拉提供
-    ['🔧 维修(历史单据)',[['repairs','📝','报修处理','todo'],['repairs','🔧','维修执行中','running'],['repairs','🗂','已归档/作废','done']]],
     ['采购管理',[['prequests','📝','采购申请'],['inquiries','🔍','三方询价'],['orders','📋','采购订单'],['contracts','📄','合同管理'],['suppliers','🏢','供应商']]],
     ['仓储库存',[['receivings','📦','入库验收'],['requisitions','📤','出库管理'],['returns','↩️','退库管理'],['inventory','📦','库存查询'],['counts','📋','库存盘点']]],
     ['财务往来',[['payments','💰','付款申请'],['expenses','💸','费用登记'],['settlements','📊','月度对账'],['invoices','🧾','合并开票'],['ledger','🔍','往来台账'],['small','💼','小额台账']]],
@@ -1124,8 +1110,6 @@ function buildNav(){
   }).join('');
   if(ME.can_config){html+=`<div class="sl">系统配置</div><div class="si si-sub" onclick="sw('feishu')">✈️飞书</div><div class="si si-sub" onclick="sw('dingtalk')">💬钉钉</div><div class="si si-sub" onclick="sw('system')">⚙️系统设置</div>`}
   id('sideMenu').innerHTML=html;
-  // V11.224c: 侧边栏维修待办红点(菜单构建后拉取一次; 60s自动刷新时同步)
-  refreshRpBadges();
   // V11.66: 顶部导航 = 六大业务大类全部显示(界面统一, 权限由页面拦截)
   const navCats=[
     {label:'📊 工作台',page:'dashboard'},
@@ -1234,7 +1218,7 @@ function sw(name){
   document.querySelectorAll('.si').forEach(a=>{const m=a.getAttribute('onclick');if(m&&m.includes("'"+name+"'"))a.classList.add('act')});
   document.querySelectorAll('.topnav a').forEach(a=>{const m=a.getAttribute('onclick');if(m&&m.includes("'"+name+"'"))a.classList.add('act')});
   const fn={'dashboard':loadDashboard,'prequests':loadPRequests,'orders':loadOrders,'inquiries':loadInquiries,'approvals':loadApprovals,
-    'contracts':loadContracts,'receivings':loadReceivings,'repairs':loadRepairs2,
+    'contracts':loadContracts,'receivings':loadReceivings,
     'payments':loadPayments,'inventory':loadInventory,'requisitions':()=>{reqTab(Array.from(document.querySelectorAll('#reqTabs button')).find(b=>b.classList.contains('act'))?.dataset?.z||'inv');loadReqInv();loadRequisitions()},'suppliers':loadSuppliers,'reports':loadReports,'feishu':loadFeishu,
     'dingtalk':loadDingTalk,
     'counts':()=>{loadAdjustments()},
@@ -1350,13 +1334,11 @@ setInterval(()=>{
   const dm=id('detailModal');
   if(dm&&dm.classList.contains('show'))return;
   const fn={'dashboard':loadDashboard,'prequests':loadPRequests,'orders':loadOrders,'inquiries':loadInquiries,'approvals':loadApprovals,
-    'contracts':loadContracts,'receivings':loadReceivings,'repairs':loadRepairs2,
+    'contracts':loadContracts,'receivings':loadReceivings,
     'payments':loadPayments,'inventory':loadInventory,'requisitions':()=>{reqTab(Array.from(document.querySelectorAll('#reqTabs button')).find(b=>b.classList.contains('act'))?.dataset?.z||'inv');loadReqInv();loadRequisitions()},'suppliers':loadSuppliers,'reports':loadReports,'feishu':loadFeishu,
     'dingtalk':loadDingTalk,
     'settlements':loadSettlements,'invoices':loadInvoicePage,'ledger':loadLedger,'system':loadSystem,'small':loadSmallLedger}[_curPage];
   if(fn)fn().catch(()=>{});
-  // V11.224c: 60s自动刷新时同步维修菜单红点待办
-  refreshRpBadges();
 },60000);
 function showDetail(t,h,f){id('dmTitle').textContent=t;id('dmBody').innerHTML=h;id('dmFooter').innerHTML=f||'<button class="btn btn-o" onclick="closeMod()">关闭</button>';id('detailModal').classList.add('show')}
 
@@ -1478,7 +1460,7 @@ function jumpAlert(t,id2){
   else if(t=='inquiry'){sw('inquiries');setTimeout(()=>showInquiry(id2),350)}
   else if(t=='purchase_order'){sw('orders');setTimeout(()=>showOrder(id2),350)}
   else if(t=='purchase_request'){sw('prequests');setTimeout(()=>showPRequest(id2),350)}
-  else if(t=='repair_plan'){sw('repairs');setTimeout(()=>{loadRepairs2&&loadRepairs2();setTimeout(()=>showRepairDetail(id2),400)},350)}  // V11.221: 维修通知跳独立设备维修页+详情
+  else if(t=='repair_plan'){sw('approvals')}  // V11.256: 独立维修模块已删除, 存量维修定损审批在审批中心(🔧维修审批分类)收尾
   else if(t=='contract'){sw('contracts');setTimeout(()=>showContract(id2),350)}
   else if(t=='payment')sw('payments');
   else if(t=='supplier')sw('suppliers');
@@ -4224,9 +4206,8 @@ async function loadRequisitions(){
 // V11.210: 采购申请页分栏切换(物资采购/设备维修) — 维修tab独立表单, 互不干扰
 let _preqTab='mat';
 function preqTab(p){
-  // V11.221: 维修已独立成菜单页, 采购申请页仅物资; rep 参数兼容跳转独立维修页
-  _preqTab=p;
-  if(p==='rep'){sw('repairs');return}
+  // V11.256: 独立维修模块已删除, 采购申请页即全部申请(物资/维修同列表); 旧 rep 跳转参数失效
+  _preqTab='mat';
   loadPRequests();
 }
 async function loadRepairs(){
@@ -4357,22 +4338,6 @@ function rpMenuStep(k){
   try{window.scrollTo(0,0)}catch(e){}
 }
 // V11.224c: 侧边栏维修待办红点 — 报修待提(草稿+定损驳回)/待技术定损 数量, 无待办隐藏
-async function refreshRpBadges(){
-  try{
-    if(!ME||!ME.username)return;
-    if(id('loginPage')&&id('loginPage').style.display!=='none')return;
-    const list=await api('/repairs',{noCache:true}).catch(()=>null);
-    if(!list)return;
-    const cnt={todo:0};
-    (list||[]).forEach(x=>{
-      if(x.status==='草稿'||x.status==='定损驳回'||x.status==='待定损')cnt.todo++;
-    });
-    [['todo',cnt.todo]].forEach(([k,n])=>{
-      const el=id('rpBdg_'+k);
-      if(el){el.textContent=n>0?n:'';el.style.display=n>0?'inline-block':'none';}
-    });
-  }catch(e){}
-}
 // V11.218: 列表✏️修改入口(全状态显示, 后端校验可编辑状态) — 与物资采购申请同构: 按钮恒在, 非法状态给友好提示
 async function editRepairDraft(rid){
   try{
