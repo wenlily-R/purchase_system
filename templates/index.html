@@ -3747,14 +3747,14 @@ async function showInvMatch(rid, rno){
   if(!ctx||ctx.error){ id('dmBody').innerHTML=`<div style="color:#c62828;font-size:12px">加载明细失败: ${esc(ctx?.error||'')}</div>`; return }
   const items=ctx.items||[];
   const _estSum=items.reduce((s,x)=>s+parseFloat(x.amount||0),0);
-  const itHtml=items.length?`<table style="width:100%;font-size:10px;border-collapse:collapse"><tr style="background:#f7f9fc"><th style="border:1px solid #eee;padding:3px;width:24px">✓</th><th style="border:1px solid #eee;padding:3px;text-align:left">物料</th><th style="border:1px solid #eee;padding:3px">规格</th><th style="border:1px solid #eee;padding:3px">暂估数量</th><th style="border:1px solid #eee;padding:3px;text-align:right">暂估金额</th><th style="border:1px solid #eee;padding:3px">发票数量</th><th style="border:1px solid #eee;padding:3px;text-align:right">发票金额(元)</th></tr>`+
-    items.map((x,ix)=>`<tr><td style="border:1px solid #eee;padding:3px;text-align:center"><input type="checkbox" id="imc${ix}" checked onchange="invRecalc()"></td><td style="border:1px solid #eee;padding:3px">${esc(x.item_name)}</td><td style="border:1px solid #eee;padding:3px">${esc(x.spec)}</td><td style="border:1px solid #eee;padding:3px;text-align:center">${x.qty}${esc(x.unit)}</td><td style="border:1px solid #eee;padding:3px;text-align:right">¥${(x.amount||0).toFixed(2)}</td><td style="border:1px solid #eee;padding:3px"><input type="number" id="imq${ix}" value="${x.qty}" min="0" step="any" style="width:56px;padding:1px 3px;border:1px solid #d0d7e2;border-radius:3px" oninput="invRecalc()"></td><td style="border:1px solid #eee;padding:3px"><input type="number" id="ima${ix}" value="${x.amount||''}" min="0" step="0.01" style="width:88px;padding:1px 3px;border:1px solid #d0d7e2;border-radius:3px;text-align:right" oninput="invRecalc()"></td></tr>`).join('')+'</table>'
+  const itHtml=items.length?`<table style="width:100%;font-size:10px;border-collapse:collapse"><tr style="background:#f7f9fc"><th style="border:1px solid #eee;padding:3px;width:24px">✓</th><th style="border:1px solid #eee;padding:3px;text-align:left">物料</th><th style="border:1px solid #eee;padding:3px">规格</th><th style="border:1px solid #eee;padding:3px">实收数量</th><th style="border:1px solid #eee;padding:3px;text-align:right">暂估金额</th><th style="border:1px solid #eee;padding:3px;text-align:right">发票金额(元)</th></tr>`+
+    items.map((x,ix)=>`<tr><td style="border:1px solid #eee;padding:3px;text-align:center"><input type="checkbox" id="imc${ix}" checked onchange="invRecalc()"></td><td style="border:1px solid #eee;padding:3px">${esc(x.item_name)}</td><td style="border:1px solid #eee;padding:3px">${esc(x.spec)}</td><td style="border:1px solid #eee;padding:3px;text-align:center">${x.qty}${esc(x.unit)}</td><td style="border:1px solid #eee;padding:3px;text-align:right">¥${(x.amount||0).toFixed(2)}</td><td style="border:1px solid #eee;padding:3px"><input type="number" id="ima${ix}" value="${x.amount||''}" min="0" step="0.01" style="width:88px;padding:1px 3px;border:1px solid #d0d7e2;border-radius:3px;text-align:right" oninput="invRecalc()"></td><input type="hidden" id="imq${ix}" value="${x.qty}"></tr>`).join('')+'</table>'
     :'<div style="color:#999;font-size:10px">(未取到明细行, 请直接填写发票号与金额)</div>';
   const typTxt=ctx.invoice_type==='增值税普通发票'?'普票(不可抵税)':'专票(可抵税)';
   id('dmBody').innerHTML=`
     <div style="font-size:11px;line-height:1.8">
       <p style="color:#e65100;background:#fff3e0;padding:6px 8px;border-radius:4px;margin-bottom:8px">
-        📋 暂估入库（货到票未到）收到发票后在此核对：<b>逐行勾选本发票覆盖的物资</b>，数量/金额可按发票微调，确认红冲即转正式入库。</p>
+        📋 暂估入库（货到票未到）收到发票后在此核对：供应商<b>整单开一张发票</b>，本批物资默认全部勾选覆盖（发票数量=实收数量，无需填写）；发票金额按票面填写（可微调尾差），确认红冲即转正式入库。</p>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
         <div class="fg" style="flex:1;min-width:140px"><label class="fl2">入库单号</label><input class="fc" value="${esc(rno)}" readonly></div>
         <div class="fg" style="flex:1;min-width:150px"><label class="fl2">申请单号(溯源)</label><input class="fc" value="${esc(ctx.req_no||'-')}" readonly></div>
@@ -3824,7 +3824,7 @@ async function doInvMatch(rid){
     rows.push({qty:q,amount:a});
   });
   if(!rows.length){alert('请至少勾选一行本发票对应的物资');return}
-  if(bad){alert('勾选行需填写有效的发票数量与金额（均须大于0）');return}
+  if(bad){alert('勾选行需填写有效的发票金额（须大于0）');return}
   if(rows.length<boxs.length&&!confirm('有物资行未勾选：未勾选行将不转入正式入库单（若该部分物资另开发票，可后续另行处理）。确认对勾选行红冲？'))return;
   const amt=rows.reduce((s,r)=>s+r.amount,0);
   const r=await api(`/receivings/${rid}/invoice-match`,{method:'POST',body:JSON.stringify({invoice_no:no,rows,attachments:window._invAtts||[]})});
