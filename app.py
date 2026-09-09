@@ -11453,6 +11453,25 @@ def api_contract_generate():
                 if any(k in orig_t for k in ('开户行', '收款账户', '收款账号', '收款银行', '银行行号', '{乙方账号}', '{乙方开户行}')) and not re.search(r'[0-9A-Za-z\u4e00-\u9fff¥￥$]', t):  # V11.233: 填充中文收款信息后保留, 仅空壳删除:
                     _acc_drop.append(para)
                     continue
+                # V11.254: 头部两栏排版 — 甲方/乙方左对齐列, 合同编号/签订日期右对齐列, 各自同一水平线
+                # (模板原稿空格分隔, 名称长短不同导致右列漂移错位 → 改右对齐制表位固定)
+                if ('甲方：' in t and '合同编号：' in t and '乙方：' in t and '签订日期' in t):
+                    try:
+                        import re as _re9
+                        _ma = _re9.search(r'甲方：(.+?)\s+合同编号：', t)
+                        _mb = _re9.search(r'乙方：(.+?)\s+签订日期：', t)
+                        _ca = _re9.search(r'合同编号：(.+?)\s*\n', t)
+                        _da = _re9.search(r'签订日期：(.+?)$', t)
+                        if _ma and _mb and _ca and _da:
+                            t = ('甲方：' + _ma.group(1).strip() + '\t合同编号：' + _ca.group(1).strip()
+                                 + '\n乙方：' + _mb.group(1).strip() + '\t签订日期：' + _da.group(1).strip())
+                            from docx.enum.text import WD_TAB_ALIGNMENT as _WTA
+                            from docx.shared import Cm as _Cm9
+                            _sec9 = doc.sections[0]
+                            _ww_cm = (_sec9.page_width - _sec9.left_margin - _sec9.right_margin) / 360000.0  # EMU→cm
+                            para.paragraph_format.tab_stops.add_tab_stop(_Cm9(max(_ww_cm - 0.1, 10)), _WTA.RIGHT)
+                    except Exception:
+                        pass
                 # V11.254: 据实结算条款(会议纪要强制)独立成段 — 不在付款条款段中混插文字
                 if '甲方自收到发票后' in t and '据实结算约定' not in t:
                     _pre = '据实结算约定：本合同按实际到货及验收数量与约定单价据实结算，最终结算金额以发票核对红冲后的正式入库金额为准。'
@@ -11585,6 +11604,19 @@ def api_contract_generate():
                                 _ci = j + _col_off
                                 if _ci < len(tr.cells):
                                     _scell(tr.cells[_ci], val)
+                        # V11.254: 动态表格行 — 删除多余空白数据行(订单N个商品只保留N行, 不留模板预置空行)
+                        _rm_rows = []
+                        for _ri in range(idx + len(det_rows), (total_row_i if total_row_i is not None else len(rows))):
+                            _cc = [c.text.strip() for c in rows[_ri].cells]
+                            _bodyc = _cc[_col_off:] if _col_off else _cc
+                            if not any(_bodyc):
+                                _rm_rows.append(rows[_ri]._tr)
+                        for _trm in _rm_rows:
+                            if _trm.getparent() is not None:
+                                _trm.getparent().remove(_trm)
+                        if _rm_rows:
+                            rows = table.rows
+                        # 合计行: 可能有"合计"标签行 + "合计金额：¥   元"行, 两处都要填
                         # 合计行: 可能有"合计"标签行 + "合计金额：¥   元"行, 两处都要填
                         for i in range(idx + len(det_rows), len(rows)):
                             cells = [cc.text.strip() for cc in rows[i].cells]
