@@ -5318,6 +5318,9 @@ def api_create_prequest():
     # V11.252: 物资类申请必须有明细(后端兜底, 防绕过前端)
     if not d.get('draft') and _rt != '设备维修' and not items:
         conn.close(); return jsonify({'error': '物资类申请请至少添加一行物资'}), 400
+    # V11.255: 到货/完工时间如实填写(必填, 后端兜底)
+    if not d.get('draft') and not str(d.get('target_date') or '').strip():
+        conn.close(); return jsonify({'error': '请填写' + ('要求完工时间' if _rt == '设备维修' else '目标到货日') + '（须如实填写，审批环节会核验时间合理性）'}), 400
     # 并发安全: 单号冲突(UNIQUE)时重新生成重试(最多5次)
     no = ''
     for _try in range(5):
@@ -5428,6 +5431,9 @@ def api_resubmit_prequest(rid):
     items = d.get('items') or []
     if not items: items = [dict(i) for i in conn.execute("SELECT * FROM request_items WHERE req_id=?", (rid,)).fetchall()]
     total = sum(float(i.get('quantity',1)) * float(i.get('estimated_price',0)) for i in items)
+    # V11.255: 编辑提交(非草稿)到货/完工时间必填兜底
+    if not d.get('draft') and not str(d.get('target_date') or (pr['target_date'] if 'target_date' in pr.keys() else '') or '').strip():
+        conn.close(); return jsonify({'error': '请填写到货/完工时间（须如实填写，审批环节会核验时间合理性）'}), 400
     # V11.187: 存草稿(draft=true) — 保存内容但状态保持草稿(不进审批/不清驳回标记); 提交则清标记+回待审批
     if d.get('draft'):
         conn.execute("UPDATE purchase_requests SET purpose=?, dept=?, budget_code=?, target_date=?, remark=?, req_type=?, urgent=?, attachments=?, total_estimated=?, repair_device=?, repair_fault=?, status='草稿', updated_at=? WHERE id=?",

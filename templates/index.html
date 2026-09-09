@@ -355,9 +355,11 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <div class="card"><div class="cb" id="prequestsTable"><div class="loading">加载中...</div></div></div>
   </div>
 </div>
-<div class="page" id="prepairs"><h2>🔧 设备维修管理</h2>
+<div class="page" id="prepairs">
+  <div style="background:#fff3cd;border:1px solid #ffe08a;color:#7d6608;font-size:10px;padding:5px 10px;border-radius:4px;margin-bottom:4px">⚠️ <b>旧版维修流程（仅历史单据与在办业务）</b>：新维修业务请到【采购申请】发起，业务类型选「🔧 设备维修」——维修并入采购申请全流程办理（审批/定损询价/选商一站式）。本页存量单据照常处理。</div>
+  <h2>🔧 设备维修（历史流程）</h2>
   <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap">
-    <button class="btn btn-p btn-sm" style="margin-left:auto" onclick="showRepairForm()">➕ 新建维修申请</button>
+    <button class="btn btn-p btn-sm" style="margin-left:auto" onclick="sw('prequests')">➡️ 去采购申请发起维修</button>
     <button class="btn btn-o btn-sm" onclick="showFlowChart('repair')">📊 维修流程图示</button>
     <button class="btn btn-o btn-sm" onclick="showDamageStats()">📈 损坏原因统计</button>
   </div>
@@ -1100,7 +1102,7 @@ function buildNav(){
     //   4项: 全部/报修待提(草稿+驳回)/待技术定损(红点提醒)/已归档; 定损审批在审批中心-维修, 比价/委外/验收在单据详情推进
     // V11.227: 打通四环节流转视图 — 菜单= 报修待提→待技术定损→设备维修(执行中,新增)→已归档/作废, 与单据自动流转环节一一对应
     // V11.230: 左侧菜单按业务流程大面板重排(消除重复/包含): 报修处理(报修提交+技术定损, 原②③合并)→维修执行中(定损审批/比价/委外/验收/发票)→已归档/作废; 全部视图由维修页状态下拉提供
-    ['设备维修管理',[['repairs','📝','报修处理','todo'],['repairs','🔧','维修执行中','running'],['repairs','🗂','已归档/作废','done']]],
+    ['🔧 维修(历史单据)',[['repairs','📝','报修处理','todo'],['repairs','🔧','维修执行中','running'],['repairs','🗂','已归档/作废','done']]],
     ['采购管理',[['prequests','📝','采购申请'],['inquiries','🔍','三方询价'],['orders','📋','采购订单'],['contracts','📄','合同管理'],['suppliers','🏢','供应商']]],
     ['仓储库存',[['receivings','📦','入库验收'],['requisitions','📤','出库管理'],['returns','↩️','退库管理'],['inventory','📦','库存查询'],['counts','📋','库存盘点']]],
     ['财务往来',[['payments','💰','付款申请'],['expenses','💸','费用登记'],['settlements','📊','月度对账'],['invoices','🧾','合并开票'],['ledger','🔍','往来台账'],['small','💼','小额台账']]],
@@ -1797,7 +1799,7 @@ async function editPRequest(oid){
     <div class="fr"><div class="fg"><label class="fl2">申请部门</label><select class="fc" id="fReqDept"><option value="">请选择（选填）</option>${depts.map(x=>`<option ${x.name==r.dept?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div>
     <div class="fg"><label class="fl2">预算科目</label><select class="fc" id="fReqBud"><option value="">无</option></select></div></div>
     <div class="fr"><div class="fg"><label class="fl2">用途说明 *</label><input class="fc" id="fReqPurp" value="${esc(r.purpose||'')}"></div>
-    <div class="fg"><label class="fl2">目标到货日(选填)</label><input class="fc" id="fReqDate" type="date" value="${esc(r.target_date||'')}"></div></div>
+    <div class="fg"><label class="fl2" id="fReqDateLbl">目标到货日 *</label><input class="fc" id="fReqDate" type="date" value="${esc(r.target_date||'')}"></div></div>
     <div class="fg"><label class="fl2">备注</label><input class="fc" id="fReqRem" value="${esc(r.remark||'')}"></div>
     <div class="fr"><div class="fg" style="display:flex;align-items:center;gap:6px;padding-top:6px"><input type="checkbox" id="fReqUrgent" style="width:14px;height:14px" ${r.urgent?'checked':''}> <label style="color:#e74c3c;font-weight:600">加急审批</label></div>
     <div class="fg"><label class="fl2">附件上传</label><input class="fc" id="fReqFiles" type="file" multiple onchange="uploadReqAtt(this)"></div></div>
@@ -1854,6 +1856,14 @@ async function doSavePReq(asDraft,oid){
   if(!asDraft&&_rtEd=='设备维修'){
     const _dev=(id('fReqDev')?.value||'').trim(),_flt=(id('fReqFault')?.value||'').trim();
     if(!_dev||!_flt){alert('维修类申请请填写故障设备名称与故障描述');return}
+  }
+  // V11.255: 到货/完工时间管控(编辑保存)
+  if(!asDraft){
+    const _dc=reqDateCheck(false);
+    if(_dc){
+      if(_dc.startsWith('err:')){alert(_dc.slice(4));return}
+      if(_dc.startsWith('ask:')&&!confirm(_dc.slice(4)))return;
+    }
   }
   const body={purpose:id('fReqPurp').value,dept:id('fReqDept')?.value||'',budget_code:id('fReqBud')?.value||'',
     target_date:id('fReqDate').value,remark:id('fReqRem')?.value||'',req_type:_rtEd,repair_device:id('fReqDev')?.value||'',repair_fault:id('fReqFault')?.value||'',
@@ -5529,7 +5539,7 @@ async function showForm(type){
       <div class="fr"><div class="fg"><label class="fl2">申请部门</label><select class="fc" id="fReqDept" onchange="reqNoByDept()"><option value="">请选择（选填）</option>${depts.map(d=>`<option>${esc(d.name)}</option>`).join('')}</select></div>
       <div class="fg"><label class="fl2">预算科目</label><select class="fc" id="fReqBud"><option value="">无</option></select></div></div>
       <div class="fr"><div class="fg"><label class="fl2">用途说明 *</label><input class="fc" id="fReqPurp"></div>
-      <div class="fg"><label class="fl2">目标到货日(选填)</label><input class="fc" id="fReqDate" type="date"></div></div>
+      <div class="fg"><label class="fl2" id="fReqDateLbl">目标到货日 *</label><input class="fc" id="fReqDate" type="date"></div></div>
       <div class="fg"><label class="fl2">备注</label><input class="fc" id="fReqRem"></div>
       <div class="fr"><div class="fg" style="display:flex;align-items:center;gap:6px;padding-top:6px"><input type="checkbox" id="fReqUrgent" style="width:14px;height:14px"> <label style="color:#e74c3c;font-weight:600">加急审批</label></div>
       <div class="fg"><label class="fl2">附件上传</label><input class="fc" id="fReqFiles" type="file" multiple onchange="uploadReqAtt(this)"></div></div>
@@ -5860,6 +5870,9 @@ function reqTypeTip(){
 function reqTypeChanged(){
   const t=id('fReqType')?.value||'物资采购';
   const rf=id('repairFields');if(rf)rf.style.display=(t=='设备维修')?'block':'none';
+  // V11.252/255: 目标日期字段随类型切换(物资=到货日, 维修=完工时间)
+  const _dl=id('fReqDateLbl');
+  if(_dl)_dl.textContent = (t=='设备维修') ? '要求完工时间 *' : '目标到货日 *';
   const _tl=id('reqDetailTitle');
   if(_tl)_tl.textContent = t=='设备维修' ? '维修项目 / 备件明细（维修类，可先留空待厂家定损后补录；物品=维修项目/备件）' : '采购物资明细';
   const _tip=id('reqDetailTip');
@@ -5867,6 +5880,22 @@ function reqTypeChanged(){
     ? '✏️ 维修类：明细行填维修项目或备件清单（可先空）；厂家拆解定损单可直接在下图/附件上传；维修行无需填品牌/质保。'
     : '✏️ <b>品牌由采购员指定</b>（如 联想/格力，或填"不限"）——发起询价后商家按指定品牌报价；<b>指定质保期(如24个月)同为必填</b>，外网报价不得低于；填品名自动带出库存；用途见上方"用途说明"。表格较宽可左右滑动。';
   reqTypeTip();
+}
+// V11.255: 到货/完工时间管控(需求文档(四)) — 必填; 不早于今天; ≤明天且非加急 → 现货提示确认
+// 返回: null=通过 / 'err:...'=直接拦截 / 'ask:...'=需confirm确认
+function reqDateCheck(asDraft){
+  if(asDraft)return null;
+  const t=id('fReqType')?.value||'物资采购';
+  const lbl = (t=='设备维修') ? '要求完工时间' : '目标到货日';
+  const v=(id('fReqDate')?.value||'').trim();
+  if(!v)return 'err:请填写'+lbl+'（须如实填写，审批环节会核验时间合理性）';
+  const d=new Date(v+'T00:00:00'); if(isNaN(d))return null;
+  const today=new Date(); today.setHours(0,0,0,0);
+  if(d<today)return 'err:'+lbl+'不能早于今天';
+  const tom=new Date(today); tom.setDate(tom.getDate()+1);
+  const urgent=id('fReqUrgent')?.checked?1:0;
+  if(d<=tom && !urgent)return 'ask:【现货提示】'+lbl+'≤24小时（'+v+'）。仅限市场现货类物资（螺丝/普通胶管等）才可这么快到；特殊型号设备生产周期长，请如实填写合理时间。确认仍按此时间提交？';
+  return null;
 }
 async function createPRequest(asDraft){
   // V11.186: 支持存草稿 — asDraft=true 时保存为草稿(不进入审批, 可稍后编辑提交)
@@ -5903,6 +5932,14 @@ async function createPRequest(asDraft){
     if(!asDraft){
       if(!_purp){alert('请填写采购事由（这批物资买来做什么）');if(btn){btn.disabled=false;btn.textContent='提交申请'}return}
       if(!_dept){alert('请选择申请部门');if(btn){btn.disabled=false;btn.textContent='提交申请'}return}
+    }
+    // V11.255: 到货/完工时间管控
+    if(!asDraft){
+      const _dc=reqDateCheck(false);
+      if(_dc){
+        if(_dc.startsWith('err:')){alert(_dc.slice(4));if(btn){btn.disabled=false;btn.textContent='提交申请'}return}
+        if(_dc.startsWith('ask:')&&!confirm(_dc.slice(4))){if(btn){btn.disabled=false;btn.textContent='提交申请'}return}
+      }
     }
     const d={dept:id('fReqDept').value,budget_code:id('fReqBud').value,purpose:id('fReqPurp').value,target_date:id('fReqDate').value,remark:id('fReqRem').value,items,urgent:id('fReqUrgent')?.checked?1:0,attachments:reqAtts,apply_date:(id('fReqApplyDate')?.value||'').replace(/年/g,'-').replace(/月/g,'-').replace(/日/g,''),req_type:_rtNew,repair_device:id('fReqDev')?.value||'',repair_fault:id('fReqFault')?.value||'',draft:asDraft||false};
     const r=await api('/prequests',{method:'POST',body:JSON.stringify(d)});
