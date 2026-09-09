@@ -1558,7 +1558,7 @@ async function loadPRequests(){
         const _pendFix = (x.req_type=='设备维修'&&x.status=='已通过'&&!x.repair_done_date&&!x.repair_entrust_type&&!x.repair_converted&&!(x._ord_cnt>0)&&!(x._inq_cnt>0));
         return `<td><b>${esc(x.req_no)}</b>${x.urgent?' <span style="color:#e74c3c;font-weight:700">🚨加急</span>':''}</td><td>${esc(x.dept)}</td><td>${esc(x.purpose||'')}</td>
         <td>${tp}</td>
-        <td>${_pendFix?`<span class="tag" style="background:#fff3cd;color:#b7791f;cursor:pointer;border:1px solid #f0d9a0" onclick="showPRequest(${x.id})" title="领导已批准维修：送厂拆解定损后，在详情点【📎 补充定损清单】录入维修项目+估价 → 再发起维修询价">🔧 待厂家定损→详情补录</span>`:tag(x.status)}</td>`
+        <td>${_pendFix?`<span class="tag" style="background:#fff3cd;color:#b7791f;cursor:pointer;border:1px solid #f0d9a0" onclick="showPRequest(${x.id})" title="领导已批准维修：送厂拆解定损后，在详情点【📎 补充定损清单】录入维修项目+估价 → 再发起维修询价">🔧 待厂家定损→详情补录</span>`:tag(x.status)}</td>
         ${rejCell(x)}
         <td style="white-space:nowrap"><button class="lnk" onclick="showPRequest(${x.id})">详情</button>
         <button class="lnk" style="color:var(--s)" onclick="window.open('/api/prequests/${x.id}/download','_blank')">⬇️下载</button>
