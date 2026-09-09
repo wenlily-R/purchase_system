@@ -7103,13 +7103,30 @@ async function saveCompany(){
   const r=await api('/settings',{method:'POST',body:JSON.stringify(d)});
   alert(r.success?'✅ 已保存':'仅系统管理员可操作');
 }
+// V11.233: 替换文件模板 — 选改好的docx覆盖 contract_templates/ 同名文件(不动服务器即可更新模板条款)
+function tplFileReplace(name){
+  showDetail('📤 替换合同模板：'+name,`
+    <div style="font-size:10px;color:#666;line-height:1.7">1. 下载当前模板或复制一份，用 Word 修改条款后保存；<br>2. 上传修改后的 .docx 将<b>覆盖</b>该模板，立即生效（后续生成的合同用新内容）。</div>
+    <div style="font-size:9px;color:#b08900;background:#fef9f0;border:1px solid #f0e0b8;border-radius:4px;padding:6px;margin-top:4px">⚠️ 请保留模板中的 {甲方名称} {乙方名称} {合同编号} {签订日期} 及收款相关占位符，否则新合同对应位置将不填充。</div>
+    <div class="fg" style="margin-top:6px"><label class="fl2">新模板文件(.docx)</label><input class="fc" id="tplRepFile" type="file" accept=".docx"></div>`,
+    `<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="doTplFileReplace('${name}')">覆盖更新</button>`);
+}
+async function doTplFileReplace(name){
+  const f=id('tplRepFile').files[0];
+  if(!f){alert('请选择要上传的 .docx 文件');return}
+  if(!confirm('将用所选文件覆盖模板「'+name+'」，确定？'))return;
+  const fd=new FormData();fd.append('file',f);fd.append('template',name);
+  const up=await fetch('/api/contract-template-file',{method:'POST',body:fd,credentials:'include'}).then(r=>r.json());
+  if(up.success){alert('✅ '+up.message);closeMod();loadTpls()}else alert(up.error||'替换失败');
+}
 async function loadTpls(){
   // V11.233: 合同模板管理 = ①文件模板(contract_templates/目录docx, 替换即更新, 生成合同时下拉选用) ②上传模板(旧机制)
   let files=[];
   try{files=(await api('/contract-file-list',{noCache:true})).templates||[]}catch(e){}
   const t=await api('/contract-templates');
   const fileRows=files.map(f=>`<tr><td><b>${esc(f.name)}</b></td><td><span class="tag" style="background:#eef2ff;color:#4338ca">📁 文件模板</span></td>
-      <td style="font-size:8.5px;color:#888">${esc(f.file||'')}</td><td style="font-size:8.5px;color:#999">生成合同时下拉选用</td><td></td></tr>`).join('');
+      <td style="font-size:8.5px;color:#888">${esc(f.file||'')}</td><td style="font-size:8.5px;color:#999">生成合同时下拉选用</td>
+      <td><button class="btn btn-w btn-sm" onclick="tplFileReplace('${esc(f.name)}')" title="上传修改后的docx覆盖此模板(占位符规则不变)">📤 替换</button></td></tr>`).join('');
   const upRows=rnder(t,['name','version','status','is_default','id'],['模板名称','版本','状态','默认','操作'],
     x=>`<td><b>${esc(x.name)}</b></td><td>${esc(x.version)}</td><td>${tag(x.status=='启用'?'执行中':'已关闭')}</td>
       <td>${x.is_default?'⭐默认':''}</td>

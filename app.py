@@ -10758,6 +10758,43 @@ def api_contract_file_list():
     return jsonify({'templates': out})
 
 
+# V11.233: 替换文件模板 — 上传同结构docx覆盖 contract_templates/ 对应文件(改条款不用碰服务器, 替换即生效)
+@app.route('/api/contract-template-file', methods=['POST'])
+@login_required
+def api_contract_template_file_replace():
+    role = session.get('user_role')
+    if role not in ('系统管理员', '分管领导', '总经理', '采购员'):
+        return jsonify({'error': '无权限'}), 403
+    f = request.files.get('file')
+    tpl = (request.form.get('template') or '').strip()
+    if not f or not tpl:
+        return jsonify({'error': '缺少文件或模板名'}), 400
+    if not (f.filename or '').lower().endswith('.docx'):
+        return jsonify({'error': '仅支持 .docx 模板文件'}), 400
+    d = os.path.join(BASE, 'contract_templates')
+    if not os.path.isdir(d):
+        return jsonify({'error': '模板目录不存在'}), 500
+    # 安全: 只允许替换现有清单内的模板名(防路径穿越/新建任意文件)
+    allowed = set(os.path.splitext(x)[0] for x in os.listdir(d) if x.lower().endswith('.docx'))
+    if tpl not in allowed:
+        return jsonify({'error': '未知模板: %s（可替换: %s）' % (tpl, '、'.join(sorted(allowed)))}), 400
+    fname = tpl + '.docx'
+    tmp = os.path.join(d, '.' + fname + '.tmp')
+    try:
+        f.save(tmp)
+        if not os.path.exists(tmp) or os.path.getsize(tmp) == 0:
+            return jsonify({'error': '文件保存失败'}), 500
+        os.replace(tmp, os.path.join(d, fname))
+    except Exception as e:
+        try:
+            if os.path.exists(tmp): os.remove(tmp)
+        except Exception:
+            pass
+        return jsonify({'error': '保存失败: %s' % str(e)[:100]}), 500
+    log(session['user_name'], '替换合同文件模板', f'{fname} 已覆盖更新')
+    return jsonify({'success': True, 'message': f'模板「{tpl}」已更新，后续生成合同将使用新模板内容（生成合同时占位符规则不变）'})
+
+
 # ---- 合同模板管理 ----
 @app.route('/api/contract-templates')
 @login_required
