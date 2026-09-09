@@ -1799,7 +1799,7 @@ async function editPRequest(oid){
     ${((r.status=='已驳回'||(r.status=='草稿'&&(r.reject_count||0)>0))&&r.rejected_reason)?`<div style="font-size:9px;color:var(--d);padding:4px 8px;background:#fff5f5;border-radius:4px;margin:4px 0">❌ 驳回原因：${esc(r.rejected_reason)}${r.rejected_by?`（${esc(r.rejected_by)} ${esc((r.rejected_at||'').slice(5,16))}）`:''}</div>`:''}
     <div style="border:1px solid var(--b);border-radius:4px;padding:6px;margin-top:4px">
       <label class="fl2">采购物资明细（可修改）</label>
-      <div style="font-size:9px;color:#8a6d3b;background:#fff8e6;border-radius:4px;padding:3px 6px;margin:2px 0">✏️ <b>品牌由采购员指定</b>（如 联想/格力，或填"不限"）——发起询价后商家按指定品牌报价；填品名自动带出库存；用途见上方"用途说明"。表格较宽可左右滑动。</div>
+      <div style="font-size:9px;color:#8a6d3b;background:#fff8e6;border-radius:4px;padding:3px 6px;margin:2px 0">✏️ <b>品牌由采购员指定</b>（如 联想/格力，或填"不限"）——发起询价后商家按指定品牌报价；<b>指定质保期(如24个月)同为必填</b>，外网报价不得低于；填品名自动带出库存；用途见上方"用途说明"。表格较宽可左右滑动。</div>
       <div style="overflow-x:auto"><table class="tb" style="font-size:10px;min-width:930px;margin-top:3px"><thead><tr>
         <th style="width:22px">#</th><th style="min-width:100px">物品名称 *</th><th style="min-width:62px">规格型号</th><th style="width:38px">单位</th><th style="width:56px">库存</th><th style="width:64px">请购数量 *</th><th style="min-width:106px">品牌（指定）</th><th style="width:84px">采购类别</th><th style="min-width:72px">备注</th><th style="min-width:128px">到货日/附图</th>
       </tr></thead><tbody id="reqItemList"></tbody></table></div>
@@ -5449,7 +5449,7 @@ async function showForm(type){
       <div id="reqAttList" style="font-size:9px;color:#666;margin-top:2px"></div>
       <div style="border:1px solid var(--b);border-radius:4px;padding:6px;margin-top:4px">
         <label class="fl2">采购物资明细</label>
-        <div style="font-size:9px;color:#8a6d3b;background:#fff8e6;border-radius:4px;padding:3px 6px;margin:2px 0">✏️ <b>品牌由采购员指定</b>（如 联想/格力，或填"不限"）——发起询价后商家按指定品牌报价；填品名自动带出库存；用途见上方"用途说明"。表格较宽可左右滑动。</div>
+        <div style="font-size:9px;color:#8a6d3b;background:#fff8e6;border-radius:4px;padding:3px 6px;margin:2px 0">✏️ <b>品牌由采购员指定</b>（如 联想/格力，或填"不限"）——发起询价后商家按指定品牌报价；<b>指定质保期(如24个月)同为必填</b>，外网报价不得低于；填品名自动带出库存；用途见上方"用途说明"。表格较宽可左右滑动。</div>
         <div style="overflow-x:auto"><table class="tb" style="font-size:10px;min-width:930px;margin-top:3px"><thead><tr>
           <th style="width:22px">#</th><th style="min-width:100px">物品名称 *</th><th style="min-width:62px">规格型号</th><th style="width:38px">单位</th><th style="width:56px">库存</th><th style="width:64px">请购数量 *</th><th style="min-width:106px">品牌（指定）</th><th style="width:84px">采购类别</th><th style="min-width:72px">备注</th><th style="min-width:128px">到货日/附图</th>
         </tr></thead><tbody id="reqItemList"></tbody></table></div>
@@ -5602,7 +5602,7 @@ function addReqItem(it){
       <td><input placeholder="单位" id="riu${c}" value="${esc(_it.unit||'个')}" style="width:32px;padding:2px;border:1px solid var(--b);border-radius:3px;font-size:10px"></td>
       <td style="text-align:center"><span id="rstk${c}" style="font-size:9px;color:#999;white-space:nowrap">—</span></td>
       <td><input type="number" min="1" step="any" id="riq${c}" value="${_q}" style="width:52px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px" title="请购数量(必填, 须大于0)"></td>
-      <td><input placeholder="指定品牌，如 联想 / 不限" id="rib${c}" value="${esc(_it.brand_param||'')}" style="width:100%;min-width:104px;padding:2px 4px;border:1px solid #c9a86a;border-radius:3px;font-size:10px;background:#fffdf5" title="品牌由采购员指定，发起询价后商家按此品牌报价"></td>
+      <td><input placeholder="指定品牌，如 联想 / 不限（必填）" id="rib${c}" value="${esc(_it.brand_param||'')}" style="width:100%;min-width:104px;padding:2px 4px;border:1px solid #c9a86a;border-radius:3px;font-size:10px;background:#fffdf5" title="品牌由采购员指定并锁死标准，发起询价后商家按此品牌报价（必填）"><br><input placeholder="指定质保期，如 24个月（必填）" id="riw${c}" value="${esc(_it.warranty_param||'')}" style="width:100%;min-width:104px;margin-top:2px;padding:2px 4px;border:1px solid #c9a86a;border-radius:3px;font-size:10px;background:#fffdf5" title="质保期由采购员指定并锁死标准，外网报价不得低于（必填）"></td>
       <td><select id="ric${c}" style="width:82px;padding:2px;border:1px solid var(--b);border-radius:3px;font-size:10px"><option value="">采购类别</option>${cats.map(x=>`<option ${x==_cat?'selected':''}>${esc(x)}</option>`).join('')}</select></td>
       <td><input placeholder="备注(选填)" id="rir${c}" value="${esc(_it.remark||'')}" style="width:100%;min-width:66px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px"></td>
       <td style="white-space:nowrap">
@@ -5715,7 +5715,7 @@ function prCollect(){
     const items=[];
     id('reqItemList').querySelectorAll('[id^="ritem"]').forEach(r=>{
       const idx=r.id.replace('ritem','');const n=id('rin'+idx)?.value;
-      if(n)items.push({item_name:n,category:id('ric'+idx)?.value||'',brand_param:id('rib'+idx)?.value||'',spec:id('ris'+idx)?.value||'',quantity:parseFloat(id('riq'+idx)?.value)||1,unit:id('riu'+idx)?.value||'个',arrival_date:id('ria'+idx)?.value||'',estimated_price:parseFloat(id('rip'+idx)?.value)||0,usage:id('ruse'+idx)?.value||'',remark:id('rir'+idx)?.value||'',attach:id('riatt'+idx)?.dataset?.attach||''});
+      if(n)items.push({item_name:n,category:id('ric'+idx)?.value||'',brand_param:id('rib'+idx)?.value||'',warranty_param:id('riw'+idx)?.value||'',spec:id('ris'+idx)?.value||'',quantity:parseFloat(id('riq'+idx)?.value)||1,unit:id('riu'+idx)?.value||'个',arrival_date:id('ria'+idx)?.value||'',estimated_price:parseFloat(id('rip'+idx)?.value)||0,usage:id('ruse'+idx)?.value||'',remark:id('rir'+idx)?.value||'',attach:id('riatt'+idx)?.dataset?.attach||''});
     });
     d.items=items;d.reqAtts=(typeof reqAtts!=='undefined'&&reqAtts)?reqAtts.slice():[];
     return d;
@@ -5780,7 +5780,7 @@ async function createPRequest(asDraft){
         const _at=id('riatt'+idx)?.dataset?.attach||'';
         // V11.245: 请购数量必填且>0
         if(!(_q>0)){if(!_badQty)_badQty='「'+n+'」请购数量必须大于0';return}
-        items.push({item_name:n,spec:id('ris'+idx)?.value||'',quantity:_q,unit:_u,estimated_price:_p,category:id('ric'+idx)?.value||'',brand_param:id('rib'+idx)?.value||'',arrival_date:id('ria'+idx)?.value||'',usage:id('ruse'+idx)?.value||'',remark:id('rir'+idx)?.value||'',attach:_at});
+        items.push({item_name:n,spec:id('ris'+idx)?.value||'',quantity:_q,unit:_u,estimated_price:_p,category:id('ric'+idx)?.value||'',brand_param:id('rib'+idx)?.value||'',warranty_param:id('riw'+idx)?.value||'',arrival_date:id('ria'+idx)?.value||'',usage:id('ruse'+idx)?.value||'',remark:id('rir'+idx)?.value||'',attach:_at});
       }
     });
     if(_badQty){if(btn){btn.disabled=false;btn.textContent=asDraft?'💾 存草稿':'提交申请'}alert(_badQty);return}

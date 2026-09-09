@@ -575,6 +575,8 @@ def init_db():
         ('requisitions', 'issued_at', "ALTER TABLE requisitions ADD COLUMN issued_at TEXT"),
         ('request_items', 'category', "ALTER TABLE request_items ADD COLUMN category TEXT DEFAULT ''"),
         ('request_items', 'brand_param', "ALTER TABLE request_items ADD COLUMN brand_param TEXT DEFAULT ''"),
+        # V11.250 采购申请锁定质量标准: 指定质保期(申请端必填, 外网报价不得低于)
+        ('request_items', 'warranty_param', "ALTER TABLE request_items ADD COLUMN warranty_param TEXT DEFAULT ''"),
         ('request_items', 'arrival_date', "ALTER TABLE request_items ADD COLUMN arrival_date TEXT DEFAULT ''"),
         # V11.126: 钉钉实例存审批表单值(询价定标审批需要读取领导在钉钉选的供应商)
         ('dingtalk_instances', 'form_values', "ALTER TABLE dingtalk_instances ADD COLUMN form_values TEXT"),
@@ -5055,7 +5057,7 @@ def api_generic_resubmit(biz_type, biz_id):
                 conn.execute("INSERT INTO request_items(req_id,item_name,spec,unit,quantity,estimated_price,total_price,remark,category,brand_param,arrival_date,attach,usage) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                              (biz_id, it.get('item_name',''), it.get('spec',''), it.get('unit','个'), float(it.get('quantity',1)),
                               float(it.get('estimated_price',0)), _tp, it.get('remark',''),
-                              it.get('category',''), it.get('brand_param',''), it.get('arrival_date',''),
+                              it.get('category',''), it.get('brand_param',''), it.get('warranty_param',''), it.get('arrival_date',''),
                               it.get('attach','') or '', it.get('usage','') or ''))
             amount = _tot
             conn.execute(f"UPDATE {tbl} SET total_estimated=?, updated_at=? WHERE id=?", (_tot, now(), biz_id))
@@ -5273,6 +5275,15 @@ def api_create_prequest():
             conn.close(); return jsonify({'error': '请填写采购事由（这批物资买来做什么）'}), 400
         if not str(d.get('dept') or '').strip():
             conn.close(); return jsonify({'error': '请选择申请部门'}), 400
+    # V11.250: 提交审批必填锁定标准 — 每行 指定品牌 + 指定质保期(采购员提前锁死, 外网报价品牌一致/质保不低于)
+    if not d.get('draft'):
+        for _n, _it in enumerate(items, 1):
+            _b = str(_it.get('brand_param') or '').strip()
+            _w = str(_it.get('warranty_param') or '').strip()
+            if not _b:
+                conn.close(); return jsonify({'error': f'第{_n}行「{_it.get("item_name","")}」请填写指定品牌（采购员提前锁死标准）'}), 400
+            if not _w:
+                conn.close(); return jsonify({'error': f'第{_n}行「{_it.get("item_name","")}」请填写指定质保期（如 12个月/24个月）'}), 400
     # 并发安全: 单号冲突(UNIQUE)时重新生成重试(最多5次)
     no = ''
     for _try in range(5):
@@ -5294,10 +5305,10 @@ def api_create_prequest():
     prid = conn.execute("SELECT id FROM purchase_requests WHERE req_no=?", (no,)).fetchone()[0]
     for it in items:
         tp = float(it.get('quantity',1)) * float(it.get('estimated_price',0))
-        conn.execute("INSERT INTO request_items(req_id,item_name,spec,unit,quantity,estimated_price,total_price,remark,category,brand_param,arrival_date,attach,usage) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        conn.execute("INSERT INTO request_items(req_id,item_name,spec,unit,quantity,estimated_price,total_price,remark,category,brand_param,warranty_param,arrival_date,attach,usage) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                      (prid, it.get('item_name',''), it.get('spec',''), it.get('unit','个'), float(it.get('quantity',1)),
                       float(it.get('estimated_price',0)), tp, it.get('remark',''),
-                      it.get('category',''), it.get('brand_param',''), it.get('arrival_date',''),
+                      it.get('category',''), it.get('brand_param',''), it.get('warranty_param',''), it.get('arrival_date',''),
                       it.get('attach','') or '', it.get('usage','') or ''))
     conn.commit()
     # V11.154: 草稿不创建审批实例(采购员检查后手动提交)
@@ -5407,7 +5418,7 @@ def api_resubmit_prequest(rid):
             conn.execute("INSERT INTO request_items(req_id,item_name,spec,unit,quantity,estimated_price,total_price,remark,category,brand_param,arrival_date,attach,usage) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                          (rid, it.get('item_name',''), it.get('spec',''), it.get('unit','个'), float(it.get('quantity',1)),
                           float(it.get('estimated_price',0)), tp, it.get('remark',''),
-                          it.get('category',''), it.get('brand_param',''), it.get('arrival_date',''),
+                          it.get('category',''), it.get('brand_param',''), it.get('warranty_param',''), it.get('arrival_date',''),
                           it.get('attach','') or '', it.get('usage','') or ''))
     if d.get('draft'):
         # V11.187: 存草稿 — 保留现有审批实例记录(驳回历史仍在), 不进审批流不发钉钉
@@ -6834,11 +6845,13 @@ def inquiry_vendor_page(token):
         if _fixed:
             _has_fixed = True
         _ref = ('<span style="color:#bbb;font-size:11px">(参考¥%.0f)</span>' % ((it['total_price'] or 0) / _qty if _qty else 0))
-        _brand_cell = ('<td style="padding:6px 8px;border-bottom:1px solid #eef"><b style="color:#b7791f;background:#fff8e6;'
-                       'border:1px solid #f0dcae;border-radius:4px;padding:2px 6px;white-space:nowrap">指定品牌：%s</b>'
-                       '<input type="hidden" id="br%d" value="%s"></td>' % (esc_html(_sb), idx, esc_html(_sb))) if _fixed else \
-                      ('<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="品牌(可自报)" id="br%d" value="%s" '
-                       'style="width:88px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>' % (idx, esc_html(_pv.get('brand') or '')))
+        # V11.250: 申请端已锁定标准的行, 外网页面不再展示/填写 品牌与质保 — 系统按申请标准自动锁定校验(品牌一致/质保不低于)
+        _sw_spec = str(it['warranty_param'] or '').strip() if 'warranty_param' in it.keys() and it['warranty_param'] else ''
+        _brand_cell = ('<td style="padding:6px 8px;border-bottom:1px solid #eef"></td>' if _fixed else
+                       ('<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="品牌(可自报)" id="br%d" value="%s" '
+                        'style="width:88px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>' % (idx, esc_html(_pv.get('brand') or ''))))
+        _wr_cell = ('<td style="padding:6px 8px;border-bottom:1px solid #eef;color:#bbb">—</td>' if _sw_spec else
+                    '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="如3个月" id="wr%d" value="%s" style="width:56px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>' % (idx, esc_html(_pv.get('warranty') or '')))
         _rows_html.append((
             '<tr>'
             '<td style="padding:6px 8px;text-align:left;border-bottom:1px solid #eef">%s</td>'
@@ -6848,15 +6861,14 @@ def inquiry_vendor_page(token):
             'oninput="calc()" data-q="%s" id="up%d" value="%s" style="width:64px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;text-align:right"></td>'
             '<td style="padding:6px 8px;border-bottom:1px solid #eef;text-align:right;font-weight:600;color:#2e7d32;white-space:nowrap">¥<span id="ut%d">0.00</span></td>'
             '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="如7天" id="dl%d" value="%s" style="width:52px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
-            '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="如3个月" id="wr%d" value="%s" style="width:56px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
+            + _wr_cell +
             + _brand_cell +
             '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="备注" id="rm%d" value="%s" style="width:64px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
             '</tr>') % (
                 esc_html(it['item_name']), esc_html(it['spec'] or ''),
                 str(_qty) + esc_html(it['unit'] or '个'), _ref,
                 str(_qty), idx, _v_price,
-                idx, idx, esc_html(_pv.get('delivery') or ''),
-                idx, esc_html(_pv.get('warranty') or ''),
+                idx, esc_html(_pv.get('delivery') or ''),
                 idx, esc_html(_pv.get('remark') or '')))
     _item_rows = ''.join(_rows_html)
     # ---------- 头部提示 ----------
@@ -6864,8 +6876,9 @@ def inquiry_vendor_page(token):
     if _deadline:
         _dl_txt = '<div style="background:#fff3cd;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px;border:1px solid #ffeeba"><b>⏰ 报价截止：%s</b></div>' % esc_html(_deadline)
     _head_note = ('<p style="color:#2e7d32;font-size:13px;margin:0 0 10px">✅ 贵司已报价，可修改后重新提交（将覆盖原报价；报价金额开标前不对外显示）</p>') if _already else ''
-    _brand_note = ('<div style="background:#fff8e6;border:1px solid #f0dcae;border-radius:8px;padding:8px 12px;font-size:12.5px;margin-bottom:10px;color:#8a6d3b">'
-                   '🏷️ <b>本单部分物资已由采购方指定品牌</b>：标黄行请严格按【指定品牌】报价，更换品牌视为无效报价；未标注品牌的行可自报品牌。</div>') if _has_fixed else ''
+    _brand_note = ('<div style="background:#eef6ff;border:1px solid #bcd9f7;border-radius:8px;padding:8px 12px;font-size:12.5px;margin-bottom:10px;color:#1a4f8b">'
+                   '📢 <b>报价须知</b>：本询价单多物料支持<b>独立报价、独立中标、可单件供货</b>；若贵司<b>无法单件供货</b>，对应项目<b>请勿报价</b>（该行留空即可）。'
+                   '品牌与质保标准已由采购方在申请时锁定，无需填写，系统自动校验（更换品牌或低于质保标准将无法提交）。</div>')
     _ship_val = '' if _already else esc_html(s['quote_price'])  # V11.217: 已报价回显不再带金额(不显示具体价格)
     _remark_val = esc_html(s['quote_remark'] or '')
     body = ('<div style="max-width:860px;margin:40px auto;background:#fff;border-radius:12px;padding:28px;'
@@ -6954,18 +6967,37 @@ def inquiry_vendor_quote(token):
             conn.close(); return jsonify({'error': '该询价已开标（全部受邀厂家已报价），报价通道已关闭，如需修改请联系采购方'}), 400
     except Exception:
         pass
-    # V11.246: 指定品牌硬校验 — 申请/询价已指定品牌(非"不限")的行, 商家提交品牌必须一致, 否则拒绝(换品牌视为无效报价)
+    # V11.246/250: 质量标准硬校验+按申请锁定 — 指定品牌行: 报价品牌必须一致(缺省=按申请品牌锁定);
+    # 指定质保期行: 报价质保不得低于申请标准(缺省视为承诺, 提交后按申请标准落库); 不达标直接拦截
+    def _pm(s):
+        import re as _re
+        if not s: return None
+        m = _re.search(r'(\d+(?:\.\d+)?)\s*(年|个月|月|天|日)', str(s))
+        if not m: return None
+        v = float(m.group(1)); u = m.group(2)
+        if u == '年': return v * 12
+        if u in ('月', '个月'): return v
+        return None  # 天不折算, 不做数值比较
     if details:
         try:
             _ritems = conn.execute("SELECT * FROM request_items WHERE req_id=? ORDER BY id", (i['req_id'],)).fetchall()
             for _xi, _x in enumerate(details):
                 if _xi < len(_ritems):
-                    _sb = str(_ritems[_xi]['brand_param'] or '').strip() if 'brand_param' in _ritems[_xi].keys() and _ritems[_xi]['brand_param'] else ''
+                    _ri = _ritems[_xi]
+                    _sb = str(_ri['brand_param'] or '').strip() if 'brand_param' in _ri.keys() and _ri['brand_param'] else ''
+                    _sw = str(_ri['warranty_param'] or '').strip() if 'warranty_param' in _ri.keys() and _ri['warranty_param'] else ''
                     if _sb and _sb != '不限':
                         _xb = str(_x.get('brand') or '').strip()
-                        if _xb != _sb:
+                        if _xb and _xb != _sb:
                             conn.close()
-                            return jsonify({'error': '第%d行「%s」指定品牌为「%s」，请按指定品牌报价（更换品牌视为无效）' % (_xi + 1, _ritems[_xi]['item_name'], _sb)}), 400
+                            return jsonify({'error': '第%d行「%s」指定品牌为「%s」，请按指定品牌报价（更换品牌视为无效）' % (_xi + 1, _ri['item_name'], _sb)}), 400
+                        _x['brand'] = _sb  # 缺省/一致 → 按申请品牌锁定
+                    if _sw:
+                        _swm = _pm(_sw); _xwm = _pm(str(_x.get('warranty') or '').strip())
+                        if _xwm is not None and _swm is not None and _xwm < _swm:
+                            conn.close()
+                            return jsonify({'error': '第%d行「%s」质保期低于申请指定标准（申请要求%s，本报价%s），不予接受' % (_xi + 1, _ri['item_name'], _sw, str(_x.get('warranty') or '').strip())}), 400
+                        _x['warranty'] = _sw  # 缺省/达标 → 按申请标准落库
         except Exception:
             pass
     # V11.41: 行明细报价(每行单价+备注), 合计=Σ单价×数量; 兼容旧版总价提交
