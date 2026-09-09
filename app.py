@@ -3906,10 +3906,11 @@ def dt_retry_failed_instances():
         return  # V11.261: 配额熔断期不重试(重试无用且烧API)
     try:
         c = db()
-        # 只挑 error 次数≤5 且非配额超限类的单据重试(配额类错误=等额度恢复, 自动重试无意义)
+        # 只挑 error 次数≤5 的单据重试; 配额超限类错误不再永久排除 —
+        # 熔断期由 _dt_quota_blocked 拦(重试无用不烧API); 熔断解除后一并重试,
+        # 额度恢复(升配/次月重置)即自动补发积压单据与附件(V11.261f)
         rows = c.execute("""SELECT d.id, d.biz_type, d.biz_id FROM dingtalk_instances d
             WHERE d.status='error' AND d.created_at <= datetime('now','localtime','-3 minutes')
-            AND (d.error IS NULL OR (d.error NOT LIKE '%调用量已超过限制%' AND d.error NOT LIKE '%ApiCountLimit%' AND d.error NOT LIKE '%90020%' AND d.error NOT LIKE '%quota%'))
             AND (SELECT COUNT(*) FROM dingtalk_instances e WHERE e.biz_type=d.biz_type AND e.biz_id=d.biz_id AND e.status='error') <= 5
             ORDER BY d.id LIMIT 5""").fetchall()
         c.close()
