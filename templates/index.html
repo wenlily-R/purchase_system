@@ -5998,6 +5998,10 @@ function prTryRestore(){
   if(id('fReqDate'))id('fReqDate').value=d.target_date||'';
   if(id('fReqRem'))id('fReqRem').value=d.remark||'';
   if(d.urgent&&id('fReqUrgent'))id('fReqUrgent').checked=true;
+  // V11.265fix: 先按草稿业务类型切好表头模式, 再回显明细行(否则按上次残留模式渲染→行列错位)
+  if(d.req_type&&id('fReqType'))id('fReqType').value=d.req_type;
+  REQ_MODE=(d.req_type=='设备维修')?'rep':'mat';
+  reqModeTable();
   if(d.items&&d.items.length){id('reqItemList').innerHTML='';d.items.forEach(it=>addReqItem(it))}
   if(d.reqAtts&&d.reqAtts.length){try{reqAtts=d.reqAtts.slice();id('reqAttList').innerHTML=reqAtts.map(a=>'📎 '+a.split('/').pop()).join(' ')}catch(e){}}
   // V11.252: 草稿恢复业务类型/维修字段
