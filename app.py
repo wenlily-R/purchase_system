@@ -5936,8 +5936,8 @@ def api_create_order():
                 ensure_ascii=False)
             _name = (first[0] + ' 等%d项' % len(rows)) if len(rows) > 1 else first[0]
             # V11.198: 自动生成的入库单不预设类型(is_est=0待定, 提交审批时手动选择暂估/正式)
-            conn.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,dept,items_json,is_est) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,0)",
-                (rno, None, oid, _name, '', total_qty, first[2], 0, '待入库', now(), '货到付款: 下单后自动进入入库板块(整批%d项)' % len(rows), _dept, _items_json))
+            conn.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,dept,items_json,is_est,trace_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,0,?)",
+                (rno, None, oid, _name, '', total_qty, first[2], 0, '待入库', now(), '货到付款: 下单后自动进入入库板块(整批%d项)' % len(rows), _dept, _items_json, no))
     conn.commit()
     create_approvals('purchase_order', oid, grand_total, submitter=session['user_name'])   # 一张订单一次审批
     start_instances('purchase_order', oid)
@@ -8614,6 +8614,8 @@ def api_create_requisition():
     for it in items:
         inv = conn.execute("SELECT * FROM inventory WHERE item_name=? AND spec=? ORDER BY quantity DESC",
                            (it['item_name'], it.get('spec', '') or '')).fetchone()
+        # V11.251 溯源: 出库明细带库存台账溯源号(前端可选传覆盖)
+        it['_trace'] = str(it.get('trace_no') or '').strip() or (inv['trace_no'] if inv and inv['trace_no'] else '')
         if not inv:
             conn.close(); return jsonify({'error': '库存中无此物资: %s %s' % (it['item_name'], it.get('spec', '') or '')}), 400
         if inv['quantity'] < float(it['quantity']):
@@ -8631,9 +8633,9 @@ def api_create_requisition():
                   total_q, first.get('unit', '个'), d.get('purpose', first.get('purpose', '')), '待审批', receiver, receive_dept, now()))
     rid = conn.execute("SELECT id FROM requisitions WHERE req_no=?", (no,)).fetchone()[0]
     for it in items:
-        conn.execute("INSERT INTO requisition_items(requisition_id,item_name,spec,unit,quantity,purpose,created_at) VALUES(?,?,?,?,?,?,?)",
+        conn.execute("INSERT INTO requisition_items(requisition_id,item_name,spec,unit,quantity,purpose,trace_no,created_at) VALUES(?,?,?,?,?,?,?,?)",
                      (rid, it['item_name'], it.get('spec', ''), it.get('unit', '个'),
-                      float(it['quantity']), it.get('purpose', d.get('purpose', '')), now()))
+                      float(it['quantity']), it.get('purpose', d.get('purpose', '')), it.get('_trace', ''), now()))
     conn.commit()
     create_approvals('requisition', rid, 0, submitter=session['user_name'])
     conn.close()
@@ -8653,6 +8655,15 @@ def api_create_receiving():
         _op = conn.execute("SELECT is_sealed FROM purchase_orders WHERE id=?", (d.get('order_id'),)).fetchone()
         if _op and _op['is_sealed']:
             conn.close(); return jsonify({'error': '关联订单已封单(剩余不再供货)，不能按该订单继续入库'}), 400
+    # V11.251 溯源强校验: 入库单必须关联采购订单(溯源根), 溯源编号为空禁止保存提交
+    _oid = d.get('order_id')
+    _trace = ''
+    if _oid:
+        _po = conn.execute("SELECT order_no FROM purchase_orders WHERE id=?", (_oid,)).fetchone()
+        if _po:
+            _trace = _po['order_no']
+    if not _trace:
+        conn.close(); return jsonify({'error': '溯源编号为空：新建入库单必须先选择对应的采购订单（商品全链路溯源要求，禁止无订单来源入库）'}), 400
     items = d.get('items') or []
     if not items and d.get('item_name'):
         items = [{'item_name': d.get('item_name'), 'spec': d.get('spec'), 'unit': d.get('unit', '个'),
@@ -8676,10 +8687,10 @@ def api_create_receiving():
     # V11.172: 经办人(inspector)必须写当前登录用户 — 否则fs_biz_info取发起人返回'系统',
     # 钉钉发起时兜底成审批人自己(发起人=审批人) → 820003审批实例参数错误
     _inspector = (d.get('inspector') or '').strip() or session.get('user_name', '') or '系统'
-    conn.execute("INSERT INTO receivings(receive_no,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,items_json,attachments,dept,is_est,est_amount,inspector) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    conn.execute("INSERT INTO receivings(receive_no,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,items_json,attachments,dept,is_est,est_amount,inspector,trace_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                  (no, d.get('order_id'), first['item_name'], first.get('spec', ''), total_q,
                   first.get('unit', '个'), 0, '待审批', now(), '手动入库单: %d项商品' % len(items),
-                  json.dumps(items, ensure_ascii=False), _atts_json, _dept, _is_est, _est_amt, _inspector))
+                  json.dumps(items, ensure_ascii=False), _atts_json, _dept, _is_est, _est_amt, _inspector, _trace))
     rid = conn.execute("SELECT id FROM receivings WHERE receive_no=?", (no,)).fetchone()[0]
     # 手动入库单没有 order_items, 明细暂存 remark; 审批通过时按 quantity 入库
     conn.commit()
@@ -9878,6 +9889,49 @@ def api_toolbox_query():
     conn.close()
     log(session['user_name'], '工具箱SQL查询', sql.strip()[:120])
     return jsonify({'cols': cols, 'rows': out[:300], 'total': len(rows)})
+
+
+@app.route('/api/trace/<path:trace_no>')
+@login_required
+def api_trace_query(trace_no):
+    """V11.251 溯源穿透查询: 输入溯源编号一次性查看整条链路 采购订单→询价→合同→入库明细→库存流水→出库领用
+    溯源根=采购订单号(订单即根); 分批入库溯源号=订单号-批次序(CGxxx-01) → 以根号+全号双口径匹配"""
+    t = str(trace_no or '').strip()
+    if not t:
+        return jsonify({'error': '请输入溯源编号'}), 400
+    conn = db()
+    # 根订单号推导: 订单号自身含连字符(CG-202609-0001), 不能按'-'拆分 —
+    # 若 t 是某入库单的批次溯源号(订单号-批次)则经入库单反查其订单; 否则 t 即根
+    _po_by_rcv = conn.execute("SELECT po.order_no FROM receivings r JOIN purchase_orders po ON po.id=r.order_id WHERE r.trace_no=? LIMIT 1", (t,)).fetchone()
+    root = _po_by_rcv[0] if _po_by_rcv else t
+    out = {'trace_no': t, 'root_order_no': root}
+    try:
+        po = conn.execute("SELECT * FROM purchase_orders WHERE order_no=? OR EXISTS(SELECT 1 FROM receivings r WHERE r.order_id=purchase_orders.id AND r.trace_no=?)",
+                          (t, t)).fetchone()
+        out['order'] = dict_row(po) if po else None
+        if po:
+            # 询价(溯源号回填或同申请来源)
+            inqs = conn.execute("SELECT * FROM inquiries WHERE (trace_no=? OR trace_no=? OR trace_no LIKE ?) OR (req_id=? AND status NOT IN ('已作废','已取消','已撤回'))",
+                                (t, root, root + '-%', po['req_id'])).fetchall() if po['req_id'] else conn.execute(
+                                "SELECT * FROM inquiries WHERE trace_no=? OR trace_no=? OR trace_no LIKE ?", (t, root, root + '-%')).fetchall()
+            out['inquiries'] = [dict_row(r) for r in inqs]
+        else:
+            inqs = conn.execute("SELECT * FROM inquiries WHERE trace_no=? OR trace_no=? OR trace_no LIKE ?", (t, root, root + '-%')).fetchall()
+            out['inquiries'] = [dict_row(r) for r in inqs]
+        cts = conn.execute("SELECT * FROM contracts WHERE trace_no=? OR trace_no=? OR trace_no LIKE ?", (t, root, root + '-%')).fetchall()
+        out['contracts'] = [dict_row(r) for r in cts]
+        rcs = conn.execute("SELECT * FROM receivings WHERE trace_no=? OR trace_no=? OR trace_no LIKE ?", (t, root, root + '-%')).fetchall()
+        out['receivings'] = [dict_row(r) for r in rcs]
+        fls = conn.execute("SELECT * FROM inventory_flows WHERE trace_no=? OR trace_no=? OR trace_no LIKE ? ORDER BY id", (t, root, root + '-%')).fetchall()
+        out['flows'] = [dict_row(r) for r in fls]
+        # 出库: 出库明细带溯源号 → 关联出库单
+        rits = conn.execute("SELECT ri.*, r.req_no, r.requester, r.receive_dept, r.created_at AS r_created FROM requisition_items ri LEFT JOIN requisitions r ON r.id=ri.requisition_id WHERE ri.trace_no=? OR ri.trace_no=? OR ri.trace_no LIKE ?", (t, root, root + '-%')).fetchall()
+        out['requisitions'] = [dict_row(r) for r in rits]
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': '查询失败: %s' % str(e)[:100]}), 500
+    conn.close()
+    return jsonify(out)
 
 
 @app.route('/api/reports/checkpoints')
