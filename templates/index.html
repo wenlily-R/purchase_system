@@ -2225,6 +2225,7 @@ async function showInquiry(qid){
   const btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button><button class="lnk" style="color:#7c5cff" onclick="showDocOps('inquiry',${d.id},'询价单 ${esc(d.inq_no)}')">🕘 操作记录</button>${d.locked?'':`<button class="btn btn-p" onclick="exportInquiry(${d.id})">📥 导出Excel</button>`}${splitBtn}${submitBtn}`;
   if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
   // V11.179: 询价审批详情也显示审批流程+驳回记录
+  btns+=`<button class="btn btn-o btn-sm" style="color:#7c5cff" onclick="showChain('inquiry',${qid})">🔗 采购链路</button>`;
   showDetail(`询价单 ${d.inq_no}`,lowestNote+h+'<div id="approvalFlowBox"></div><div id="rejectLogsBox"></div>',btns);
   loadApprovalFlow('inquiry_approval',d.id,'approvalFlowBox');
   loadRejectLogs('inquiry_approval',d.id,'rejectLogsBox');
@@ -3473,7 +3474,8 @@ async function showContract(id){
   h+=`<div id="invBox${c.id}" style="margin-top:10px;border-top:1px dashed #e8e8e8;padding-top:8px"><div style="font-size:10px;color:#999">🧾 发票台账加载中...</div></div>`;
   // V11.228: 合同附件(发票/扫描件等资料) — 系统内留存预览下载, 不嵌入合同正文
   h+=`<div id="ctAttBox${c.id}" style="margin-top:10px;border-top:1px dashed #e8e8e8;padding-top:8px"><div style="font-size:10px;color:#999">📎 合同附件加载中...</div></div>`;
-  showDetail(`合同 ${c.contract_no}`,h+'<div id="approvalFlowBox"></div><div id="rejectLogsBox"></div>');
+  showDetail(`合同 ${c.contract_no}`,h+'<div id="approvalFlowBox"></div><div id="rejectLogsBox"></div>',
+    `<button class="btn btn-o" onclick="closeMod()">关闭</button><button class="btn btn-o btn-sm" style="color:#7c5cff" onclick="showChain('contract',${c.id})">🔗 采购链路</button><button class="lnk" style="color:#7c5cff" onclick="showDocOps('contract',${c.id},'合同 ${esc(c.contract_no)}')">🕘 操作记录</button>`);
   loadApprovalFlow('contract',id,'approvalFlowBox');
   loadRejectLogs('contract',id,'rejectLogsBox');
   loadInvBox(id);
@@ -3692,7 +3694,7 @@ async function showRcvDetail(id){
     <button class="btn btn-o btn-sm" style="color:#b08900;border-color:#b08900" onclick="editDoc('receiving',${r.id},'入库单')">✏️ 修改</button>
     ${((r.status=='已驳回'||(r.status=='草稿'&&(r.reject_count||0)>0))&&(ME.role=='系统管理员'||ME.name==r.inspector))?`<button class="btn btn-p btn-sm" style="background:#16a34a;border-color:#16a34a" onclick="resubmitDoc('receiving',${r.id},'入库单','${esc(r.receive_no)}')">🔄 再次提交审批</button>`:''}`;
   if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
-  showDetail(`入库单 ${r.receive_no}`,h+'<div id="approvalFlowBox"></div><div id="rejectLogsBox"></div>',btns);
+  showDetail(`入库单 ${r.receive_no}`,h+'<div id="approvalFlowBox"></div><div id="rejectLogsBox"></div>',btns+`<button class="btn btn-o btn-sm" style="color:#7c5cff" onclick="showChain('receiving',${r.id})">🔗 采购链路</button>`);
   loadApprovalFlow('receiving',id,'approvalFlowBox');
   loadRejectLogs('receiving',id,'rejectLogsBox');
 }
