@@ -1364,8 +1364,21 @@ def create_approvals(biz_type, biz_id, amount, submitter=''):
     - 未配置(留空) → 按角色在 users 表找有效用户
     - V11.183: submitter参数预留(提交人) — 钉钉模板固定审批人模式下不校验发起人=审批人,
       且穆娇自提交的单由模板固定审批人正常处理(实测发起成功), 因此不做自动换人, 保持系统与钉钉审批人一致
-    支持每个环节独立配置/更换审批负责人, 页面可视化维护, 无需改代码"""
-    configs = get_approval_config(biz_type, amount)
+    支持每个环节独立配置/更换审批负责人, 页面可视化维护, 无需改代码
+    V11.252: 采购申请=设备维修类 → 审批链按 repair_plan 配置(穆娇1级全档, 与历史维修审批规则一致);
+    approval_instances.biz_type 仍存 purchase_request(详情/待办/钉钉/通知全链零改动)"""
+    # V11.252: 维修类申请 → 审批配置来源切换为 repair_plan
+    _cfg_biz = biz_type
+    if biz_type == 'purchase_request':
+        try:
+            _c0 = db()
+            _pr0 = _c0.execute("SELECT req_type FROM purchase_requests WHERE id=?", (biz_id,)).fetchone()
+            _c0.close()
+            if _pr0 and (_pr0['req_type'] or '') == '设备维修':
+                _cfg_biz = 'repair_plan'
+        except Exception:
+            pass
+    configs = get_approval_config(_cfg_biz, amount)
     conn = db()
     for cfg in configs:
         approver_name = ''
@@ -2883,12 +2896,22 @@ def dt_build_detail(biz_type, r, c):
         lines['报价合计'] = f"¥{float(r['quote_total'] or 0):,.2f}"
         return '\n'.join(f"{k}: {v}" for k, v in lines.items())
     if biz_type == 'purchase_request':
-        lines['单据编号'] = r['req_no']; lines['单据类型'] = '采购申请'
+        # V11.252: 设备维修类申请 — 钉钉展示维修设备/故障描述/完工时限(与详情页同源)
+        _is_rep = (r['req_type'] if 'req_type' in r.keys() else '') == '设备维修'
+        lines['单据编号'] = r['req_no']; lines['单据类型'] = '设备维修申请' if _is_rep else '采购申请'
         lines['申请人'] = r['requester']; lines['申请部门'] = r['dept']
         lines['申请时间'] = str(r['created_at'] or '')[:19]
         lines['预算归属'] = r['budget_code'] or '-'
-        lines['采购用途'] = r['purpose']
-        lines['需求到货'] = str(r['target_date'] or '')[:10]
+        if _is_rep:
+            lines['维修事由'] = r['purpose']
+            _rdv = r['repair_device'] if 'repair_device' in r.keys() else ''
+            _rft = r['repair_fault'] if 'repair_fault' in r.keys() else ''
+            if _rdv: lines['维修设备'] = str(_rdv)
+            if _rft: lines['故障描述'] = str(_rft)[:300]
+            lines['完工时限'] = str(r['target_date'] or '-')[:10]
+        else:
+            lines['采购用途'] = r['purpose']
+            lines['需求到货'] = str(r['target_date'] or '')[:10]
         lines['预估总金额'] = f"¥{float(r['total_estimated'] or 0):,.2f}"
         lines['紧急等级'] = '🚨加急' if r['urgent'] else '普通'
         # 明细子表 (V11.245: 全套字段输出 — 类别/厂家品牌参数/规格/单位/请购数量/用途/实时库存/备注, 与页面表格同源)
