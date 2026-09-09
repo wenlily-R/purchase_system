@@ -199,16 +199,25 @@ def gen_req_no(dept=None, c=None):
 
 def gen_contract_no(c=None):
     """合同编码规则(55.docx需求7): HQZC-SBCG-份号-年份, 如 HQZC-SBCG-019-2026
-    份号=当年合同序号, 年份=签订年份; 用 MAX 取当前最大序号(并发安全)"""
+    份号=当年合同序号, 年份=签订年份; 取最大份号+1(并发安全)
+    V11.254修复: 原MAX(contract_no)文本排序会把'-TEST-'等后缀测试链(如HQZC-SBCG-003-TEST-2026)
+    排到最大→序号解析失败归零→生成001撞已存在正式合同→UNIQUE 500; 改为正则仅识别正式格式提取份号"""
+    import re as _re
     conn = c if c else db()
     year = datetime.date.today().strftime('%Y')
-    r = conn.execute("SELECT MAX(contract_no) m FROM contracts WHERE contract_no LIKE ?", (f'HQZC-SBCG-%-{year}',)).fetchone()
+    _pfx = 'HQZC-SBCG'
+    rows = conn.execute("SELECT contract_no FROM contracts WHERE contract_no LIKE ?", (f'{_pfx}-%-{year}',)).fetchall()
     if not c: conn.close()
-    cur = 0
-    if r and r['m']:
-        try: cur = int(str(r['m']).split('-')[-2])
-        except Exception: cur = 0
-    return f'HQZC-SBCG-{cur+1:03d}-{year}'
+    _used = set()
+    for _row in rows:
+        _m = _re.search(rf'{_pfx}-(\d+)-{year}$', str(_row['contract_no']))
+        if _m:
+            _used.add(int(_m.group(1)))
+    cur = max(_used) if _used else 0
+    n = cur + 1
+    while n in _used:  # 兜底: 中间号被删除重排后仍不撞号
+        n += 1
+    return f'{_pfx}-{n:03d}-{year}'
 
 def log(op, action, detail, c=None):
     if c: c.execute("INSERT INTO logs(operator,action,detail,created_at) VALUES(?,?,?,?)", (op,action,detail,now()))
