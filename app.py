@@ -6315,10 +6315,10 @@ def api_inquiries():
     out = []
     for r in rows:
         d = dict_row(r)
-        # V11.217: 全部受邀供应商报完价 → 才带最低价(否则 None 前端显示'待开标')
+        # V11.253: 统一时间开标 — 截止前一律不显示最低价(去掉V11.217'全报齐提前'豁免); 截止后带最低价
         _sc = d['sup_count'] or 0
         _qc = d['quoted_count'] or 0
-        if _sc >= 2 and _qc >= _sc:
+        if not _inq_locked(d.get('deadline') or '') and _qc > 0:
             conn2 = db()
             _m = conn2.execute("SELECT MIN(quote_price) m FROM inquiry_suppliers WHERE inquiry_id=? AND quote_price>0", (d['id'],)).fetchone()[0]
             conn2.close()
@@ -6683,15 +6683,14 @@ def api_inquiry_detail(iid):
     pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (i['req_id'],)).fetchone()
     items = conn.execute("SELECT * FROM request_items WHERE req_id=?", (i['req_id'],)).fetchall()
     sups = conn.execute("SELECT * FROM inquiry_suppliers WHERE inquiry_id=? ORDER BY (quote_price=0), quote_price, id", (iid,)).fetchall()
-    # V11.217: 提前开标 — 全部受邀供应商已报价(每家quote_price>0)则立即解锁(不等截止时间)
+    # V11.253: 统一时间开标 — 严格按报价截止时间(去掉V11.217/244'全部报齐提前开标'豁免, 截止前报价一律不公开)
     _all_q = bool(sups) and all((s['quote_price'] or 0) > 0 for s in sups)
     conn.close()
     out = dict_row(i)
     out['request'] = dict_row(pr)
     out['items'] = [dict_row(r) for r in items]
-    # V11.205: 锁定期状态(截止时间精确到分钟; 纯日期老数据按当天23:59)
-    # V11.217: 全部报价完成 → 提前解锁(三家在截止前全部提前报完价 → 提前显示报价详情并可提交)
-    out['locked'] = _inq_locked(i['deadline']) and not _all_q
+    # V11.205: 锁定期状态(截止时间精确到分钟; 纯日期老数据按当天23:59) — 截止前锁定, 到点自动解锁
+    out['locked'] = _inq_locked(i['deadline'])
     out['deadline_passed'] = (not out['locked']) and bool((i['deadline'] or '').strip())
     out['all_quoted'] = _all_q
     # 添加品牌分析
@@ -6839,15 +6838,8 @@ def inquiry_vendor_page(token):
     _deadline = (i['deadline'] or '').strip()
     # V11.205: 截止精确到分钟 — 到点(含纯日期老数据按当日23:59)后报价通道关闭
     _ddt2 = _inq_deadline_dt(_deadline)
-    # V11.217: 全部受邀供应商已报价 → 提前开标(不等截止时间)
-    _all_q2 = False
-    try:
-        _tot2 = conn.execute("SELECT COUNT(*) c FROM inquiry_suppliers WHERE inquiry_id=?", (i['id'],)).fetchone()[0]
-        _qed2 = conn.execute("SELECT COUNT(*) c FROM inquiry_suppliers WHERE inquiry_id=? AND (quote_price IS NULL OR quote_price<=0)", (i['id'],)).fetchone()[0]
-        _all_q2 = _tot2 > 0 and _qed2 == 0
-    except Exception:
-        pass
-    if (_ddt2 and datetime.datetime.now() >= _ddt2) or _all_q2:
+    # V11.253: 统一时间开标 — 严格按截止时间(去掉V11.217全报齐提前开标); 截止后进入比价公开只读页
+    if _ddt2 and datetime.datetime.now() >= _ddt2:
         # V11.236: 开标后 → 比价公开只读页(已鉴权, 各家报价可见; 报价通道关闭)
         conn.close()
         _res = _inq_vendor_result(token, s)
@@ -7085,11 +7077,9 @@ def api_inquiry_submit(iid):
         conn.close()
         return jsonify({'error': '该询价已结束'}), 400
     # V11.205: 统一开标 — 截止前禁止提交定标审批(否则审批详情/钉钉会泄露报价)
-    # V11.217: 例外 — 全部受邀供应商提前报完价 → 允许提前开标提交(不等截止时间)
-    sups0 = conn.execute("SELECT * FROM inquiry_suppliers WHERE inquiry_id=?", (iid,)).fetchall()
-    _all_q = bool(sups0) and all((s['quote_price'] or 0) > 0 for s in sups0)
-    if _inq_locked(i['deadline']) and not _all_q:
-        conn.close(); return jsonify({'error': '报价未开标（截止 %s，当前尚未全部报价），请等全部供应商报完价或到截止时间后再提交定标审批' % (i['deadline'] or '')}), 400
+    # V11.253: 统一时间开标 — 去掉V11.217'全报齐提前'例外, 截止前一律禁止
+    if _inq_locked(i['deadline']):
+        conn.close(); return jsonify({'error': '报价未开标（统一时间开标：截止 %s 后统一公开报价并定标），请到截止时间后再提交定标审批' % (i['deadline'] or '')}), 400
     # V11.155f: 防重复提交 — 已有审批中记录(定标审批中)则拒绝
     _pend = conn.execute("SELECT 1 FROM inquiry_approvals WHERE inquiry_id=? AND status='审批中' LIMIT 1", (iid,)).fetchone()
     if _pend:
@@ -7159,13 +7149,11 @@ def api_inquiry_select(iid):
     if i['status'] != '询价中':
         conn.close(); return jsonify({'error': '该询价已结束'}), 400
     # V11.24/V11.205: 统一开标 — 报价截止前禁止提前定标(防人为泄露/串通); 到点开标后才允许选中下单
+    # V11.253: 严格统一时间开标 — 去掉V11.244'全报齐视为提前开标'豁免, 截止前一律拦截
     if i['deadline']:
         _ddt4 = _inq_deadline_dt(i['deadline'])
         if _ddt4 and datetime.datetime.now() < _ddt4:
-            # V11.244修复: 与V11.217一致 — 全部受邀供应商已报价视为提前开标(否则询价中+全报齐+未到截止 会被自己挡住)
-            _noq4 = conn.execute("SELECT COUNT(*) FROM inquiry_suppliers WHERE inquiry_id=? AND (quote_price IS NULL OR quote_price=0)", (iid,)).fetchone()[0]
-            if _noq4 > 0:
-                conn.close(); return jsonify({'error': '报价尚未开标（截止 %s），请等待统一开标后再定标选择供应商' % i['deadline']}), 400
+            conn.close(); return jsonify({'error': '报价尚未开标（统一时间开标：截止 %s 后统一公开报价并定标）' % i['deadline']}), 400
     s = conn.execute("SELECT * FROM inquiry_suppliers WHERE id=? AND inquiry_id=?", (sid, iid)).fetchone()
     if not s:
         conn.close(); return jsonify({'error': '供应商不在该询价单中'}), 400
@@ -7283,12 +7271,9 @@ def api_inquiry_split_select(iid):
     if i['status'] not in ('询价中', '待定标'):
         conn.close(); return jsonify({'error': '当前状态不可分项定标（仅询价中/待定标可操作）'}), 400
     # V11.205: 统一开标 — 截止前禁止分项定标(报价不可见阶段)
-    # V11.244修复: 与详情/提交审批/导出一致 — 全部受邀供应商已报价 → 提前开标放行
-    # (原漏加豁免: 领导批'按最低价择优采购'→状态待定标 后, 全报齐但未到截止的单被自己拦截, 无法生成订单)
+    # V11.253: 严格统一时间开标 — 去掉V11.244'全报齐提前放行'豁免, 截止前一律拦截
     if _inq_locked(i['deadline']):
-        _noq5 = conn.execute("SELECT COUNT(*) FROM inquiry_suppliers WHERE inquiry_id=? AND (quote_price IS NULL OR quote_price=0)", (iid,)).fetchone()[0]
-        if _noq5 > 0:
-            conn.close(); return jsonify({'error': '报价未开标（截止 %s），请等待统一开标后再分项定标' % (i['deadline'] or '')}), 400
+        conn.close(); return jsonify({'error': '报价未开标（统一时间开标：截止 %s 后统一公开报价并分项定标）' % (i['deadline'] or '')}), 400
     pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (i['req_id'],)).fetchone()
     if not pr:
         conn.close(); return jsonify({'error': '来源申请缺失'}), 400
@@ -7448,12 +7433,9 @@ def api_inquiry_export(iid):
     if not i:
         conn.close(); return jsonify({'error': '询价单不存在'}), 404
     # V11.205: 统一开标 — 截止前禁止导出比价单(报价内容不外泄)
-    # V11.229修复: 与详情接口V11.217一致 — 全部受邀供应商已报价则提前开标解锁;
-    # (否则提交定标审批生成钉钉附件时被锁挡→审批无附件)
+    # V11.253: 严格统一时间开标 — 去掉V11.229'全报齐提前解锁'豁免, 截止前一律拦截
     if _inq_locked(i['deadline']):
-        _noq = conn.execute("SELECT COUNT(*) FROM inquiry_suppliers WHERE inquiry_id=? AND (quote_price IS NULL OR quote_price=0)", (iid,)).fetchone()[0]
-        if _noq > 0:
-            conn.close(); return jsonify({'error': '报价未开标（截止 %s），开标后方可导出比价单' % (i['deadline'] or '')}), 400
+        conn.close(); return jsonify({'error': '报价未开标（统一时间开标：截止 %s 后统一公开报价并导出比价单）' % (i['deadline'] or '')}), 400
     pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (i['req_id'],)).fetchone()
     items = conn.execute("SELECT * FROM request_items WHERE req_id=? ORDER BY id", (i['req_id'],)).fetchall()
     sups = [dict(s) for s in conn.execute("SELECT * FROM inquiry_suppliers WHERE inquiry_id=? ORDER BY id", (iid,)).fetchall()]
