@@ -157,17 +157,27 @@ def gen_no(prefix, table, col, c=None):
 
 # V11.45: 部门→单号前缀映射(申请单号前两位随部门变化, 如生产=SC 财务=CW)
 DEPT_PREFIX = {
-    '生产部': 'SC', '财务部': 'CW', '机电部': 'JD', '机电': 'JD', '信息部': 'XX',
-    '后勤部': 'HQ', '工程部': 'GC', '维修车间': 'WX', '综合办': 'ZH', '调度': 'DD',
-    '化验室': 'HY', '库房': 'KF', '绿化': 'LH', '环卫': 'HW', '生产车队': 'CD',
-    '采购部': 'CG', '采购与供应链部': 'CG',
+    # V11.254: 需求口径部门前缀映射(需求文档: 生产SC/维修WX/后勤HQ/综合办ZB/财务CW/工程GC/信息XX)
+    '生产部': 'SC', '维修车间': 'WX', '后勤部': 'HQ', '综合办': 'ZB', '财务部': 'CW', '工程部': 'GC', '信息部': 'XX',
+    # 历史扩展部门(兼容存量): 机电/调度/化验/库房/绿化/环卫/车队/采购等
+    '机电部': 'JD', '机电': 'JD', '调度': 'DD', '化验室': 'HY', '库房': 'KF', '绿化': 'LH',
+    '环卫': 'HW', '生产车队': 'CD', '采购部': 'CG', '采购与供应链部': 'CG',
 }
 
 def dept_prefix(dept):
-    """部门 → 单号前缀, 未知部门默认 SC(采购)"""
+    """部门 → 单号前缀, 未知部门默认 SC
+    V11.254: 后台维护映射优先(sys_config.dept_prefix_map, 系统设置可编辑 — 需求: 新部门取首字母/防重复冲突由后台维护)"""
     if not dept:
         return 'SC'
     d = str(dept).strip()
+    try:
+        _m = db().execute("SELECT value FROM sys_config WHERE key='dept_prefix_map'").fetchone()
+        if _m and _m['value']:
+            _ov = json.loads(_m['value'])
+            if d in _ov and str(_ov[d]).strip():
+                return str(_ov[d]).strip()[:2]
+    except Exception:
+        pass
     if d in DEPT_PREFIX:
         return DEPT_PREFIX[d]
     # 包含匹配(如 "机电部2" → JD)
@@ -5972,6 +5982,52 @@ def api_orders_execution_list():
         out.append(od)
     c.close()
     return jsonify({'rows': out, 'total': len(out)})
+
+
+@app.route('/api/admin/dept-prefix', methods=['GET', 'POST'])
+@login_required
+def api_admin_dept_prefix():
+    """V11.254(需求): 部门单号前缀后台维护 — GET返回[部门名,当前生效前缀]; POST保存覆盖映射(sys_config.dept_prefix_map)
+    新增部门/首字母重复冲突时, 管理员在此维护前缀(需求1②)"""
+    conn = db()
+    if request.method == 'GET':
+        _ov = {}
+        try:
+            _m = conn.execute("SELECT value FROM sys_config WHERE key='dept_prefix_map'").fetchone()
+            if _m and _m['value']:
+                _ov = json.loads(_m['value'])
+        except Exception:
+            pass
+        _depts = [r['name'] for r in conn.execute("SELECT name FROM departments ORDER BY id")]
+        # 合并内置映射中系统部门+常用扩展
+        out = []
+        for _dn in _depts:
+            out.append({'dept': _dn, 'prefix': str(_ov.get(_dn) or DEPT_PREFIX.get(_dn) or 'SC')})
+        for _k, _v in DEPT_PREFIX.items():
+            if _k not in _depts and _k not in [x['dept'] for x in out]:
+                out.append({'dept': _k, 'prefix': _v, 'extra': True})
+        conn.close()
+        return jsonify({'list': out})
+    # POST 保存
+    if not can_manage_config():
+        conn.close()
+        return jsonify({'error': '仅配置管理员可操作'}), 403
+    d = request.json or {}
+    mp = d.get('map') or {}
+    clean = {}
+    for _k, _v in mp.items():
+        _kk = str(_k).strip()
+        if _kk and str(_v).strip():
+            clean[_kk] = str(_v).strip()[:2]
+    _ex = conn.execute("SELECT 1 FROM sys_config WHERE key='dept_prefix_map'").fetchone()
+    if _ex:
+        conn.execute("UPDATE sys_config SET value=? WHERE k='dept_prefix_map'", (json.dumps(clean, ensure_ascii=False),))
+    else:
+        conn.execute("INSERT INTO sys_config(key, value) VALUES('dept_prefix_map', ?)", (json.dumps(clean, ensure_ascii=False),))
+    conn.commit()
+    conn.close()
+    log(session['user_name'], '维护部门单号前缀', json.dumps(clean, ensure_ascii=False)[:150])
+    return jsonify({'success': True})
 
 
 @app.route('/api/admin/fix-partial-orders', methods=['POST'])

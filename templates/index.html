@@ -649,7 +649,10 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
       <div style="color:#666;margin-bottom:4px">部分入库后订单被误置"已入库"导致剩余数量无法继续录入时，点此一键修正为"部分到货，待继续验收"（只修正确有余量的订单，幂等安全，可重复点）。</div>
       <div id="fixOrderBox"><div style="color:#bbb">尚未执行检查</div></div>
     </div></div>
-  <div class="card"><div class="ch"><h3>🔎 审批人配置检查（V5.0）</h3><button class="btn btn-o btn-sm" onclick="loadApprConfigCheck()">刷新检查</button></div>
+  <div class="card"><div class="ch"><h3>🔢 部门单号前缀维护（V11.254）</h3><button class="btn btn-o btn-sm" onclick="deptPrefixCard()">🔄 加载</button> <button class="btn btn-p btn-sm" onclick="saveDeptPrefix()">💾 保存</button></div>
+      <div class="cb" style="font-size:9px"><div style="color:#666;margin-bottom:4px">采购申请单号前缀随申请部门自动生成（需求: 生产SC/维修WX/后勤HQ/综合办ZB/财务CW/工程GC/信息XX）。新增部门或前缀重复冲突时在此改前缀，立即生效。</div>
+        <div id="deptPrefixBox" style="color:#bbb">点击「加载」查看</div></div></div>
+    <div class="card"><div class="ch"><h3>🔎 审批人配置检查（V5.0）</h3><button class="btn btn-o btn-sm" onclick="loadApprConfigCheck()">刷新检查</button></div>
     <div class="cb" style="font-size:9px;line-height:1.6">
       <div style="color:#666;margin-bottom:4px">审批流按 单据类型+金额 分级，每级审批人=对应角色在 users 表中的<b>有效用户</b>；发起钉钉/飞书审批时，该角色必须已绑定通讯录成员ID。下方红标=该级审批人未就绪（角色未启用或未绑定通讯录），需在用户管理中绑定后才可发起外部审批。</div>
       <div id="apprCfgBox"><div class="loading">加载中...</div></div>
@@ -7584,6 +7587,33 @@ async function backfillTrace(){
       box.innerHTML=`<div style="color:#16a34a">✅ 存量溯源补录完成：入库单 <b>${b.receivings||0}</b>、合同 <b>${b.contracts||0}</b>、询价 <b>${b.inquiries||0}</b>、库存流水 <b>${b.flows||0}</b>、库存台账 <b>${b.inventory||0}</b> 条已回填</div>`;
     }else box.innerHTML='<div style="color:#c0392b">⚠️ '+(r&&r.error?esc(r.error):'补录失败')+'</div>';
   }catch(e){box.innerHTML='<div style="color:#c0392b">⚠️ 补录异常</div>'}
+}
+// V11.254(需求): 部门单号前缀后台维护 — 加载列表可编辑保存
+async function deptPrefixCard(){
+  const box=id('deptPrefixBox');if(!box)return;
+  box.innerHTML='<div class="loading">加载中...</div>';
+  try{
+    const d=await api('/admin/dept-prefix');
+    if(d&&d.list){
+      box.innerHTML=`<table class="tb" style="font-size:9px"><thead><tr><th>部门</th><th>单号前缀(2位)</th></tr></thead><tbody>
+        ${d.list.map(x=>`<tr><td>${esc(x.dept)}${x.extra?' <span class="tag" style="background:#f3f4f6;color:#888">内置</span>':''}</td>
+        <td><input value="${esc(x.prefix)}" style="width:56px;padding:3px 6px;border:1px solid #ccc;border-radius:4px;text-align:center;text-transform:uppercase" data-dept="${esc(x.dept)}" maxlength="2"></td></tr>`).join('')}
+        </tbody></table>
+        <div style="color:#888;margin-top:4px">新增部门：先在部门管理中建部门，再来此设前缀（默认自动生成，冲突时手动改）。保存后新单据立即按新前缀编号。</div>`;
+    }else box.innerHTML='<div style="color:#c0392b">加载失败</div>';
+  }catch(e){box.innerHTML='<div style="color:#c0392b">加载失败</div>'}
+}
+async function saveDeptPrefix(){
+  const box=id('deptPrefixBox');if(!box)return;
+  const mp={};
+  box.querySelectorAll('input[data-dept]').forEach(inp=>{
+    const v=(inp.value||'').trim().toUpperCase();
+    if(v)mp[inp.dataset.dept]=v;
+  });
+  if(!Object.keys(mp).length){alert('无修改');return}
+  if(!confirm('保存部门单号前缀映射？新单据将按新前缀编号（历史单据不变）。'))return;
+  const r=await api('/admin/dept-prefix',{method:'POST',body:JSON.stringify({map:mp})});
+  if(r&&r.success){alert('✅ 已保存');deptPrefixCard()}else alert((r&&r.error)||'保存失败');
 }
 // V11.244: 业务卡点排查(①已审批未采购 ②已采购未到货 ③已入库未回票) — 报表中心面板
 let _ckCache=null;
