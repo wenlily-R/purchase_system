@@ -5275,8 +5275,10 @@ def api_create_prequest():
             conn.close(); return jsonify({'error': '请填写采购事由（这批物资买来做什么）'}), 400
         if not str(d.get('dept') or '').strip():
             conn.close(); return jsonify({'error': '请选择申请部门'}), 400
-    # V11.250: 提交审批必填锁定标准 — 每行 指定品牌 + 指定质保期(采购员提前锁死, 外网报价品牌一致/质保不低于)
-    if not d.get('draft'):
+    # V11.250: 提交审批必填锁定标准(物资类) — 每行 指定品牌 + 指定质保期(采购员提前锁死, 外网报价品牌一致/质保不低于)
+    # V11.252: 设备维修类不走品牌/质保锁定(维修项目行无此概念), 且允许先空明细(仅填故障描述), 定损项目清单在询价前补充
+    _rt = str(d.get('req_type') or '物资采购')
+    if not d.get('draft') and _rt != '设备维修':
         for _n, _it in enumerate(items, 1):
             _b = str(_it.get('brand_param') or '').strip()
             _w = str(_it.get('warranty_param') or '').strip()
@@ -5284,6 +5286,12 @@ def api_create_prequest():
                 conn.close(); return jsonify({'error': f'第{_n}行「{_it.get("item_name","")}」请填写指定品牌（采购员提前锁死标准）'}), 400
             if not _w:
                 conn.close(); return jsonify({'error': f'第{_n}行「{_it.get("item_name","")}」请填写指定质保期（如 12个月/24个月）'}), 400
+    if not d.get('draft') and _rt == '设备维修' and not items:
+        if not str(d.get('repair_device') or '').strip() or not str(d.get('repair_fault') or '').strip():
+            conn.close(); return jsonify({'error': '维修类申请请填写故障设备名称与故障描述（维修项目/定损清单可在询价前补充）'}), 400
+    # V11.252: 物资类申请必须有明细(后端兜底, 防绕过前端)
+    if not d.get('draft') and _rt != '设备维修' and not items:
+        conn.close(); return jsonify({'error': '物资类申请请至少添加一行物资'}), 400
     # 并发安全: 单号冲突(UNIQUE)时重新生成重试(最多5次)
     no = ''
     for _try in range(5):
@@ -5291,12 +5299,13 @@ def api_create_prequest():
         try:
             # V11.154: draft=true → 存草稿不提交审批(采购员检查后再手动提交)
             _status = '草稿' if d.get('draft') else '待审批'
-            conn.execute("""INSERT INTO purchase_requests(req_no,dept,requester,requester_id,budget_code,purpose,target_date,total_estimated,remark,attachments,urgent,apply_date,req_type,status)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            conn.execute("""INSERT INTO purchase_requests(req_no,dept,requester,requester_id,budget_code,purpose,target_date,total_estimated,remark,attachments,urgent,apply_date,req_type,status,repair_device,repair_fault)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (no, d.get('dept',''), session['user_name'], session['user_id'], d.get('budget_code',''),
                  d.get('purpose',''), d.get('target_date'), total, d.get('remark',''),
                  json.dumps(d.get('attachments') or [], ensure_ascii=False), 1 if d.get('urgent') else 0, apply_date,
-                 d.get('req_type') or '物资采购', _status))
+                 d.get('req_type') or '物资采购', _status,
+                 str(d.get('repair_device') or ''), str(d.get('repair_fault') or '')))
             break
         except sqlite3.IntegrityError:
             continue
@@ -5395,21 +5404,27 @@ def api_resubmit_prequest(rid):
     total = sum(float(i.get('quantity',1)) * float(i.get('estimated_price',0)) for i in items)
     # V11.187: 存草稿(draft=true) — 保存内容但状态保持草稿(不进审批/不清驳回标记); 提交则清标记+回待审批
     if d.get('draft'):
-        conn.execute("UPDATE purchase_requests SET purpose=?, dept=?, budget_code=?, target_date=?, remark=?, req_type=?, urgent=?, attachments=?, total_estimated=?, status='草稿', updated_at=? WHERE id=?",
+        conn.execute("UPDATE purchase_requests SET purpose=?, dept=?, budget_code=?, target_date=?, remark=?, req_type=?, urgent=?, attachments=?, total_estimated=?, repair_device=?, repair_fault=?, status='草稿', updated_at=? WHERE id=?",
                      (d.get('purpose', pr['purpose']), d.get('dept', pr['dept']), d.get('budget_code', pr['budget_code']),
                       d.get('target_date', pr['target_date']), d.get('remark', pr['remark']),
                       d.get('req_type', pr['req_type'] if 'req_type' in pr.keys() else '物资采购'),
                       1 if d.get('urgent') else (pr['urgent'] if 'urgent' in pr.keys() else 0),
                       json.dumps(d.get('attachments') or [], ensure_ascii=False) if d.get('attachments') is not None else (pr['attachments'] if 'attachments' in pr.keys() else '[]'),
-                      total, now(), rid))
+                      total,
+                      str(d.get('repair_device', pr['repair_device'] if 'repair_device' in pr.keys() else '')),
+                      str(d.get('repair_fault', pr['repair_fault'] if 'repair_fault' in pr.keys() else '')),
+                      now(), rid))
     else:
-        conn.execute("UPDATE purchase_requests SET purpose=?, dept=?, budget_code=?, target_date=?, remark=?, req_type=?, urgent=?, attachments=?, total_estimated=?, status='待审批', rejected_reason='', rejected_items='', resubmit_count=resubmit_count+1, updated_at=? WHERE id=?",
+        conn.execute("UPDATE purchase_requests SET purpose=?, dept=?, budget_code=?, target_date=?, remark=?, req_type=?, urgent=?, attachments=?, total_estimated=?, repair_device=?, repair_fault=?, status='待审批', rejected_reason='', rejected_items='', resubmit_count=resubmit_count+1, updated_at=? WHERE id=?",
                      (d.get('purpose', pr['purpose']), d.get('dept', pr['dept']), d.get('budget_code', pr['budget_code']),
                       d.get('target_date', pr['target_date']), d.get('remark', pr['remark']),
                       d.get('req_type', pr['req_type'] if 'req_type' in pr.keys() else '物资采购'),
                       1 if d.get('urgent') else (pr['urgent'] if 'urgent' in pr.keys() else 0),
                       json.dumps(d.get('attachments') or [], ensure_ascii=False) if d.get('attachments') is not None else (pr['attachments'] if 'attachments' in pr.keys() else '[]'),
-                      total, now(), rid))
+                      total,
+                      str(d.get('repair_device', pr['repair_device'] if 'repair_device' in pr.keys() else '')),
+                      str(d.get('repair_fault', pr['repair_fault'] if 'repair_fault' in pr.keys() else '')),
+                      now(), rid))
     if items:
         # V11.154: 传了明细才重建(编辑时); 不传则保留现有明细(草稿提交审批场景)
         conn.execute("DELETE FROM request_items WHERE req_id=?", (rid,))

@@ -1786,8 +1786,14 @@ async function editPRequest(oid){
   id('dmBody').innerHTML=`
     <div class="fr"><div class="fg"><label class="fl2">申请单号</label><input class="fc" id="fReqNo" readonly value="${esc(r.req_no)}" style="background:#f5f5f5"></div>
     <div class="fg"><label class="fl2">申请日期</label><input class="fc" id="fReqApplyDate" readonly value="${esc(r.apply_date||'')}" style="background:#f5f5f5"></div></div>
-    <div class="fr"><div class="fg"><label class="fl2">类型</label><input class="fc" id="fReqType" readonly value="物资采购" style="background:#f5f5f5;color:#555"></div>
+    <div class="fr"><div class="fg"><label class="fl2">业务类型 *</label><select class="fc" id="fReqType" onchange="reqTypeChanged()"><option value="物资采购">📦 物资采购（买物资/设备）</option><option value="设备维修">🔧 设备维修（修设备/小额维修）</option></select></div>
     <div class="fg"><label class="fl2" id="fReqTypeTip" style="color:#b76e00;font-size:9px;align-self:center">📦 买物资: 填物资名称/规格/数量</label></div></div>
+    <div id="repairFields" style="display:none;border:1px solid #f0d9b5;background:#fffaf2;border-radius:6px;padding:6px;margin-bottom:6px">
+      <div style="font-size:9px;color:#8a6d3b;margin-bottom:4px">🔧 维修信息（维修业务并入采购申请办理；压高压胶管/打黄油/补胎补气等小额透明维修也在此发起）</div>
+      <div class="fr"><div class="fg"><label class="fl2">故障设备名称 *</label><input class="fc" id="fReqDev" placeholder="如: 3号装载机变速箱"></div>
+      <div class="fg"><label class="fl2">故障描述 / 维修内容 *</label><input class="fc" id="fReqFault" placeholder="如: 异响漏油, 需厂家拆解定损"></div></div>
+      <div style="font-size:8px;color:#999;margin-top:3px">设备送厂家拆解定损后，维修项目清单可补录到下方明细表（物品=维修项目/备件）或整单附图上传定损单。</div>
+    </div>
     <div class="fr"><div class="fg"><label class="fl2">申请部门</label><select class="fc" id="fReqDept"><option value="">请选择（选填）</option>${depts.map(x=>`<option ${x.name==r.dept?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div>
     <div class="fg"><label class="fl2">预算科目</label><select class="fc" id="fReqBud"><option value="">无</option></select></div></div>
     <div class="fr"><div class="fg"><label class="fl2">用途说明 *</label><input class="fc" id="fReqPurp" value="${esc(r.purpose||'')}"></div>
@@ -1798,8 +1804,8 @@ async function editPRequest(oid){
     <div id="reqAttList" style="font-size:9px;color:#666;margin-top:2px"></div>
     ${((r.status=='已驳回'||(r.status=='草稿'&&(r.reject_count||0)>0))&&r.rejected_reason)?`<div style="font-size:9px;color:var(--d);padding:4px 8px;background:#fff5f5;border-radius:4px;margin:4px 0">❌ 驳回原因：${esc(r.rejected_reason)}${r.rejected_by?`（${esc(r.rejected_by)} ${esc((r.rejected_at||'').slice(5,16))}）`:''}</div>`:''}
     <div style="border:1px solid var(--b);border-radius:4px;padding:6px;margin-top:4px">
-      <label class="fl2">采购物资明细（可修改）</label>
-      <div style="font-size:9px;color:#8a6d3b;background:#fff8e6;border-radius:4px;padding:3px 6px;margin:2px 0">✏️ <b>品牌由采购员指定</b>（如 联想/格力，或填"不限"）——发起询价后商家按指定品牌报价；<b>指定质保期(如24个月)同为必填</b>，外网报价不得低于；填品名自动带出库存；用途见上方"用途说明"。表格较宽可左右滑动。</div>
+      <label class="fl2" id="reqDetailTitle">采购物资明细</label>
+      <div style="font-size:9px;color:#8a6d3b;background:#fff8e6;border-radius:4px;padding:3px 6px;margin:2px 0" id="reqDetailTip">✏️ <b>品牌由采购员指定</b>（如 联想/格力，或填"不限"）——发起询价后商家按指定品牌报价；<b>指定质保期(如24个月)同为必填</b>，外网报价不得低于；填品名自动带出库存；用途见上方"用途说明"。表格较宽可左右滑动。</div>
       <div style="overflow-x:auto"><table class="tb" style="font-size:10px;min-width:930px;margin-top:3px"><thead><tr>
         <th style="width:22px">#</th><th style="min-width:100px">物品名称 *</th><th style="min-width:62px">规格型号</th><th style="width:38px">单位</th><th style="width:56px">库存</th><th style="width:64px">请购数量 *</th><th style="min-width:106px">品牌（指定）</th><th style="width:84px">采购类别</th><th style="min-width:72px">备注</th><th style="min-width:128px">到货日/附图</th>
       </tr></thead><tbody id="reqItemList"></tbody></table></div>
@@ -1811,7 +1817,11 @@ async function editPRequest(oid){
     <button class="btn btn-p" onclick="doSavePReq()">✅ 保存并提交审批</button>`;
   // 预算回显
   id('fReqBud').innerHTML='<option value="">无</option>'+bs.map(b=>`<option value="${b.code}" ${b.code==r.budget_code?'selected':''}>${esc(b.name)} (¥${(b.annual_budget||0).toFixed(0)})</option>`).join('');
-  // V11.223: 类型固定物资采购且只读展示(无下拉箭头), 表单内已直出, 无需回显处理
+  // V11.252: 业务类型回显(物资采购/设备维修, 历史单据默认物资) + 维修字段 + 联动
+  id('fReqType').value=((r.req_type||'物资采购')=='设备维修')?'设备维修':'物资采购';
+  if(id('fReqDev'))id('fReqDev').value=r.repair_device||'';
+  if(id('fReqFault'))id('fReqFault').value=r.repair_fault||'';
+  reqTypeChanged();
   // 整单附件列表回显
   reqAtts.forEach(a=>{const _wrap=document.createElement('div');_wrap.style.display='flex';_wrap.style.alignItems='center';_wrap.style.gap='6px';_wrap.innerHTML=`<a href="/uploads/${esc(a)}" target="_blank" style="color:#3370ff">📄 ${esc(a.split('/').pop())}</a><span onclick="this.parentElement.remove()" style="cursor:pointer;color:var(--d)">✕</span>`;id('reqAttList').appendChild(_wrap)});
   // 明细行回显(富字段)
@@ -1838,9 +1848,15 @@ async function doSavePReq(asDraft,oid){
     }
   });
   if(_bad){alert(_bad);return}
-  if(!items.length){alert('请填至少一行物资');return}
+  const _rtEd=(id('fReqType')?.value||'物资采购');
+  if(!items.length&&_rtEd!='设备维修'){alert('请填至少一行物资');return}
+  // V11.252: 维修类空明细时须填故障设备+描述(草稿可暂存)
+  if(!asDraft&&_rtEd=='设备维修'){
+    const _dev=(id('fReqDev')?.value||'').trim(),_flt=(id('fReqFault')?.value||'').trim();
+    if(!_dev||!_flt){alert('维修类申请请填写故障设备名称与故障描述');return}
+  }
   const body={purpose:id('fReqPurp').value,dept:id('fReqDept')?.value||'',budget_code:id('fReqBud')?.value||'',
-    target_date:id('fReqDate').value,remark:id('fReqRem')?.value||'',req_type:id('fReqType')?.value||'物资采购',
+    target_date:id('fReqDate').value,remark:id('fReqRem')?.value||'',req_type:_rtEd,repair_device:id('fReqDev')?.value||'',repair_fault:id('fReqFault')?.value||'',
     urgent:id('fReqUrgent')?.checked?1:0,attachments:reqAtts||[],apply_date:(id('fReqApplyDate')?.value||'').replace(/年/g,'-').replace(/月/g,'-').replace(/日/g,''),items};
   if(asDraft)body.draft=true;
   const r=await api(`/prequests/${oid}/resubmit`,{method:'POST',body:JSON.stringify(body)});
@@ -1858,7 +1874,12 @@ async function showPRequest(pid){
   const r=d.request,items=d.items,approvals=d.approvals;
   window.__rejItems=[];  // V11.185: 本单被驳回条目集合(统一字符串比较)
   try{window.__rejItems=(r.rejected_items||'')=='__all__'?items.map(x=>String(x.id)):(JSON.parse(r.rejected_items||'[]')||[]).map(String)}catch(e){}
-  let h=`<div class="c2"><div><dt>编号</dt><dd><b>${esc(r.req_no)}</b></dd><dt>部门</dt><dd>${esc(r.dept)}</dd><dt>申请人</dt><dd>${esc(r.requester)}</dd><dt>预算科目</dt><dd>${esc(r.budget_code||'-')}</dd></div>
+  const _rtSh=((r.req_type||'物资采购')=='设备维修')?'设备维修':'物资采购';
+  // V11.252: 详情页顶部维修类信息块(审批人一眼识别维修/物资 + 设备/故障 + 转物资标记)
+  let h=(_rtSh=='设备维修'
+    ? `<div style="background:#fff8f0;border:1px solid #f0d9b5;color:#8a4b0f;font-size:10px;padding:5px 8px;border-radius:4px;margin-bottom:6px">🔧 <b>设备维修申请</b>${r.repair_device?` ｜ 设备: <b>${esc(r.repair_device)}</b>`:''}${r.repair_fault?`<br>故障描述: ${esc(r.repair_fault)}`:''}${r.repair_converted?'<br><span style="color:#c0392b">⚠️ 定损判定不具备维修条件，本单已变更为物资采购（走寻价比价采购新设备）</span>':''}</div>`
+    : '')
+    + `<div class="c2"><div><dt>编号</dt><dd><b>${esc(r.req_no)}</b></dd><dt>部门</dt><dd>${esc(r.dept)}</dd><dt>申请人</dt><dd>${esc(r.requester)}</dd><dt>预算科目</dt><dd>${esc(r.budget_code||'-')}</dd></div>
     <div><dt>用途</dt><dd>${esc(r.purpose)}</dt><dt>目标日</dt><dd>${r.target_date||'-'}</dd><dt>状态</dt><dd>${tag(r.status)}${(r.reject_count||0)>0?` <span style="font-size:9px;color:#c0392b;background:#fdeaea;border-radius:3px;padding:1px 5px">已驳回${r.reject_count}次</span>`:''}</dd></div></div>
     <h4 style="font-size:10px;margin:6px 0 3px">📋 物资明细</h4>
     <div style="overflow-x:auto"><table class="tb" style="font-size:10px;min-width:700px"><thead><tr><th>#</th><th>物品名称</th><th>规格型号</th><th>单位</th><th>库存</th><th>请购数量</th><th style="min-width:110px">品牌（指定）</th><th>类别/用途/备注</th></tr></thead><tbody>`;
@@ -5437,8 +5458,14 @@ async function showForm(type){
     id('dmBody').innerHTML=`
       <div class="fr"><div class="fg"><label class="fl2">申请单号</label><input class="fc" id="fReqNo" readonly style="background:#f5f5f5"></div>
       <div class="fg"><label class="fl2">申请日期</label><input class="fc" id="fReqApplyDate" readonly style="background:#f5f5f5"></div></div>
-      <div class="fr"><div class="fg"><label class="fl2">类型</label><input class="fc" id="fReqType" readonly value="物资采购" style="background:#f5f5f5;color:#555"></div>
+      <div class="fr"><div class="fg"><label class="fl2">业务类型 *</label><select class="fc" id="fReqType" onchange="reqTypeChanged()"><option value="物资采购">📦 物资采购（买物资/设备）</option><option value="设备维修">🔧 设备维修（修设备/小额维修）</option></select></div>
       <div class="fg"><label class="fl2" id="fReqTypeTip" style="color:#b76e00;font-size:9px;align-self:center">📦 买物资: 填物资名称/规格/数量</label></div></div>
+      <div id="repairFields" style="display:none;border:1px solid #f0d9b5;background:#fffaf2;border-radius:6px;padding:6px;margin-bottom:6px">
+        <div style="font-size:9px;color:#8a6d3b;margin-bottom:4px">🔧 维修信息（维修业务并入采购申请办理；压高压胶管/打黄油/补胎补气等小额透明维修也在此发起）</div>
+        <div class="fr"><div class="fg"><label class="fl2">故障设备名称 *</label><input class="fc" id="fReqDev" placeholder="如: 3号装载机变速箱"></div>
+        <div class="fg"><label class="fl2">故障描述 / 维修内容 *</label><input class="fc" id="fReqFault" placeholder="如: 异响漏油, 需厂家拆解定损"></div></div>
+        <div style="font-size:8px;color:#999;margin-top:3px">设备送厂家拆解定损后，维修项目清单可补录到下方明细表（物品=维修项目/备件）或整单附图上传定损单。</div>
+      </div>
       <div class="fr"><div class="fg"><label class="fl2">申请部门</label><select class="fc" id="fReqDept" onchange="reqNoByDept()"><option value="">请选择（选填）</option>${depts.map(d=>`<option>${esc(d.name)}</option>`).join('')}</select></div>
       <div class="fg"><label class="fl2">预算科目</label><select class="fc" id="fReqBud"><option value="">无</option></select></div></div>
       <div class="fr"><div class="fg"><label class="fl2">用途说明 *</label><input class="fc" id="fReqPurp"></div>
@@ -5448,8 +5475,8 @@ async function showForm(type){
       <div class="fg"><label class="fl2">附件上传</label><input class="fc" id="fReqFiles" type="file" multiple onchange="uploadReqAtt(this)"></div></div>
       <div id="reqAttList" style="font-size:9px;color:#666;margin-top:2px"></div>
       <div style="border:1px solid var(--b);border-radius:4px;padding:6px;margin-top:4px">
-        <label class="fl2">采购物资明细</label>
-        <div style="font-size:9px;color:#8a6d3b;background:#fff8e6;border-radius:4px;padding:3px 6px;margin:2px 0">✏️ <b>品牌由采购员指定</b>（如 联想/格力，或填"不限"）——发起询价后商家按指定品牌报价；<b>指定质保期(如24个月)同为必填</b>，外网报价不得低于；填品名自动带出库存；用途见上方"用途说明"。表格较宽可左右滑动。</div>
+        <label class="fl2" id="reqDetailTitle">采购物资明细</label>
+        <div style="font-size:9px;color:#8a6d3b;background:#fff8e6;border-radius:4px;padding:3px 6px;margin:2px 0" id="reqDetailTip">✏️ <b>品牌由采购员指定</b>（如 联想/格力，或填"不限"）——发起询价后商家按指定品牌报价；<b>指定质保期(如24个月)同为必填</b>，外网报价不得低于；填品名自动带出库存；用途见上方"用途说明"。表格较宽可左右滑动。</div>
         <div style="overflow-x:auto"><table class="tb" style="font-size:10px;min-width:930px;margin-top:3px"><thead><tr>
           <th style="width:22px">#</th><th style="min-width:100px">物品名称 *</th><th style="min-width:62px">规格型号</th><th style="width:38px">单位</th><th style="width:56px">库存</th><th style="width:64px">请购数量 *</th><th style="min-width:106px">品牌（指定）</th><th style="width:84px">采购类别</th><th style="min-width:72px">备注</th><th style="min-width:128px">到货日/附图</th>
         </tr></thead><tbody id="reqItemList"></tbody></table></div>
@@ -5466,6 +5493,7 @@ async function showForm(type){
     // V11.237: 新建采购申请 开启本地草稿 — 输入自动保存, 误关/误滑后再打开自动恢复
     window.__prDraftOn=true;
     prTryRestore();
+    reqTypeChanged();
     // Load budgets
     api('/budgets').then(bs=>{
       id('fReqBud').innerHTML='<option value="">无</option>'+bs.map(b=>`<option value="${b.code}">${esc(b.name)} (¥${(b.annual_budget||0).toFixed(0)})</option>`).join('');
@@ -5718,6 +5746,8 @@ function prCollect(){
       if(n)items.push({item_name:n,category:id('ric'+idx)?.value||'',brand_param:id('rib'+idx)?.value||'',warranty_param:id('riw'+idx)?.value||'',spec:id('ris'+idx)?.value||'',quantity:parseFloat(id('riq'+idx)?.value)||1,unit:id('riu'+idx)?.value||'个',arrival_date:id('ria'+idx)?.value||'',estimated_price:parseFloat(id('rip'+idx)?.value)||0,usage:id('ruse'+idx)?.value||'',remark:id('rir'+idx)?.value||'',attach:id('riatt'+idx)?.dataset?.attach||''});
     });
     d.items=items;d.reqAtts=(typeof reqAtts!=='undefined'&&reqAtts)?reqAtts.slice():[];
+    d.req_type=id('fReqType')?.value||'物资采购';
+    d.repair_device=id('fReqDev')?.value||'';d.repair_fault=id('fReqFault')?.value||'';
     return d;
   }catch(e){return null}
 }
@@ -5742,6 +5772,11 @@ function prTryRestore(){
   if(d.urgent&&id('fReqUrgent'))id('fReqUrgent').checked=true;
   if(d.items&&d.items.length){id('reqItemList').innerHTML='';d.items.forEach(it=>addReqItem(it))}
   if(d.reqAtts&&d.reqAtts.length){try{reqAtts=d.reqAtts.slice();id('reqAttList').innerHTML=reqAtts.map(a=>'📎 '+a.split('/').pop()).join(' ')}catch(e){}}
+  // V11.252: 草稿恢复业务类型/维修字段
+  if(d.req_type&&id('fReqType'))id('fReqType').value=d.req_type;
+  if(d.repair_device&&id('fReqDev'))id('fReqDev').value=d.repair_device;
+  if(d.repair_fault&&id('fReqFault'))id('fReqFault').value=d.repair_fault;
+  reqTypeChanged();
   toast('📝 已恢复上次未提交的草稿(提交或存草稿成功后自动清除)');
 }
 window.__prDraftOn=false;
@@ -5749,18 +5784,29 @@ id('dmBody').addEventListener('input',()=>{if(window.__prDraftOn)__prSchedule()}
 id('dmBody').addEventListener('change',()=>{if(window.__prDraftOn)__prSchedule()});
 id('dmBody').addEventListener('click',()=>{if(window.__prDraftOn)__prSchedule()});
 
-// V11.61: 申请类型提示(物资采购/设备维修)
+// V11.61/V11.252: 申请业务类型联动(物资采购/设备维修) — 提示条/维修信息区/明细区文案/标题
 function reqTypeTip(){
   const t=id('fReqType')?.value||'物资采购';
   const tip=id('fReqTypeTip');
   if(!tip)return;
   tip.textContent = t=='设备维修'
-    ? '🛠 报维修: 物资名称填设备名(如"传动轴"), 用途填使用地点+故障, 可附图'
+    ? '🔧 维修类：故障设备+故障描述必填；审批直达分管领导；小额透明维修(压高压胶管/打黄油/补胎补气)不走多家询价'
     : '📦 买物资: 填物资名称/规格/数量, 自动查库存';
   // 标题也提示 — V11.187: 编辑模式(标题已是"修改采购申请")不改标题
   const _title=id('dmTitle').textContent||'';
   if(_title.includes('修改'))return;
-  id('dmTitle').textContent = t=='设备维修' ? '🛠 新建申请(设备维修)' : '📝 新建申请(物资采购)';
+  id('dmTitle').textContent = t=='设备维修' ? '📝 新建申请(设备维修)' : '📝 新建申请(物资采购)';
+}
+function reqTypeChanged(){
+  const t=id('fReqType')?.value||'物资采购';
+  const rf=id('repairFields');if(rf)rf.style.display=(t=='设备维修')?'block':'none';
+  const _tl=id('reqDetailTitle');
+  if(_tl)_tl.textContent = t=='设备维修' ? '维修项目 / 备件明细（维修类，可先留空待厂家定损后补录；物品=维修项目/备件）' : '采购物资明细';
+  const _tip=id('reqDetailTip');
+  if(_tip)_tip.innerHTML = t=='设备维修'
+    ? '✏️ 维修类：明细行填维修项目或备件清单（可先空）；厂家拆解定损单可直接在下图/附件上传；维修行无需填品牌/质保。'
+    : '✏️ <b>品牌由采购员指定</b>（如 联想/格力，或填"不限"）——发起询价后商家按指定品牌报价；<b>指定质保期(如24个月)同为必填</b>，外网报价不得低于；填品名自动带出库存；用途见上方"用途说明"。表格较宽可左右滑动。';
+  reqTypeTip();
 }
 async function createPRequest(asDraft){
   // V11.186: 支持存草稿 — asDraft=true 时保存为草稿(不进入审批, 可稍后编辑提交)
@@ -5784,7 +5830,13 @@ async function createPRequest(asDraft){
       }
     });
     if(_badQty){if(btn){btn.disabled=false;btn.textContent=asDraft?'💾 存草稿':'提交申请'}alert(_badQty);return}
-    if(!items.length){alert('请添加至少一行物资');return}
+    const _rtNew=(id('fReqType')?.value||'物资采购');
+    if(!items.length&&_rtNew!='设备维修'){alert('请添加至少一行物资');return}
+    // V11.252: 维修类空明细时须填故障设备+描述(草稿可暂存)
+    if(!asDraft&&_rtNew=='设备维修'){
+      const _dev=(id('fReqDev')?.value||'').trim(),_flt=(id('fReqFault')?.value||'').trim();
+      if(!_dev||!_flt){alert('维修类申请请填写故障设备名称与故障描述（维修项目可在厂家定损后补充）');if(btn){btn.disabled=false;btn.textContent='提交申请'}return}
+    }
     // V11.199: 提交审批前必填校验(采购事由/部门) — 空事由会导致钉钉必填控件820001发起失败
     const _purp=(id('fReqPurp')?.value||'').trim();
     const _dept=(id('fReqDept')?.value||'').trim();
@@ -5792,7 +5844,7 @@ async function createPRequest(asDraft){
       if(!_purp){alert('请填写采购事由（这批物资买来做什么）');if(btn){btn.disabled=false;btn.textContent='提交申请'}return}
       if(!_dept){alert('请选择申请部门');if(btn){btn.disabled=false;btn.textContent='提交申请'}return}
     }
-    const d={dept:id('fReqDept').value,budget_code:id('fReqBud').value,purpose:id('fReqPurp').value,target_date:id('fReqDate').value,remark:id('fReqRem').value,items,urgent:id('fReqUrgent')?.checked?1:0,attachments:reqAtts,apply_date:(id('fReqApplyDate')?.value||'').replace(/年/g,'-').replace(/月/g,'-').replace(/日/g,''),req_type:id('fReqType')?.value||'物资采购',draft:asDraft||false};
+    const d={dept:id('fReqDept').value,budget_code:id('fReqBud').value,purpose:id('fReqPurp').value,target_date:id('fReqDate').value,remark:id('fReqRem').value,items,urgent:id('fReqUrgent')?.checked?1:0,attachments:reqAtts,apply_date:(id('fReqApplyDate')?.value||'').replace(/年/g,'-').replace(/月/g,'-').replace(/日/g,''),req_type:_rtNew,repair_device:id('fReqDev')?.value||'',repair_fault:id('fReqFault')?.value||'',draft:asDraft||false};
     const r=await api('/prequests',{method:'POST',body:JSON.stringify(d)});
     if(r.success){window.__prDraftOn=false;try{localStorage.removeItem('prDraft')}catch(e){}toast(asDraft?'✅ 已存草稿(可稍后在列表继续编辑提交)':('✅ 已提交'+(r.req_no?(' '+r.req_no):'')));closeMod();reqAtts=[];loadPRequests();loadDashboard()}
     else if(r.error){alert('保存失败: '+r.error)}
