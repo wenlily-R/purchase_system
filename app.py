@@ -9981,6 +9981,7 @@ def api_est_view():
             'quantity': row['quantity'], 'unit': row['unit'] or '个', 'amount': row['est_amount'] or 0,
             'invoice_no': row['invoice_no'] or '', 'date': str(row['received_at'] or '')[:10],
             'remark': row['remark'] or '', 'id': row['id'],
+            'is_conv': 1 if ('is_conv' in row.keys() and row['is_conv']) else 0,
         }
         # V11.153: 红冲组补 发票金额/差价 (invoice_amount新列; 旧数据兼容)
         try:
@@ -10001,7 +10002,8 @@ def api_est_view():
     else:
         checks.append({'level': 'ok', 'msg': '✅ 暂估入库单均已红冲, 无发票未回', 'count': 0})
     # ② V11.153: 红冲单(is_est=1且有发票)即已转正式, 不再要求进白入组; 检查"有发票号但is_est=0"的异常(正式单带发票=数据不一致)
-    _weird = [x['receive_no'] for x in br if x['invoice_no']]
+    # V11.263: 红冲自动转正单(is_conv=1, 发票核对后生成的正式单)属正常业务, 不计入异常
+    _weird = [x['receive_no'] for x in br if x['invoice_no'] and not x.get('is_conv')]
     if _weird:
         checks.append({'level': 'danger', 'msg': f'🚨 {len(_weird)} 张正式入库单带发票号(数据异常, 需检查): {", ".join(_weird[:3])}', 'count': len(_weird)})
     else:
@@ -10046,13 +10048,13 @@ def _gen_est_export(kind):
         if kind == 'br' and is_est: continue
         # V11.153: 红冲表体现 暂估价 vs 发票价 差价(invoice_amount新列; 兼容旧数据用est_amount)
         _est = float(row['est_amount'] or 0)
-        _inv = float(row.get('invoice_amount') or 0) if row.keys() and 'invoice_amount' in row.keys() else 0
+        _inv = float(row['invoice_amount'] or 0) if 'invoice_amount' in row.keys() else 0
         if _inv == 0 and has_inv: _inv = _est  # 旧数据兼容
         _diff = round(_inv - _est, 2)
         vals = [row['receive_no'], row['item_name'], row['spec'] or '', row['quantity'],
                 row['unit'] or '个', _est,
                 (_inv if has_inv else 0), (_diff if has_inv else 0),
-                row['invoice_no'] or '', row.get('invoice_type') or '', str(row['received_at'] or '')[:10], row['remark'] or '']
+                row['invoice_no'] or '', (row['invoice_type'] or '') if 'invoice_type' in row.keys() else '', str(row['received_at'] or '')[:10], row['remark'] or '']
         for ci, v in enumerate(vals, 1):
             c = ws.cell(r, ci, v); c.border = border; c.font = bf
             c.alignment = Alignment(horizontal='center' if ci in (1, 3, 4, 5, 6, 7, 8, 9, 10, 11) else 'left', vertical='center', wrap_text=True)

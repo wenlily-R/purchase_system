@@ -507,9 +507,9 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
           <button class="btn btn-sm" id="estTabBtn_hc" onclick="estTab('hc')">🔴 红字冲销</button>
           <button class="btn btn-sm" id="estTabBtn_br" onclick="estTab('br')">⚪ 白入（正式）</button>
           <span style="flex:1"></span>
-          <button class="btn btn-o btn-sm" onclick="window.open('/api/reports/est-export?kind=est','_blank')">⬇️ 暂估表</button>
-          <button class="btn btn-o btn-sm" onclick="window.open('/api/reports/est-export?kind=hc','_blank')">⬇️ 红冲表</button>
-          <button class="btn btn-o btn-sm" onclick="window.open('/api/reports/est-export?kind=br','_blank')">⬇️ 白入表</button>
+          <button class="btn btn-o btn-sm" onclick="estExport('est')">⬇️ 暂估表</button>
+          <button class="btn btn-o btn-sm" onclick="estExport('hc')">⬇️ 红冲表</button>
+          <button class="btn btn-o btn-sm" onclick="estExport('br')">⬇️ 白入表</button>
         </div>
         <div id="estTableWrap"><div style="color:#999;font-size:10px">点击上方标签查看各表明细</div></div>
       </div></div>
@@ -7492,6 +7492,23 @@ function estTab(kind){
   id('estTableWrap').innerHTML=`<table class="tb" style="font-size:10px"><tr style="background:#f0f4ff"><th>入库单号</th><th>物资</th><th>规格</th><th>数量</th><th>金额(元)</th><th>发票号</th><th>日期</th></tr>`+
     list.map(x=>`<tr><td><b>${esc(x.receive_no)}</b></td><td>${esc(x.item_name)}</td><td>${esc(x.spec)}</td><td>${x.quantity}${esc(x.unit)}</td><td>¥${(x.amount||0).toFixed(0)}</td><td>${x.invoice_no?esc(x.invoice_no):'<span style="color:#c0392b">未回</span>'}</td><td>${esc(x.date)}</td></tr>`).join('')+
     `</table>`;
+}
+// V11.263: 三表导出 — 用fetch下载(不再window.open, 规避弹窗拦截导致'点不开')
+async function estExport(kind){
+  const nm={est:'暂估表',hc:'红冲表',br:'白入表'}[kind]||kind;
+  const btn=event&&event.target?event.target:null;
+  const old=btn?btn.textContent:''; if(btn){btn.disabled=true;btn.textContent='生成中...'}
+  try{
+    const r=await fetch('/api/reports/est-export?kind='+kind,{credentials:'include'});
+    if(!r.ok){const j=await r.json().catch(()=>null);alert('导出失败: '+((j&&j.error)||r.status));return}
+    const b=await r.blob();
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(b);
+    a.download='月底三表_'+nm+'_'+new Date().toISOString().slice(0,10)+'.xlsx';
+    document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  }catch(e){alert('导出失败: '+e.message)}
+  finally{if(btn){btn.disabled=false;btn.textContent=old}}
 }
 // V11.251: 溯源号点击 → 跳到报表中心并查询全链路
 async function openTrace(t){
