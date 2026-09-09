@@ -1994,6 +1994,19 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
                       (st, now(), _rc_n, rejected_items if rejected_items is not None else '__all__', biz_id))
         else:
             c.execute(f"UPDATE {_tbl} SET status=?, updated_at=? WHERE id=?", (st, now(), biz_id))
+    # V11.260: 审批流转统一操作留痕(每张单时间线: 创建→审批通过/驳回→后续动作, 修复操作记录空白)
+    try:
+        if biz_type != 'collect_accept':
+            _ptbl = biz_table(biz_type) or ('inquiries' if biz_type == 'inquiry_approval' else '')
+            if _ptbl:
+                _prow = c.execute(f"SELECT * FROM {_ptbl} WHERE id=?", (biz_id,)).fetchone()
+                _ok_st = st if isinstance(st, str) else ''
+                _act = '审批驳回' if result != 'ok' else ('审批通过' if _ok_st in ('已通过', '审批通过', '已生成订单', '已核销', '已入库', '已完成', '已生效') else '审批同意')
+                _doc_trace(biz_type, biz_id, _act, old_d=None, new_d=dict(_prow) if _prow else None,
+                           old_status='', new_status=_ok_st,
+                           node=('审批-' + str(approver) + ('：' + str(comment)[:80] if comment else '')).strip(), conn=c)
+    except Exception:
+        pass
     # V11.67: 询价定标审批通过 → 同步询价单状态(定标审批中→已生成订单); 驳回→恢复询价中
     if biz_type == 'purchase_order':
         if result == 'ok' and st in ('已通过', '审批通过'):
@@ -5359,6 +5372,7 @@ def api_create_prequest():
         start_instances('purchase_request', prid)   # 飞书/钉钉同步发起审批(未配置则跳过)
     conn.close()
     log(session['user_name'], '创建采购申请', f'{no} 共{len(items)}项 ¥{total:.0f}{" (草稿)" if d.get("draft") else ""}')
+    _trace_create('purchase_request', 'purchase_requests', 'req_no=?', no, node='保存草稿' if d.get('draft') else '新建提交审批')
     return jsonify({'success':True, 'req_no':no, 'id':prid})
 
 @app.route('/api/inventory/<int:iid>/replenish', methods=['POST'])
@@ -5532,6 +5546,7 @@ def api_prequest_repair_direct(rid):
                  (vendor, round(amount, 2), now(), rid))
     conn.commit(); conn.close()
     log(session['user_name'], '维修直接委托', f'申请#{rid} 小额透明维修直接委托 {vendor} ¥{amount:.2f}' + (('：' + note) if note else ''))
+    _trace_biz('purchase_request', 'purchase_requests', rid, '直接委托登记', f'委托 {vendor} ¥{amount:.2f}（不进审批，线下执行留痕）', status='已通过')
     return jsonify({'success': True, 'message': f'已登记直接委托 {vendor}（¥{amount:.2f}），线下执行，留痕可查'})
 
 @app.route('/api/prequests/<int:rid>/convert-material', methods=['POST'])
@@ -5563,6 +5578,7 @@ def api_prequest_convert_material(rid):
                  ((_old_rm + ('\n' if _old_rm else '') + _add), now(), rid))
     conn.commit(); conn.close()
     log(session['user_name'], '维修转物资采购', f'申请#{rid} 定损不可修转物资采购' + (f'；作废维修询价{_cnt}张' if _cnt else '') + (f'：{note}' if note else ''))
+    _trace_biz('purchase_request', 'purchase_requests', rid, '转物资采购', '定损不可修→变更业务类型' + (f'：{note}' if note else ''))
     return jsonify({'success': True, 'message': '已变更为物资采购（维修痕迹保留），可发起物资询价采购新设备' + (f'；已作废维修询价{_cnt}张' if _cnt else '')})
 
 @app.route('/api/prequests/<int:rid>/repair-append-items', methods=['POST'])
@@ -5614,6 +5630,7 @@ def api_prequest_repair_append(rid):
         pass
     conn.commit(); conn.close()
     log(session['user_name'], '补充定损清单', f'申请#{rid} 追加定损维修项目{len(items)}项 ¥{_add_amt:.2f}（累计估算¥{_new_amt:.2f}）')
+    _trace_biz('purchase_request', 'purchase_requests', rid, '补充定损清单', f'追加{len(items)}项 估算+¥{_add_amt:.2f}（状态保持已通过）')
     return jsonify({'success': True, 'message': f'已补充定损项目{len(items)}项（估算+¥{_add_amt:.2f}），可发起维修询价'})
 
 @app.route('/api/prequests/<int:rid>/repair-done', methods=['POST'])
@@ -5651,6 +5668,7 @@ def api_prequest_repair_done(rid):
                  (_dt, _res[:500], now(), rid))
     conn.commit(); conn.close()
     log(session['user_name'], '维修完工登记', f'申请#{rid} 完工日期{_dt} 结果:{_res[:60]}')
+    _trace_biz('purchase_request', 'purchase_requests', rid, '完工登记', f'完工日期{_dt} 结果:{_res[:60]}')
     return jsonify({'success': True, 'message': '✅ 已登记完工（%s）：%s' % (_dt, _res[:40])})
 
 # ============================================================
@@ -6176,6 +6194,7 @@ def api_create_order():
     start_instances('purchase_order', oid)
     conn.close()
     log(session['user_name'], '创建采购订单', '%s 共%d项商品 ¥%.0f' % (no, len(rows), grand_total))
+    _trace_create('purchase_order', 'purchase_orders', 'order_no=?', no, node='汇总下单(加购)生成订单')
     return jsonify({'success':True, 'order_no': no, 'id': oid, 'receive_no': rno,
                     'total_qty': total_qty, 'total_amount': grand_total, 'item_count': len(rows)})
 
@@ -7459,6 +7478,7 @@ def api_inquiry_select(iid):
         conn.execute("INSERT INTO order_items(order_id,item_name,spec,unit,quantity,price,amount,tax_rate,tax_amount,total_amount,remark) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                      (oid, r[0], r[1], r[2], r[3], r[4], r[5], 0, 0, r[5], ('整单总价分摊参考价(商家未分项报价)' if _is_split else '')))
     conn.execute("UPDATE inquiry_suppliers SET is_selected=1 WHERE id=?", (sid,))
+    _trace_biz('purchase_order', 'purchase_orders', oid, '定标生成订单', '整单定标-'+s['supplier_name'], conn=conn)
     # V11.73: 定标审批通过后直接生效(领导已选定供应商,无需再次审批)
     conn.execute("UPDATE purchase_orders SET status='已通过', settle_type=?, updated_at=? WHERE id=?", (settle_type, now(), oid))
     conn.execute("UPDATE inquiries SET status='已生成订单', selected_supplier_id=?, updated_at=? WHERE id=?", (sid, now(), iid))
@@ -7564,6 +7584,7 @@ def api_inquiry_split_select(iid):
                 (oid, r[0], r[1], r[2], r[3], r[4], r[5], 0, 0, r[5],
                  '品牌:%s 交付:%s 质保:%s %s' % (r[6], r[7], r[8], r[9]) if (r[6] or r[7] or r[8]) else ''))
         conn.execute("UPDATE inquiry_suppliers SET is_selected=1 WHERE id=?", (sid,))
+        _trace_biz('purchase_order', 'purchase_orders', oid, '分项定标生成订单', '分项定标-'+s['supplier_name'], conn=conn)
         # V11.158c: 分项定标生成的订单(货到付款)自动生成待入库单 → 入库验收模块同步显示
         try:
             _rno = gen_no('RK', 'receivings', 'receive_no', conn)
@@ -8017,6 +8038,7 @@ def api_create_contract():
     start_instances('contract', cid)   # 飞书/钉钉同步发起合同审批(未配置则跳过)
     conn.close()
     log(session['user_name'],'创建合同',f'{no}')
+    _trace_create('contract', 'contracts', 'contract_no=?', no, node='新建合同')
     return jsonify({'success':True,'contract_no':no})
 
 @app.route('/api/contracts/monthly-summary')
@@ -8933,6 +8955,7 @@ def api_create_requisition():
     try: start_instances('requisition', rid)
     except Exception as e: print('requisition start_instances err:', e)
     log(session['user_name'], '新建出库单', f'{no} {len(items)}项 {total_q}件 待审批')
+    _trace_create('requisition', 'requisitions', 'req_no=?', no, node='新建提交审批')
     return jsonify({'success': True, 'req_no': no, 'id': rid, 'message': f'出库单 {no} 已提交审批，审批通过后自动扣减库存'})
 
 
@@ -9020,6 +9043,7 @@ def api_create_receiving():
     try: start_instances('receiving', rid)
     except Exception as e: print('receiving start_instances err:', e)
     log(session['user_name'], '新建入库单', f'{no} {len(items)}项 {total_q}件 待审批')
+    _trace_create('receiving', 'receivings', 'receive_no=?', no, node='新建提交审批(暂估)')
     return jsonify({'success': True, 'receive_no': no, 'message': f'入库单 {no} 已提交审批，审批通过后自动增加库存'})
 
 @app.route('/api/inventory')
@@ -14287,6 +14311,39 @@ def _doc_trace(biz_type, bid, action, old_d=None, new_d=None, old_status='', new
             log('系统', '留痕失败', f'{biz_type}#{bid} {_e}')
         except Exception:
             pass
+
+
+def _trace_create(biz_type, tbl, where_sql, where_val, node='新建'):
+    """V11.260: 单据创建即留痕(操作记录从'创建'起有完整时间线, 修复新单操作记录空白)"""
+    try:
+        c0 = db()
+        row = c0.execute(f"SELECT * FROM {tbl} WHERE {where_sql}", where_val if isinstance(where_val, (tuple, list)) else (where_val,)).fetchone()
+        c0.close()
+        if row:
+            _doc_trace(biz_type, row['id'], '创建', old_d=None, new_d=dict(row),
+                       new_status=row['status'] if 'status' in row.keys() else '', node=node)
+    except Exception:
+        pass
+
+
+def _trace_biz(biz_type, tbl, bid, action, node, status=None, conn=None):
+    """V11.260: 通用动作留痕(按id重查当前行, 动作后调用; 传入调用方conn则随其事务, 否则自开连接独立提交)"""
+    try:
+        if conn is not None:
+            row = conn.execute(f"SELECT * FROM {tbl} WHERE id=?", (bid,)).fetchone()
+            if row:
+                _doc_trace(biz_type, bid, action, old_d=None, new_d=dict(row),
+                           new_status=status if status is not None else (row['status'] if 'status' in row.keys() else ''), node=node,
+                           conn=conn)
+        else:
+            c0 = db()
+            row = c0.execute(f"SELECT * FROM {tbl} WHERE id=?", (bid,)).fetchone()
+            c0.close()
+            if row:
+                _doc_trace(biz_type, bid, action, old_d=None, new_d=dict(row),
+                           new_status=status if status is not None else (row['status'] if 'status' in row.keys() else ''), node=node)
+    except Exception:
+        pass
 
 
 _DOC_DETAIL_TABS = {
