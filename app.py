@@ -6519,9 +6519,10 @@ def api_inquiries():
     for r in rows:
         d = dict_row(r)
         # V11.253: 统一时间开标 — 截止前一律不显示最低价(去掉V11.217'全报齐提前'豁免); 截止后带最低价
+        # V11.254: 全部供应商报完 → 提前开标(列表即时显示最低价)
         _sc = d['sup_count'] or 0
         _qc = d['quoted_count'] or 0
-        if not _inq_locked(d.get('deadline') or '') and _qc > 0:
+        if (not _inq_locked(d.get('deadline') or '') or (_sc == _qc and _sc > 0)) and _qc > 0:
             conn2 = db()
             _m = conn2.execute("SELECT MIN(quote_price) m FROM inquiry_suppliers WHERE inquiry_id=? AND quote_price>0", (d['id'],)).fetchone()[0]
             conn2.close()
@@ -6694,7 +6695,7 @@ def api_inquiry_adjust(iid):
     if i['status'] not in ('询价中', '待定标'):
         conn.close(); return jsonify({'error': '当前状态不可议价（仅询价中/待定标可操作）'}), 400
     # V11.205: 开标前禁止议价(报价不可见阶段不允许内部改价)
-    if _inq_locked(i['deadline']):
+    if _inq_locked(i['deadline']) and not _inq_all_quoted(conn, iid):
         conn.close(); return jsonify({'error': '报价未开标（截止 %s），开标前不可议价' % (i['deadline'] or '')}), 400
     # 行明细调整(可选): [{unit_price, qty}] 按申请物资顺序
     adj_details = d.get('adj_details')
@@ -6729,6 +6730,17 @@ def _inq_locked(deadline):
     """截止前=锁定期(内部禁看报价/禁定标/禁提交审批/禁导出); 到点自动解锁"""
     _ddt = _inq_deadline_dt(deadline)
     return bool(_ddt) and datetime.datetime.now() < _ddt
+
+
+def _inq_all_quoted(conn, iid):
+    """V11.254: 全部供应商已报价(每家quote_price>0) → 提前开标豁免(全报齐后报价公开/可议价/可定标/可导出)
+    需求: 全部供应商报价结束后要能提前开标看到报价金额, 并可进行下一步操作"""
+    try:
+        _r = conn.execute("SELECT COUNT(*) c FROM inquiry_suppliers WHERE inquiry_id=?", (iid,)).fetchone()
+        _q = conn.execute("SELECT COUNT(*) c FROM inquiry_suppliers WHERE inquiry_id=? AND (quote_price IS NOT NULL AND quote_price > 0)", (iid,)).fetchone()
+        return bool(_r and _q and _r['c'] > 0 and _r['c'] == _q['c'])
+    except Exception:
+        return False
 
 
 # ============ V11.236 三方询价外部链接鉴权: 手机号 + 访问密码(绑定供应商身份, 链接泄露无效) ============
@@ -6899,7 +6911,8 @@ def api_inquiry_detail(iid):
     out['request'] = dict_row(pr)
     out['items'] = [dict_row(r) for r in items]
     # V11.205: 锁定期状态(截止时间精确到分钟; 纯日期老数据按当天23:59) — 截止前锁定, 到点自动解锁
-    out['locked'] = _inq_locked(i['deadline'])
+    # V11.254: 全部供应商报完 → 提前开标(金额立即可见+可下一步); 未报齐仍按截止时间统一开标
+    out['locked'] = _inq_locked(i['deadline']) and not _all_q
     out['deadline_passed'] = (not out['locked']) and bool((i['deadline'] or '').strip())
     out['all_quoted'] = _all_q
     # 添加品牌分析
@@ -7309,7 +7322,7 @@ def api_inquiry_submit(iid):
         return jsonify({'error': '该询价已结束'}), 400
     # V11.205: 统一开标 — 截止前禁止提交定标审批(否则审批详情/钉钉会泄露报价)
     # V11.253: 统一时间开标 — 去掉V11.217'全报齐提前'例外, 截止前一律禁止
-    if _inq_locked(i['deadline']):
+    if _inq_locked(i['deadline']) and not _inq_all_quoted(conn, iid):
         conn.close(); return jsonify({'error': '报价未开标（统一时间开标：截止 %s 后统一公开报价并定标），请到截止时间后再提交定标审批' % (i['deadline'] or '')}), 400
     # V11.155f: 防重复提交 — 已有审批中记录(定标审批中)则拒绝
     _pend = conn.execute("SELECT 1 FROM inquiry_approvals WHERE inquiry_id=? AND status='审批中' LIMIT 1", (iid,)).fetchone()
@@ -7507,7 +7520,7 @@ def api_inquiry_split_select(iid):
         conn.close(); return jsonify({'error': '当前状态不可分项定标（仅询价中/待定标可操作）'}), 400
     # V11.205: 统一开标 — 截止前禁止分项定标(报价不可见阶段)
     # V11.253: 严格统一时间开标 — 去掉V11.244'全报齐提前放行'豁免, 截止前一律拦截
-    if _inq_locked(i['deadline']):
+    if _inq_locked(i['deadline']) and not _inq_all_quoted(conn, iid):
         conn.close(); return jsonify({'error': '报价未开标（统一时间开标：截止 %s 后统一公开报价并分项定标）' % (i['deadline'] or '')}), 400
     pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (i['req_id'],)).fetchone()
     if not pr:
@@ -7670,7 +7683,7 @@ def api_inquiry_export(iid):
         conn.close(); return jsonify({'error': '询价单不存在'}), 404
     # V11.205: 统一开标 — 截止前禁止导出比价单(报价内容不外泄)
     # V11.253: 严格统一时间开标 — 去掉V11.229'全报齐提前解锁'豁免, 截止前一律拦截
-    if _inq_locked(i['deadline']):
+    if _inq_locked(i['deadline']) and not _inq_all_quoted(conn, iid):
         conn.close(); return jsonify({'error': '报价未开标（统一时间开标：截止 %s 后统一公开报价并导出比价单）' % (i['deadline'] or '')}), 400
     pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (i['req_id'],)).fetchone()
     items = conn.execute("SELECT * FROM request_items WHERE req_id=? ORDER BY id", (i['req_id'],)).fetchall()
