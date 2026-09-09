@@ -7105,14 +7105,13 @@ def inquiry_vendor_page(token):
             'oninput="calc()" data-q="%s" id="up%d" value="%s" style="width:64px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;text-align:right"></td>'
             '<td style="padding:6px 8px;border-bottom:1px solid #eef;text-align:right;font-weight:600;color:#2e7d32;white-space:nowrap">¥<span id="ut%d">0.00</span></td>'
             '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="如7天" id="dl%d" value="%s" style="width:52px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
-            + _wr_cell +
-            + _brand_cell +
+            + _wr_cell + _brand_cell +
             '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="备注" id="rm%d" value="%s" style="width:64px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
             '</tr>') % (
                 esc_html(it['item_name']), esc_html(it['spec'] or ''),
                 str(_qty) + esc_html(it['unit'] or '个'), _ref,
                 str(_qty), idx, _v_price,
-                idx, esc_html(_pv.get('delivery') or ''),
+                idx, idx, esc_html(_pv.get('delivery') or ''),
                 idx, esc_html(_pv.get('remark') or '')))
     _item_rows = ''.join(_rows_html)
     # ---------- 头部提示 ----------
