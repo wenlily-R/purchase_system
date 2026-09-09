@@ -5276,14 +5276,17 @@ def api_prequest(rid):
     _stk = {}
     for _inv in conn.execute("SELECT item_name, quantity FROM inventory WHERE quantity>0").fetchall():
         _stk[_inv['item_name']] = _stk.get(_inv['item_name'], 0) + _inv['quantity']
+    # V11.254: 维修类详情带询价/订单状态(选商闭环展示用)
+    _inq0 = conn.execute("SELECT inq_no,status FROM inquiries WHERE req_id=? ORDER BY id DESC LIMIT 1", (rid,)).fetchone()
+    _ord0 = conn.execute("SELECT order_no,status FROM purchase_orders WHERE req_id=? ORDER BY id DESC LIMIT 1", (rid,)).fetchone()
     conn.close()
     out = []
     for i in items:
         d = dict_row(i)
         d['stock_qty'] = _stk.get(d['item_name'] or '', 0)
         out.append(d)
-    return jsonify({'request': dict_row(pr), 'items': out, 'approvals': [dict_row(a) for a in approvals]})
-
+    return jsonify({'request': dict_row(pr), 'items': out, 'approvals': [dict_row(a) for a in approvals],
+                    'inq': dict_row(_inq0) if _inq0 else None, 'order': dict_row(_ord0) if _ord0 else None})
 @app.route('/api/prequests', methods=['POST'])
 @login_required
 def api_create_prequest():
@@ -5489,6 +5492,64 @@ def api_resubmit_prequest(rid):
     conn.close()
     log(session['user_name'], '修改采购申请', f'申请#{rid} 重新进入审批')
     return jsonify({'success':True})
+
+@app.route('/api/prequests/<int:rid>/repair-direct', methods=['POST'])
+@login_required
+def api_prequest_repair_direct(rid):
+    """V11.254: 维修类申请-小额直接委托登记(压高压胶管/打黄油/补胎补气等价格透明维修:
+    不走多家询价, 直接在申请内选用长期合作厂家; 记录维修商/金额, 线下执行, 留痕可查)"""
+    d = request.json or {}
+    vendor = str(d.get('vendor') or '').strip()
+    amount = float(d.get('amount') or 0)
+    note = str(d.get('note') or '').strip()
+    if not vendor:
+        return jsonify({'error': '请填写委托维修商'}), 400
+    if amount <= 0:
+        return jsonify({'error': '请填写委托金额（>0）'}), 400
+    conn = db()
+    pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (rid,)).fetchone()
+    if not pr:
+        conn.close(); return jsonify({'error': '申请不存在'}), 404
+    if (pr['req_type'] or '') != '设备维修':
+        conn.close(); return jsonify({'error': '仅设备维修类申请可登记直接委托'}), 400
+    if pr['status'] != '已通过':
+        conn.close(); return jsonify({'error': '仅审批通过的维修申请可登记委托（当前%s）' % pr['status']}), 400
+    if pr['repair_entrust_type'] if 'repair_entrust_type' in pr.keys() else '':
+        conn.close(); return jsonify({'error': '该申请已登记过委托方式，勿重复登记'}), 400
+    conn.execute("UPDATE purchase_requests SET repair_vendor=?, repair_amount=?, repair_entrust_type='direct', updated_at=? WHERE id=?",
+                 (vendor, round(amount, 2), now(), rid))
+    conn.commit(); conn.close()
+    log(session['user_name'], '维修直接委托', f'申请#{rid} 小额透明维修直接委托 {vendor} ¥{amount:.2f}' + (('：' + note) if note else ''))
+    return jsonify({'success': True, 'message': f'已登记直接委托 {vendor}（¥{amount:.2f}），线下执行，留痕可查'})
+
+@app.route('/api/prequests/<int:rid>/convert-material', methods=['POST'])
+@login_required
+def api_prequest_convert_material(rid):
+    """V11.254: 维修类申请 → 定损判定不具备维修条件 → 变更业务类型为物资采购
+    (本申请直接转寻价比价采购新设备; 保留维修设备/故障/定损结论痕迹; 作废该申请挂起的维修询价)"""
+    d = request.json or {}
+    note = str(d.get('note') or '').strip()
+    conn = db()
+    pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (rid,)).fetchone()
+    if not pr:
+        conn.close(); return jsonify({'error': '申请不存在'}), 404
+    if (pr['req_type'] or '') != '设备维修':
+        conn.close(); return jsonify({'error': '仅设备维修类申请可变更业务类型'}), 400
+    if pr['status'] in ('草稿', '已驳回', '已作废'):
+        conn.close(); return jsonify({'error': '当前状态不可变更业务类型（%s）' % pr['status']}), 400
+    if (pr['repair_converted'] if 'repair_converted' in pr.keys() else 0):
+        conn.close(); return jsonify({'error': '该申请已变更为物资采购，勿重复操作'}), 400
+    _ocnt = conn.execute("SELECT COUNT(*) FROM purchase_orders WHERE req_id=?", (rid,)).fetchone()[0]
+    if _ocnt > 0:
+        conn.close(); return jsonify({'error': '该申请已生成订单，不可变更业务类型（可直接走订单采购新设备）'}), 400
+    _cnt = conn.execute("UPDATE inquiries SET status='已作废' WHERE req_id=? AND status='询价中'", (rid,)).rowcount
+    _old_rm = (pr['remark'] or '')
+    _add = '【定损判定不具备维修条件 → 转物资采购】' + (note if note else '改为采购新设备')
+    conn.execute("UPDATE purchase_requests SET req_type='物资采购', repair_converted=1, remark=?, updated_at=? WHERE id=?",
+                 ((_old_rm + ('\n' if _old_rm else '') + _add), now(), rid))
+    conn.commit(); conn.close()
+    log(session['user_name'], '维修转物资采购', f'申请#{rid} 定损不可修转物资采购' + (f'；作废维修询价{_cnt}张' if _cnt else '') + (f'：{note}' if note else ''))
+    return jsonify({'success': True, 'message': '已变更为物资采购（维修痕迹保留），可发起物资询价采购新设备' + (f'；已作废维修询价{_cnt}张' if _cnt else '')})
 
 # ============================================================
 # ── ORDERS ──
