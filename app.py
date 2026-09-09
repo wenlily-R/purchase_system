@@ -8163,6 +8163,14 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
     _is_batch = bool(rn['batch_no'])
     _ft = ('分批入库暂估' if rn['is_est'] else '分批入库正式') if _is_batch else '入库'
     _ft_suffix = (f" 分批验收{rn['batch_no']}·{'暂估入库' if rn['is_est'] else '正式入库'}") if _is_batch else ''
+    # V11.251 溯源编号: 本单溯源号(分批=订单号-批次序; 空则回退关联订单号)
+    _tno = rn['trace_no'] or ''
+    if not _tno and rn['order_id']:
+        try:
+            _po_t = c.execute("SELECT order_no FROM purchase_orders WHERE id=?", (rn['order_id'],)).fetchone()
+            _tno = _po_t['order_no'] if _po_t else ''
+        except Exception:
+            _tno = ''
     qty_override = qty_override or {}
     oi = []
     if rn['order_id']:
@@ -8191,16 +8199,18 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
                     _up += ", price=?"; _args.append(_price)
                 if _tr and (not inv['tax_rate'] or inv['tax_rate'] == 0):
                     _up += ", tax_rate=?"; _args.append(_tr)
+                if _tno and not inv['trace_no']:
+                    _up += ", trace_no=?"; _args.append(_tno)
                 _args.append(inv['id'])
                 c.execute("UPDATE inventory SET " + _up + " WHERE id=?", _args)
                 new_bal = (inv['quantity'] or 0) + q
             else:
-                c.execute("INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,price,tax_rate,last_move_date,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                          (it['item_name'], it.get('spec','') or '', it.get('unit','个') or '个', q, warehouse, _price, _tr, now(), now()))
+                c.execute("INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,price,tax_rate,last_move_date,updated_at,trace_no) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                          (it['item_name'], it.get('spec','') or '', it.get('unit','个') or '个', q, warehouse, _price, _tr, now(), now(), _tno))
                 new_bal = q
-            c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at,trace_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                       (it['item_name'], it.get('spec','') or '', it.get('unit','个') or '个', _ft, 'receiving', rid, rn['receive_no'], q, new_bal,
-                       _op_name(), f'入库单{rn["receive_no"]}审批通过{_ft_suffix}', now()))
+                       _op_name(), f'入库单{rn["receive_no"]}审批通过{_ft_suffix}', now(), _tno))
     elif oi:
         _po = c.execute("SELECT category, trade_mode, supplier FROM purchase_orders WHERE id=?", (rn['order_id'],)).fetchone()
         _po_sup = (_po['supplier'] or '') if _po else ''
@@ -8228,16 +8238,18 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
                     _up += ", cat_code=?"; _args.append(_cat)
                 if _po_sup and not inv['supplier']:
                     _up += ", supplier=?"; _args.append(_po_sup)
+                if _tno and not inv['trace_no']:
+                    _up += ", trace_no=?"; _args.append(_tno)
                 _args.append(inv['id'])
                 c.execute("UPDATE inventory SET " + _up + " WHERE id=?", _args)
                 new_bal = (inv['quantity'] or 0) + q
             else:
-                c.execute("INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,price,tax_rate,cat_code,last_move_date,updated_at,supplier) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                          (it['item_name'], it['spec'] or '', it['unit'] or '个', q, warehouse, _price, _tr, _cat, now(), now(), _po_sup))
+                c.execute("INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,price,tax_rate,cat_code,last_move_date,updated_at,supplier,trace_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                          (it['item_name'], it['spec'] or '', it['unit'] or '个', q, warehouse, _price, _tr, _cat, now(), now(), _po_sup, _tno))
                 new_bal = q
-            c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at,trace_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                       (it['item_name'], it['spec'] or '', it['unit'] or '个', _ft, 'receiving', rid, rn['receive_no'], q, new_bal,
-                       _op_name(), f'入库单{rn["receive_no"]}审批通过{_ft_suffix}', now()))
+                       _op_name(), f'入库单{rn["receive_no"]}审批通过{_ft_suffix}', now(), _tno))
     else:
         q = float(rn['quantity'] or 0)
         total_q = q
@@ -8257,16 +8269,18 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
                 _up += ", cat_code=?"; _args.append(_cat)
             if _sup and not inv['supplier']:
                 _up += ", supplier=?"; _args.append(_sup)
-            _args.append(inv['id'])
+                if _tno and not inv['trace_no']:
+                    _up += ", trace_no=?"; _args.append(_tno)
+                _args.append(inv['id'])
             c.execute("UPDATE inventory SET " + _up + " WHERE id=?", _args)
             new_bal = (inv['quantity'] or 0) + q
         else:
-            c.execute("INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,price,tax_rate,cat_code,last_move_date,updated_at,supplier) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            c.execute("INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,price,tax_rate,cat_code,last_move_date,updated_at,supplier,trace_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                       (rn['item_name'], rn['spec'] or '', rn['unit'] or '个', q, warehouse, _price, _tr, _cat, now(), now(), _sup))
             new_bal = q
-        c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+        c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at,trace_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                   (rn['item_name'], rn['spec'] or '', rn['unit'] or '个', _ft, 'receiving', rid, rn['receive_no'], q, new_bal,
-                   _op_name(), f'入库单{rn["receive_no"]}审批通过{_ft_suffix}', now()))
+                   _op_name(), f'入库单{rn["receive_no"]}审批通过{_ft_suffix}', now(), _tno))
     c.execute("UPDATE receivings SET status='已入库',completed_at=?,warehouse=?,inspector=? WHERE id=?",
               (now(), warehouse, inspector or rn['inspector'] or '系统', rid))
     if rn['order_id']:
