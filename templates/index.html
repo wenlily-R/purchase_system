@@ -3704,7 +3704,10 @@ async function loadReceivings(){
       const estTag = x.conv_from_id||x.is_conv?'<span class="tag" style="background:#e8f5e9;color:#2e7d32" title="发票核对红冲自动生成的正式入库单,不重复计库存">红冲转正式</span>'
                    : x.invoice_no?'<span class="tag" style="background:#e8f5e9;color:#2e7d32">已红冲</span>'
                    : x.is_est?'<span class="tag" style="background:#fff3e0;color:#e65100">暂估</span>'
-                   : '';
+                   // V11.262: 订单自动生成的中间单(待入库/入库中, 未提交验收) — 明确标注未入账, 避免误认正式/暂估
+                   : (x.status=='待入库'||x.status=='入库中')
+                     ? '<span class="tag" style="background:#f5f5f5;color:#8a8a8a;border:1px dashed #ccc" title="订单自动生成, 尚未入账。库管员确认到货并提交验收入库后, 按暂估入账并显示🟠暂估">待验收·未入账</span>'
+                     : '';
       // V11.152: 恢复旧版完整展示(加粗单号/部门绿标签/物资名+N项标签/加急/数量带单位) + 保留到货提醒/暂估红冲
       const deptTag = x.dept?`<span class="tag" style="background:#eef7ee;color:#2e7d32">${esc(x.dept)}</span>`:'<span style="color:#bbb">—</span>';
       const cntTag = x.item_count?` <span class="tag" style="background:#e8f0fe;color:#1a6bff">${x.item_count}项</span>`:'';
