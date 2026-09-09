@@ -1554,9 +1554,11 @@ async function loadPRequests(){
         const tp = (x.req_type||'物资采购')=='设备维修'
           ? '<span style="color:#8a6d3b;background:#f8f0e3;padding:1px 6px;border-radius:3px;font-size:9px">🛠 维修</span>'
           : '<span style="color:#666;background:#f0f0f0;padding:1px 6px;border-radius:3px;font-size:9px">📦 采购</span>';
+        // V11.265: 审批通过的维修单未定损 → 橙色引导(点直达详情补录定损清单)
+        const _pendFix = (x.req_type=='设备维修'&&x.status=='已通过'&&!x.repair_done_date&&!x.repair_entrust_type&&!x.repair_converted&&!(x._ord_cnt>0)&&!(x._inq_cnt>0));
         return `<td><b>${esc(x.req_no)}</b>${x.urgent?' <span style="color:#e74c3c;font-weight:700">🚨加急</span>':''}</td><td>${esc(x.dept)}</td><td>${esc(x.purpose||'')}</td>
         <td>${tp}</td>
-        <td>${tag(x.status)}</td>
+        <td>${_pendFix?`<span class="tag" style="background:#fff3cd;color:#b7791f;cursor:pointer;border:1px solid #f0d9a0" onclick="showPRequest(${x.id})" title="领导已批准维修：送厂拆解定损后，在详情点【📎 补充定损清单】录入维修项目+估价 → 再发起维修询价">🔧 待厂家定损→详情补录</span>`:tag(x.status)}</td>`
         ${rejCell(x)}
         <td style="white-space:nowrap"><button class="lnk" onclick="showPRequest(${x.id})">详情</button>
         <button class="lnk" style="color:var(--s)" onclick="window.open('/api/prequests/${x.id}/download','_blank')">⬇️下载</button>
@@ -1777,7 +1779,7 @@ async function editPRequest(oid){
   id('dmBody').innerHTML=`
     <div class="fr"><div class="fg"><label class="fl2">申请单号</label><input class="fc" id="fReqNo" readonly value="${esc(r.req_no)}" style="background:#f5f5f5"></div>
     <div class="fg"><label class="fl2">申请日期</label><input class="fc" id="fReqApplyDate" readonly value="${esc(r.apply_date||'')}" style="background:#f5f5f5"></div></div>
-    <div class="fr"><div class="fg"><label class="fl2">业务类型 *</label><select class="fc" id="fReqType" onchange="reqTypeChanged()"><option value="物资采购">📦 物资采购（买物资/设备）</option><option value="设备维修">🔧 设备维修（修设备/小额维修）</option></select></div>
+    <div class="fr"><div class="fg"><label class="fl2">业务类型 *</label><select class="fc" id="fReqType" onchange="reqTypeChanged(true)"><option value="物资采购">📦 物资采购（买物资/设备）</option><option value="设备维修">🔧 设备维修（修设备/小额维修）</option></select></div>
     <div class="fg"><label class="fl2" id="fReqTypeTip" style="color:#b76e00;font-size:9px;align-self:center">📦 买物资: 填物资名称/规格/数量</label></div></div>
     <div id="repairFields" style="display:none;border:1px solid #f0d9b5;background:#fffaf2;border-radius:6px;padding:6px;margin-bottom:6px">
       <div style="font-size:9px;color:#8a6d3b;margin-bottom:4px">🔧 维修信息（维修业务并入采购申请办理；压高压胶管/打黄油/补胎补气等小额透明维修也在此发起）</div>
@@ -1797,10 +1799,8 @@ async function editPRequest(oid){
     <div style="border:1px solid var(--b);border-radius:4px;padding:6px;margin-top:4px">
       <label class="fl2" id="reqDetailTitle">采购物资明细</label>
       <div style="font-size:9px;color:#8a6d3b;background:#fff8e6;border-radius:4px;padding:3px 6px;margin:2px 0" id="reqDetailTip">✏️ <b>品牌由采购员指定</b>（如 联想/格力，或填"不限"）——发起询价后商家按指定品牌报价；<b>指定质保期(如24个月)同为必填</b>，外网报价不得低于；填品名自动带出库存；用途见上方"用途说明"。表格较宽可左右滑动。</div>
-      <div style="overflow-x:auto"><table class="tb" style="font-size:10px;min-width:930px;margin-top:3px"><thead><tr>
-        <th style="width:22px">#</th><th style="min-width:100px">物品名称 *</th><th style="min-width:62px">规格型号</th><th style="width:38px">单位</th><th style="width:56px">库存</th><th style="width:64px">请购数量 *</th><th style="min-width:106px">品牌（指定）</th><th style="width:84px">采购类别</th><th style="min-width:72px">备注</th><th style="min-width:128px">到货日/附图</th>
-      </tr></thead><tbody id="reqItemList"></tbody></table></div>
-      <div style="margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button class="btn btn-o btn-sm" onclick="addReqItem()">+ 添加一行</button><button class="btn btn-o btn-sm" onclick="reqPasteFromExcel()">📋 从Excel粘贴</button><span style="color:#999;font-size:9px">粘贴识别 品牌/名称/规格/数量 等列</span></div>
+      <div style="overflow-x:auto"><table class="tb" style="font-size:10px;min-width:930px;margin-top:3px"><thead id="reqThHead"></thead><tbody id="reqItemList"></tbody></table></div>
+        <div id="reqAddBtns" style="margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button class="btn btn-o btn-sm" onclick="addReqItem()">+ 添加一行</button><button class="btn btn-o btn-sm" onclick="reqPasteFromExcel()">📋 从Excel粘贴</button><span style="color:#999;font-size:9px">粘贴识别 品牌/名称/规格/数量 等列</span></div>
     </div>`;
   id('detailModal').classList.add('show');
   id('dmFooter').innerHTML=`<button class="btn btn-o" onclick="closeMod()">取消</button>
@@ -5674,7 +5674,7 @@ async function showForm(type){
     id('dmBody').innerHTML=`
       <div class="fr"><div class="fg"><label class="fl2">申请单号</label><input class="fc" id="fReqNo" readonly style="background:#f5f5f5"></div>
       <div class="fg"><label class="fl2">申请日期</label><input class="fc" id="fReqApplyDate" readonly style="background:#f5f5f5"></div></div>
-      <div class="fr"><div class="fg"><label class="fl2">业务类型 *</label><select class="fc" id="fReqType" onchange="reqTypeChanged()"><option value="物资采购">📦 物资采购（买物资/设备）</option><option value="设备维修">🔧 设备维修（修设备/小额维修）</option></select></div>
+      <div class="fr"><div class="fg"><label class="fl2">业务类型 *</label><select class="fc" id="fReqType" onchange="reqTypeChanged(true)"><option value="物资采购">📦 物资采购（买物资/设备）</option><option value="设备维修">🔧 设备维修（修设备/小额维修）</option></select></div>
       <div class="fg"><label class="fl2" id="fReqTypeTip" style="color:#b76e00;font-size:9px;align-self:center">📦 买物资: 填物资名称/规格/数量</label></div></div>
       <div id="repairFields" style="display:none;border:1px solid #f0d9b5;background:#fffaf2;border-radius:6px;padding:6px;margin-bottom:6px">
         <div style="font-size:9px;color:#8a6d3b;margin-bottom:4px">🔧 维修信息（维修业务并入采购申请办理；压高压胶管/打黄油/补胎补气等小额透明维修也在此发起）</div>
@@ -5693,10 +5693,8 @@ async function showForm(type){
       <div style="border:1px solid var(--b);border-radius:4px;padding:6px;margin-top:4px">
         <label class="fl2" id="reqDetailTitle">采购物资明细</label>
         <div style="font-size:9px;color:#8a6d3b;background:#fff8e6;border-radius:4px;padding:3px 6px;margin:2px 0" id="reqDetailTip">✏️ <b>品牌由采购员指定</b>（如 联想/格力，或填"不限"）——发起询价后商家按指定品牌报价；<b>指定质保期(如24个月)同为必填</b>，外网报价不得低于；填品名自动带出库存；用途见上方"用途说明"。表格较宽可左右滑动。</div>
-        <div style="overflow-x:auto"><table class="tb" style="font-size:10px;min-width:930px;margin-top:3px"><thead><tr>
-          <th style="width:22px">#</th><th style="min-width:100px">物品名称 *</th><th style="min-width:62px">规格型号</th><th style="width:38px">单位</th><th style="width:56px">库存</th><th style="width:64px">请购数量 *</th><th style="min-width:106px">品牌（指定）</th><th style="width:84px">采购类别</th><th style="min-width:72px">备注</th><th style="min-width:128px">到货日/附图</th>
-        </tr></thead><tbody id="reqItemList"></tbody></table></div>
-        <div style="margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button class="btn btn-o btn-sm" onclick="addReqItem()">+ 添加一行</button><button class="btn btn-o btn-sm" onclick="reqPasteFromExcel()">📋 从Excel粘贴</button><span style="color:#999;font-size:9px">粘贴识别 品牌/名称/规格/数量 等列</span></div>
+        <div style="overflow-x:auto"><table class="tb" style="font-size:10px;min-width:930px;margin-top:3px"><thead id="reqThHead"></thead><tbody id="reqItemList"></tbody></table></div>
+          <div id="reqAddBtns" style="margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button class="btn btn-o btn-sm" onclick="addReqItem()">+ 添加一行</button><button class="btn btn-o btn-sm" onclick="reqPasteFromExcel()">📋 从Excel粘贴</button><span style="color:#999;font-size:9px">粘贴识别 品牌/名称/规格/数量 等列</span></div>
       </div>`;
     id('detailModal').classList.add('show');
     id('dmFooter').innerHTML=`<button class="btn btn-o" onclick="closeMod()">取消</button>
@@ -5838,6 +5836,20 @@ function addReqItem(it){
   const _cat=(_it.category||'').toString();
   const cats=REQ_CATS.includes(_cat)?REQ_CATS:REQ_CATS.concat([_cat]); // 历史旧值不在预设列表也保留回显
   const _q=_it.quantity!=null?_it.quantity:1;
+  // V11.265: 维修模式行(无库存/品牌/质保/类别; 预估金额列可见) vs 物资模式行(原10列)
+  if(REQ_MODE=='rep'){
+    id('reqItemList').insertAdjacentHTML('beforeend',
+      `<tr id="ritem${c}">
+        <td class="rn" style="text-align:center;color:#999">${c}</td>
+        <td><input placeholder="维修项目/备件名称 *" id="rin${c}" value="${esc(_it.item_name||'')}" style="width:100%;min-width:120px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px"></td>
+        <td><input placeholder="规格/说明(如: 原厂件/含工时)" id="ris${c}" value="${esc(_it.spec||'')}" style="width:100%;min-width:70px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px"></td>
+        <td><input placeholder="项" id="riu${c}" value="${esc(_it.unit||'项')}" style="width:44px;padding:2px;border:1px solid var(--b);border-radius:3px;font-size:10px"></td>
+        <td><input type="number" min="1" step="any" id="riq${c}" value="${_q}" style="width:54px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px" title="数量(必填, 大于0)"></td>
+        <td><input type="number" min="0" step="0.01" id="rip${c}" value="${_it.estimated_price!=null&&_it.estimated_price?_it.estimated_price:''}" placeholder="0.00" style="width:84px;padding:2px 4px;border:1px solid #c9a86a;border-radius:3px;font-size:10px;background:#fffdf5" title="该维修项目/备件预估金额(元)"></td>
+        <td style="white-space:nowrap"><input placeholder="备注(如备件质保说明)" id="rir${c}" value="${esc(_it.remark||'')}" style="width:100%;min-width:90px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px"><span onclick="delReqItem(this)" style="cursor:pointer;color:var(--d);font-size:12px;margin-left:4px" title="删除本行">✕</span></td>
+      </tr>`);
+    return;
+  }
   id('reqItemList').insertAdjacentHTML('beforeend',
     `<tr id="ritem${c}">
       <td class="rn" style="text-align:center;color:#999">${c}</td>
@@ -6001,6 +6013,7 @@ id('dmBody').addEventListener('change',()=>{if(window.__prDraftOn)__prSchedule()
 id('dmBody').addEventListener('click',()=>{if(window.__prDraftOn)__prSchedule()});
 
 // V11.61/V11.252: 申请业务类型联动(物资采购/设备维修) — 提示条/维修信息区/明细区文案/标题
+let REQ_MODE='mat';  // V11.265: 明细表模式 mat=物资采购列 / rep=设备维修列
 function reqTypeTip(){
   const t=id('fReqType')?.value||'物资采购';
   const tip=id('fReqTypeTip');
@@ -6013,19 +6026,46 @@ function reqTypeTip(){
   if(_title.includes('修改'))return;
   id('dmTitle').textContent = t=='设备维修' ? '📝 新建申请(设备维修)' : '📝 新建申请(物资采购)';
 }
-function reqTypeChanged(){
+function reqTypeChanged(fromUser){
   const t=id('fReqType')?.value||'物资采购';
+  REQ_MODE=(t=='设备维修')?'rep':'mat';
   const rf=id('repairFields');if(rf)rf.style.display=(t=='设备维修')?'block':'none';
   // V11.252/255: 目标日期字段随类型切换(物资=到货日, 维修=完工时间)
   const _dl=id('fReqDateLbl');
   if(_dl)_dl.textContent = (t=='设备维修') ? '要求完工时间 *' : '目标到货日 *';
   const _tl=id('reqDetailTitle');
-  if(_tl)_tl.textContent = t=='设备维修' ? '维修项目 / 备件明细（维修类，可先留空待厂家定损后补录；物品=维修项目/备件）' : '采购物资明细';
+  if(_tl)_tl.textContent = t=='设备维修' ? '维修项目 / 备件明细（可先空：厂家定损后在详情页📎补录；如需直接填请按维修列填写）' : '采购物资明细';
   const _tip=id('reqDetailTip');
   if(_tip)_tip.innerHTML = t=='设备维修'
-    ? '✏️ 维修类：明细行填维修项目或备件清单（可先空）；厂家拆解定损单可直接在下图/附件上传；维修行无需填品牌/质保。'
+    ? '✏️ 维修类：明细行填维修项目/备件清单（厂家拆解定损后才知道换什么、多少钱，所以<b>可先空提交</b>，领导批的是"设备坏了、要不要修"）；审批通过后送厂定损，回来在详情页点【📎 补充定损清单】补录项目+估价+定损单照片。维修行无需填品牌/质保。'
     : '✏️ <b>品牌由采购员指定</b>（如 联想/格力，或填"不限"）——发起询价后商家按指定品牌报价；<b>指定质保期(如24个月)同为必填</b>，外网报价不得低于；填品名自动带出库存；用途见上方"用途说明"。表格较宽可左右滑动。';
+  reqModeTable(fromUser);   // V11.265: 明细表列结构随类型切换(物资10列 <-> 维修7列)
   reqTypeTip();
+}
+// V11.265: 明细表类型化 — 物资模式=采购字段(库存/品牌/质保/类别); 维修模式=维修字段(项目/规格说明/预估金额)
+function reqModeTable(fromUser){
+  const tb=id('reqItemList');
+  const isRep=(REQ_MODE=='rep');
+  // 用户手动切换且已有行 → 提示清空(两模式列结构不同不可互转)
+  if(fromUser && tb && tb.querySelectorAll('tr[id^="ritem"]').length){
+    if(!confirm('业务类型切换后，已填的明细行会清空（物资与维修的表格列不同）。确认切换？')){
+      const sel=id('fReqType');
+      if(sel)sel.value=(isRep)?'物资采购':'设备维修';
+      REQ_MODE=(isRep)?'mat':'rep';
+      reqModeTable();
+      return;
+    }
+    tb.innerHTML='';
+  }
+  const head=id('reqThHead');
+  if(head){
+    head.innerHTML = isRep
+      ? '<tr><th style="width:22px">#</th><th style="min-width:150px">维修项目/备件名称 *</th><th style="min-width:80px">规格/说明</th><th style="width:52px">单位</th><th style="width:62px">数量 *</th><th style="width:96px">预估金额(元)</th><th style="min-width:110px">备注/质保</th></tr>'
+      : '<tr><th style="width:22px">#</th><th style="min-width:100px">物品名称 *</th><th style="min-width:62px">规格型号</th><th style="width:38px">单位</th><th style="width:56px">库存</th><th style="width:64px">请购数量 *</th><th style="min-width:106px">品牌（指定）</th><th style="width:84px">采购类别</th><th style="min-width:72px">备注</th><th style="min-width:128px">到货日/附图</th></tr>';
+  }
+  const btns=id('reqAddBtns');
+  if(btns)btns.style.display=(isRep)?'none':'flex';
+  // 维修模式预填提示行(若空表且维修模式 → 自动放一条"待定损说明"占位说明不建行; 不自动加行)
 }
 // V11.255: 到货/完工时间管控(需求文档(四)) — 必填; 不早于今天; ≤明天且非加急 → 现货提示确认
 // 返回: null=通过 / 'err:...'=直接拦截 / 'ask:...'=需confirm确认
