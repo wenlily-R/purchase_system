@@ -5406,6 +5406,12 @@ def api_prequests():
                 d['progress'] = 'shipped'      # 黄: 已下单/在途
             else:
                 d['progress'] = 'contact'      # 红: 未联系厂家
+        # V11.265: 维修单"待定损引导"标记(列表状态列用): 已通过+未委托+无订单+无进行中询价+未完工+未转物资
+        if (d.get('req_type') or '') == '设备维修':
+            d['_inq_cnt'] = conn.execute("SELECT COUNT(*) FROM inquiries WHERE req_id=? AND status='询价中'", (d['id'],)).fetchone()[0]
+            d['_ord_cnt'] = conn.execute("SELECT COUNT(*) FROM purchase_orders WHERE req_id=?", (d['id'],)).fetchone()[0]
+        else:
+            d['_inq_cnt'] = 0; d['_ord_cnt'] = 0
         out.append(d)
     conn.close()
     return jsonify(out)
