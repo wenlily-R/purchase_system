@@ -207,6 +207,26 @@ def gen_req_no(dept=None, c=None):
     if not c: conn.close()
     return f"{prefix}{m}{cur+1:02d}"
 
+def gen_biz_no(c=None):
+    """V11.254: 主业务流水号 = 公司简码+YYYYMMDD+当日3位流水, 如 HQZC20260909001(河曲正成当天第1笔业务)
+    采购申请发起时生成, 该笔业务的申请/订单/入库经关系链共用此号做全链路溯源; 当日公司级流水递增(并发安全)"""
+    conn = c if c else db()
+    _cc = company_default()
+    m = datetime.date.today().strftime('%Y%m%d')
+    r = conn.execute("SELECT biz_no b FROM purchase_requests WHERE biz_no LIKE ?", (f'{_cc}{m}%',)).fetchall()
+    if not c: conn.close()
+    cur = 0
+    for row in r:
+        try:
+            tail = int(str(row['b'])[-3:])
+            if tail > cur:
+                cur = tail
+        except Exception:
+            continue
+    return f'{_cc}{m}{cur + 1:03d}'
+
+
+
 def gen_contract_no(c=None, company='HQZC', category='SBCG'):
     """合同编码规则(需求): 公司简码-类目编码-类目年度序号-年份, 如 HQZC-CLCG-001-2026
     类目: 材料CLCG/维修WXHT/工程GCJS/工程物资GCWZ/技术服务JSFW/设备SBCG/其他QTHT/修理修缮XLXS
@@ -693,6 +713,10 @@ def init_db():
         ('inventory', 'trace_no', "ALTER TABLE inventory ADD COLUMN trace_no TEXT DEFAULT ''"),
         ('inventory_flows', 'trace_no', "ALTER TABLE inventory_flows ADD COLUMN trace_no TEXT DEFAULT ''"),
         ('requisition_items', 'trace_no', "ALTER TABLE requisition_items ADD COLUMN trace_no TEXT DEFAULT ''"),
+        # ---- V11.254 主业务流水号: 采购申请发起时生成(公司简码+日期+流水), 订单/入库经req/order关系链继承 — 溯源串联 ----
+        ('purchase_requests', 'biz_no', "ALTER TABLE purchase_requests ADD COLUMN biz_no TEXT DEFAULT ''"),
+        # V11.245: 申请明细用途列(迁移文件在部分库漏应用 — 幂等补丁保三机一致)
+        ('request_items', 'usage', "ALTER TABLE request_items ADD COLUMN usage TEXT DEFAULT ''"),
     ]:
         _cols = [r[1] for r in conn.execute(f"PRAGMA table_info({_tbl})").fetchall()]
         if _col not in _cols:
@@ -5463,6 +5487,8 @@ def api_create_prequest():
                  json.dumps(d.get('attachments') or [], ensure_ascii=False), 1 if d.get('urgent') else 0, apply_date,
                  d.get('req_type') or '物资采购', _status,
                  str(d.get('repair_device') or ''), str(d.get('repair_fault') or '')))
+            _bzn = gen_biz_no(conn)
+            conn.execute("UPDATE purchase_requests SET biz_no=? WHERE req_no=?", (_bzn, no))
             break
         except sqlite3.IntegrityError:
             continue
@@ -5511,6 +5537,8 @@ def api_inventory_replenish(iid):
                  f'库存补货: {inv["item_name"]}', datetime.date.today().strftime('%Y-%m-%d'), est,
                  f'自动补货(库存不足): 当前{inv["quantity"]:g}{inv["unit"]}, 安全线{safe:g}{inv["unit"]}, 补货{buy_qty:g}{inv["unit"]}', 0,
                  datetime.date.today().strftime('%Y-%m-%d')))
+            _bzn = gen_biz_no(conn)
+            conn.execute("UPDATE purchase_requests SET biz_no=? WHERE req_no=?", (_bzn, no))
             break
         except sqlite3.IntegrityError:
             continue
@@ -10416,6 +10444,41 @@ def api_trace_query(trace_no):
     if not t:
         return jsonify({'error': '请输入溯源编号'}), 400
     conn = db()
+    # V11.254: 主业务流水号入口 — 输入主业务号(如 HQZC20260909001)直接串联该业务全链单据(申请→订单→合同→入库→流水→出库)
+    _req_by_biz = conn.execute("SELECT * FROM purchase_requests WHERE biz_no=?", (t,)).fetchone()
+    if _req_by_biz:
+        _ords = conn.execute("SELECT * FROM purchase_orders WHERE req_id=? ORDER BY id", (_req_by_biz['id'],)).fetchall()
+        _oid_l = [r['id'] for r in _ords]
+        out = {'trace_no': t, 'biz_no': t, 'root_order_no': (_ords[0]['order_no'] if _ords else ''),
+               'request': dict_row(_req_by_biz),
+               'order': dict_row(_ords[0]) if _ords else None,
+               'orders': [dict_row(r) for r in _ords]}
+        if _oid_l:
+            _ph = ','.join('?' * len(_oid_l))
+            out['contracts'] = [dict_row(r) for r in conn.execute("SELECT * FROM contracts WHERE order_id IN (" + _ph + ")", _oid_l).fetchall()]
+            out['receivings'] = [dict_row(r) for r in conn.execute("SELECT * FROM receivings WHERE order_id IN (" + _ph + ")", _oid_l).fetchall()]
+            _rcv_ids = [r['id'] for r in conn.execute("SELECT id FROM receivings WHERE order_id IN (" + _ph + ")", _oid_l).fetchall()]
+            if _rcv_ids:
+                _ph2 = ','.join('?' * len(_rcv_ids))
+                out['flows'] = [dict_row(r) for r in conn.execute("SELECT * FROM inventory_flows WHERE doc_type='receiving' AND doc_id IN (" + _ph2 + ") ORDER BY id", _rcv_ids).fetchall()]
+                out['requisitions'] = [dict_row(r) for r in conn.execute("SELECT ri.*, rq.req_no, rq.requester, rq.receive_dept FROM requisition_items ri LEFT JOIN requisitions rq ON rq.id=ri.requisition_id WHERE ri.trace_no IN (" + _ph2 + ") OR ri.trace_no LIKE ?", _rcv_ids + [(_ords[0]['order_no'] if _ords else '') + '-%']).fetchall()]
+            else:
+                out['flows'] = []
+                out['requisitions'] = []
+        else:
+            out['contracts'] = []
+            out['receivings'] = []
+            out['flows'] = []
+            out['requisitions'] = []
+        # 询价(经订单 inquiry 来源)
+        _inids = [r['inquiry_id'] for r in _ords if r['inquiry_id']]
+        if _inids:
+            _ph3 = ','.join('?' * len(_inids))
+            out['inquiries'] = [dict_row(r) for r in conn.execute("SELECT * FROM inquiries WHERE id IN (" + _ph3 + ")", _inids).fetchall()]
+        else:
+            out['inquiries'] = []
+        conn.close()
+        return jsonify(out)
     # 根订单号推导: 订单号自身含连字符(CG-202609-0001), 不能按'-'拆分 —
     # 若 t 是某入库单的批次溯源号(订单号-批次)则经入库单反查其订单; 否则 t 即根
     _po_by_rcv = conn.execute("SELECT po.order_no FROM receivings r JOIN purchase_orders po ON po.id=r.order_id WHERE r.trace_no=? LIMIT 1", (t,)).fetchone()
@@ -13449,6 +13512,8 @@ def api_repair_damage(rid):
                   (req_no, r['dept'] or '', r['requester'] or '', r['requester_id'] or 0,
                    f"设备报废更换: {r['fault_desc'] or ''}（原维修单{r['plan_no']}转来）", '草稿', float(d.get('est_cost') or r['est_cost'] or 0),
                    f'由维修单 {r["plan_no"]} 定损"建议直接更换新设备"生成', '物资采购', now(), datetime.date.today().strftime('%Y-%m-%d')))
+        _bzn = gen_biz_no(c)
+        c.execute("UPDATE purchase_requests SET biz_no=? WHERE req_no=?", (_bzn, req_no))
         c.execute("UPDATE repair_plans SET repair_type='更换新设备', convert_req_no=?, damage_opinion=?, damage_time=?, status='已归档', damage_reason_cat=?, damage_reason_sub=?, damage_reason_note=? WHERE id=?",
                   (req_no, opinion, now(), _rcat, _rsub, _rnote, rid))
         _logmsg = f'{r["plan_no"]} → 物资申请{req_no}'
