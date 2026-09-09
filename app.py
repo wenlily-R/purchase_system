@@ -14539,6 +14539,86 @@ _DOC_DETAIL_TABS = {
 }
 
 
+@app.route('/api/chain', methods=['GET'])
+@login_required
+def api_chain():
+    """V11.264: 采购溯源链 — 输入任意单据(申请/询价/订单/合同/入库/付款)返回整条业务链:
+    申请 → 询价(可多张) → 订单(可拆多张) → 合同 → 入库(暂估/红冲/作废) → 付款; 每节点可跳转详情"""
+    bt = (request.args.get('biz_type') or '').strip()
+    try:
+        bid = int(request.args.get('biz_id') or 0)
+    except Exception:
+        bid = 0
+    if not bt or not bid:
+        return jsonify({'error': '参数缺失'}), 400
+    conn = db()
+    nodes = []
+    def _push(t, i, no, title, status, amt=None, extra=''):
+        if i:
+            nodes.append({'type': t, 'id': i, 'no': no or '', 'title': title or '', 'status': status or '', 'amount': amt, 'extra': extra})
+    # 1) 从锚点向上解析到申请 req_id
+    req_id = None
+    if bt == 'purchase_request':
+        req_id = bid
+    elif bt == 'inquiry':
+        _r = conn.execute("SELECT req_id FROM inquiries WHERE id=?", (bid,)).fetchone()
+        req_id = _r['req_id'] if _r else None
+    elif bt == 'purchase_order':
+        _r = conn.execute("SELECT req_id FROM purchase_orders WHERE id=?", (bid,)).fetchone()
+        req_id = _r['req_id'] if _r else None
+    elif bt == 'contract':
+        _r = conn.execute("SELECT order_id FROM contracts WHERE id=?", (bid,)).fetchone()
+        if _r and _r['order_id']:
+            _o = conn.execute("SELECT req_id FROM purchase_orders WHERE id=?", (_r['order_id'],)).fetchone()
+            req_id = _o['req_id'] if _o else None
+    elif bt == 'receiving':
+        _r = conn.execute("SELECT order_id FROM receivings WHERE id=?", (bid,)).fetchone()
+        if _r and _r['order_id']:
+            _o = conn.execute("SELECT req_id FROM purchase_orders WHERE id=?", (_r['order_id'],)).fetchone()
+            req_id = _o['req_id'] if _o else None
+    elif bt == 'payment':
+        _r = conn.execute("SELECT contract_id FROM payment_requests WHERE id=?", (bid,)).fetchone()
+        if _r and _r['contract_id']:
+            _c = conn.execute("SELECT order_id FROM contracts WHERE id=?", (_r['contract_id'],)).fetchone()
+            if _c and _c['order_id']:
+                _o = conn.execute("SELECT req_id FROM purchase_orders WHERE id=?", (_c['order_id'],)).fetchone()
+                req_id = _o['req_id'] if _o else None
+    # 2) 自顶向下组装链(sqlite3.Row 用下标, 无 .get)
+    if req_id:
+        _pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (req_id,)).fetchone()
+        if _pr:
+            _rt = _pr['req_type'] if 'req_type' in _pr.keys() else ''
+            _push('purchase_request', _pr['id'], _pr['req_no'], ('维修' if _rt == '设备维修' else '物资') + '采购申请', _pr['status'], float(_pr['total_estimated'] or 0), _pr['purpose'] if 'purpose' in _pr.keys() else '')
+        for _iq in conn.execute("SELECT * FROM inquiries WHERE req_id=? ORDER BY id", (req_id,)).fetchall():
+            _qm = _iq['quoted_min'] if 'quoted_min' in _iq.keys() and _iq['quoted_min'] else None
+            _push('inquiry', _iq['id'], _iq['inq_no'], '三方询价', _iq['status'], float(_qm) if _qm else None)
+        for _o in conn.execute("SELECT * FROM purchase_orders WHERE req_id=? ORDER BY id", (req_id,)).fetchall():
+            _is_rep = bool(_pr and (_pr['req_type'] if 'req_type' in _pr.keys() else '') == '设备维修')
+            _push('purchase_order', _o['id'], _o['order_no'], '采购订单' + ('(维修委托)' if _is_rep else ''), _o['status'], float(_o['total_amount'] or 0), _o['supplier'] if 'supplier' in _o.keys() else '')
+            for _c in conn.execute("SELECT * FROM contracts WHERE order_id=? ORDER BY id", (_o['id'],)).fetchall():
+                _push('contract', _c['id'], _c['contract_no'], '采购合同', _c['status'], float(_c['amount'] or 0), _c['supplier'] if 'supplier' in _c.keys() else '')
+                for _p in conn.execute("SELECT * FROM payment_requests WHERE contract_id=? ORDER BY id", (_c['id'],)).fetchall():
+                    _pt = _p['payment_type'] if 'payment_type' in _p.keys() else ''
+                    _push('payment', _p['id'], _p['payment_no'], '付款' + (('(' + str(_pt) + ')') if _pt else ''), _p['status'], float(_p['amount'] or 0), _p['supplier'] if 'supplier' in _p.keys() else '')
+            for _rc in conn.execute("SELECT * FROM receivings WHERE order_id=? ORDER BY id", (_o['id'],)).fetchall():
+                _is_conv = _rc['is_conv'] if 'is_conv' in _rc.keys() else 0
+                _inv = _rc['invoice_no'] if 'invoice_no' in _rc.keys() else ''
+                _est = _rc['is_est'] if 'is_est' in _rc.keys() else 0
+                _st2 = _rc['status'] if 'status' in _rc.keys() else ''
+                _tag = ('红冲转正式' if _is_conv else ('已红冲' if _inv else ('暂估' if _est else ('未入账' if _st2 in ('待入库', '入库中') else ''))))
+                _push('receiving', _rc['id'], _rc['receive_no'], '入库单' + ('(' + str(_tag) + ')' if _tag else ''), _st2, float(_rc['amount'] or 0) if ('amount' in _rc.keys() and _rc['amount']) else None, _rc['inspector'] if 'inspector' in _rc.keys() else '')
+    else:
+        # 锚点自身(找不到申请的孤儿单)
+        _tbl = bt if bt in ('purchase_order', 'contract', 'receiving', 'payment') else 'inquiries'
+        _nok = {'purchase_order': 'order_no', 'contract': 'contract_no', 'receiving': 'receive_no', 'payment': 'payment_no', 'inquiry': 'inq_no'}.get(bt, 'inq_no')
+        _no = conn.execute(f"SELECT * FROM {_tbl} WHERE id=?", (bid,)).fetchone()
+        if _no:
+            _titles = {'purchase_order': '采购订单', 'contract': '合同', 'receiving': '入库单', 'payment': '付款', 'inquiry': '询价单'}
+            _push(bt, bid, _no[_nok] if _nok in _no.keys() else '', _titles.get(bt, bt), _no['status'] if 'status' in _no.keys() else '')
+    conn.close()
+    return jsonify({'nodes': nodes})
+
+
 @app.route('/api/docs/<biz_type>/<int:bid>/edit-logs')
 @login_required
 def api_doc_edit_logs(biz_type, bid):
