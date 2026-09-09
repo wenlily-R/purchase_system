@@ -11358,6 +11358,8 @@ def api_contract_generate():
             if _oi:
                 total = round(sum(float(r['amount'] or 0) for r in _oi), 2)
                 rate = float(_oi[0]['tax_rate'] or 0)
+                if rate <= 0 and (o['tax_rate'] or 0):  # V11.254: 明细未录税率时回退订单税率
+                    rate = float(o['tax_rate'] or 0)
                 if rate > 0:
                     amt = round(total/(1+rate/100.0), 2)
                     tax = round(total - amt, 2)
@@ -11405,6 +11407,7 @@ def api_contract_generate():
                     (r'签订合同后\s+日内，乙方向甲方提供全额', '签订合同后3日内，乙方向甲方提供全额'),
                     (r'收到发票后\s+日内支付合同总价的\s+%', '收到发票后3日内支付合同总价的100%'),
                     (r'质保期满后若无质量纠纷，\s+日内支付剩余价款', '质保期满后若无质量纠纷，30日内支付剩余价款'),
+                    (r'质保期满后若无质量纠纷，\s*/?\s*\d*\s*日内支付剩余部分', '质保期满后若无质量纠纷，30日内支付剩余部分'),  # V11.254: 文件模板' / 日内'占位残留规范
                     (r'延迟交付货物超过\s+天', '延迟交付货物超过3天'),
                     (r'需提前\s+天通知对方', '需提前3天通知对方'),
                     (r'合同额的\s+%', '合同额的30%'),
@@ -11415,15 +11418,10 @@ def api_contract_generate():
                 # V11.228 Bug2③: 收款账户信息禁止进入合同正文 — 段落区整体移除(见下方 _acc_drop), 此处不再注入任何账户值
                 # V11.144: 结算方式注入 — 付款条款段(甲方自收到发票后...)前插入现结/月结说明
                 # V11.248: 强制据实结算条款(会议纪要第9条: 合同模板强制写据实结算) — 无论现结/月结/其他均注入
-                if ('甲方自收到发票后' in t) and '据实结算约定' not in t:
-                    _pre = '据实结算约定：本合同按实际到货及验收数量与约定单价据实结算，最终结算金额以发票核对红冲后的正式入库金额为准。'
-                    _sline = ''
-                    if _settle_choice == '现结':
-                        _sline = '现结：一单一结，验收合格后立即付款；'
-                    elif _settle_choice == '月结':
-                        _sline = '月结：月底按厂家汇总对账，统一生成月度合同后付款；'
-                    t = t.replace('甲方自收到发票后', _pre + _sline + '甲方自收到发票后')
-                elif re.search(r'20\d\d年\s*\d+\s*月\s*\d+日', t):
+                # V11.254: 付款比例100%时无剩余款项 — 清理模板'质保期满后.../日内支付剩余部分'残留占位句(如现结模板原文)
+                if ('支付合同总价的 100' in t or '支付合同总价的100' in t) and '质保期满后若无质量纠纷' in t:
+                    t = re.sub(r'质保期满后若无质量纠纷[^。]*。', '', t)
+                if re.search(r'20\d\d年\s*\d+\s*月\s*\d+日', t):
                     t = re.sub(r'20\d\d年\s*\d+\s*月\s*\d+日', today_s, t)
                 return t
             # V11.228 Bug2③: 收款账户信息禁止进入合同正文 — 收集区段(标题「收款账户信息」→「银行行号」)待整体移除
@@ -11455,8 +11453,18 @@ def api_contract_generate():
                 if any(k in orig_t for k in ('开户行', '收款账户', '收款账号', '收款银行', '银行行号', '{乙方账号}', '{乙方开户行}')) and not re.search(r'[0-9A-Za-z\u4e00-\u9fff¥￥$]', t):  # V11.233: 填充中文收款信息后保留, 仅空壳删除:
                     _acc_drop.append(para)
                     continue
+                # V11.254: 据实结算条款(会议纪要强制)独立成段 — 不在付款条款段中混插文字
+                if '甲方自收到发票后' in t and '据实结算约定' not in t:
+                    _pre = '据实结算约定：本合同按实际到货及验收数量与约定单价据实结算，最终结算金额以发票核对红冲后的正式入库金额为准。'
+                    para.insert_paragraph_before(_pre)
                 if t != para.text:
-                    para.text = t
+                    _runs = para.runs
+                    if _runs:
+                        _runs[0].text = t
+                        for _rr in _runs[1:]:
+                            _rr.text = ''
+                    else:
+                        para.text = t
             for _p in _acc_drop:  # 物理移除收款账户区段/空账户标签段
                 try:
                     _el = _p._element
@@ -11481,12 +11489,22 @@ def api_contract_generate():
                                     _p.text = ''
                                     continue
                                 if _nt != _p.text:
-                                    _p.text = _nt
+                                    _pr = _p.runs
+                                    if _pr:
+                                        _pr[0].text = _nt
+                                        for _prr in _pr[1:]:
+                                            _prr.text = ''
+                                    else:
+                                        _p.text = _nt
+                                _p.text = _nt
                 rows = table.rows
                 if len(rows) < 3:
                     continue
                 header = [c.text.strip() for c in rows[0].cells]
-                if '标的物' in header or '标的' in header[0] or '品名' in header[0]:
+                # V11.254修复: 文件模板表头首格='序号'(旧tpl_default为'标的/品名'), 增加'序号+名称'判定, 否则明细表空白
+                _hdr_ok = ('标的物' in header or '标的' in header[0] or '品名' in header[0]
+                           or ('序号' in header[0] and any('名称' in h for h in header[1:4])))
+                if _hdr_ok:
                     # 明细行: 多商品订单取 order_items 逐行填充, 旧单取订单单商品
                     det_rows = _oi if _oi else [None]
                     # 先定位合计行(含"合计"字样的行)作为明细边界
@@ -11496,33 +11514,58 @@ def api_contract_generate():
                         if any('合计' in cc for cc in cells):
                             total_row_i = i
                             break
-                    # 再找第一个可写空行(合计行之前)
+                    # 再找第一个可写行(合计行之前): 序号列表头时序号列预填1-4, 其余列空即可覆盖(非空行判定只查明细列)
+                    _hdr_seq = bool(header) and ('序号' in header[0])
+                    _col_off = 1 if _hdr_seq else 0  # 序号列表头 → 数据从第2列写起(序号列保留/重写), 旧无序号表头 → 从第1列
                     idx = 1
                     boundary = total_row_i if total_row_i is not None else len(rows)
                     for i in range(1, boundary):
                         cells = [cc.text.strip() for cc in rows[i].cells]
-                        if not any(cells) or all(cc.strip() == '' for cc in cells):
+                        _body = cells[_col_off:] if _col_off else cells
+                        if not any(_body) or all(cc == '' for cc in _body):
                             idx = i; break
                     else:
-                        idx = boundary  # 合计行前无空行 → 从合计行位置开始填(会先插入)
+                        idx = boundary  # 合计行前无可用行 → 从合计行位置插入
+                    def _scell(_c, _val):
+                        """V11.254: cell文本run级写入, 保留单元格段落/字体/对齐样式(cell.text整写会丢格式)"""
+                        try:
+                            _ps = _c.paragraphs
+                            if _ps and _ps[0].runs:
+                                _ps[0].runs[0].text = str(_val)
+                                for _rr in _ps[0].runs[1:]:
+                                    _rr.text = ''
+                            elif _ps:
+                                _ps[0].text = str(_val)
+                            else:
+                                _c.text = str(_val)
+                        except Exception:
+                            _c.text = str(_val)
                     try:
-                        # 需要行数 > 可用空行 → 插入新行(在合计行之前)
+                        # 需要行数 > 可用行 → 在合计行前复制插入新行(deepcopy保留边框/对齐样式), 新行文本清空
                         need = len(det_rows)
                         avail = boundary - idx
+                        import copy as _cpy
                         while avail < need:
-                            from docx.oxml.ns import qn as _qn
-                            new_tr = rows[idx]._tr.makeelement(_qn('w:tr'), {})
-                            for _ in range(len(rows[idx].cells)):
-                                tc = rows[idx]._tr.makeelement(_qn('w:tc'), {})
-                                new_tr.append(tc)
+                            _proto = rows[idx]._tr
+                            _new_tr = _cpy.deepcopy(_proto)
+                            # 清空新行所有cell文本
+                            from docx.oxml.ns import qn as _qn2
+                            for _tc in _new_tr.findall(_qn2('w:tc')):
+                                for _pp in _tc.findall(_qn2('w:p')):
+                                    for _r_ in _pp.findall(_qn2('w:r')):
+                                        _pp.remove(_r_)
+                                    # 若段落只剩空run组, 加空run占位避免docx渲染异常
+                                    _tgs = _pp.findall(_qn2('w:t'))
+                                    if not _tgs:
+                                        _pp.add_run() if False else None
                             if total_row_i is not None:
-                                rows[total_row_i]._tr.addprevious(new_tr)
+                                rows[total_row_i]._tr.addprevious(_new_tr)
                                 total_row_i += 1
                             else:
-                                table._tbl.append(new_tr)
+                                table._tbl.append(_new_tr)
                             avail += 1
                         rows = table.rows
-                        # 逐行填充
+                        # 逐行填充: 名称/规格/单位/数量/含税单价/金额/备注 (序号列=_hdr_seq时写序号或保留)
                         for k, oi_row in enumerate(det_rows):
                             if oi_row is not None:
                                 qty_v = oi_row['quantity']
@@ -11535,9 +11578,13 @@ def api_contract_generate():
                                 line = [o['item_name'] or '', o['spec'] or '', o['unit'] or '',
                                         qty_s, f"{o['price'] or 0:,.2f}", f"{amt:,.2f}", '']
                             tr = rows[idx + k]
+                            # 序号列(若表头有序号): 数据行序号=1..N 统一重写(兼容模板预填1-4)
+                            if _hdr_seq and len(tr.cells) > _col_off:
+                                _scell(tr.cells[0], k + 1)
                             for j, val in enumerate(line):
-                                if j < len(tr.cells):
-                                    tr.cells[j].text = str(val)
+                                _ci = j + _col_off
+                                if _ci < len(tr.cells):
+                                    _scell(tr.cells[_ci], val)
                         # 合计行: 可能有"合计"标签行 + "合计金额：¥   元"行, 两处都要填
                         for i in range(idx + len(det_rows), len(rows)):
                             cells = [cc.text.strip() for cc in rows[i].cells]
@@ -11547,12 +11594,14 @@ def api_contract_generate():
                                     # 只替换"合计金额：¥"后的数字(税金/不含税/大写已由 _apply_ct 填好, 不能整格替换)
                                     for cell in rows[i].cells:
                                         if '合计金额：¥' in cell.text:
-                                            cell.text = re.sub(r'(合计金额：¥)[\d,\.\s]*(元)',
-                                                               lambda m: f'{m.group(1)}{total:,.2f}{m.group(2)}', cell.text)
+                                            _nt2 = re.sub(r'(合计金额：¥)[\d,\.\s]*(元)',
+                                                          lambda m: f'{m.group(1)}{total:,.2f}{m.group(2)}', cell.text)
+                                            _scell(cell, _nt2)
                                             break
                                 else:
-                                    # 照片格式: 合计行金额列写纯数字(如 2800.00)
-                                    rows[i].cells[-2].text = f"{total:,.2f}"
+                                    # 合计行金额列写纯数字
+                                    _scell(rows[i].cells[-2], f"{total:,.2f}")
+
                                 # 继续检查下一行是否也是"合计金额"行
                     except Exception:
                         pass
