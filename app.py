@@ -7379,8 +7379,11 @@ def api_inquiry_select(iid):
         amt = round(price * qty, 2)
         grand_amt += amt
         rows.append((it['item_name'], it['spec'] or '', it['unit'] or '个', qty, price, amt))
+    # V11.259: 商家未分项报价标记(行单价=整单总价分摊参考价)
+    _is_split = False
     # 兜底: 商家未填单价(旧数据) → 回退按申请参考金额比例分摊报价总额
     if grand_amt <= 0:
+        _is_split = True
         rows = []
         base_sum = sum(float(it['total_price'] or 0) for it in items)
         grand_amt = 0.0
@@ -7435,7 +7438,7 @@ def api_inquiry_select(iid):
     oid = conn.execute("SELECT id FROM purchase_orders WHERE order_no=?", (no,)).fetchone()[0]
     for r in rows:
         conn.execute("INSERT INTO order_items(order_id,item_name,spec,unit,quantity,price,amount,tax_rate,tax_amount,total_amount,remark) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                     (oid, r[0], r[1], r[2], r[3], r[4], r[5], 0, 0, r[5], ''))
+                     (oid, r[0], r[1], r[2], r[3], r[4], r[5], 0, 0, r[5], ('整单总价分摊参考价(商家未分项报价)' if _is_split else '')))
     conn.execute("UPDATE inquiry_suppliers SET is_selected=1 WHERE id=?", (sid,))
     # V11.73: 定标审批通过后直接生效(领导已选定供应商,无需再次审批)
     conn.execute("UPDATE purchase_orders SET status='已通过', settle_type=?, updated_at=? WHERE id=?", (settle_type, now(), oid))
@@ -8449,7 +8452,12 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
             if inv:
                 _up = "quantity=quantity+?, last_move_date=?, updated_at=?"
                 _args = [q, now(), now()]
-                if (not inv['price'] or inv['price'] == 0) and _price:
+                if _price and float(inv['price'] or 0) > 0 and float(inv['quantity'] or 0) >= 0:
+                    # V11.259: 加权平均价 — 不同批次进价不同时库存单价联动(保留旧功能: 空价填充)
+                    _oq = float(inv['quantity'] or 0); _op = float(inv['price'] or 0)
+                    _np = round((_oq * _op + q * _price) / (_oq + q), 4) if (_oq + q) > 0 else _price
+                    _up += ", price=?"; _args.append(_np)
+                elif (not inv['price'] or inv['price'] == 0) and _price:
                     _up += ", price=?"; _args.append(_price)
                 if _tr and (not inv['tax_rate'] or inv['tax_rate'] == 0):
                     _up += ", tax_rate=?"; _args.append(_tr)
@@ -8486,7 +8494,12 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
             if inv:
                 _up = "quantity=quantity+?, last_move_date=?, updated_at=?"
                 _args = [q, now(), now()]
-                if (not inv['price'] or inv['price'] == 0) and _price:
+                if _price and float(inv['price'] or 0) > 0 and float(inv['quantity'] or 0) >= 0:
+                    # V11.259: 加权平均价 — 不同批次进价不同时库存单价联动(保留旧功能: 空价填充)
+                    _oq = float(inv['quantity'] or 0); _op = float(inv['price'] or 0)
+                    _np = round((_oq * _op + q * _price) / (_oq + q), 4) if (_oq + q) > 0 else _price
+                    _up += ", price=?"; _args.append(_np)
+                elif (not inv['price'] or inv['price'] == 0) and _price:
                     _up += ", price=?"; _args.append(_price)
                 if _cat and not inv['cat_code']:
                     _up += ", cat_code=?"; _args.append(_cat)
@@ -8517,7 +8530,12 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
         if inv:
             _up = "quantity=quantity+?, last_move_date=?, updated_at=?"
             _args = [q, now(), now()]
-            if (not inv['price'] or inv['price'] == 0) and _price:
+            if _price and float(inv['price'] or 0) > 0 and float(inv['quantity'] or 0) >= 0:
+                # V11.259: 加权平均价 — 不同批次进价不同时库存单价联动(保留旧功能: 空价填充)
+                _oq = float(inv['quantity'] or 0); _op = float(inv['price'] or 0)
+                _np = round((_oq * _op + q * _price) / (_oq + q), 4) if (_oq + q) > 0 else _price
+                _up += ", price=?"; _args.append(_np)
+            elif (not inv['price'] or inv['price'] == 0) and _price:
                 _up += ", price=?"; _args.append(_price)
             if _cat and not inv['cat_code']:
                 _up += ", cat_code=?"; _args.append(_cat)
@@ -8929,6 +8947,32 @@ def api_create_receiving():
     items = [it for it in items if it.get('item_name') and float(it.get('quantity', 0) or 0) > 0]
     if not items:
         conn.close(); return jsonify({'error': '请至少填写一个商品及数量'}), 400
+    # V11.259: 超量收货拦截 — 分批验收照旧, 仅防超收: 本次入库量不得超过订单未收货量
+    if _oid:
+        _ois = {}
+        for _x in conn.execute("SELECT item_name, quantity FROM order_items WHERE order_id=?", (_oid,)).fetchall():
+            _ois[str(_x['item_name'] or '').strip()] = float(_x['quantity'] or 0)
+        if _ois:
+            _got = {}
+            for _rv in conn.execute("SELECT item_name,quantity,items_json,invoice_no,is_est,status FROM receivings WHERE order_id=? AND status NOT IN ('已作废','已撤回')", (_oid,)).fetchall():
+                if (_rv['is_est'] if 'is_est' in _rv.keys() else 0) and (_rv['invoice_no'] if 'invoice_no' in _rv.keys() else ''):
+                    continue  # 暂估已红冲(发票已回)那半不再占用, 对应正式单已计入
+                try:
+                    _j = json.loads(_rv['items_json'] or '[]')
+                    if isinstance(_j, list) and _j and isinstance(_j[0], dict) and _j[0].get('item_name'):
+                        for _ji in _j:
+                            if _ji and _ji.get('item_name'):
+                                _got[str(_ji['item_name']).strip()] = _got.get(str(_ji['item_name']).strip(), 0) + float(_ji.get('quantity') or 0)
+                        continue
+                except Exception:
+                    pass
+                _got[str(_rv['item_name'] or '').strip()] = _got.get(str(_rv['item_name'] or '').strip(), 0) + float(_rv['quantity'] or 0)
+            for it in items:
+                _nm = str(it.get('item_name') or '').strip()
+                if _nm in _ois:
+                    _left = _ois[_nm] - _got.get(_nm, 0)
+                    if float(it.get('quantity', 0) or 0) > _left + 0.0001:
+                        conn.close(); return jsonify({'error': '入库数量超过订单未收货量：%s 订单共%s%s，已收%s%s，本次%s%s（超量请先与供应商/采购确认追加，勿直接超收）' % (_nm, _ois[_nm], it.get('unit','个'), _got.get(_nm,0), it.get('unit','个'), it.get('quantity'), it.get('unit','个'))}), 400
     no = gen_no('RK', 'receivings', 'receive_no', conn)
     total_q = sum(float(it['quantity']) for it in items)
     first = items[0]

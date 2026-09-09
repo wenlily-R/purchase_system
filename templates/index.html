@@ -2519,6 +2519,9 @@ async function showOrder(ordid){
   let h=`<div class="c2"><div><dt>单号</dt><dd><b>${esc(o.order_no)}</b></dd><dt>物资</dt><dd>${esc(o.item_name)}</dd><dt>数量</dt><dd>${o.quantity}${esc(o.unit)}</dd><dt>金额</dt><dd>¥${(o.total_amount||0).toFixed(0)}</dd></div>
     <div><dt>供应商</dt><dd>${esc(o.supplier)}</dd><dt>负责人</dt><dd>${esc(o.owner)}</dd><dt>交易模式</dt><dd><span class="tag ${o.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(o.trade_mode||'货到付款')}</span></dd><dt>状态</dt><dd>${tag(o.status)}</dd></div></div>`;
   if(o.contract_no){const cf=(await api('/contracts')).find(x=>x.contract_no===o.contract_no);h+=`<div style="margin-top:6px;font-size:9px;color:var(--s)">已关联合同: ${esc(o.contract_no)} ${cf&&cf.file_path?`<a href="/uploads/${esc(cf.file_path)}" target="_blank" style="color:var(--b2,#3370ff)">📄下载</a>`:''}</div>`}
+  if(d.items&&d.items.some(it=>(it.remark||'').includes('分摊'))){
+    h+=`<div style="margin:6px 0;padding:5px 8px;background:#fff8e1;border:1px solid #f0d9a0;border-radius:4px;font-size:9px;color:#8a6d3b">ℹ️ 本单商家按<b>整单总价</b>成交（未逐项报价），明细行单价为按金额比例<b>分摊参考价</b>；入库、财务核对请以实际到货与发票为准</div>`;
+  }
   if(d.items&&d.items.length){
     h+=`<h4 style="font-size:10px;margin:6px 0 3px">📋 商品明细（${d.items.length}项，累计数量 ${o.total_qty||o.quantity}）</h4>
       <table class="tb" style="font-size:9px"><thead><tr><th>物资名称</th><th>规格</th><th>单价</th><th>数量</th><th>税率</th><th>金额</th><th>状态</th><th>操作</th></tr></thead>
