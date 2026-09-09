@@ -11241,405 +11241,415 @@ def fmt_wan(seg, digs, units):
 @app.route('/api/contracts/generate', methods=['POST'])
 @login_required
 def api_contract_generate():
-    """订单下单后一键生成采购合同: 调默认模板→自动填充甲方/乙方/明细/结算方式→生成docx归档"""
-    d = request.json
-    oid = d.get('order_id')
-    conn = db()
-    # V11.203 模块一1.1: 每份合同独立发票条款/预计开票时间(采购员生成合同时填, 不传则空=老逻辑)
-    inv_clause = (d.get('invoice_clause') or '').strip()
-    inv_first = (d.get('invoice_est_first') or '').strip()[:10]
-    inv_done = (d.get('invoice_est_done') or '').strip()[:10]
-    # V11.225: 发票回收顺序节点(生成合同弹窗录入, 每节点=触发条件/约定开票金额/约定时间), 可空
-    inv_nodes = [x for x in (d.get('nodes') or []) if isinstance(x, dict)] or None
-    o = conn.execute("SELECT * FROM purchase_orders WHERE id=?", (oid,)).fetchone()
-    if not o:
-        conn.close(); return jsonify({'error': '订单不存在'}), 400
-    # V11.151: 防重复生成合同 — 订单已有有效合同(非作废/非已撤回)时禁止再次生成
-    _exist = conn.execute(
-        "SELECT id,contract_no,status FROM contracts WHERE order_id=? AND status NOT IN ('已作废','已撤回','撤回') ORDER BY id LIMIT 1",
-        (oid,)).fetchone()
-    if _exist:
-        conn.close()
-        return jsonify({'error': '该订单已生成合同 %s（状态:%s），如需重新生成请先撤回或作废原合同' % (_exist['contract_no'], _exist['status'])}), 400
-    sup = conn.execute("SELECT * FROM suppliers WHERE name=?", (o['supplier'],)).fetchone() if o['supplier'] else None
-    # V11.233: 合同模板来源 — 优先读 contract_templates/ 目录下的模板docx(需求: 文件放固定路径, 替换即更新, 不后台导入);
-    # 下拉选项=该目录docx文件名(如 买卖合同-现结), 未指定时回退旧模板表默认模板
-    tpl_name = (d.get('template_name') or '').strip()
-    tpl_path = ''
-    tpl_display = ''
-    if tpl_name:
-        _cand = [os.path.join(BASE, 'contract_templates', tpl_name),
-                 os.path.join(BASE, 'contract_templates', tpl_name + '.docx')]
-        for _pc in _cand:
-            if os.path.exists(_pc):
-                tpl_path = _pc
-                tpl_display = os.path.splitext(os.path.basename(_pc))[0]
-                break
-    if not tpl_path:
-        tpl = None
-        if d.get('template_id'):
-            tpl = conn.execute("SELECT * FROM contract_templates WHERE id=?", (d['template_id'],)).fetchone()
-        if not tpl:
-            tpl = conn.execute("SELECT * FROM contract_templates WHERE is_default=1 AND status='启用'").fetchone()
-        if not tpl:
-            conn.close(); return jsonify({'error': '未找到启用的合同模板, 请到 系统设置→合同模板管理 上传模板'}), 400
-        tpl_path = os.path.join(BASE, 'uploads', tpl['file_path'])
-        tpl_display = tpl['name'] or ''
-    if not os.path.exists(tpl_path):
-        conn.close(); return jsonify({'error': '模板文件缺失(%s), 请检查 contract_templates 目录' % tpl_path}), 400
-    # 甲方预设
-    cname = cfg_get('company_name', '正成能源有限公司')
-    caddr = cfg_get('company_address', '山西省')
-    ccontact = cfg_get('company_contact', '采购部')
-    cphone = cfg_get('company_phone', '')
-    cno = gen_contract_no(conn)
-    # V11.144: 结算方式由采购员在生成合同时选择(现结/月结), 覆盖订单默认值
-    _settle_choice = (d.get('settle_type') or '').strip()
-    if _settle_choice in ('现结', '月结'):
-        conn.execute("UPDATE purchase_orders SET settle_type=?, updated_at=? WHERE id=?", (_settle_choice, now(), oid))
-        conn.commit()
-    tm = o['trade_mode'] or '货到付款'
-    # V11.7: 结算方式跟随订单交易模式 — 自定义模式(如 预付30%)直接带入, 内置两种保留详细说明
-    if _settle_choice == '现结':
-        settle = '现结：一单一结，验收合格后立即付款'
-    elif _settle_choice == '月结':
-        settle = '月结：月底按厂家汇总对账，统一生成月度合同后付款'
-    elif tm == '货到付款':
-        settle = '货到付款：到货验收入库后，月度对账、合并开票、挂账后付款'
-    elif tm == '先款后货':
-        settle = '先款后货：合同签订后预付货款，供应商收款后发货，到货入库后挂账核销'
-    else:
-        settle = tm
-    items_txt = ''
-    _oi = conn.execute("SELECT * FROM order_items WHERE order_id=? ORDER BY id", (oid,)).fetchall()
-    if _oi:
-        items_txt = '\n'.join(f"{i+1}. {r['item_name']} {r['spec'] or ''} {r['quantity']}{r['unit'] or '个'} 单价¥{r['price'] or 0}" for i, r in enumerate(_oi))
-    elif o['req_id']:
-        rows = conn.execute("SELECT * FROM request_items WHERE req_id=?", (o['req_id'],)).fetchall()
-        if rows:
-            items_txt = '\n'.join(f"{i+1}. {r['item_name']} {r['spec'] or ''} {r['quantity']}{r['unit'] or '个'}" for i, r in enumerate(rows))
-    else:
-        items_txt = f"1. {o['item_name']} {o['spec'] or ''} {o['quantity']}{o['unit'] or '个'} 单价¥{o['price'] or 0}"
-    mapping = {
-        '{合同编号}': cno, '{订单编号}': o['order_no'],
-        '{甲方名称}': cname, '{甲方地址}': caddr, '{甲方联系人}': ccontact, '{甲方电话}': cphone,
-        '{乙方名称}': sup['name'] if sup else (o['supplier'] or ''),
-        '{乙方地址}': '', '{乙方联系人}': sup['contact'] if sup else '',
-        '{乙方电话}': sup['phone'] if sup else '',
-        # V11.228 Bug2③ 历史占位(旧模板无收款正文需求): 保持置空, 旧模板段落无值将按空壳移除
-        '{乙方开户行}': '', '{乙方账号}': '',
-        # V11.233: 收款信息自动填充 — 第八条第3点取自供应商档案渲染进合同正文(需求: 无需人工填写, 允许保存后手动改)
-        '{收款账号名称}': (sup['name'] if sup else (o['supplier'] or '')),
-        '{收款账号}': (sup['account'] if sup and sup['account'] else ''),
-        '{收款银行}': (sup['bank'] if sup and sup['bank'] else ''),
-        '{签订日期}': '',  # 实际值在下方 today_s 计算后回填
-        '{下单日期}': (o['created_at'] or '')[:10], '{预计交货日期}': o['target_date'] or '',
-        '{结算方式}': settle, '{明细清单}': items_txt,
-        '{合计金额}': '',  # V11.228: total 联动计算后填充(见下方覆盖), 修复合同金额/大写取旧订单0值
-    }
     try:
-        from docx import Document
-        # tpl_path 已在上方按 template_name/默认模板解析(V11.233); 此处不再覆盖
+        """订单下单后一键生成采购合同: 调默认模板→自动填充甲方/乙方/明细/结算方式→生成docx归档"""
+        d = request.json
+        oid = d.get('order_id')
+        conn = db()
+        # V11.203 模块一1.1: 每份合同独立发票条款/预计开票时间(采购员生成合同时填, 不传则空=老逻辑)
+        inv_clause = (d.get('invoice_clause') or '').strip()
+        inv_first = (d.get('invoice_est_first') or '').strip()[:10]
+        inv_done = (d.get('invoice_est_done') or '').strip()[:10]
+        # V11.225: 发票回收顺序节点(生成合同弹窗录入, 每节点=触发条件/约定开票金额/约定时间), 可空
+        inv_nodes = [x for x in (d.get('nodes') or []) if isinstance(x, dict)] or None
+        o = conn.execute("SELECT * FROM purchase_orders WHERE id=?", (oid,)).fetchone()
+        if not o:
+            conn.close(); return jsonify({'error': '订单不存在'}), 400
+        # V11.151: 防重复生成合同 — 订单已有有效合同(非作废/非已撤回)时禁止再次生成
+        _exist = conn.execute(
+            "SELECT id,contract_no,status FROM contracts WHERE order_id=? AND status NOT IN ('已作废','已撤回','撤回') ORDER BY id LIMIT 1",
+            (oid,)).fetchone()
+        if _exist:
+            conn.close()
+            return jsonify({'error': '该订单已生成合同 %s（状态:%s），如需重新生成请先撤回或作废原合同' % (_exist['contract_no'], _exist['status'])}), 400
+        sup = conn.execute("SELECT * FROM suppliers WHERE name=?", (o['supplier'],)).fetchone() if o['supplier'] else None
+        # V11.233: 合同模板来源 — 优先读 contract_templates/ 目录下的模板docx(需求: 文件放固定路径, 替换即更新, 不后台导入);
+        # 下拉选项=该目录docx文件名(如 买卖合同-现结), 未指定时回退旧模板表默认模板
+        tpl_name = (d.get('template_name') or '').strip()
+        tpl_path = ''
+        tpl_display = ''
+        if tpl_name:
+            _cand = [os.path.join(BASE, 'contract_templates', tpl_name),
+                     os.path.join(BASE, 'contract_templates', tpl_name + '.docx')]
+            for _pc in _cand:
+                if os.path.exists(_pc):
+                    tpl_path = _pc
+                    tpl_display = os.path.splitext(os.path.basename(_pc))[0]
+                    break
+        if not tpl_path:
+            tpl = None
+            if d.get('template_id'):
+                tpl = conn.execute("SELECT * FROM contract_templates WHERE id=?", (d['template_id'],)).fetchone()
+            if not tpl:
+                tpl = conn.execute("SELECT * FROM contract_templates WHERE is_default=1 AND status='启用'").fetchone()
+            if not tpl:
+                conn.close(); return jsonify({'error': '未找到启用的合同模板, 请到 系统设置→合同模板管理 上传模板'}), 400
+            tpl_path = os.path.join(BASE, 'uploads', tpl['file_path'])
+            tpl_display = tpl['name'] or ''
         if not os.path.exists(tpl_path):
-            conn.close(); return jsonify({'error': '模板文件缺失, 请重新上传'}), 400
-        doc = Document(tpl_path)
-        # 方案A(2026-09-07用户拍板): 明细金额=含税含运总价(价税合计口径), 合同金额=Σ录入金额, 永不加税放大;
-        # 税率>0时按价内倒拆展示税金/不含税(正式样式, 金额不变); 税率0/未配=一口价, 合同只写总价一句
-        if _oi:
-            total = round(sum(float(r['amount'] or 0) for r in _oi), 2)
-            rate = float(_oi[0]['tax_rate'] or 0)
-            if rate > 0:
-                amt = round(total/(1+rate/100.0), 2)
-                tax = round(total - amt, 2)
-            else:
-                amt, tax = total, 0.0
-        else:
-            total = round(float(o['amount'] or 0), 2)
-            rate = float(o['tax_rate'] or 0)
-            if rate > 0:
-                amt = round(total/(1+rate/100.0), 2)
-                tax = round(total - amt, 2)
-            else:
-                amt, tax = total, 0.0
-        # 方案A: 回写订单 金额/价税合计=录入含税总价(修正历史'不含税+13%'自动加税虚增), 税额=价内倒拆
-        try:
-            conn.execute("UPDATE purchase_orders SET amount=?, tax_amount=?, total_amount=?, tax_rate=?, updated_at=? WHERE id=?",
-                         (round(total, 2), round(tax, 2), round(total, 2), rate, now(), oid))
+            conn.close(); return jsonify({'error': '模板文件缺失(%s), 请检查 contract_templates 目录' % tpl_path}), 400
+        # 甲方预设
+        cname = cfg_get('company_name', '正成能源有限公司')
+        caddr = cfg_get('company_address', '山西省')
+        ccontact = cfg_get('company_contact', '采购部')
+        cphone = cfg_get('company_phone', '')
+        cno = gen_contract_no(conn)
+        # V11.144: 结算方式由采购员在生成合同时选择(现结/月结), 覆盖订单默认值
+        _settle_choice = (d.get('settle_type') or '').strip()
+        if _settle_choice in ('现结', '月结'):
+            conn.execute("UPDATE purchase_orders SET settle_type=?, updated_at=? WHERE id=?", (_settle_choice, now(), oid))
             conn.commit()
-        except Exception:
-            pass
-        mapping['{合计金额}'] = f"¥{total:,.2f}（人民币大写：{rmb_upper(total)}）"  # 方案A: 总价=录入含税总价
-        # 交付天数
-        days = ''
-        if o['target_date']:
+        tm = o['trade_mode'] or '货到付款'
+        # V11.7: 结算方式跟随订单交易模式 — 自定义模式(如 预付30%)直接带入, 内置两种保留详细说明
+        if _settle_choice == '现结':
+            settle = '现结：一单一结，验收合格后立即付款'
+        elif _settle_choice == '月结':
+            settle = '月结：月底按厂家汇总对账，统一生成月度合同后付款'
+        elif tm == '货到付款':
+            settle = '货到付款：到货验收入库后，月度对账、合并开票、挂账后付款'
+        elif tm == '先款后货':
+            settle = '先款后货：合同签订后预付货款，供应商收款后发货，到货入库后挂账核销'
+        else:
+            settle = tm
+        items_txt = ''
+        _oi = conn.execute("SELECT * FROM order_items WHERE order_id=? ORDER BY id", (oid,)).fetchall()
+        if _oi:
+            items_txt = '\n'.join(f"{i+1}. {r['item_name']} {r['spec'] or ''} {r['quantity']}{r['unit'] or '个'} 单价¥{r['price'] or 0}" for i, r in enumerate(_oi))
+        elif o['req_id']:
+            rows = conn.execute("SELECT * FROM request_items WHERE req_id=?", (o['req_id'],)).fetchall()
+            if rows:
+                items_txt = '\n'.join(f"{i+1}. {r['item_name']} {r['spec'] or ''} {r['quantity']}{r['unit'] or '个'}" for i, r in enumerate(rows))
+        else:
+            items_txt = f"1. {o['item_name']} {o['spec'] or ''} {o['quantity']}{o['unit'] or '个'} 单价¥{o['price'] or 0}"
+        mapping = {
+            '{合同编号}': cno, '{订单编号}': o['order_no'],
+            '{甲方名称}': cname, '{甲方地址}': caddr, '{甲方联系人}': ccontact, '{甲方电话}': cphone,
+            '{乙方名称}': sup['name'] if sup else (o['supplier'] or ''),
+            '{乙方地址}': '', '{乙方联系人}': sup['contact'] if sup else '',
+            '{乙方电话}': sup['phone'] if sup else '',
+            # V11.228 Bug2③ 历史占位(旧模板无收款正文需求): 保持置空, 旧模板段落无值将按空壳移除
+            '{乙方开户行}': '', '{乙方账号}': '',
+            # V11.233: 收款信息自动填充 — 第八条第3点取自供应商档案渲染进合同正文(需求: 无需人工填写, 允许保存后手动改)
+            '{收款账号名称}': (sup['name'] if sup else (o['supplier'] or '')),
+            '{收款账号}': (sup['account'] if sup and sup['account'] else ''),
+            '{收款银行}': (sup['bank'] if sup and sup['bank'] else ''),
+            '{签订日期}': '',  # 实际值在下方 today_s 计算后回填
+            '{下单日期}': (o['created_at'] or '')[:10], '{预计交货日期}': o['target_date'] or '',
+            '{结算方式}': settle, '{明细清单}': items_txt,
+            '{合计金额}': '',  # V11.228: total 联动计算后填充(见下方覆盖), 修复合同金额/大写取旧订单0值
+        }
+        try:
+            from docx import Document
+            # tpl_path 已在上方按 template_name/默认模板解析(V11.233); 此处不再覆盖
+            if not os.path.exists(tpl_path):
+                conn.close(); return jsonify({'error': '模板文件缺失, 请重新上传'}), 400
+            doc = Document(tpl_path)
+            # 方案A(2026-09-07用户拍板): 明细金额=含税含运总价(价税合计口径), 合同金额=Σ录入金额, 永不加税放大;
+            # 税率>0时按价内倒拆展示税金/不含税(正式样式, 金额不变); 税率0/未配=一口价, 合同只写总价一句
+            if _oi:
+                total = round(sum(float(r['amount'] or 0) for r in _oi), 2)
+                rate = float(_oi[0]['tax_rate'] or 0)
+                if rate > 0:
+                    amt = round(total/(1+rate/100.0), 2)
+                    tax = round(total - amt, 2)
+                else:
+                    amt, tax = total, 0.0
+            else:
+                total = round(float(o['amount'] or 0), 2)
+                rate = float(o['tax_rate'] or 0)
+                if rate > 0:
+                    amt = round(total/(1+rate/100.0), 2)
+                    tax = round(total - amt, 2)
+                else:
+                    amt, tax = total, 0.0
+            # 方案A: 回写订单 金额/价税合计=录入含税总价(修正历史'不含税+13%'自动加税虚增), 税额=价内倒拆
             try:
-                d1 = datetime.datetime.strptime(o['target_date'][:10], '%Y-%m-%d').date()
-                days = str(max((d1 - datetime.date.today()).days, 1))
-            except Exception:
-                days = ''
-        today_s = datetime.date.today().strftime('%Y年 %m月 %d日')
-        mapping['{签订日期}'] = today_s
-        # V8.4: 合同文本通用处理(段落+表格共用) — 合计金额中文大写/税率/税金/不含税/收款账户/日期
-        def _apply_ct(t):
-            if '合计金额：¥' in t:
-                # 合同金额段格式固定三段式(与用户正式合同样式一致, 文本结构永不变):
-                # 合计金额=录入含税含运总价(方案A不放大); 税率>0税金/不含税=价内倒拆; 未配税率显示0%
-                return (f"合计金额：¥{total:,.2f}元（大写金额：人民币{rmb_upper(total)}）。"
-                        f"税金（税率 {rate:.0f}%）为：¥{tax:,.2f}元（大写金额：人民币{rmb_upper(tax)}）；"
-                        f"不含税价款为：¥{amt:,.2f}元（大写金额：人民币{rmb_upper(amt)}）。")
-            reps = [
-                (r'合同签订后\s+日内交付', f'合同签订后{days or "7"}日内交付'),
-                (r'运抵甲方指定地点后\s+日内', '运抵甲方指定地点后1日内'),
-                (r'乙方应在\s+日内更换', '乙方应在1日内更换'),
-                (r'质保期为\s+年', '质保期为1年'),
-                (r'签订合同后\s+日内，乙方向甲方提供全额', '签订合同后3日内，乙方向甲方提供全额'),
-                (r'收到发票后\s+日内支付合同总价的\s+%', '收到发票后3日内支付合同总价的100%'),
-                (r'质保期满后若无质量纠纷，\s+日内支付剩余价款', '质保期满后若无质量纠纷，30日内支付剩余价款'),
-                (r'延迟交付货物超过\s+天', '延迟交付货物超过3天'),
-                (r'需提前\s+天通知对方', '需提前3天通知对方'),
-                (r'合同额的\s+%', '合同额的30%'),
-            ]
-            for pat, repx in reps:
-                if re.search(pat, t):
-                    t = re.sub(pat, repx, t)
-            # V11.228 Bug2③: 收款账户信息禁止进入合同正文 — 段落区整体移除(见下方 _acc_drop), 此处不再注入任何账户值
-            # V11.144: 结算方式注入 — 付款条款段(甲方自收到发票后...)前插入现结/月结说明
-            # V11.248: 强制据实结算条款(会议纪要第9条: 合同模板强制写据实结算) — 无论现结/月结/其他均注入
-            if ('甲方自收到发票后' in t) and '据实结算约定' not in t:
-                _pre = '据实结算约定：本合同按实际到货及验收数量与约定单价据实结算，最终结算金额以发票核对红冲后的正式入库金额为准。'
-                _sline = ''
-                if _settle_choice == '现结':
-                    _sline = '现结：一单一结，验收合格后立即付款；'
-                elif _settle_choice == '月结':
-                    _sline = '月结：月底按厂家汇总对账，统一生成月度合同后付款；'
-                t = t.replace('甲方自收到发票后', _pre + _sline + '甲方自收到发票后')
-            elif re.search(r'20\d\d年\s*\d+\s*月\s*\d+日', t):
-                t = re.sub(r'20\d\d年\s*\d+\s*月\s*\d+日', today_s, t)
-            return t
-        # V11.228 Bug2③: 收款账户信息禁止进入合同正文 — 收集区段(标题「收款账户信息」→「银行行号」)待整体移除
-        _acc_drop = []
-        _acc_zone = False
-        for _pa in doc.paragraphs:
-            _tx = _pa.text or ''
-            if '收款账户信息' in _tx:
-                _acc_zone = True
-            if _acc_zone:
-                _acc_drop.append(_pa)
-            if '银行行号' in _tx:
-                _acc_zone = False
-        # 1) 段落: 占位符 + 框架合同字段填充
-        for para in doc.paragraphs:
-            t = para.text
-            orig_t = t
-            for k, v in mapping.items():
-                if k in t:
-                    t = t.replace(k, v)
-            # 框架合同: 合同编码/乙方/合计金额/交付/验收/质保/结算/解除/签署日期
-            # (用正则精确匹配空白占位, 不污染行首缩进)
-            if '合同编码' in t and 'HT-' not in t:
-                t = '合同编码：' + cno
-            elif t.strip().startswith('乙方：') and len(t.strip()) <= 5:
-                t = '乙方：' + (sup['name'] if sup else (o['supplier'] or '')) + '（供应方）'
-            t = _apply_ct(t)
-            # V11.228: 开户/账号/收款占位替换后无值(空壳标签/残留占位) → 删段, 账户信息不进正文
-            if any(k in orig_t for k in ('开户行', '收款账户', '收款账号', '收款银行', '银行行号', '{乙方账号}', '{乙方开户行}')) and not re.search(r'[0-9A-Za-z\u4e00-\u9fff¥￥$]', t):  # V11.233: 填充中文收款信息后保留, 仅空壳删除:
-                _acc_drop.append(para)
-                continue
-            if t != para.text:
-                para.text = t
-        for _p in _acc_drop:  # 物理移除收款账户区段/空账户标签段
-            try:
-                _el = _p._element
-                if _el.getparent() is not None:
-                    _el.getparent().remove(_el)
+                conn.execute("UPDATE purchase_orders SET amount=?, tax_amount=?, total_amount=?, tax_rate=?, updated_at=? WHERE id=?",
+                             (round(total, 2), round(tax, 2), round(total, 2), rate, now(), oid))
+                conn.commit()
             except Exception:
                 pass
-        # 2) 表格: 先处理所有单元格段落(占位符替换 + 合计金额大写/税金/税率/收款账户等), 再填明细
-        for table in doc.tables:
-            for _row in table.rows:
-                for _cell in _row.cells:
-                    for _p in _cell.paragraphs:
-                        if _p.text.strip():
-                            _nt0 = _p.text
-                            _nt = _p.text
-                            for _k, _v in mapping.items():
-                                if _k in _nt:
-                                    _nt = _nt.replace(_k, _v)
-                            _nt = _apply_ct(_nt)
-                            # V11.228: 单元格收款账户空标签(无值) → 清空, 不进正文
-                            if any(k in _nt0 for k in ('开户行', '收款账户', '收款账号', '收款银行', '银行行号', '{乙方账号}', '{乙方开户行}')) and not re.search(r'[0-9A-Za-z\u4e00-\u9fff¥￥$]', _nt):
-                                _p.text = ''
-                                continue
-                            if _nt != _p.text:
-                                _p.text = _nt
-            rows = table.rows
-            if len(rows) < 3:
-                continue
-            header = [c.text.strip() for c in rows[0].cells]
-            if '标的物' in header or '标的' in header[0] or '品名' in header[0]:
-                # 明细行: 多商品订单取 order_items 逐行填充, 旧单取订单单商品
-                det_rows = _oi if _oi else [None]
-                # 先定位合计行(含"合计"字样的行)作为明细边界
-                total_row_i = None
-                for i in range(1, len(rows)):
-                    cells = [cc.text.strip() for cc in rows[i].cells]
-                    if any('合计' in cc for cc in cells):
-                        total_row_i = i
-                        break
-                # 再找第一个可写空行(合计行之前)
-                idx = 1
-                boundary = total_row_i if total_row_i is not None else len(rows)
-                for i in range(1, boundary):
-                    cells = [cc.text.strip() for cc in rows[i].cells]
-                    if not any(cells) or all(cc.strip() == '' for cc in cells):
-                        idx = i; break
-                else:
-                    idx = boundary  # 合计行前无空行 → 从合计行位置开始填(会先插入)
+            mapping['{合计金额}'] = f"¥{total:,.2f}（人民币大写：{rmb_upper(total)}）"  # 方案A: 总价=录入含税总价
+            # 交付天数
+            days = ''
+            if o['target_date']:
                 try:
-                    # 需要行数 > 可用空行 → 插入新行(在合计行之前)
-                    need = len(det_rows)
-                    avail = boundary - idx
-                    while avail < need:
-                        from docx.oxml.ns import qn as _qn
-                        new_tr = rows[idx]._tr.makeelement(_qn('w:tr'), {})
-                        for _ in range(len(rows[idx].cells)):
-                            tc = rows[idx]._tr.makeelement(_qn('w:tc'), {})
-                            new_tr.append(tc)
-                        if total_row_i is not None:
-                            rows[total_row_i]._tr.addprevious(new_tr)
-                            total_row_i += 1
-                        else:
-                            table._tbl.append(new_tr)
-                        avail += 1
-                    rows = table.rows
-                    # 逐行填充
-                    for k, oi_row in enumerate(det_rows):
-                        if oi_row is not None:
-                            qty_v = oi_row['quantity']
-                            qty_s = str(int(qty_v)) if float(qty_v).is_integer() else str(qty_v)
-                            line = [oi_row['item_name'] or '', oi_row['spec'] or '', oi_row['unit'] or '',
-                                    qty_s, f"{oi_row['price'] or 0:,.2f}", f"{oi_row['amount'] or 0:,.2f}", '']
-                        else:
-                            qty_v = o['quantity']
-                            qty_s = str(int(qty_v)) if float(qty_v).is_integer() else str(qty_v)
-                            line = [o['item_name'] or '', o['spec'] or '', o['unit'] or '',
-                                    qty_s, f"{o['price'] or 0:,.2f}", f"{amt:,.2f}", '']
-                        tr = rows[idx + k]
-                        for j, val in enumerate(line):
-                            if j < len(tr.cells):
-                                tr.cells[j].text = str(val)
-                    # 合计行: 可能有"合计"标签行 + "合计金额：¥   元"行, 两处都要填
-                    for i in range(idx + len(det_rows), len(rows)):
-                        cells = [cc.text.strip() for cc in rows[i].cells]
-                        joined = ' | '.join(cells)
-                        if any('合计' in cc for cc in cells):
-                            if '合计金额' in joined:
-                                # 只替换"合计金额：¥"后的数字(税金/不含税/大写已由 _apply_ct 填好, 不能整格替换)
-                                for cell in rows[i].cells:
-                                    if '合计金额：¥' in cell.text:
-                                        cell.text = re.sub(r'(合计金额：¥)[\d,\.\s]*(元)',
-                                                           lambda m: f'{m.group(1)}{total:,.2f}{m.group(2)}', cell.text)
-                                        break
-                            else:
-                                # 照片格式: 合计行金额列写纯数字(如 2800.00)
-                                rows[i].cells[-2].text = f"{total:,.2f}"
-                            # 继续检查下一行是否也是"合计金额"行
+                    d1 = datetime.datetime.strptime(o['target_date'][:10], '%Y-%m-%d').date()
+                    days = str(max((d1 - datetime.date.today()).days, 1))
+                except Exception:
+                    days = ''
+            today_s = datetime.date.today().strftime('%Y年 %m月 %d日')
+            mapping['{签订日期}'] = today_s
+            # V8.4: 合同文本通用处理(段落+表格共用) — 合计金额中文大写/税率/税金/不含税/收款账户/日期
+            def _apply_ct(t):
+                if '合计金额：¥' in t:
+                    # 合同金额段格式固定三段式(与用户正式合同样式一致, 文本结构永不变):
+                    # 合计金额=录入含税含运总价(方案A不放大); 税率>0税金/不含税=价内倒拆; 未配税率显示0%
+                    return (f"合计金额：¥{total:,.2f}元（大写金额：人民币{rmb_upper(total)}）。"
+                            f"税金（税率 {rate:.0f}%）为：¥{tax:,.2f}元（大写金额：人民币{rmb_upper(tax)}）；"
+                            f"不含税价款为：¥{amt:,.2f}元（大写金额：人民币{rmb_upper(amt)}）。")
+                reps = [
+                    (r'合同签订后\s+日内交付', f'合同签订后{days or "7"}日内交付'),
+                    (r'运抵甲方指定地点后\s+日内', '运抵甲方指定地点后1日内'),
+                    (r'乙方应在\s+日内更换', '乙方应在1日内更换'),
+                    (r'质保期为\s+年', '质保期为1年'),
+                    (r'签订合同后\s+日内，乙方向甲方提供全额', '签订合同后3日内，乙方向甲方提供全额'),
+                    (r'收到发票后\s+日内支付合同总价的\s+%', '收到发票后3日内支付合同总价的100%'),
+                    (r'质保期满后若无质量纠纷，\s+日内支付剩余价款', '质保期满后若无质量纠纷，30日内支付剩余价款'),
+                    (r'延迟交付货物超过\s+天', '延迟交付货物超过3天'),
+                    (r'需提前\s+天通知对方', '需提前3天通知对方'),
+                    (r'合同额的\s+%', '合同额的30%'),
+                ]
+                for pat, repx in reps:
+                    if re.search(pat, t):
+                        t = re.sub(pat, repx, t)
+                # V11.228 Bug2③: 收款账户信息禁止进入合同正文 — 段落区整体移除(见下方 _acc_drop), 此处不再注入任何账户值
+                # V11.144: 结算方式注入 — 付款条款段(甲方自收到发票后...)前插入现结/月结说明
+                # V11.248: 强制据实结算条款(会议纪要第9条: 合同模板强制写据实结算) — 无论现结/月结/其他均注入
+                if ('甲方自收到发票后' in t) and '据实结算约定' not in t:
+                    _pre = '据实结算约定：本合同按实际到货及验收数量与约定单价据实结算，最终结算金额以发票核对红冲后的正式入库金额为准。'
+                    _sline = ''
+                    if _settle_choice == '现结':
+                        _sline = '现结：一单一结，验收合格后立即付款；'
+                    elif _settle_choice == '月结':
+                        _sline = '月结：月底按厂家汇总对账，统一生成月度合同后付款；'
+                    t = t.replace('甲方自收到发票后', _pre + _sline + '甲方自收到发票后')
+                elif re.search(r'20\d\d年\s*\d+\s*月\s*\d+日', t):
+                    t = re.sub(r'20\d\d年\s*\d+\s*月\s*\d+日', today_s, t)
+                return t
+            # V11.228 Bug2③: 收款账户信息禁止进入合同正文 — 收集区段(标题「收款账户信息」→「银行行号」)待整体移除
+            _acc_drop = []
+            _acc_zone = False
+            for _pa in doc.paragraphs:
+                _tx = _pa.text or ''
+                if '收款账户信息' in _tx:
+                    _acc_zone = True
+                if _acc_zone:
+                    _acc_drop.append(_pa)
+                if '银行行号' in _tx:
+                    _acc_zone = False
+            # 1) 段落: 占位符 + 框架合同字段填充
+            for para in doc.paragraphs:
+                t = para.text
+                orig_t = t
+                for k, v in mapping.items():
+                    if k in t:
+                        t = t.replace(k, v)
+                # 框架合同: 合同编码/乙方/合计金额/交付/验收/质保/结算/解除/签署日期
+                # (用正则精确匹配空白占位, 不污染行首缩进)
+                if '合同编码' in t and 'HT-' not in t:
+                    t = '合同编码：' + cno
+                elif t.strip().startswith('乙方：') and len(t.strip()) <= 5:
+                    t = '乙方：' + (sup['name'] if sup else (o['supplier'] or '')) + '（供应方）'
+                t = _apply_ct(t)
+                # V11.228: 开户/账号/收款占位替换后无值(空壳标签/残留占位) → 删段, 账户信息不进正文
+                if any(k in orig_t for k in ('开户行', '收款账户', '收款账号', '收款银行', '银行行号', '{乙方账号}', '{乙方开户行}')) and not re.search(r'[0-9A-Za-z\u4e00-\u9fff¥￥$]', t):  # V11.233: 填充中文收款信息后保留, 仅空壳删除:
+                    _acc_drop.append(para)
+                    continue
+                if t != para.text:
+                    para.text = t
+            for _p in _acc_drop:  # 物理移除收款账户区段/空账户标签段
+                try:
+                    _el = _p._element
+                    if _el.getparent() is not None:
+                        _el.getparent().remove(_el)
                 except Exception:
                     pass
-            for row in rows:
-                for cell in row.cells:
-                    for k, v in mapping.items():
-                        if k in cell.text:
-                            cell.text = cell.text.replace(k, v)
-        # V11.203 模块一1.1: 发票条款注入 — 在结算付款条款段(甲方自收到发票后...)后插入独立发票条款段(每份合同可编辑区域)
-        # V11.225: 有发票回收顺序节点时按节点逐条生成(触发条件/金额/约定时间), 无节点回退老逻辑(条款文本+首次/全部时间)
-        def _mk_para_after(_anchor, _txt):
-            from docx.oxml import OxmlElement as _OE
-            from docx.oxml.ns import qn as _QN
-            _p = _OE('w:p')
-            _r = _OE('w:r')
-            _t = _OE('w:t')
-            _t.text = _txt
-            _t.set(_QN('xml:space'), 'preserve')
-            _r.append(_t)
-            _p.append(_r)
-            _anchor._p.addnext(_p)
-            return _p
-        _anchor = None
-        for para in doc.paragraphs:
-            if '甲方自收到发票后' in para.text:
-                _anchor = para
-                break
+            # 2) 表格: 先处理所有单元格段落(占位符替换 + 合计金额大写/税金/税率/收款账户等), 再填明细
+            for table in doc.tables:
+                for _row in table.rows:
+                    for _cell in _row.cells:
+                        for _p in _cell.paragraphs:
+                            if _p.text.strip():
+                                _nt0 = _p.text
+                                _nt = _p.text
+                                for _k, _v in mapping.items():
+                                    if _k in _nt:
+                                        _nt = _nt.replace(_k, _v)
+                                _nt = _apply_ct(_nt)
+                                # V11.228: 单元格收款账户空标签(无值) → 清空, 不进正文
+                                if any(k in _nt0 for k in ('开户行', '收款账户', '收款账号', '收款银行', '银行行号', '{乙方账号}', '{乙方开户行}')) and not re.search(r'[0-9A-Za-z\u4e00-\u9fff¥￥$]', _nt):
+                                    _p.text = ''
+                                    continue
+                                if _nt != _p.text:
+                                    _p.text = _nt
+                rows = table.rows
+                if len(rows) < 3:
+                    continue
+                header = [c.text.strip() for c in rows[0].cells]
+                if '标的物' in header or '标的' in header[0] or '品名' in header[0]:
+                    # 明细行: 多商品订单取 order_items 逐行填充, 旧单取订单单商品
+                    det_rows = _oi if _oi else [None]
+                    # 先定位合计行(含"合计"字样的行)作为明细边界
+                    total_row_i = None
+                    for i in range(1, len(rows)):
+                        cells = [cc.text.strip() for cc in rows[i].cells]
+                        if any('合计' in cc for cc in cells):
+                            total_row_i = i
+                            break
+                    # 再找第一个可写空行(合计行之前)
+                    idx = 1
+                    boundary = total_row_i if total_row_i is not None else len(rows)
+                    for i in range(1, boundary):
+                        cells = [cc.text.strip() for cc in rows[i].cells]
+                        if not any(cells) or all(cc.strip() == '' for cc in cells):
+                            idx = i; break
+                    else:
+                        idx = boundary  # 合计行前无空行 → 从合计行位置开始填(会先插入)
+                    try:
+                        # 需要行数 > 可用空行 → 插入新行(在合计行之前)
+                        need = len(det_rows)
+                        avail = boundary - idx
+                        while avail < need:
+                            from docx.oxml.ns import qn as _qn
+                            new_tr = rows[idx]._tr.makeelement(_qn('w:tr'), {})
+                            for _ in range(len(rows[idx].cells)):
+                                tc = rows[idx]._tr.makeelement(_qn('w:tc'), {})
+                                new_tr.append(tc)
+                            if total_row_i is not None:
+                                rows[total_row_i]._tr.addprevious(new_tr)
+                                total_row_i += 1
+                            else:
+                                table._tbl.append(new_tr)
+                            avail += 1
+                        rows = table.rows
+                        # 逐行填充
+                        for k, oi_row in enumerate(det_rows):
+                            if oi_row is not None:
+                                qty_v = oi_row['quantity']
+                                qty_s = str(int(qty_v)) if float(qty_v).is_integer() else str(qty_v)
+                                line = [oi_row['item_name'] or '', oi_row['spec'] or '', oi_row['unit'] or '',
+                                        qty_s, f"{oi_row['price'] or 0:,.2f}", f"{oi_row['amount'] or 0:,.2f}", '']
+                            else:
+                                qty_v = o['quantity']
+                                qty_s = str(int(qty_v)) if float(qty_v).is_integer() else str(qty_v)
+                                line = [o['item_name'] or '', o['spec'] or '', o['unit'] or '',
+                                        qty_s, f"{o['price'] or 0:,.2f}", f"{amt:,.2f}", '']
+                            tr = rows[idx + k]
+                            for j, val in enumerate(line):
+                                if j < len(tr.cells):
+                                    tr.cells[j].text = str(val)
+                        # 合计行: 可能有"合计"标签行 + "合计金额：¥   元"行, 两处都要填
+                        for i in range(idx + len(det_rows), len(rows)):
+                            cells = [cc.text.strip() for cc in rows[i].cells]
+                            joined = ' | '.join(cells)
+                            if any('合计' in cc for cc in cells):
+                                if '合计金额' in joined:
+                                    # 只替换"合计金额：¥"后的数字(税金/不含税/大写已由 _apply_ct 填好, 不能整格替换)
+                                    for cell in rows[i].cells:
+                                        if '合计金额：¥' in cell.text:
+                                            cell.text = re.sub(r'(合计金额：¥)[\d,\.\s]*(元)',
+                                                               lambda m: f'{m.group(1)}{total:,.2f}{m.group(2)}', cell.text)
+                                            break
+                                else:
+                                    # 照片格式: 合计行金额列写纯数字(如 2800.00)
+                                    rows[i].cells[-2].text = f"{total:,.2f}"
+                                # 继续检查下一行是否也是"合计金额"行
+                    except Exception:
+                        pass
+                for row in rows:
+                    for cell in row.cells:
+                        for k, v in mapping.items():
+                            if k in cell.text:
+                                cell.text = cell.text.replace(k, v)
+            # V11.203 模块一1.1: 发票条款注入 — 在结算付款条款段(甲方自收到发票后...)后插入独立发票条款段(每份合同可编辑区域)
+            # V11.225: 有发票回收顺序节点时按节点逐条生成(触发条件/金额/约定时间), 无节点回退老逻辑(条款文本+首次/全部时间)
+            def _mk_para_after(_anchor, _txt):
+                from docx.oxml import OxmlElement as _OE
+                from docx.oxml.ns import qn as _QN
+                _p = _OE('w:p')
+                _r = _OE('w:r')
+                _t = _OE('w:t')
+                _t.text = _txt
+                _t.set(_QN('xml:space'), 'preserve')
+                _r.append(_t)
+                _p.append(_r)
+                _anchor._p.addnext(_p)
+                return _p
+            _anchor = None
+            for para in doc.paragraphs:
+                if '甲方自收到发票后' in para.text:
+                    _anchor = para
+                    break
+            if inv_nodes:
+                if _anchor is not None:
+                    # addnext 每次插到锚点正后方会反序, 故整组段落先收集再倒序逐个 addnext
+                    _paras_txt = ['发票开具与回收条款：本合同货款发票由乙方按下列顺序节点向甲方开具交付，甲方按节点催收核对：']
+                    for _i, _nd in enumerate(inv_nodes, 1):
+                        _desc = str(_nd.get('trigger_desc') or '').strip()
+                        _amt = _nd.get('amount')
+                        _dt = str(_nd.get('plan_date') or '').strip()[:10]
+                        _seg = []
+                        if _desc:
+                            _seg.append('节点条件：' + _desc)
+                        if _amt not in (None, ''):
+                            try:
+                                _seg.append('约定开票金额：人民币¥{:,.2f}元'.format(float(_amt)))
+                            except Exception:
+                                _seg.append('约定开票金额：' + str(_amt))
+                        if _dt:
+                            _seg.append('约定收回时间：' + _dt)
+                        if _seg:
+                            _paras_txt.append('（%d）%s。' % (_i, '；'.join(_seg)))
+                    _paras_txt.append('乙方逾期未按约定节点开具并交付发票的，甲方有权顺延支付对应款项，由此造成的损失由乙方承担。')
+                    for _txt in reversed(_paras_txt):
+                        _mk_para_after(_anchor, _txt)
+            elif inv_clause or inv_first or inv_done:
+                _inv_txt = '发票条款：' + (inv_clause or '按双方协商约定开票')
+                if inv_first:
+                    _inv_txt += '；预计首次开票时间：' + inv_first
+                if inv_done:
+                    _inv_txt += '；预计全部开票完成时间：' + inv_done
+                _inv_txt += '。'
+                if _anchor is not None:
+                    _mk_para_after(_anchor, _inv_txt)
+            fname = f"contract_{cno}.docx"
+            _fpath = os.path.join(BASE, 'uploads', fname)
+            # V11.164: 防编号复用覆盖历史文件 — 目标文件已存在且无合同记录引用(孤儿残留, 如清理过contracts表)时先删除再生成
+            if os.path.exists(_fpath):
+                _ref = conn.execute("SELECT COUNT(*) FROM contracts WHERE file_path=?", (fname,)).fetchone()[0]
+                if _ref == 0:
+                    os.remove(_fpath)
+            doc.save(_fpath)
+            # 合同全文(供在线编辑)
+            full_text = '\n'.join(p.text for p in doc.paragraphs if p.text.strip())
+            for t in doc.tables:
+                for row in t.rows:
+                    full_text += '\n' + ' | '.join(c.text for c in row.cells)
+        except Exception as e:
+            conn.close(); return jsonify({'error': f'合同生成失败: {e}'}), 500
+        # V11.228 Bug2③: 收款账户信息仅系统面板留存 — 存 contracts.bank_info 快照(不进合同正文docx)
+        try:
+            _bank_json = json.dumps({'name': (sup['name'] if sup else (o['supplier'] or '')),
+                                     'account': (sup['account'] if sup and sup['account'] else ''),
+                                     'bank': (sup['bank'] if sup and sup['bank'] else '')}, ensure_ascii=False)
+        except Exception:
+            _bank_json = ''
+        conn.execute("""INSERT INTO contracts(contract_no,order_id,contract_name,supplier,amount,sign_date,start_date,end_date,content,file_path,status,remark,created_at,updated_at,invoice_clause,invoice_est_first,invoice_est_done,bank_info,template_name,trace_no)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (cno, oid, f"{o['item_name']}采购合同", o['supplier'] or '', round(total, 2), (o['created_at'] or '')[:10],
+             (o['created_at'] or '')[:10], o['target_date'], full_text, fname, '待审批', f"由订单{o['order_no']}自动生成", datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+             inv_clause, inv_first, inv_done, _bank_json, tpl_display, o['order_no']))
+        cid = conn.execute("SELECT id FROM contracts WHERE contract_no=?", (cno,)).fetchone()[0]
+        # V11.225: 发票回收顺序节点随合同一并入库(生成弹窗录入; 未录=空)
         if inv_nodes:
-            if _anchor is not None:
-                # addnext 每次插到锚点正后方会反序, 故整组段落先收集再倒序逐个 addnext
-                _paras_txt = ['发票开具与回收条款：本合同货款发票由乙方按下列顺序节点向甲方开具交付，甲方按节点催收核对：']
-                for _i, _nd in enumerate(inv_nodes, 1):
-                    _desc = str(_nd.get('trigger_desc') or '').strip()
-                    _amt = _nd.get('amount')
-                    _dt = str(_nd.get('plan_date') or '').strip()[:10]
-                    _seg = []
-                    if _desc:
-                        _seg.append('节点条件：' + _desc)
-                    if _amt not in (None, ''):
-                        try:
-                            _seg.append('约定开票金额：人民币¥{:,.2f}元'.format(float(_amt)))
-                        except Exception:
-                            _seg.append('约定开票金额：' + str(_amt))
-                    if _dt:
-                        _seg.append('约定收回时间：' + _dt)
-                    if _seg:
-                        _paras_txt.append('（%d）%s。' % (_i, '；'.join(_seg)))
-                _paras_txt.append('乙方逾期未按约定节点开具并交付发票的，甲方有权顺延支付对应款项，由此造成的损失由乙方承担。')
-                for _txt in reversed(_paras_txt):
-                    _mk_para_after(_anchor, _txt)
-        elif inv_clause or inv_first or inv_done:
-            _inv_txt = '发票条款：' + (inv_clause or '按双方协商约定开票')
-            if inv_first:
-                _inv_txt += '；预计首次开票时间：' + inv_first
-            if inv_done:
-                _inv_txt += '；预计全部开票完成时间：' + inv_done
-            _inv_txt += '。'
-            if _anchor is not None:
-                _mk_para_after(_anchor, _inv_txt)
-        fname = f"contract_{cno}.docx"
-        _fpath = os.path.join(BASE, 'uploads', fname)
-        # V11.164: 防编号复用覆盖历史文件 — 目标文件已存在且无合同记录引用(孤儿残留, 如清理过contracts表)时先删除再生成
-        if os.path.exists(_fpath):
-            _ref = conn.execute("SELECT COUNT(*) FROM contracts WHERE file_path=?", (fname,)).fetchone()[0]
-            if _ref == 0:
-                os.remove(_fpath)
-        doc.save(_fpath)
-        # 合同全文(供在线编辑)
-        full_text = '\n'.join(p.text for p in doc.paragraphs if p.text.strip())
-        for t in doc.tables:
-            for row in t.rows:
-                full_text += '\n' + ' | '.join(c.text for c in row.cells)
-    except Exception as e:
-        conn.close(); return jsonify({'error': f'合同生成失败: {e}'}), 500
-    # V11.228 Bug2③: 收款账户信息仅系统面板留存 — 存 contracts.bank_info 快照(不进合同正文docx)
-    try:
-        _bank_json = json.dumps({'name': (sup['name'] if sup else (o['supplier'] or '')),
-                                 'account': (sup['account'] if sup and sup['account'] else ''),
-                                 'bank': (sup['bank'] if sup and sup['bank'] else '')}, ensure_ascii=False)
-    except Exception:
-        _bank_json = ''
-    conn.execute("""INSERT INTO contracts(contract_no,order_id,contract_name,supplier,amount,sign_date,start_date,end_date,content,file_path,status,remark,created_at,updated_at,invoice_clause,invoice_est_first,invoice_est_done,bank_info,template_name,trace_no)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (cno, oid, f"{o['item_name']}采购合同", o['supplier'] or '', round(total, 2), (o['created_at'] or '')[:10],
-         (o['created_at'] or '')[:10], o['target_date'], full_text, fname, '待审批', f"由订单{o['order_no']}自动生成", datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-         inv_clause, inv_first, inv_done, _bank_json, tpl_display, o['order_no']))
-    cid = conn.execute("SELECT id FROM contracts WHERE contract_no=?", (cno,)).fetchone()[0]
-    # V11.225: 发票回收顺序节点随合同一并入库(生成弹窗录入; 未录=空)
-    if inv_nodes:
-        _save_inv_nodes(conn, cid, inv_nodes)
-    conn.commit()
-    create_approvals('contract', cid, o['total_amount'] or 0, submitter=session['user_name'])
-    start_instances('contract', cid)
-    conn.close()
-    log(session['user_name'], '自动生成合同', f'{cno} 订单{o["order_no"]} 模式:{tm}')
-    return jsonify({'success': True, 'contract_no': cno, 'file': fname})
+            _save_inv_nodes(conn, cid, inv_nodes)
+        conn.commit()
+        create_approvals('contract', cid, o['total_amount'] or 0, submitter=session['user_name'])
+        start_instances('contract', cid)
+        conn.close()
+        log(session['user_name'], '自动生成合同', f'{cno} 订单{o["order_no"]} 模式:{tm}')
+        return jsonify({'success': True, 'contract_no': cno, 'file': fname})
 
+    except Exception as _ge:
+        import traceback as _tb
+        _tb.print_exc()
+        try:
+            conn.close()
+        except Exception:
+            pass
+        log(session.get('user_name', ''), '生成合同异常', '订单%s: %s' % (str(d.get('order_id')), str(_ge)[:200]))
+        return jsonify({'error': '生成合同失败: %s' % str(_ge)[:300]}), 500
 # ---- 合同在线编辑: 读取文本(旧合同自动从Word提取) ----
 @app.route('/api/contracts/<int:cid>/content')
 @login_required
