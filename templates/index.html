@@ -3095,6 +3095,30 @@ async function loadApprovalFlow(bt,bid,boxId){
   }catch(e){}
 }
 // V11.224 模块一: 单据操作记录/修改留痕审计 — 展示 操作人/时间/动作/状态流转/差异明细 + 历史版本快照
+// V11.264: 采购溯源链弹窗 — 任意单据显示完整业务链, 各环节可跳转(记住申请号即顺藤摸瓜)
+async function showChain(bt,bid){
+  showDetail('🔗 采购链路（记住申请号即可顺藤摸瓜）','<div class="loading">加载中...</div>');
+  let d;
+  try{d=await api(`/chain?biz_type=${encodeURIComponent(bt)}&biz_id=${bid}`)}
+  catch(e){id('dmBody').innerHTML='<div style="padding:20px;color:#c0392b;font-size:11px">⚠️ 链路查询失败 <button class="btn btn-p btn-sm" onclick="showChain(\''+bt+'\','+bid+')">重试</button></div>';return}
+  const ns=d.nodes||[];
+  if(!ns.length){id('dmBody').innerHTML='<div style="padding:20px;color:#888;font-size:11px">该单据未关联采购申请链路（独立单）。</div>';return}
+  const ICON={purchase_request:'📝',inquiry:'🔍',purchase_order:'📦',contract:'📄',receiving:'📥',payment:'💳'};
+  const OPEN={purchase_request:'showPRequest',inquiry:'showInquiry',purchase_order:'showOrder',contract:'showContract',receiving:'showRcvDetail'};
+  let rows=ns.map(n=>{
+    const cur=(n.type==bt&&n.id==bid);
+    const btn=OPEN[n.type]?`<button class="lnk" onclick="${OPEN[n.type]}(${n.id})">查看 ↗</button>`:'';
+    return `<tr style="${cur?'background:#e8f0fe;':''}">
+      <td style="white-space:nowrap">${ICON[n.type]||'•'} ${esc(n.title)}${cur?' <span class="tag" style="background:#3370ff;color:#fff">当前</span>':''}</td>
+      <td><b>${esc(n.no)}</b></td>
+      <td style="white-space:nowrap">${n.amount?('¥'+(+n.amount).toFixed(0)):'—'}</td>
+      <td>${tag(n.status)}</td>
+      <td style="font-size:8px;color:#888;max-width:180px">${esc(n.extra||'')}</td>
+      <td style="white-space:nowrap">${btn}</td></tr>`;
+  }).join('');
+  id('dmBody').innerHTML=`<div style="font-size:10px;color:#666;margin-bottom:6px">一笔采购从申请到付款的完整单据链：每张单保留自己的编号（对账用），<b>申请单号是主线</b>，从任何一环都能看到前后环并跳转。</div>
+    <div style="overflow-x:auto"><table class="tb" style="font-size:10px;min-width:600px"><thead><tr><th>环节</th><th>单号</th><th>金额</th><th>状态</th><th>说明</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
 async function showDocOps(bt,bid,label){
   showDetail(`🕘 ${label} 操作记录`,'<div class="loading">加载中...</div>',
     '<button class="btn btn-o" onclick="closeMod()">关闭</button>');
