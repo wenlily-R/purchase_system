@@ -1875,11 +1875,27 @@ async function showPRequest(pid){
   window.__rejItems=[];  // V11.185: 本单被驳回条目集合(统一字符串比较)
   try{window.__rejItems=(r.rejected_items||'')=='__all__'?items.map(x=>String(x.id)):(JSON.parse(r.rejected_items||'[]')||[]).map(String)}catch(e){}
   const _rtSh=((r.req_type||'物资采购')=='设备维修')?'设备维修':'物资采购';
-  // V11.252: 详情页顶部维修类信息块(审批人一眼识别维修/物资 + 设备/故障 + 转物资标记)
-  let h=(_rtSh=='设备维修'
-    ? `<div style="background:#fff8f0;border:1px solid #f0d9b5;color:#8a4b0f;font-size:10px;padding:5px 8px;border-radius:4px;margin-bottom:6px">🔧 <b>设备维修申请</b>${r.repair_device?` ｜ 设备: <b>${esc(r.repair_device)}</b>`:''}${r.repair_fault?`<br>故障描述: ${esc(r.repair_fault)}`:''}${r.repair_converted?'<br><span style="color:#c0392b">⚠️ 定损判定不具备维修条件，本单已变更为物资采购（走寻价比价采购新设备）</span>':''}</div>`
-    : '')
-    + `<div class="c2"><div><dt>编号</dt><dd><b>${esc(r.req_no)}</b></dd><dt>部门</dt><dd>${esc(r.dept)}</dd><dt>申请人</dt><dd>${esc(r.requester)}</dd><dt>预算科目</dt><dd>${esc(r.budget_code||'-')}</dd></div>
+  const _showRep = _rtSh=='设备维修' || (r.repair_converted==1);  // V11.254: 转物资后仍显示维修痕迹
+  // V11.252/254: 详情页顶部维修类信息块(审批人一眼识别维修/物资 + 设备/故障 + 选商状态 + 转物资标记)
+  const _canOp = ['系统管理员','采购员'].includes(ME.role) || ME.name==r.requester;
+  let _entrustTxt='', _entrustBtns='';
+  if(_showRep && r.status=='已通过' && _canOp && !r.repair_converted){
+    if(r.repair_entrust_type=='direct'){
+      _entrustTxt=`<div style="background:#e8f5e9;border:1px solid #a5d6a7;color:#2e7d32;border-radius:4px;padding:4px 8px;font-size:9px;margin-top:4px">🤝 已直接委托 <b>${esc(r.repair_vendor||'')}</b> ¥${(+r.repair_amount||0).toFixed(2)}（小额透明维修·不走多家询价，线下执行）</div>`;
+    } else if(d.order){
+      _entrustTxt=`<div style="background:#e8f5e9;border:1px solid #a5d6a7;color:#2e7d32;border-radius:4px;padding:4px 8px;font-size:9px;margin-top:4px">📦 已生成订单 <b>${esc(d.order.order_no)}</b>（${esc(d.order.status)}）</div>`;
+    } else if(d.inq){
+      _entrustTxt=`<div style="background:#fff3e0;border:1px solid #f5cba7;color:#a05a12;border-radius:4px;padding:4px 8px;font-size:9px;margin-top:4px">🔨 维修询价 <b>${esc(d.inq.inq_no)}</b>（${esc(d.inq.status)}，统一开标后比价确定维修商）</div>`;
+    } else {
+      _entrustTxt=`<div style="color:#b7791f;font-size:9px;margin-top:4px">⏳ 待选商：定损完成后 ①发起维修询价（3-4家维修商，24小时统一开标比价）②或小额透明维修（压高压胶管/打黄油/补胎补气）直接委托长期合作厂家，不走询价</div>`;
+      _entrustBtns=`<div style="margin-top:5px"><button class="btn btn-o btn-sm" onclick="showInquiryForm(${r.id})">🔨 发起维修询价</button> <button class="btn btn-o btn-sm" style="color:#8a4b0f;border-color:#d9a05b" onclick="repairDirect(${r.id})">🤝 小额直接委托</button> <button class="btn btn-o btn-sm" style="color:#c0392b;border-color:#e6a5a5" onclick="convertPReq(${r.id})">🔁 定损不可修→转物资采购</button></div>`;
+    }
+  }
+  let h='';
+  if(_showRep){
+    h+=`<div style="background:#fff8f0;border:1px solid #f0d9b5;color:#8a4b0f;font-size:10px;padding:5px 8px;border-radius:4px;margin-bottom:6px">${r.repair_converted?'⚠️':'🔧'} <b>${r.repair_converted?'原设备维修申请（已转物资采购）':'设备维修申请'}</b>${r.repair_device?` ｜ 设备: <b>${esc(r.repair_device)}</b>`:''}${r.repair_fault?`<br>故障描述: ${esc(r.repair_fault)}`:''}${r.repair_converted?'<br><span style="color:#c0392b">已按定损结论变更为物资采购，走寻价比价采购新设备（维修痕迹保留）</span>':''}${_entrustTxt}</div>${_entrustBtns}`;
+  }
+  h+=`<div class="c2"><div><dt>编号</dt><dd><b>${esc(r.req_no)}</b></dd><dt>部门</dt><dd>${esc(r.dept)}</dd><dt>申请人</dt><dd>${esc(r.requester)}</dd><dt>预算科目</dt><dd>${esc(r.budget_code||'-')}</dd></div>
     <div><dt>用途</dt><dd>${esc(r.purpose)}</dt><dt>目标日</dt><dd>${r.target_date||'-'}</dd><dt>状态</dt><dd>${tag(r.status)}${(r.reject_count||0)>0?` <span style="font-size:9px;color:#c0392b;background:#fdeaea;border-radius:3px;padding:1px 5px">已驳回${r.reject_count}次</span>`:''}</dd></div></div>
     <h4 style="font-size:10px;margin:6px 0 3px">📋 物资明细</h4>
     <div style="overflow-x:auto"><table class="tb" style="font-size:10px;min-width:700px"><thead><tr><th>#</th><th>物品名称</th><th>规格型号</th><th>单位</th><th>库存</th><th>请购数量</th><th style="min-width:110px">品牌（指定）</th><th>类别/用途/备注</th></tr></thead><tbody>`;
@@ -1940,7 +1956,8 @@ async function loadInquiries(){
       ${(['询价中','待比价','定标审批中'].includes(r.status)&&(['系统管理员','分管领导','总经理','采购员'].includes(ME.role)||r.created_by===ME.name))?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('inquiry',${r.id},'询价单')">↩️撤回</button>`:''}</td>`;
     });
 }
-async function showInquiryForm(){
+async function showInquiryForm(preselectReqId){
+  // V11.254: preselectReqId — 从维修类申请详情点"发起维修询价"进入时自动选中该申请
   const el=await api('/inquiries/eligible');
   if(!el.length){alert('暂无可询价的申请：需要「已通过审批且尚未下单」的采购申请');return}
   const opts=el.map(x=>`<option value="${x.id}">${esc(x.req_no)}｜${esc(x.purpose||'')}（${x.item_count||0}项，参考¥${(x.item_total||0).toFixed(0)}）</option>`).join('');
@@ -1960,6 +1977,48 @@ async function showInquiryForm(){
     `<button class="btn btn-o" onclick="closeMod()">取消</button>
      <button class="btn btn-p" onclick="createInquiry()">🚀 发起询价</button>`);
   addIqSup();
+  // V11.254: 预选指定申请(维修类快捷入口); 不在可询价列表时提示原因
+  if(preselectReqId){
+    setTimeout(()=>{
+      const sel=id('iqReq'); if(!sel)return;
+      const ok=[...sel.options].some(o=>o.value==String(preselectReqId));
+      if(ok)sel.value=String(preselectReqId);
+      else alert('该申请当前不可发起询价（需已审批通过且尚未下单/无进行中询价）');
+    },60);
+  }
+}
+// V11.254: 维修类小额直接委托(价格透明维修不走多家询价) — 选用长期合作厂家登记, 线下执行留痕
+async function repairDirect(rid){
+  let supOpts='';
+  try{
+    const arch=await api('/suppliers',{noCache:true}).catch(()=>[]);
+    supOpts=arch&&arch.length?'<option value="">— 从供应商档案选择(可选) —</option>'+arch.map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join(''):'';
+  }catch(e){}
+  showDetail('🤝 小额直接委托（维修）',
+    `<div style="font-size:10px;color:#666;margin-bottom:6px">适用于压高压胶管、打黄油、补胎补气等<b>价格透明</b>的小额维修：直接选用长期合作厂家，不做多家询价。填写后留痕可查，线下执行。</div>
+    <div class="fg"><label class="fl2">委托维修商 *</label><input class="fc" id="rdVendor" list="rdSups" placeholder="如: 鑫茂液压胶管门市"><datalist id="rdSups">${supOpts}</datalist></div>
+    <div class="fg"><label class="fl2">委托金额(元) *</label><input class="fc" id="rdAmt" type="number" min="0" step="0.01" placeholder="如: 350"></div>
+    <div class="fg"><label class="fl2">维修内容说明(选填)</label><input class="fc" id="rdNote" placeholder="如: 更换8分高压胶管3根"></div>`,
+    `<button class="btn btn-o" onclick="closeMod()">取消</button>
+     <button class="btn btn-p" onclick="doRepairDirect(${rid})">✅ 确认登记委托</button>`);
+}
+async function doRepairDirect(rid){
+  const vendor=(id('rdVendor')?.value||'').trim();
+  const amount=parseFloat(id('rdAmt')?.value)||0;
+  const note=(id('rdNote')?.value||'').trim();
+  if(!vendor){alert('请填写委托维修商');return}
+  if(!(amount>0)){alert('请填写委托金额（大于0）');return}
+  const r=await api(`/prequests/${rid}/repair-direct`,{method:'POST',body:JSON.stringify({vendor,amount,note})});
+  if(r.success){alert(r.message||'✅ 已登记');closeMod();showPRequest(rid);loadPRequests&&loadPRequests()}
+  else alert(r.error||'登记失败');
+}
+// V11.254: 定损判定不具备维修条件 → 变更业务类型为物资采购(本单直接转寻价采购新设备)
+async function convertPReq(rid){
+  if(!confirm('确认按定损结论操作？\n本维修申请将变更为【物资采购】类型，直接走寻价比价采购新设备；维修设备/故障/定损痕迹保留可查，原维修询价（如有）自动作废。'))return;
+  const note=prompt('转换说明（选填，例如定损结论：缸体开裂无法修复）','')||'';
+  const r=await api(`/prequests/${rid}/convert-material`,{method:'POST',body:JSON.stringify({note})});
+  if(r.success){alert(r.message||'✅ 已转物资采购');showPRequest(rid);loadPRequests&&loadPRequests()}
+  else alert(r.error||'操作失败');
 }
 let IQ_ARCHIVE=null;  // V11.161: 系统供应商档案缓存(询价表单选档案自动带出)
 async function addIqSup(){
