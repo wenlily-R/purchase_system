@@ -6384,8 +6384,14 @@ def api_create_inquiry():
         conn.close(); return jsonify({'error': '该申请已下单，无需询价'}), 400
     no = gen_no('XJ', 'inquiries', 'inq_no', conn)
     title = (pr['purpose'] or '')[:80]
-    # V11.24: 报价截止时间 — V11.205 精确到分钟(统一开标): 传 deadline(YYYY-MM-DD 或 YYYY-MM-DD HH:MM), 不传默认7天后
+    # V11.24: 报价截止时间 — V11.205 精确到分钟(统一开标): 传 deadline(YYYY-MM-DD 或 YYYY-MM-DD HH:MM)
+    # V11.253: 询价统一24小时报价时限(需求文档定版: 超时视为自动放弃投标; sys_config inquiry_deadline_hours 可调, 默认24)
     import datetime as _dt
+    _dlh = 24
+    try:
+        _dlh = max(1, int(float(cfg_get('inquiry_deadline_hours', '24') or 24)))
+    except Exception:
+        pass
     try:
         dl = (d.get('deadline') or '').strip().replace('T', ' ')
         if dl:
@@ -6393,13 +6399,17 @@ def api_create_inquiry():
                 _dl = _dt.datetime.strptime(dl[:10], '%Y-%m-%d').replace(hour=23, minute=59)
             else:
                 _dl = _dt.datetime.strptime(dl[:16], '%Y-%m-%d %H:%M')
-            if _dl < _dt.datetime.now():
-                _dl = _dt.datetime.now() + _dt.timedelta(minutes=30)  # 防填过去时间
+            # 允许的最大截止=默认24h; 传了早于当前+1h的自动抬到+1h; 传超24h自动压回24h(严格执行统一时限)
+            _nowx = _dt.datetime.now()
+            if _dl < _nowx + _dt.timedelta(hours=1):
+                _dl = _nowx + _dt.timedelta(hours=1)
+            if _dl > _nowx + _dt.timedelta(hours=_dlh):
+                _dl = _nowx + _dt.timedelta(hours=_dlh)
         else:
-            _dl = _dt.datetime.now() + _dt.timedelta(days=7)
+            _dl = _dt.datetime.now() + _dt.timedelta(hours=_dlh)
         deadline = _dl.strftime('%Y-%m-%d %H:%M')
     except Exception:
-        deadline = (_dt.datetime.now() + _dt.timedelta(days=7)).strftime('%Y-%m-%d %H:%M')
+        deadline = (_dt.datetime.now() + _dt.timedelta(hours=24)).strftime('%Y-%m-%d %H:%M')
     conn.execute("INSERT INTO inquiries(inq_no,req_id,title,purpose,status,deadline,created_by) VALUES(?,?,?,?,?,?,?)",
                  (no, req_id, title, pr['purpose'], '询价中', deadline, session['user_name']))
     iid = conn.execute("SELECT id FROM inquiries WHERE inq_no=?", (no,)).fetchone()[0]
