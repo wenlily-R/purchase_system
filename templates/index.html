@@ -1929,6 +1929,7 @@ async function showPRequest(pid){
   const btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button>
     <button class="lnk" style="color:#7c5cff" onclick="showDocOps('purchase_request',${r.id},'申请单 ${esc(r.req_no)}')">🕘 操作记录</button>
     <button class="btn btn-p btn-sm" onclick="window.open('/api/prequests/${r.id}/download','_blank')">⬇️ 下载申请单</button>
+    <button class="btn btn-o btn-sm" style="color:#7c5cff" onclick="showChain('purchase_request',${r.id})">🔗 链路</button>
     ${(ME.role=='系统管理员'||ME.name==r.requester)?`<button class="btn btn-o btn-sm" style="color:#e67e22;border-color:#e67e22" onclick="urgentRemind('purchase_request',${r.id})">⏰ 钉钉加急提醒</button>`:''}
     ${((r.status=='已驳回'||(r.status=='草稿'&&(r.reject_count||0)>0))&&(ME.role=='系统管理员'||ME.name==r.requester))?`<button class="btn btn-p btn-sm" style="background:#16a34a;border-color:#16a34a" onclick="resubmitDoc('purchase_request',${r.id},'申请单','${esc(r.req_no)}')">🔄 再次提交审批</button>`:''}`;
   if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
@@ -2537,6 +2538,8 @@ async function showOrder(ordid){
   let h=`<div class="c2"><div><dt>单号</dt><dd><b>${esc(o.order_no)}</b></dd><dt>物资</dt><dd>${esc(o.item_name)}</dd><dt>数量</dt><dd>${o.quantity}${esc(o.unit)}</dd><dt>金额</dt><dd>¥${(o.total_amount||0).toFixed(0)}</dd></div>
     <div><dt>供应商</dt><dd>${esc(o.supplier)}</dd><dt>负责人</dt><dd>${esc(o.owner)}</dd><dt>交易模式</dt><dd><span class="tag ${o.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(o.trade_mode||'货到付款')}</span></dd><dt>状态</dt><dd>${tag(o.status)}</dd></div></div>`;
   if(o.contract_no){const cf=(await api('/contracts')).find(x=>x.contract_no===o.contract_no);h+=`<div style="margin-top:6px;font-size:9px;color:var(--s)">已关联合同: ${esc(o.contract_no)} ${cf&&cf.file_path?`<a href="/uploads/${esc(cf.file_path)}" target="_blank" style="color:var(--b2,#3370ff)">📄下载</a>`:''}</div>`}
+  // V11.264: 关联申请(申请号为主线) — 独立行+一键看全链路, 不再拼接在编号里
+  h+=`<div style="margin-top:6px;font-size:10px;color:#333;background:#f0f6ff;border:1px solid #d5e4fb;border-radius:4px;padding:4px 8px">📝 关联申请：<b>${esc(o.req_no||'-')}</b> <a class="lnk" style="color:#1a6bff;font-size:10px" onclick="showChain('purchase_order',${ordid})">🔗 查看完整链路 ↗</a></div>`;
   if(d.items&&d.items.some(it=>(it.remark||'').includes('分摊'))){
     h+=`<div style="margin:6px 0;padding:5px 8px;background:#fff8e1;border:1px solid #f0d9a0;border-radius:4px;font-size:9px;color:#8a6d3b">ℹ️ 本单商家按<b>整单总价</b>成交（未逐项报价），明细行单价为按金额比例<b>分摊参考价</b>；入库、财务核对请以实际到货与发票为准</div>`;
   }
@@ -2590,6 +2593,7 @@ async function showOrder(ordid){
     btns+=`<button class="btn btn-p btn-sm" onclick="genContract(${ordid})">📄 生成采购合同</button>`;
   if(['待审批','审批通过'].includes(o.status))
     btns+=`<button class="btn btn-d btn-sm" onclick="voidDoc('/api/orders/${ordid}/void','订单')">作废</button>`;
+  btns+=`<button class="btn btn-o btn-sm" style="color:#7c5cff" onclick="showChain('purchase_order',${ordid})">🔗 采购链路</button>`;
   btns+=`<button class="btn btn-o btn-sm" style="color:#e67e22;border-color:#e67e22" onclick="urgentRemind('purchase_order',${ordid})">⏰ 钉钉加急提醒</button>`;
   if((o.status=='已驳回'||(o.status=='草稿'&&(o.reject_count||0)>0))&&(ME.role=='系统管理员'||ME.name==o.requester))
     btns+=`<button class="btn btn-p btn-sm" style="background:#16a34a;border-color:#16a34a" onclick="resubmitDoc('purchase_order',${ordid},'订单','${esc(o.order_no)}')">🔄 再次提交审批</button>`;
