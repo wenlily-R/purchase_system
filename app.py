@@ -10529,6 +10529,19 @@ def api_contract_template_files():
     return jsonify({'templates': names})
 
 
+# V11.233: 模板管理页文件模板清单(含文件名, 供展示'替换哪个文件即更新')
+@app.route('/api/contract-file-list')
+@login_required
+def api_contract_file_list():
+    d = os.path.join(BASE, 'contract_templates')
+    out = []
+    if os.path.isdir(d):
+        for f in sorted(os.listdir(d)):
+            if f.lower().endswith('.docx'):
+                out.append({'name': os.path.splitext(f)[0], 'file': f})
+    return jsonify({'templates': out})
+
+
 # ---- 合同模板管理 ----
 @app.route('/api/contract-templates')
 @login_required

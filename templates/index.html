@@ -7042,13 +7042,23 @@ async function saveCompany(){
   alert(r.success?'✅ 已保存':'仅系统管理员可操作');
 }
 async function loadTpls(){
+  // V11.233: 合同模板管理 = ①文件模板(contract_templates/目录docx, 替换即更新, 生成合同时下拉选用) ②上传模板(旧机制)
+  let files=[];
+  try{files=(await api('/contract-file-list',{noCache:true})).templates||[]}catch(e){}
   const t=await api('/contract-templates');
-  id('tplList').innerHTML=rnder(t,['name','version','status','is_default','id'],['模板名称','版本','状态','默认','操作'],
+  const fileRows=files.map(f=>`<tr><td><b>${esc(f.name)}</b></td><td><span class="tag" style="background:#eef2ff;color:#4338ca">📁 文件模板</span></td>
+      <td style="font-size:8.5px;color:#888">${esc(f.file||'')}</td><td style="font-size:8.5px;color:#999">生成合同时下拉选用</td><td></td></tr>`).join('');
+  const upRows=rnder(t,['name','version','status','is_default','id'],['模板名称','版本','状态','默认','操作'],
     x=>`<td><b>${esc(x.name)}</b></td><td>${esc(x.version)}</td><td>${tag(x.status=='启用'?'执行中':'已关闭')}</td>
       <td>${x.is_default?'⭐默认':''}</td>
-      <td><button class="btn btn-o btn-sm" onclick="tplToggle(${x.id},'${x.status=='启用'?'停用':'启用'}')">${x.status=='启用'?'停用':'启用'}</button>
+      <td><button class="btn btn-o btn-sm" onclick="tplToggle(${x.id},'${x.status=='启用'?'停用':'启用'}' )">${x.status=='启用'?'停用':'启用'}</button>
       ${!x.is_default?`<button class="btn btn-w btn-sm" onclick="tplDefault(${x.id})">设默认</button>`:''}
       <button class="btn btn-d btn-sm" onclick="tplDelete(${x.id})">删除</button></td>`);
+  id('tplList').innerHTML=
+    `<div style="font-size:9px;color:#666;margin-bottom:4px">📁 <b>文件模板</b>（现结/按月结算/预付款+验收后尾款）——存放在服务器 contract_templates/ 目录，直接替换同名 docx 文件即更新模板，无需上传；「生成采购合同」时下拉选用。</div>
+     <table class="tb" style="font-size:9px;margin-bottom:8px"><thead><tr><th>模板名称</th><th>类型</th><th>文件</th><th>用途</th><th></th></tr></thead><tbody>${fileRows||'<tr><td colspan=5 style="color:#999">未发现文件模板(contract_templates/ 目录为空)</td></tr>'}</tbody></table>
+     <div style="font-size:9px;color:#666;margin-bottom:4px">📤 <b>上传模板</b>（旧机制，供兼容使用）</div>
+     ${upRows}`;
 }
 async function tplToggle(id,st){const r=await api(`/contract-templates/${id}`,{method:'POST',body:JSON.stringify({status:st=='启用'?'启用':'停用'})});if(r.success)loadTpls()}
 async function tplDefault(id){const r=await api(`/contract-templates/${id}`,{method:'POST',body:JSON.stringify({is_default:true})});if(r.success)loadTpls()}
