@@ -637,6 +637,13 @@ def init_db():
         ('contracts', 'bank_info', "ALTER TABLE contracts ADD COLUMN bank_info TEXT DEFAULT ''"),
         # V11.233: 合同模板名称(现结/按月结算/预付款+验收后尾款) — 需求: 合同表记录选用模板, 列表/详情展示
         ('contracts', 'template_name', "ALTER TABLE contracts ADD COLUMN template_name TEXT DEFAULT ''"),
+        # ---- V11.251 采购全流程溯源编号: 各业务环节表挂 trace_no(源=采购订单号, 分批入库=订单号-批次序) ----
+        ('inquiries', 'trace_no', "ALTER TABLE inquiries ADD COLUMN trace_no TEXT DEFAULT ''"),
+        ('contracts', 'trace_no', "ALTER TABLE contracts ADD COLUMN trace_no TEXT DEFAULT ''"),
+        ('receivings', 'trace_no', "ALTER TABLE receivings ADD COLUMN trace_no TEXT DEFAULT ''"),
+        ('inventory', 'trace_no', "ALTER TABLE inventory ADD COLUMN trace_no TEXT DEFAULT ''"),
+        ('inventory_flows', 'trace_no', "ALTER TABLE inventory_flows ADD COLUMN trace_no TEXT DEFAULT ''"),
+        ('requisition_items', 'trace_no', "ALTER TABLE requisition_items ADD COLUMN trace_no TEXT DEFAULT ''"),
     ]:
         _cols = [r[1] for r in conn.execute(f"PRAGMA table_info({_tbl})").fetchall()]
         if _col not in _cols:
@@ -2070,6 +2077,8 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
                                        _sup['supplier_name'], _iq['created_by'], '后勤类', _iq['created_by'], 1, (_iq['deadline'] or '')[:10], '货到付款',
                                        _remark, 0, json.dumps([], ensure_ascii=False), '已通过', _iq['id']))
                             _oid = c.execute("SELECT id FROM purchase_orders WHERE order_no=?", (_no,)).fetchone()[0]
+                            # V11.251 溯源编号: 订单号为溯源根 — 回填来源询价单 trace_no
+                            c.execute("UPDATE inquiries SET trace_no=?, updated_at=? WHERE id=?", (_no, now(), _iq['id']))
                         # V11.170: 明细价格优先用商家报价(quote_details按全量物资顺序存unit_price),
                         # 不再按申请参考金额分摊(参考金额常为0, 导致首项吃全额/后项变0, 合同丢明细)
                         # V11.180: 采购已议价时用调整后明细
@@ -5787,9 +5796,10 @@ def api_order_receiving_batch(oid):
         conn.close(); return jsonify({'error': '本批验收数量必须大于0'}), 400
     if st['accepted'] + total_batch > st['order_total'] + 1e-9:
         conn.close(); return jsonify({'error': f'累计验收超量: 订单总数{st["order_total"]:g}，已验收{st["accepted"]:g}，本批{total_batch:g}'}), 400
-    # 批次号 = 已有批次序号+1
+    # 批次号 = 已有批次序号+1; 溯源编号 = 订单号-批次序号(V11.251: 分批到货溯源号 CGxxx-01/-02)
     _n = conn.execute("SELECT COUNT(*) FROM receivings WHERE order_id=? AND batch_no IS NOT NULL AND batch_no<>''", (oid,)).fetchone()[0]
     batch_no = '第%d批' % (_n + 1)
+    _trace_no = "%s-%02d" % (po['order_no'], _n + 1)
     # 自动作废未入库存的老整批流程单(待入库/入库中/待检验/草稿/已驳回), 防双流程重复入库
     _old_docs = conn.execute("SELECT id, receive_no, status FROM receivings WHERE order_id=? AND (batch_no IS NULL OR batch_no='') AND status IN ('待入库','入库中','待检验','草稿','已驳回')", (oid,)).fetchall()
     for _od2 in _old_docs:
@@ -5816,11 +5826,11 @@ def api_order_receiving_batch(oid):
     _first = _lines[0]
     _name = (_first['item_name'] + ' 等%d项' % len(_lines)) if len(_lines) > 1 else _first['item_name']
     rno = gen_no('RK', 'receivings', 'receive_no', conn)
-    conn.execute("""INSERT INTO receivings(receive_no,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,dept,items_json,is_est,batch_no,inspector,warehouse)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+    conn.execute("""INSERT INTO receivings(receive_no,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,dept,items_json,is_est,batch_no,inspector,warehouse,trace_no)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                  (rno, oid, _name, '', total_batch, _first['unit'] or '个', total_batch, '待审批', now(),
                   f'分批验收{batch_no}·{_typ_txt}', _dept, _items_json, is_est, batch_no,
-                  session.get('user_name', ''), d.get('warehouse', '主库房')))
+                  session.get('user_name', ''), d.get('warehouse', '主库房'), _trace_no))
     rid = conn.execute("SELECT id FROM receivings WHERE receive_no=?", (rno,)).fetchone()[0]
     conn.commit()
     create_approvals('receiving', rid, 0, submitter=session['user_name'])
@@ -7048,6 +7058,10 @@ def api_inquiry_submit(iid):
             (gen_no('CG', 'purchase_orders', 'order_no', conn), i['req_id'], i['title'][:50], '', 1, '个', 0, total, 0, 0, total,
              cheapest['supplier_name'] if cheapest else '待定', i['created_by'], '后勤类', i['created_by'], 1, (i['deadline'] or '')[:10], '货到付款',
              remark, 0, json.dumps([], ensure_ascii=False), '草稿', i['id']))
+    # V11.251 溯源编号: 订单号为溯源根 — 回填来源询价单 trace_no(询价记录/报价/比价全部关联该编号)
+    _tno = conn.execute("SELECT order_no FROM purchase_orders WHERE inquiry_id=? ORDER BY id DESC LIMIT 1", (iid,)).fetchone()
+    if _tno:
+        conn.execute("UPDATE inquiries SET trace_no=?, updated_at=? WHERE id=?", (_tno[0], now(), iid))
     # 创建询价审批记录 (biz_id 统一=询价单id)
     conn.execute("INSERT INTO inquiry_approvals(inquiry_id, status, created_at) VALUES(?, '审批中', ?)", (iid, now()))
     conn.execute("INSERT INTO approval_instances(biz_type, biz_id, level_no, role, approver, status) VALUES(?, ?, 1, '分管领导', 'xingguo', 'pending')", ('inquiry_approval', iid))
@@ -11028,11 +11042,11 @@ def api_contract_generate():
                                  'bank': (sup['bank'] if sup and sup['bank'] else '')}, ensure_ascii=False)
     except Exception:
         _bank_json = ''
-    conn.execute("""INSERT INTO contracts(contract_no,order_id,contract_name,supplier,amount,sign_date,start_date,end_date,content,file_path,status,remark,created_at,updated_at,invoice_clause,invoice_est_first,invoice_est_done,bank_info,template_name)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+    conn.execute("""INSERT INTO contracts(contract_no,order_id,contract_name,supplier,amount,sign_date,start_date,end_date,content,file_path,status,remark,created_at,updated_at,invoice_clause,invoice_est_first,invoice_est_done,bank_info,template_name,trace_no)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (cno, oid, f"{o['item_name']}采购合同", o['supplier'] or '', round(total, 2), (o['created_at'] or '')[:10],
          (o['created_at'] or '')[:10], o['target_date'], full_text, fname, '待审批', f"由订单{o['order_no']}自动生成", datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-         inv_clause, inv_first, inv_done, _bank_json, tpl_display))
+         inv_clause, inv_first, inv_done, _bank_json, tpl_display, o['order_no']))
     cid = conn.execute("SELECT id FROM contracts WHERE contract_no=?", (cno,)).fetchone()[0]
     # V11.225: 发票回收顺序节点随合同一并入库(生成弹窗录入; 未录=空)
     if inv_nodes:
