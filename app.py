@@ -7167,6 +7167,7 @@ def _inq_gate_html(token):
     防链接转发泄密(权限绑手机号不绑链接); 陌生手机号直接拦截不发码"""
     return ('<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            '<meta http-equiv="Cache-Control" content="no-store"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">'
             '<title>供应商报价 · 身份验证</title></head><body style="margin:0;background:#eef2f7;font-family:-apple-system,Segoe UI,Microsoft YaHei,sans-serif">'
             '<div style="max-width:420px;margin:70px auto;background:#fff;border-radius:14px;padding:32px 28px;box-shadow:0 6px 28px rgba(0,0,0,.09)">'
             '<div style="text-align:center;font-size:40px;margin-bottom:8px">🔐</div>'
