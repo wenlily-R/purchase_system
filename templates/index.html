@@ -1318,6 +1318,8 @@ function __pageAllowed(name){
 }
 
 function closeMod(){ if(window.__prDraftOn){try{prSaveDraftNow()}catch(e){}} window.__prDraftOn=false; id('detailModal').classList.remove('show') }
+// V11.266 防"整页点不动": 弹窗遮罩卡住时 ESC / 点弹窗外空白处 自动关闭(此前遮罩会吞掉全页点击)
+document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ const _m=id('detailModal'); if(_m&&_m.classList.contains('show')) closeMod(); } });
 // V11.237: 遮罩关闭防误触 — 只有"按下与松开都在遮罩空白处"才关闭; 在面板内按下(拖动滚动条/选中文字)滑到遮罩上松开不再误关
 const __dmEl0=id('detailModal');let __dmInCard=false;
 if(__dmEl0){
