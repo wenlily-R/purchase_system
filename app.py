@@ -7307,12 +7307,12 @@ def inquiry_vendor_page(token):
         if _fixed:
             _has_fixed = True
         _ref = ('<span style="color:#bbb;font-size:11px">(参考¥%.0f)</span>' % ((it['total_price'] or 0) / _qty if _qty else 0))
-        # V11.250: 申请端已锁定标准的行, 外网页面不再展示/填写 品牌与质保 — 系统按申请标准自动锁定校验(品牌一致/质保不低于)
+        # V11.250改(用户明确): 申请端锁定标准在商家页醒目只读展示(商家必须知道供什么品牌/质保才可判断接单), 仍不让填防乱改; 提交按标准自动落库校验
         _sw_spec = str(it['warranty_param'] or '').strip() if 'warranty_param' in it.keys() and it['warranty_param'] else ''
-        _brand_cell = ('<td style="padding:6px 8px;border-bottom:1px solid #eef"></td>' if _fixed else
+        _brand_cell = ('<td style="padding:6px 8px;border-bottom:1px solid #eef"><span style="font-size:12px;font-weight:600;color:#8a4b0f;background:#fdf3e2;border:1px solid #e8cfa0;border-radius:4px;padding:2px 7px" title="采购方指定品牌：仅限按此品牌供货报价">🔒 指定品牌:%s</span></td>' % esc_html(_sb) if _fixed else
                        ('<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="品牌(可自报)" id="br%d" value="%s" '
                         'style="width:88px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>' % (idx, esc_html(_pv.get('brand') or ''))))
-        _wr_cell = ('<td style="padding:6px 8px;border-bottom:1px solid #eef;color:#bbb">—</td>' if _sw_spec else
+        _wr_cell = ('<td style="padding:6px 8px;border-bottom:1px solid #eef"><span style="font-size:12px;color:#2e7d32;background:#e8f5e9;border:1px solid #b7dfb9;border-radius:4px;padding:2px 6px" title="质保期不得低于该标准">质保≥%s</span></td>' % esc_html(_sw_spec) if _sw_spec else
                     '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="如3个月" id="wr%d" value="%s" style="width:56px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>' % (idx, esc_html(_pv.get('warranty') or '')))
         _rows_html.append((
             '<tr>'
@@ -7339,7 +7339,7 @@ def inquiry_vendor_page(token):
     _head_note = ('<p style="color:#2e7d32;font-size:13px;margin:0 0 10px">✅ 贵司已报价，可修改后重新提交（将覆盖原报价；报价金额开标前不对外显示）</p>') if _already else ''
     _brand_note = ('<div style="background:#eef6ff;border:1px solid #bcd9f7;border-radius:8px;padding:8px 12px;font-size:12.5px;margin-bottom:10px;color:#1a4f8b">'
                    '📢 <b>报价须知</b>：本询价单多物料支持<b>独立报价、独立中标、可单件供货</b>；若贵司<b>无法单件供货</b>，对应项目<b>请勿报价</b>（该行留空即可）。'
-                   '品牌与质保标准已由采购方在申请时锁定，无需填写，系统自动校验（更换品牌或低于质保标准将无法提交）。</div>')
+                   '品牌与质保标准已由采购方指定并<b>显示在明细中</b>（🔒指定品牌 / 质保≥期限）：仅限按指定品牌报价、质保不得低于该标准，无需填写，系统自动校验。</div>')
     _ship_val = '' if _already else esc_html(s['quote_price'])  # V11.217: 已报价回显不再带金额(不显示具体价格)
     _remark_val = esc_html(s['quote_remark'] or '')
     body = ('<div style="max-width:860px;margin:40px auto;background:#fff;border-radius:12px;padding:28px;'
