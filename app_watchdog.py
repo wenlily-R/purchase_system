@@ -8,6 +8,16 @@
 """
 import os, sys, time, signal, subprocess, hashlib
 
+# Windows 下 stdout 重定向到文件默认 GBK, emoji(⛔/⚠️)打印即崩 → 强制 UTF-8 + 替换兜底 + 实时落盘
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding='utf-8', errors='replace', line_buffering=True, write_through=True)
+    except Exception:
+        try:
+            _s.reconfigure(encoding='utf-8', errors='replace')
+        except Exception:
+            pass
+
 BASE = os.path.dirname(os.path.abspath(__file__))
 APP = os.path.join(BASE, 'app.py')
 # 路径自适应: Windows=.venv/Scripts/python.exe, Mac/Linux=.venv/bin/python (一份脚本双端通用)
