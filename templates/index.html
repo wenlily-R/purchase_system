@@ -7796,12 +7796,18 @@ function _ckTab(list, cols){ // 通用渲染: list=行数组, cols=[{k,label}]
   if(list.length>60) h+=`<tr><td colspan="${cols.length}" style="padding:3px;color:#999">…共 ${list.length} 条,已显示前60条</td></tr>`;
   return h+'</table>';
 }
+function _ckFail(msg){ // V11.268: 加载失败可见(原静默卡在"查询中")
+  ['ckA','ckB','ckC'].forEach(i=>{const el=id(i);if(el){el.textContent='⚠️ 加载失败';el.style.color='#c62828';el.style.cursor='pointer';el.onclick=loadCheckpoints}});
+  const w=id('ckWrap'); if(w) w.innerHTML=`<div style="color:#c62828;font-size:11px">⚠️ 数据加载失败：${esc(msg||'网络较慢或服务异常')} <button class="btn btn-p btn-sm" onclick="loadCheckpoints()">重试</button></div>`;
+}
 async function loadCheckpoints(){
   const tb=id('tbCard');
   if(tb) tb.style.display=(ME&&ME.role==='系统管理员')?'':'none';
-  ['ckA','ckB','ckC'].forEach(i=>{const el=id(i); if(el) el.textContent=el.textContent.replace('加载中','查询中')});
-  const d=await api('/api/reports/checkpoints');
-  if(!d||d.error){const w=id('ckWrap'); if(w) w.innerHTML=`<div style="color:#c62828;font-size:11px">加载失败: ${esc(d?.error||'')}</div>`; return}
+  ['ckA','ckB','ckC'].forEach(i=>{const el=id(i); if(el){el.textContent=el.textContent.replace('加载中','查询中').replace('⚠️ 加载失败','查询中')}});
+  let d;
+  try{ d=await api('/reports/checkpoints'); }   // V11.268: 修正原 api('/api/...') 双前缀404
+  catch(e){ _ckFail(e&&e.message); return }
+  if(!d||d.error){ _ckFail(d&&d.error); return }
   _ckCache=d;
   const A=(d.approved_no_purchase||[]), B=(d.purchased_no_goods||[]), C=(d.stored_no_invoice||[]);
   if(id('ckA')) id('ckA').textContent=`① 已审批未采购: ${A.length} 单`;
@@ -7836,7 +7842,7 @@ async function mkTestChain(){
   const name=(id('tbName').value||'').trim();
   if(!name){alert('请填物料名');return}
   if(!confirm(`生成测试链: ${name} × ${id('tbQty').value||10} ${id('tbUnit').value} @ ¥${id('tbPrice').value||50}？\n将创建 采购申请→订单→暂估入库(已入库,发票未回), 不触发审批/钉钉。`))return;
-  const r=await api('/api/toolbox/mk-test-chain',{method:'POST',body:JSON.stringify({
+  const r=await api('/toolbox/mk-test-chain',{method:'POST',body:JSON.stringify({
     item_name:name,quantity:parseFloat(id('tbQty').value)||10,price:parseFloat(id('tbPrice').value)||0,
     spec:id('tbSpec').value||'',unit:id('tbUnit').value||'个',supplier:id('tbSup').value||''})});
   if(r.success){id('tbOut').innerHTML=`<div style="color:#2e7d32">✅ 已生成: 申请 ${r.req_no} → 订单 ${r.order_no} → <b>入库单 ${r.receive_no}</b>（暂估已入库 ¥${r.total}）<br>${r.tip}</div>`;alert('✅ 测试链已生成\n入库单 '+r.receive_no+'\n去 入库 列表可点🧾发票核对测试红冲')}
@@ -7847,7 +7853,7 @@ async function mkTestContract(){
   const name=(id('tbName').value||'').trim();
   if(!name){alert('请填物料名');return}
   if(!confirm(`生成测试合同链: ${name} × ${id('tbQty').value||10} ${id('tbUnit').value} @ ¥${id('tbPrice').value||50}？\n将创建 采购申请→订单→合同(待审批), 审批人挂合同流程首节点, 不触发钉钉。`))return;
-  const r=await api('/api/toolbox/mk-contract-chain',{method:'POST',body:JSON.stringify({
+  const r=await api('/toolbox/mk-contract-chain',{method:'POST',body:JSON.stringify({
     item_name:name,quantity:parseFloat(id('tbQty').value)||10,price:parseFloat(id('tbPrice').value)||0,
     spec:id('tbSpec').value||'',unit:id('tbUnit').value||'个',supplier:id('tbSup').value||''})});
   if(r.success){id('tbOut').innerHTML=`<div style="color:#2e7d32">✅ 已生成测试合同: <b>${r.contract_no}</b>(${r.name} ¥${r.total}, 待审批, 审批人:${r.approver})<br>${r.tip}</div>`;alert('✅ 测试合同已生成\n合同号 '+r.contract_no+'\n去 合同管理-待审批 列表查看/测试审批')}
@@ -7856,14 +7862,14 @@ async function mkTestContract(){
 async function cleanTest(){
   if(!confirm('确认删除全部【测试】标签数据(申请/订单/入库/合同)?此操作不可恢复!'))return;
   if(!confirm('再确认一次: 只删【测试】开头的数据, 生产真实数据不受影响。确认清理?'))return;
-  const r=await api('/api/toolbox/cleanup-test',{method:'POST',body:'{}'});
+  const r=await api('/toolbox/cleanup-test',{method:'POST',body:'{}'});
   if(r.success){id('tbOut').innerHTML=`<div style="color:#2e7d32">✅ 已清理: 申请${r.requests} 订单${r.orders} 入库${r.receivings}</div>`;alert('✅ 已清理测试数据 '+r.requests+' 申请 / '+r.receivings+' 入库');loadReceivings&&loadReceivings()}
   else alert('失败: '+(r.error||''));
 }
 async function runToolSql(){
   const sql=(id('tbSql').value||'').trim();
   if(!sql){alert('请填SQL');return}
-  const r=await api('/api/toolbox/query',{method:'POST',body:JSON.stringify({sql})});
+  const r=await api('/toolbox/query',{method:'POST',body:JSON.stringify({sql})});
   const w=id('tbOut');
   if(!r||r.error){w.innerHTML=`<div style="color:#c62828">${esc(r?.error||'查询失败')}</div>`;return}
   if(!r.cols||!r.cols.length){w.innerHTML='<div style="color:#999">查询成功, 0 行</div>';return}
