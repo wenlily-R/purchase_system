@@ -838,6 +838,20 @@ def init_db():
     _iqcols = [r[1] for r in conn.execute("PRAGMA table_info(inquiries)").fetchall()]
     if 'access_unlocked' not in _iqcols:
         conn.execute("ALTER TABLE inquiries ADD COLUMN access_unlocked INTEGER DEFAULT 0")
+    # V11.265 订单头数量=明细合计 一致性维护: 历史一次纠偏 + 触发器防再错
+    # (定标/自动下单路径曾把 header quantity 写死为1, 与 order_items 明细不一致 → 头部数量显示错误/卡点误判)
+    try:
+        _fix = conn.execute("""UPDATE purchase_orders SET quantity=COALESCE((SELECT SUM(quantity) FROM order_items WHERE order_id=purchase_orders.id), quantity)
+            WHERE EXISTS (SELECT 1 FROM order_items WHERE order_id=purchase_orders.id)""").rowcount
+        if _fix:
+            log('系统', '订单数量一致性修复', f'订单头部数量与明细不符, 已按明细合计修正 {_fix} 单')
+        for _tg in ('trg_po_qty_i', 'trg_po_qty_u', 'trg_po_qty_d'):
+            conn.execute(f"DROP TRIGGER IF EXISTS {_tg}")
+        conn.execute("CREATE TRIGGER trg_po_qty_i AFTER INSERT ON order_items BEGIN UPDATE purchase_orders SET quantity=COALESCE((SELECT SUM(quantity) FROM order_items WHERE order_id=NEW.order_id),0) WHERE id=NEW.order_id; END")
+        conn.execute("CREATE TRIGGER trg_po_qty_u AFTER UPDATE ON order_items BEGIN UPDATE purchase_orders SET quantity=COALESCE((SELECT SUM(quantity) FROM order_items WHERE order_id=NEW.order_id),0) WHERE id=NEW.order_id; END")
+        conn.execute("CREATE TRIGGER trg_po_qty_d AFTER DELETE ON order_items BEGIN UPDATE purchase_orders SET quantity=COALESCE((SELECT SUM(quantity) FROM order_items WHERE order_id=OLD.order_id),0) WHERE id=OLD.order_id; END")
+    except Exception as _e:
+        print('V11.265 订单数量一致性维护失败:', _e)
     # ---- V11.206 集体验收: 标记是否需集体验收 + 验收状态(空=常规, 1=需集体验收; collect_status: 空/待集体验收/已集体验收) ----
     if 'collect_accept' not in _rcvcols:
         conn.execute("ALTER TABLE receivings ADD COLUMN collect_accept INTEGER DEFAULT 0")
