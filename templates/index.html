@@ -332,12 +332,15 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
       </div>
       <div id="apprZoneBody" style="margin-top:8px"><div class="loading">加载中...</div></div>
     </div></div>
-  <!-- ④ 第二卡片: 业务预警 -->
+  <!-- ④ 第二卡片: 业务预警(V11.267 9.10优化: 首页只放统计卡片+高风险摘要, 明细进独立预警中心) -->
   <div class="card dash-card">
-    <div class="ch"><h3>🚨 业务预警</h3><span class="ch-sub">库存 · 审批超时 · 交期 · 合同到期</span><button class="btn btn-o btn-sm" style="margin-left:auto" onclick="showAlertLog()">📜 完整预警 →</button></div>
-    <div class="dash-alert-sum" id="dashAlertSum"></div>
-    <div class="cb" id="alertCenter" style="padding-top:6px"><div class="loading">加载中...</div></div>
-    <div class="cb" style="border-top:1px dashed var(--v9-b);padding-top:8px" id="overdueBox"><div class="loading">加载中...</div></div></div>
+    <div class="ch"><h3>🚨 业务预警</h3><span class="ch-sub">分级管理 · 只有🔴高风险推送钉钉</span><button class="btn btn-o btn-sm" style="margin-left:auto" onclick="sw('alerts')">📜 完整预警 →</button></div>
+    <div class="cb"><div class="kpi" id="alertSumCards"><div class="loading">加载中...</div></div></div>
+    <div class="cb" style="border-top:1px dashed var(--v9-b);padding-top:6px">
+      <div style="font-size:10px;color:#999;margin-bottom:4px">🔴 高风险摘要（前5条，完整清单与处置请进预警中心）</div>
+      <div id="alertTopList"><div class="loading">加载中...</div></div>
+    </div>
+    <div class="cb" style="display:none" id="overdueBox"></div></div>
   <!-- ⑤ 第三卡片: 简易数据统计(按角色权限, 点击数字跳原列表页) -->
   <div class="card dash-card">
     <div class="ch"><h3>📊 数据统计</h3>
@@ -475,6 +478,18 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <button class="btn btn-o btn-sm" onclick="window.open('/api/small-ledger/export','_blank')">⬇️ 导出台账</button>
   </div>
   <div class="card"><div class="cb" id="smallLedgerTable"><div class="loading">加载中...</div></div></div>
+</div>
+<div class="page" id="palerts">
+  <h2>🚨 预警中心 <span style="font-size:10px;color:#999;font-weight:normal">(分级 · 降噪 · 闭环处置 · 与报表同源)</span></h2>
+  <div class="card"><div class="cb" style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">
+    <div class="fg"><label class="fl2">预警等级</label><select id="alLv" class="fc" onchange="loadAlertCenter()"><option value="">全部等级</option><option value="red">🔴高风险</option><option value="orange">🟡一般提醒</option><option value="green">⚫信息提示</option></select></div>
+    <div class="fg"><label class="fl2">业务类型</label><select id="alBiz" class="fc" onchange="loadAlertCenter()"><option value="">全部业务</option><option>审批</option><option>采购订单</option><option>三方询价</option><option>入库发票</option><option>库存</option><option>合同</option><option>财务</option><option>供应商</option><option>设备维修</option></select></div>
+    <div class="fg"><label class="fl2">处置状态</label><select id="alSt" class="fc" onchange="loadAlertCenter()"><option value="open">未闭环(含处理中)</option><option value="pending">未处理</option><option value="processing">处理中</option><option value="closed">已闭环(历史)</option></select></div>
+    <div class="fg"><label class="fl2">时间范围</label><select id="alDays" class="fc" onchange="loadAlertCenter()"><option value="">全部时间</option><option value="1">今天</option><option value="7">近7天</option><option value="30">近30天</option></select></div>
+    <button class="btn btn-w btn-sm" onclick="loadAlertCenter()">🔄 刷新</button>
+    <span style="font-size:10px;color:#999;margin-left:auto" id="alCount"></span>
+  </div>
+  <div class="cb" id="alList"><div class="loading">加载中...</div></div></div>
 </div>
 <div class="page" id="preports">
   <h2>📊 报表中心</h2>
@@ -652,6 +667,9 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
   <div class="card"><div class="ch"><h3>🔢 部门单号前缀维护（V11.254）</h3><button class="btn btn-o btn-sm" onclick="deptPrefixCard()">🔄 加载</button> <button class="btn btn-p btn-sm" onclick="saveDeptPrefix()">💾 保存</button></div>
       <div class="cb" style="font-size:9px"><div style="color:#666;margin-bottom:4px">采购申请单号前缀随申请部门自动生成（需求: 生产SC/维修WX/后勤HQ/综合办ZB/财务CW/工程GC/信息XX）。新增部门或前缀重复冲突时在此改前缀，立即生效。</div>
         <div id="deptPrefixBox" style="color:#bbb">点击「加载」查看
+    <div class="card"><div class="ch"><h3>🚨 预警参数配置（V11.267 · 9.10需求）</h3><button class="btn btn-o btn-sm" onclick="alertCfgCard()">🔄 加载</button> <button class="btn btn-p btn-sm" onclick="saveAlertCfg()">💾 保存</button></div>
+      <div class="cb" style="font-size:9px"><div style="color:#666;margin-bottom:4px">各类预警触发阈值、钉钉推送开关、冷却窗口期均可在此配置（不写死代码），保存即时生效。只有🔴高风险预警推送钉钉且只发单据责任人，冷却窗口内不重复推送。</div>
+        <div id="alertCfgBox" style="color:#bbb">点击「加载」查看当前参数</div></div></div>
     <div class="card"><div class="ch"><h3>🏢 公司简码维护（V11.254）</h3><button class="btn btn-o btn-sm" onclick="companyCodesCard()">🔄 加载</button> <button class="btn btn-p btn-sm" onclick="saveCompanyCodes()">💾 保存</button></div>
       <div class="cb" style="font-size:9px"><div style="color:#666;margin-bottom:4px">合同编号=公司简码-类目-年度序号（如 HQZC-CLCG-001-2026）。新增公司在此登记简码（默认取名称拼音首字母，重复冲突时手工改），生成合同时下拉选择公司+类目自动拼接编号。</div>
         <div id="companyCodesBox" style="color:#bbb">点击「加载」查看</div></div></div>
@@ -1125,6 +1143,7 @@ function buildNav(){
     {label:'📦 库房',page:'receivings'},
     {label:'💰 财务',page:'payments'},
     {label:'📈 报表',page:'reports'},
+    {label:'🚨 预警中心',page:'alerts'},
         {label:'📊 数据看板',href:'/dashboard'},
       ];
   let navHtml='';
@@ -1231,7 +1250,7 @@ function sw(name){
     'counts':()=>{loadAdjustments()},
     'returns':loadReturns,
     'settlements':loadSettlements,'invoices':loadInvoicePage,'ledger':loadLedger,'system':loadSystem,
-    'small':loadSmallLedger};
+    'small':loadSmallLedger,'alerts':loadAlertCenter};
   // V11.66: 页面级权限拦截 — 无权限角色看到友好提示(数据级过滤已在后端兜底)
   if(!__pageAllowed(name)){
     const wrap=id('p'+name);
@@ -1414,26 +1433,8 @@ async function loadDashboard(){
     // V11.5: 顶部导航审批中心待办徽标
     if(window._setNavBadge)window._setNavBadge((d.my_pending||[]).length);
     apprZone('todo');
-    // ⑤ 业务预警(V9: 按类型分组 + 红黄绿分级; 数据源与优化前一致)
-    const al=d.alerts||[];
-    const ALERT_GROUPS=[['库存预警',['库存','缺货','超储']],['询价跟进',['询价超时']],['订单交货预警',['订单','交货','到货']],['合同到期预警',['合同']],['发票催收',['发票']],['付款逾期预警',['付款','应付']],['审批超时预警',['审批']]];
-    const groupOf=a=>ALERT_GROUPS.find(g=>g[1].some(k=>(a.alert_type||'').includes(k)))?.[0]||'其他预警';
-    // 预警摘要chips(库存预警/审批超时/订单交期/合同到期)
-    const sumBox=id('dashAlertSum');
-    if(sumBox){
-      const cnt=g=>al.filter(a=>(a.alert_type||'').includes(g)).length;
-      const ic=[[['库存预警','库存'],['审批超时','审批'],['订单交期','订单'],['合同到期','合同'],['付款逾期','付款']]];
-      sumBox.innerHTML=ic[0].map(([label,k])=>`<span class="das-chip ${cnt(k)>0?'das-orange':''}">${label} <b>${cnt(k)}</b></span>`).join('')
-        +(al.length?`<span class="das-chip das-red" style="margin-left:auto">共 ${al.length} 条</span>`:'<span class="das-chip das-green" style="margin-left:auto">✅ 暂无预警</span>');
-    }
-    if(!al.length){id('alertCenter').innerHTML='<div style="color:#27ae60;font-size:11px;padding:8px">✅ 暂无预警，一切正常</div>'}
-    else{
-      const grouped={};
-      al.slice(0,20).forEach(a=>{(grouped[groupOf(a)]=grouped[groupOf(a)]||[]).push(a)});
-      id('alertCenter').innerHTML=Object.entries(grouped).map(([g,list])=>`
-        <div class="v9-group-title" style="margin-top:4px">${g} <span style="color:#aaa;font-weight:400">(${list.length})</span></div>
-        ${list.map(a=>alertRow(a)).join('')}`).join('');
-    }
+    // ⑤ 业务预警(V11.267 9.10优化): 首页只放统计卡片+高风险摘要, 明细/处置进独立「预警中心」
+    loadAlertSummary();
     // 超期未审批(V7.0)
     loadOverdue();
     // ⑥ 系统公告(V11.196: 从公告表读取, 置顶优先+最新; 按发布范围/有效期过滤在后端; 空→占位)
@@ -5438,6 +5439,78 @@ async function showAlertLog(){
     <span style="color:#999;white-space:nowrap">${esc((a.processed_at||a.created_at||'').slice(0,19))}</span></div>`).join('')||'暂无记录'}</div>`;
   id('detailModal').classList.add('show');
   id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">关闭</button>';
+}
+// ============ V11.267 预警中心(9.10需求: 分级/降噪/闭环处置/责任人) ============
+function _alBadge(lv){return lv=='red'?{t:'🔴高风险',c:'#e74c3c',bg:'#fdecea'}:lv=='orange'?{t:'🟡一般提醒',c:'#e67e22',bg:'#fff6e8'}:{t:'⚫信息提示',c:'#7f8c8d',bg:'#f4f6f8'}}
+async function loadAlertSummary(){
+  try{
+    const s=await api('/alerts/summary');
+    const box=id('alertSumCards');
+    if(box){
+      box.innerHTML=(s.cards||[]).map(c=>{
+        var lvTxt=(c.red?('🔴'+c.red+' '):'')+(c.yellow?('🟡'+c.yellow+' '):'')+((!c.red&&!c.yellow)?'✅无':'');
+        return '<div class="kc '+(c.red>0?'kc-r':'')+'" style="cursor:pointer" onclick="sw(\'alerts\')">'
+          +'<div class="kl">'+esc(c.name)+'</div><div class="kv">'+c.total+'</div>'
+          +'<div style="font-size:9px;color:#999">'+lvTxt+'</div></div>';
+      }).join('')
+      +'<div class="kc" style="background:#f5f8fc"><div class="kl">今日自动闭环</div><div class="kv">'+(s.closed_today||0)+'</div></div>';
+    }
+    const tl=id('alertTopList');
+    if(tl){
+      tl.innerHTML=(s.top&&s.top.length)?s.top.map(a=>{const b=_alBadge(a.level);return `
+        <div style="padding:4px 0;border-bottom:1px dashed #eef;font-size:10px">
+          <span style="color:${b.c};font-weight:700">${b.t}</span>
+          <b style="margin:0 4px">${esc(a.title)}</b>
+          <span style="color:#666">${esc((a.content||'').slice(0,60))}</span>
+          <div style="color:#1a6fbf;font-size:9px;margin-top:2px">${esc(a.suggest||'')} ${a.owner?('· 责任人:'+esc(a.owner)):''}
+          <span style="color:#1a6fbf;cursor:pointer;margin-left:6px" onclick="sw('alerts')">去处置 →</span></div>
+        </div>`}).join(''):'<div style="color:#27ae60;font-size:11px;padding:6px">✅ 当前无🔴高风险预警</div>';
+    }
+  }catch(e){const tl=id('alertTopList'); if(tl)tl.innerHTML='<div style="color:#999;font-size:10px">预警加载失败</div>'}
+}
+async function loadAlertCenter(){
+  const q=new URLSearchParams({level:id('alLv').value,type:id('alBiz').value,status:id('alSt').value,days:id('alDays').value}).toString();
+  const box=id('alList'); box.innerHTML='<div class="loading">加载中...</div>';
+  try{
+    const rows=await api('/alerts?'+q);
+    id('alCount').textContent='共 '+rows.length+' 条';
+    if(!rows.length){box.innerHTML='<div style="color:#27ae60;font-size:11px;padding:10px">✅ 无符合条件的预警</div>';return}
+    box.innerHTML=rows.map(a=>{const b=_alBadge(a.level);const st=a.status=='closed'?'<span style="color:#27ae60">✅已闭环</span>':(a.status=='processing'?'<span style="color:#e67e22">⏳处理中</span>':'<span style="color:#c0392b">未处理</span>');
+      return `<div style="border:1px solid #e8eef6;border-left:4px solid ${b.c};border-radius:6px;padding:8px;margin-bottom:6px;background:${b.bg}">
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:11px">
+          <span style="color:${b.c};font-weight:700">${b.t}</span>
+          <span style="background:#fff;border:1px solid #dde;border-radius:4px;padding:0 5px;font-size:9px;color:#456">${esc(a.biz_label||'')} · ${esc(a.alert_type)}</span>
+          <b>${esc(a.title)}</b>${st}
+          <span style="margin-left:auto;font-size:9px;color:#999">${esc((a.created_at||'').slice(0,16))}${a.owner?(' · 责任人:'+esc(a.owner)):''}</span>
+        </div>
+        <div style="font-size:10px;color:#555;margin-top:4px">${esc(a.content||'')}</div>
+        <div style="font-size:10px;color:#1a6fbf;margin-top:2px">${esc(a.suggest||'')}</div>
+        ${a.remark?`<div style="font-size:9px;color:#888;margin-top:2px">处置备注: ${esc(a.remark)}${a.closed_by?(' ('+esc(a.closed_by)+')'):''}</div>`:''}
+        <div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap">
+          ${(a.biz_type&&a.biz_id)?`<button class="btn btn-o btn-sm" onclick="jumpAlert('${a.biz_type}',${a.biz_id})">🔍 查看单据</button>`:''}
+          ${a.status!='closed'?`<button class="btn btn-w btn-sm" onclick="alertAct(${a.id},'processing')">⏳ 标记处理中</button>
+          <button class="btn btn-p btn-sm" onclick="alertAct(${a.id},'close')">✅ 闭环</button>`:''}
+        </div></div>`}).join('');
+  }catch(e){box.innerHTML='<div style="color:#c62828;font-size:11px">加载失败</div>'}
+}
+async function alertAct(aid,action){
+  let remark='';
+  if(action=='close'){remark=prompt('闭环处置备注(将记入操作日志):','已跟进处理完毕');if(remark===null)return;if(!remark.trim()){alert('请填写处置备注');return}}
+  const r=await api('/alerts/'+aid+'/process',{method:'POST',body:JSON.stringify({action,remark})});
+  if(r&&r.success){alert('✅ '+(r.message||'操作成功'));loadAlertCenter();loadAlertSummary()}
+  else alert((r&&r.error)||'操作失败');
+}
+async function alertCfgCard(){
+  const c=await api('/alerts/config');
+  const F=[['warn_enabled','预警总开关(1开/0关)'],['warn_push_enabled','高风险钉钉推送开关(1开/0关)'],['warn_approve_hours','审批超时阈值(小时)'],['warn_pending_days','审批通过未转采购(天)'],['warn_est_days','暂估挂账算长期(天)'],['warn_arrive_days','交期提前提醒(天)'],['warn_contract_days','合同到期提前(天)'],['warn_pay_days','应付款到期提前(天)'],['warn_idle_days','呆滞库存(天)'],['warn_cooldown_hours','钉钉推送冷却窗口(小时)'],['warn_types_off','关闭的预警类型(逗号分隔)']];
+  id('alertCfgBox').innerHTML='<table class="tb" style="font-size:10px">'+F.map(([k,lb])=>`<tr><td style="width:210px">${lb}</td><td><input class="fc" id="wcfg_${k}" value="${esc(c[k]||'')}" style="width:180px;padding:2px 6px"></td></tr>`).join('')+'</table><div style="font-size:9px;color:#999;margin-top:4px">修改后点保存立即生效；黄/灰预警不推钉钉，仅高风险按责任人推送并受冷却窗口限制。</div>';
+}
+async function saveAlertCfg(){
+  const keys=['warn_enabled','warn_push_enabled','warn_approve_hours','warn_pending_days','warn_est_days','warn_arrive_days','warn_contract_days','warn_pay_days','warn_idle_days','warn_cooldown_hours','warn_types_off'];
+  const d={};keys.forEach(k=>{const el=id('wcfg_'+k);if(el)d[k]=el.value.trim()});
+  const r=await api('/alerts/config',{method:'POST',body:JSON.stringify(d)});
+  if(r&&r.success){alert('✅ 预警参数已保存, 即时生效');loadAlertSummary()}
+  else alert((r&&r.error)||'保存失败(仅系统管理员可改)');
 }
 async function bindDing(uid,name){
   const userid=prompt('输入「'+name+'」的钉钉账号(userid/手机号):');

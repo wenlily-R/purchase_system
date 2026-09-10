@@ -9491,52 +9491,284 @@ def build_alerts():
         c.execute("INSERT INTO alert_items(alert_type,level,title,content,biz_type,biz_id) VALUES(?,?,?,?,?,?)", w)
     c.commit(); c.close()
 
+# ============================================================
+# V11.267 ── 9.10预警优化: 三级分级 · 责任人精准推送 · 冷却降噪 · 处置闭环 · 后台阈值配置
+#   原全部预警规则逻辑保留(_build_alerts_legacy), 本层只做分级/去重/责任人/建议/自动闭环/钉钉降噪
+# ============================================================
+_ALERT_LEVEL = {'red': '🔴高风险', 'orange': '🟡一般提醒', 'green': '⚫信息提示'}
+_ALERT_TYPE_BIZ = {'库存缺货': '库存', '库存超储': '库存', '呆滞库存': '库存', '物料临期': '库存',
+                   '审批超时': '审批', '加急审批': '审批', '多次驳回': '审批', '通过未转采购': '审批',
+                   '超期未到货': '采购订单', '待到货': '采购订单', '部分到货未闭环': '采购订单',
+                   '合同到期': '合同', '合同未归档': '合同',
+                   '应付款到期': '财务', '应付款逾期': '财务', '预付款跟踪': '财务',
+                   '暂估挂账': '入库发票', '询价无报价': '三方询价',
+                   '供应商风险': '供应商', '维修超时': '设备维修'}
+_ALERT_ENSURED = [False]
+
+def _alert_ensure():
+    """V11.267: 预警表结构升级(幂等) — key/责任人/建议/闭环/推送痕迹 + 推送冷却日志表"""
+    if _ALERT_ENSURED[0]:
+        return
+    try:
+        c = db()
+        cols = [r[1] for r in c.execute("PRAGMA table_info(alert_items)").fetchall()]
+        for nm, dd in (('alert_key', 'TEXT'), ('owner', 'TEXT'), ('owner_id', 'INTEGER'), ('suggest', 'TEXT'),
+                       ('remark', 'TEXT'), ('closed_at', 'TEXT'), ('closed_by', 'TEXT'),
+                       ('pushed_at', 'TEXT'), ('push_count', 'INTEGER DEFAULT 0'), ('updated_at', 'TEXT')):
+            if nm not in cols:
+                c.execute("ALTER TABLE alert_items ADD COLUMN %s %s" % (nm, dd))
+        c.execute("CREATE TABLE IF NOT EXISTS alert_push_log(id INTEGER PRIMARY KEY AUTOINCREMENT, alert_key TEXT, userid TEXT, pushed_at TEXT)")
+        c.commit(); c.close()
+        _ALERT_ENSURED[0] = True
+    except Exception as e:
+        print('alert_ensure:', e)
+
+def _alert_owner(c, biz_type, bid):
+    """V11.267: 权责到人 — 解析单据责任人(申请人/采购员/库管), 用于精准推送而非全员广播"""
+    try:
+        q = {'purchase_request': ("SELECT requester FROM purchase_requests WHERE id=?", ),
+             'order': ("SELECT COALESCE(NULLIF(owner,''),requester) x FROM purchase_orders WHERE id=?", ),
+             'contract': ("SELECT COALESCE(NULLIF(owner,''),'') x FROM contracts WHERE id=?", ),
+             'inquiry': ("SELECT created_by x FROM inquiries WHERE id=?", ),
+             'payment': ("SELECT COALESCE(NULLIF(requester,''),created_by) x FROM payment_requests WHERE id=?", ),
+             'receiving': ("SELECT (SELECT COALESCE(NULLIF(o.owner,''),o.requester) FROM purchase_orders o WHERE o.id=receivings.order_id) x FROM receivings WHERE id=?", )}
+        if biz_type not in q:
+            return ('', 0)
+        r = c.execute(q[biz_type][0], (bid,)).fetchone()
+        nm = (r[0] if r and r[0] else '') if r else ''
+        if not nm:
+            return ('', 0)
+        u = c.execute("SELECT id FROM users WHERE name=? AND is_active=1 LIMIT 1", (nm,)).fetchone()
+        return (nm, (u[0] if u else 0))
+    except Exception:
+        return ('', 0)
+
+def _alert_push(c, aid, alert_key, owner_id, title, content, suggest, biz_type, bid, level):
+    """V11.267: 只有🔴高风险才推钉钉工作通知; 同一单据同一预警冷却窗口内不重复推; 配额熔断期跳过"""
+    try:
+        if str(cfg_get('warn_push_enabled', '1')) != '1':
+            return
+        cool = int(cfg_get('warn_cooldown_hours', '24') or 24)
+        since = (datetime.datetime.now() - datetime.timedelta(hours=cool)).strftime('%Y-%m-%d %H:%M:%S')
+        if c.execute("SELECT 1 FROM alert_push_log WHERE alert_key=? AND pushed_at>=?", (alert_key, since)).fetchone():
+            return  # 冷却窗口内, 已推过 → 只留在预警中心, 不再轰炸
+        row = c.execute("SELECT dingtalk_userid FROM users WHERE id=? AND dingtalk_userid IS NOT NULL AND dingtalk_userid!=''", (owner_id,)).fetchone() if owner_id else None
+        if not row:
+            return
+        if _dt_quota_blocked():
+            return
+        dt_send_todo([row[0]], title, '%s\n%s' % (content, suggest or ''), biz_type=biz_type, biz_id=bid)
+        c.execute("INSERT INTO alert_push_log(alert_key,userid,pushed_at) VALUES(?,?,?)", (alert_key, row[0], now()))
+        c.execute("UPDATE alert_items SET pushed_at=?, push_count=COALESCE(push_count,0)+1 WHERE id=?", (now(), aid))
+    except Exception as e:
+        print('alert_push:', e)
+
+_build_alerts_legacy = build_alerts
+_ALERT_LOCK = threading.Lock()
+
+def build_alerts():
+    """V11.267(9.10需求): 原规则+分级/去重/责任人/建议/自动闭环/高风险钉钉(冷却降噪)
+    并发保护: 多页面/多标签同时刷新时串行重建, 避免竞态导致计数飘忽"""
+    if not _ALERT_LOCK.acquire(timeout=5):
+        return
+    try:
+        _build_alerts_impl()
+    finally:
+        _ALERT_LOCK.release()
+
+def _build_alerts_impl():
+    """V11.267(9.10需求): 在原规则基础上做 分级/去重/责任人/建议/自动闭环/高风险钉钉(冷却降噪)"""
+    _alert_ensure()
+    c = db(); c.row_factory = sqlite3.Row
+    snap = [dict(r) for r in c.execute("SELECT * FROM alert_items WHERE status='pending'").fetchall()]
+    c.close()
+    _build_alerts_legacy()          # 原规则全部保留(不删除任何原有预警项)
+    c = db(); c.row_factory = sqlite3.Row
+    try:
+        est_days = int(cfg_get('warn_est_days', '15') or 15)
+        pend_days = int(cfg_get('warn_pending_days', '3') or 3)
+        # ---- 新增类型(9.10: 暂估挂账欠票/询价截止无报价/通过未转采购/部分到货未闭环) ----
+        extra = []
+        for r in c.execute("SELECT id,receive_no,est_amount,received_at FROM receivings WHERE is_est=1 AND COALESCE(invoice_no,'')='' AND COALESCE(received_at,'')!='' AND received_at<=datetime('now','localtime',?)", ('-%d days' % est_days,)):
+            extra.append(('暂估挂账', 'red', '已入库未拿回发票: %s' % r['receive_no'],
+                          '暂估 ¥%.2f 挂账已超 %d 天，长期挂账影响成本核算' % (r['est_amount'] or 0, est_days),
+                          '建议：跟进供应商取回发票并做发票核对(红冲转正式单)', 'receiving', r['id']))
+        for r in c.execute("SELECT i.id,i.inq_no FROM inquiries i WHERE i.status='询价中' AND COALESCE(i.deadline,'')!='' AND i.deadline<datetime('now','localtime') AND NOT EXISTS(SELECT 1 FROM inquiry_suppliers s WHERE s.inquiry_id=i.id AND s.quote_price>0)"):
+            extra.append(('询价无报价', 'red', '询价截止无报价: %s' % r['inq_no'],
+                          '已过报价截止时间且无任何供应商报价，采购进度受阻', '建议：联系供应商催报或重新发起询价', 'inquiry', r['id']))
+        for r in c.execute("SELECT p.id,p.req_no FROM purchase_requests p WHERE p.status='已通过' AND COALESCE(p.updated_at,'')!='' AND p.updated_at<=datetime('now','localtime',?) AND NOT EXISTS(SELECT 1 FROM inquiries i WHERE i.req_id=p.id) AND NOT EXISTS(SELECT 1 FROM purchase_orders o WHERE o.req_id=p.id)", ('-%d days' % pend_days,)):
+            extra.append(('通过未转采购', 'orange', '审批通过未转采购: %s' % r['req_no'],
+                          '申请审批通过已超 %d 天仍未发起询价/下单' % pend_days, '建议：尽快发起三方询价或直接下单采购', 'purchase_request', r['id']))
+        for r in c.execute("SELECT o.id,o.order_no,COALESCE((SELECT SUM(quantity) FROM order_items oi WHERE oi.order_id=o.id),o.quantity) q,COALESCE((SELECT SUM(quantity) FROM receivings rv WHERE rv.order_id=o.id AND rv.status IN ('已入库','已通过','审批通过')),0) rq,(SELECT MAX(received_at) FROM receivings rv2 WHERE rv2.order_id=o.id) lastr FROM purchase_orders o WHERE o.status NOT IN ('已完成','已关闭','已核销','已入库')"):
+            if (r['rq'] or 0) > 0 and (r['rq'] or 0) < (r['q'] or 0) and (r['lastr'] or '') and r['lastr'] <= (datetime.datetime.now() - datetime.timedelta(days=pend_days)).strftime('%Y-%m-%d %H:%M:%S'):
+                extra.append(('部分到货未闭环', 'orange', '部分到货待处理: %s' % r['order_no'],
+                              '已验收 %s/%s，长时间未继续验收或封单' % (r['rq'], r['q']),
+                              '建议：确认剩余是否继续供货；不再供货请封单(按实到闭环)', 'order', r['id']))
+        off = set((cfg_get('warn_types_off', '') or '').split(','))
+        for t, lv, ti, ct, sg, bt, bid in extra:
+            if t in off:
+                continue
+            c.execute("INSERT INTO alert_items(alert_type,level,title,content,biz_type,biz_id,suggest,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                      (t, lv, ti, ct, bt, bid, sg, 'pending', now(), now()))
+        # ---- 去重(同单据同异常仅1条) + 责任人 + 建议/分级标签 ----
+        rows = [dict(r) for r in c.execute("SELECT * FROM alert_items WHERE status='pending' ORDER BY id").fetchall()]
+        oldmap = {}
+        for s in snap:
+            oldmap['%s|%s|%s' % (s['alert_type'], s['biz_type'] or '', s['biz_id'] or 0)] = s
+        seen = {}
+        for r in rows:
+            k = '%s|%s|%s' % (r['alert_type'], r['biz_type'] or '', r['biz_id'] or 0)
+            if k in seen:
+                c.execute("DELETE FROM alert_items WHERE id=?", (r['id'],)); continue
+            owner, owner_uid = _alert_owner(c, r['biz_type'], r['biz_id'])
+            if k in oldmap:
+                # V11.267: id 稳定 — 旧行已被 legacy 删除, 把新行 id 改回旧 id(前端/接口拿到的预警 id 不因重建失效)
+                old_id = oldmap[k]['id']
+                tid = r['id']
+                if old_id != tid and not c.execute("SELECT 1 FROM alert_items WHERE id=?", (old_id,)).fetchone():
+                    try:
+                        c.execute("UPDATE alert_items SET id=? WHERE id=?", (old_id, tid)); tid = old_id
+                    except Exception:
+                        tid = r['id']
+                c.execute("""UPDATE alert_items SET alert_key=?, owner=?, owner_id=?, level=?,
+                    suggest=COALESCE(NULLIF(?,''),suggest), status='pending', updated_at=? WHERE id=?""",
+                          (k, owner, owner_uid, r['level'], r.get('suggest') or '', now(), tid))
+                seen[k] = tid
+            else:
+                c.execute("UPDATE alert_items SET alert_key=?, owner=?, owner_id=?, level=?, updated_at=COALESCE(updated_at,?) WHERE id=?",
+                          (k, owner, owner_uid, r['level'], now(), r['id']))
+                seen[k] = r['id']
+        # ---- 自动闭环: 上次存在、本次源条件已解除 → 关闭留史(不删除) ----
+        for s in snap:
+            k = '%s|%s|%s' % (s['alert_type'], s['biz_type'] or '', s['biz_id'] or 0)
+            if k not in seen:
+                c.execute("""INSERT INTO alert_items(alert_type,level,title,content,biz_type,biz_id,status,created_at,alert_key,owner,owner_id,suggest,remark,closed_at,closed_by)
+                    VALUES(?,?,?,?,?,?,'closed',?,?,?,?,?,?,?,?)""",
+                          (s['alert_type'], s['level'], s['title'], s['content'], s['biz_type'], s['biz_id'], s['created_at'],
+                           k, s.get('owner') or '', s.get('owner_id') or 0, s.get('suggest') or '', '业务已恢复正常, 系统自动闭环', now(), '系统'))
+        c.commit()
+        # ---- 钉钉降噪: 仅🔴高风险 + 仅责任人 + 冷却窗口 + 配额熔断保护 ----
+        for r in c.execute("SELECT * FROM alert_items WHERE status='pending' AND level='red' AND (pushed_at IS NULL OR pushed_at='')").fetchall():
+            _alert_push(c, r['id'], r['alert_key'] or ('%s|%s|%s' % (r['alert_type'], r['biz_type'] or '', r['biz_id'] or 0)),
+                        r['owner_id'] or 0, r['title'], r['content'] or '', r['suggest'] or '', r['biz_type'] or '', r['biz_id'] or 0, r['level'])
+        c.commit()
+    except Exception as e:
+        print('build_alerts_v2:', e)
+    finally:
+        c.close()
+
+def _alert_row(r):
+    d = dict_row(r)
+    d['level_label'] = _ALERT_LEVEL.get(d.get('level'), d.get('level'))
+    d['biz_label'] = _ALERT_TYPE_BIZ.get(d.get('alert_type'), '其他')
+    return d
+
 @app.route('/api/alerts')
 @login_required
 def api_alerts():
-    """V55: 预警中心-全部待处理预警(首页集中展示)"""
+    """V11.267: 预警中心(支持 等级/业务类型/处置状态/时间范围 筛选)"""
     build_alerts()
+    lv = request.args.get('level', ''); bt = request.args.get('type', '')
+    stt = request.args.get('status', 'open'); days = request.args.get('days', '')
     conn = db()
-    rows = conn.execute("SELECT * FROM alert_items WHERE status='pending' ORDER BY CASE level WHEN 'red' THEN 0 WHEN 'orange' THEN 1 ELSE 2 END, id DESC LIMIT 50").fetchall()
+    sql = "SELECT * FROM alert_items WHERE 1=1"; args = []
+    if lv: sql += " AND level=?"; args.append(lv)
+    if stt == 'open': sql += " AND status IN ('pending','processing')"
+    elif stt == 'processing': sql += " AND status='processing'"
+    elif stt == 'closed': sql += " AND status='closed'"
+    elif stt == 'pending': sql += " AND status='pending'"
+    if days:
+        try:
+            sql += " AND created_at>=datetime('now','localtime',?)"; args.append('-%d days' % int(days))
+        except Exception:
+            pass
+    sql += " ORDER BY CASE level WHEN 'red' THEN 0 WHEN 'orange' THEN 1 ELSE 2 END, CASE status WHEN 'pending' THEN 0 WHEN 'processing' THEN 1 ELSE 2 END, id DESC LIMIT 300"
+    rows = [ _alert_row(r) for r in conn.execute(sql, args).fetchall() ]
+    if bt:
+        rows = [x for x in rows if x.get('biz_label') == bt or x.get('alert_type') == bt]
     conn.close()
-    return jsonify([dict_row(r) for r in rows])
+    return jsonify(rows)
+
+@app.route('/api/alerts/summary')
+@login_required
+def api_alerts_summary():
+    """V11.267: 首页预警统计卡片 + 高风险摘要(首页不再平铺全部预警)"""
+    build_alerts()
+    conn = db(); rows = [ _alert_row(r) for r in conn.execute("SELECT * FROM alert_items WHERE status IN ('pending','processing')").fetchall() ]; conn.close()
+    groups = {'审批超时': ('审批超时', '加急审批', '多次驳回', '通过未转采购'),
+              '订单交期异常': ('超期未到货', '待到货', '部分到货未闭环'),
+              '暂估挂账欠票': ('暂估挂账',),
+              '库存异常': ('库存缺货', '库存超储', '呆滞库存', '物料临期')}
+    cards = []
+    for name, types in groups.items():
+        sub = [x for x in rows if x.get('alert_type') in types]
+        cards.append({'name': name, 'total': len(sub),
+                      'red': len([x for x in sub if x['level'] == 'red']),
+                      'yellow': len([x for x in sub if x['level'] == 'orange']),
+                      'gray': len([x for x in sub if x['level'] == 'green'])})
+    top = [x for x in rows if x['level'] == 'red'][:5]
+    return jsonify({'cards': cards, 'top': top, 'red_total': len([x for x in rows if x['level'] == 'red']),
+                    'total': len(rows), 'closed_today': _alert_closed_today()})
+
+def _alert_closed_today():
+    try:
+        c = db(); n = c.execute("SELECT COUNT(*) FROM alert_items WHERE status='closed' AND closed_at>=date('now','localtime')").fetchone()[0]; c.close(); return n
+    except Exception:
+        return 0
 
 @app.route('/api/alerts/<int:aid>/process', methods=['POST'])
 @login_required
 def api_process_alert(aid):
-    """V55: 手动标记预警已处理(处理后从预警列表清除, 留日志)"""
+    """V11.267: 处置预警 — action=processing(标记处理中) / close(闭环+备注留痕)"""
+    d = request.json or {}
+    action = d.get('action', 'close'); remark = (d.get('remark') or '').strip()
     conn = db()
     r = conn.execute("SELECT * FROM alert_items WHERE id=?", (aid,)).fetchone()
-    if not r: conn.close(); return jsonify({'error': '预警不存在'}), 404
-    conn.execute("UPDATE alert_items SET status='processed', processed_at=?, processed_by=? WHERE id=?", (now(), session['user_name'], aid))
+    if not r:
+        conn.close(); return jsonify({'error': '预警不存在'}), 404
+    if action == 'processing':
+        conn.execute("UPDATE alert_items SET status='processing', updated_at=?, remark=? WHERE id=?", (now(), remark, aid))
+        msg = '已标记处理中'
+    else:
+        if not remark:
+            conn.close(); return jsonify({'error': '闭环请填写简短处置备注'}), 400
+        conn.execute("UPDATE alert_items SET status='closed', closed_at=?, closed_by=?, remark=?, updated_at=? WHERE id=?",
+                     (now(), session['user_name'], remark, now(), aid))
+        msg = '已闭环'
     conn.commit(); conn.close()
-    log(session['user_name'], '处理预警', '%s' % r['title'])
-    return jsonify({'success': True})
+    log(session['user_name'], '预警处置-%s' % msg, '%s | %s' % (r['title'], remark))
+    return jsonify({'success': True, 'message': msg})
 
 @app.route('/api/alerts/log')
 @login_required
 def api_alerts_log():
-    """V55: 预警历史日志(含已处理)"""
-    conn = db()
-    rows = conn.execute("SELECT * FROM alert_items ORDER BY id DESC LIMIT 100").fetchall()
-    conn.close()
-    return jsonify([dict_row(r) for r in rows])
+    """V11.267: 预警历史(含已闭环, 可筛选追溯)"""
+    stt = request.args.get('status', 'all'); conn = db()
+    sql = "SELECT * FROM alert_items"; args = []
+    if stt in ('pending', 'processing', 'closed'):
+        sql += " WHERE status=?"; args.append(stt)
+    sql += " ORDER BY id DESC LIMIT 300"
+    rows = [_alert_row(r) for r in conn.execute(sql, args).fetchall()]; conn.close()
+    return jsonify(rows)
 
 @app.route('/api/alerts/config', methods=['GET', 'POST'])
 @login_required
 def api_alerts_config():
-    """V55: 预警参数后台配置(是否开启/提前天数/超时小时/呆滞天数)"""
+    """V11.267: 预警参数后台配置(阈值/冷却/开关/接收角色) — 全部可配, 不硬编码"""
+    KEYS = [('warn_enabled', '1'), ('warn_approve_hours', '24'), ('warn_pending_days', '3'), ('warn_est_days', '15'),
+            ('warn_arrive_days', '3'), ('warn_contract_days', '30'), ('warn_pay_days', '3'), ('warn_idle_days', '90'),
+            ('warn_cooldown_hours', '24'), ('warn_push_enabled', '1'), ('warn_types_off', ''), ('warn_roles', '')]
     if request.method == 'POST':
-        if not can_manage_config(): return jsonify({'error': '仅系统管理员可配置'}), 403
+        if not can_manage_config():
+            return jsonify({'error': '仅系统管理员可配置'}), 403
         d = request.json or {}
-        for k in ('warn_enabled', 'warn_arrive_days', 'warn_contract_days', 'warn_pay_days', 'warn_approve_hours', 'warn_idle_days'):
-            if k in d: cfg_set(k, d[k])
-        changed = [k for k in ('warn_enabled','warn_arrive_days','warn_contract_days','warn_pay_days','warn_approve_hours','warn_idle_days') if k in d]
-        log(session.get('user_name',''), '修改预警参数', '变更项: %s' % (','.join(changed) or '无'))
-        return jsonify({'success': True})
-    return jsonify({k: cfg_get(k, defv) for k, defv in [
-        ('warn_enabled', '1'), ('warn_arrive_days', '3'), ('warn_contract_days', '30'),
-        ('warn_pay_days', '3'), ('warn_approve_hours', '24'), ('warn_idle_days', '90')]})
+        changed = []
+        for k, _ in KEYS:
+            if k in d:
+                cfg_set(k, str(d[k])); changed.append(k)
+        log(session.get('user_name', ''), '修改预警参数', '变更项: %s' % (','.join(changed) or '无'))
+        return jsonify({'success': True, 'changed': changed})
+    return jsonify({k: cfg_get(k, v) for k, v in KEYS})
 
 # ============================================================
 # V4.1 ── 飞书 API: 回调 + 管理配置
