@@ -6953,13 +6953,20 @@ _VENDOR_AUTH_FAIL = {}  # 内存节流: token -> [失败次数, 首次失败时�
 
 
 def _vendor_auth_ok(s):
-    """外部报价会话校验: cookie inq_auth = <token>:<auth_token>, 与库内令牌一致才放行"""
+    """外部报价会话校验: cookie inq_auth = <token>:<auth_token>; V11.267 兜底: Safari隐私模式/内嵌浏览器 cookie失效时支持 ?k=<at> 或 X-Inq-Auth 头(报价页进入后立即从地址栏抹除)"""
     try:
         raw = request.cookies.get('inq_auth') or ''
-        if ':' not in raw:
-            return False
-        _t, _a = raw.split(':', 1)
-        return bool(_a) and _t == s['token'] and _a == (s['auth_token'] or '')
+        _at0 = (s['auth_token'] or '') if 'auth_token' in s.keys() else ''
+        if ':' in raw:
+            _t, _a = raw.split(':', 1)
+            if _a and _t == s['token'] and _a == _at0:
+                return True
+        _k = (request.args.get('k') or request.headers.get('X-Inq-Auth') or '').strip()
+        if _k:
+            if _k.startswith(str(s['token']) + ':'):
+                _k = _k.split(':', 1)[1]
+            return bool(_at0 and _k == _at0)
+        return False
     except Exception:
         return False
 
@@ -7084,7 +7091,7 @@ def inquiry_vendor_auth(token):
         conn.execute("UPDATE inquiry_suppliers SET auth_token=?, sms_code=CASE WHEN ?=1 THEN '' ELSE sms_code END WHERE id=?",
                      (_at, 1 if _sms_ok else 0, s['id']))
         conn.commit(); conn.close()
-        resp = jsonify({'success': True, 'company': s['supplier_name']})
+        resp = jsonify({'success': True, 'company': s['supplier_name'], 'at': _at})
         resp.set_cookie('inq_auth', '%s:%s' % (token, _at), max_age=60 * 60 * 24 * 30, httponly=True)
         return resp
     # 失败计数
@@ -7174,6 +7181,8 @@ def _inq_gate_html(token):
             '<div id="msg" style="margin-top:12px;font-size:12.5px;color:#e74c3c;text-align:center"></div>'
             '<div style="margin-top:14px;padding-top:12px;border-top:1px dashed #e5e9f0;font-size:11.5px;color:#999;text-align:center;line-height:1.7">⛔ 仅本询价单登记过的供应商可获取专属访问码，一供应商一码<br>陌生手机号将被拦截；请勿转发访问码</div></div>'
             '<script>'
+            'var _T="%s";'
+            'try{window.addEventListener("load",function(){try{var _a=localStorage.getItem("inqat_"+_T);var _m=location.search.match(/[?&]k=([^&]+)/);var _k=_m?decodeURIComponent(_m[1]):_a;if(_k){location.replace("/inq/"+_T+"?k="+encodeURIComponent(_k))}}catch(e){}});}catch(e){}'
             'let _cdT=null;'
             'function setCdBtn(s){const b=document.getElementById("btnCd");if(b){b.disabled=!!s;b.textContent=s||"获取验证码"}}'
             'window.sendCode=async function(){const ph=(document.getElementById("ph").value||"").trim();'
@@ -7186,10 +7195,10 @@ def _inq_gate_html(token):
             'window.go=async function(){const ph=(document.getElementById("ph").value||"").trim(),cd=(document.getElementById("cd").value||"").trim();'
             'if(!ph||!cd){document.getElementById("msg").textContent="请输入手机号和验证码";return}'
             'const r=await fetch("/api/inquiry/vendor/%s/auth",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({phone:ph,code:cd})}).then(x=>x.json()).catch(()=>({error:"网络错误"}));'
-            'if(r.success){location.reload()}else{document.getElementById("msg").style.color="#e74c3c";document.getElementById("msg").textContent=r.error||"验证失败"}};'
+            'if(r.success){try{localStorage.setItem("inqat_"+_T,r.at||"")}catch(e){}var _u="/inq/"+_T;if(r.at){_u+="?k="+encodeURIComponent(r.at)}location.replace(_u)}else{document.getElementById("msg").style.color="#e74c3c";document.getElementById("msg").textContent=r.error||"验证失败"}};'
             'document.getElementById("ph").addEventListener("keydown",e=>{if(e.key==="Enter")go()});'
             'document.getElementById("cd").addEventListener("keydown",e=>{if(e.key==="Enter")go()});'
-            '</script></body></html>') % (token, token)
+            '</script></body></html>') % (token, token, token)
 
 
 def _inq_vendor_result(token, s):
@@ -7341,6 +7350,21 @@ def inquiry_vendor_page(token):
                    '📢 <b>报价须知</b>：本询价单多物料支持<b>独立报价、独立中标、可单件供货</b>；若贵司<b>无法单件供货</b>，对应项目<b>请勿报价</b>（该行留空即可）。'
                    '品牌与质保标准已由采购方指定并<b>显示在明细中</b>（🔒指定品牌 / 质保≥期限）：仅限按指定品牌报价、质保不得低于该标准，无需填写，系统自动校验。</div>')
     _ship_val = '' if _already else esc_html(s['quote_price'])  # V11.217: 已报价回显不再带金额(不显示具体价格)
+    # V11.267: 提交报价时携带鉴权令牌(cookie失效场景兜底: 从 cookie 或页面 k 参数取, 注入提交URL)
+    _at_cur = ''
+    try:
+        _raw_ck = request.cookies.get('inq_auth') or ''
+        if ':' in _raw_ck and _raw_ck.split(':', 1)[0] == token:
+            _at_cur = _raw_ck.split(':', 1)[1]
+        if not _at_cur:
+            _at_cur = (request.args.get('k') or '').strip()
+            if _at_cur.startswith(str(token) + ':'):
+                _at_cur = _at_cur.split(':', 1)[1]
+    except Exception:
+        pass
+    _quote_url = '/api/inquiry/vendor/%s/quote' % token
+    if _at_cur:
+        _quote_url += '?k=' + _at_cur
     _remark_val = esc_html(s['quote_remark'] or '')
     body = ('<div style="max-width:860px;margin:40px auto;background:#fff;border-radius:12px;padding:28px;'
             'box-shadow:0 4px 24px rgba(0,0,0,.08);font-family:-apple-system,Segoe UI,Microsoft YaHei,sans-serif">'
@@ -7393,8 +7417,23 @@ def inquiry_vendor_page(token):
             '</script></div>') % (
                 esc_html(s['supplier_name']), _head_note, _brand_note, _dl_txt,
                 esc_html(pr['purpose'] if pr else ''), esc_html(i['inq_no']),
-                _item_rows, _ship_val, _remark_val, '/api/inquiry/vendor/%s/quote' % token)
+                _item_rows, _ship_val, _remark_val, _quote_url)
+    # V11.267: 进入后立即从地址栏抹掉令牌(防链接转发泄露), 会话由cookie/localStorage维持
+    body += '<script>try{if(location.search.indexOf("k=")>=0){var _s=location.search.replace(/([?&])k=[^&]*/,"$1").replace(/[?&]$/,"");history.replaceState(null,"",location.pathname+_s)}}catch(e){}</script>'
     return body
+
+
+@app.after_request
+def _inq_no_store(resp):
+    """V11.267: 外部报价页/门禁页禁缓存 — 防止浏览器缓存旧门禁页导致"验证后点击仍进不去" """
+    try:
+        if request.path.startswith('/inq/'):
+            resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+            resp.headers['Pragma'] = 'no-cache'
+            resp.headers['Expires'] = '0'
+    except Exception:
+        pass
+    return resp
 
 @app.route('/api/inquiry/<int:iid>/access-unlock', methods=['POST'])
 @login_required
