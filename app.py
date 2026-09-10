@@ -2213,8 +2213,9 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
                             _price = float(_q.get('unit_price') or 0) or 0
                             _amt = round(_price * _qty, 2)
                             _grand += _amt
+                            _trv = inquiry_line_tax(_q, _amt)[0]  # V11.268 需求2: 行税率随询价带入订单
                             c.execute("INSERT INTO order_items(order_id,item_name,spec,unit,quantity,price,amount,tax_rate,tax_amount,total_amount,remark) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                                      (_oid, _it['item_name'], _it['spec'] or '', _it['unit'] or '个', _qty, _price, _amt, 0, 0, _amt, ''))
+                                      (_oid, _it['item_name'], _it['spec'] or '', _it['unit'] or '个', _qty, _price, _amt, _trv, _tax_of(_trv, _amt), _amt, ''))
                         # 兜底: 商家未填单价(旧数据) → 回退按申请参考金额比例分摊报价总额
                         if _grand <= 0:
                             c.execute("DELETE FROM order_items WHERE order_id=?", (_oid,))
@@ -6868,6 +6869,24 @@ def inquiry_eff_price(s, key='quote_price'):
     return s.get(key) or ('[]' if key == 'quote_details' else 0)
 
 
+def _tax_of(rate, amt):
+    """V11.268 需求2/3: 价内倒拆税额 — 含税金额 amt 按税率 rate% 拆出税额(不放大金额)"""
+    try:
+        _r = float(rate or 0)
+    except Exception:
+        _r = 0.0
+    return round(amt - amt / (1 + _r / 100.0), 2) if _r > 0 else 0.0
+
+
+def inquiry_line_tax(q, amt):
+    """V11.268 需求2: 询价明细行的税率与税额 — q=报价明细行(可空), amt=含税金额; 返回(税率%, 税额)"""
+    try:
+        _r = float((q or {}).get('tax_rate') or 0)
+    except Exception:
+        _r = 0.0
+    return _r, _tax_of(_r, amt)
+
+
 def inquiry_is_adjusted(s):
     """V11.180: 该供应商报价是否已被采购调整过(adj_price>0 或 adj_details非空)"""
     try:
@@ -7310,6 +7329,15 @@ def inquiry_vendor_page(token):
     for idx, it in enumerate(items):
         _pv = _prev.get(idx, {}) or {}
         _v_price = esc_html(_pv.get('unit_price') or '')
+        # V11.268 需求1: 不含税单价/税率回显(新式报价带此二字段; 旧报价留空, 税率默认13%)
+        try:
+            _v_ex = ('%g' % float(_pv.get('excl_price'))) if _pv.get('excl_price') not in (None, '') else ''
+        except Exception:
+            _v_ex = ''
+        try:
+            _v_tx = ('%g' % float(_pv.get('tax_rate'))) if _pv.get('tax_rate') not in (None, '') else '13'
+        except Exception:
+            _v_tx = '13'
         _qty = it['quantity'] or 0
         # V11.246: 指定品牌(采购员在申请/询价中指定, 商家只能按此品牌报)
         _sb = str(it['brand_param'] or '').strip() if 'brand_param' in it.keys() and it['brand_param'] else ''
@@ -7329,8 +7357,11 @@ def inquiry_vendor_page(token):
             '<td style="padding:6px 8px;text-align:left;border-bottom:1px solid #eef">%s</td>'
             '<td style="padding:6px 8px;text-align:left;border-bottom:1px solid #eef;color:#888;font-size:12px">%s</td>'
             '<td style="padding:6px 8px;text-align:left;border-bottom:1px solid #eef;white-space:nowrap">%s%s</td>'
-            '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input type="number" min="0" step="0.01" placeholder="单价" '
-            'oninput="calc()" data-q="%s" id="up%d" value="%s" style="width:64px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;text-align:right"></td>'
+            '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input type="number" min="0" step="0.01" placeholder="不含税单价" '
+            'oninput="calc()" data-q="%s" id="ex%d" value="%s" style="width:76px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;text-align:right"></td>'
+            '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input type="number" min="0" step="0.01" placeholder="13" '
+            'oninput="calc()" id="tx%d" value="%s" style="width:52px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;text-align:right"></td>'
+            '<td style="padding:6px 8px;border-bottom:1px solid #eef;text-align:right;font-weight:600;color:#2e7d32;white-space:nowrap">¥<span id="ht%d">0.00</span></td>'
             '<td style="padding:6px 8px;border-bottom:1px solid #eef;text-align:right;font-weight:600;color:#2e7d32;white-space:nowrap">¥<span id="ut%d">0.00</span></td>'
             '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="如7天" id="dl%d" value="%s" style="width:52px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
             + _wr_cell + _brand_cell +
@@ -7338,8 +7369,10 @@ def inquiry_vendor_page(token):
             '</tr>') % (
                 esc_html(it['item_name']), esc_html(it['spec'] or ''),
                 str(_qty) + esc_html(it['unit'] or '个'), _ref,
-                str(_qty), idx, _v_price,
-                idx, idx, esc_html(_pv.get('delivery') or ''),
+                str(_qty), idx, _v_ex,
+                idx, _v_tx,
+                idx, idx,
+                idx, esc_html(_pv.get('delivery') or ''),
                 idx, esc_html(_pv.get('remark') or '')))
     _item_rows = ''.join(_rows_html)
     # ---------- 头部提示 ----------
@@ -7370,13 +7403,14 @@ def inquiry_vendor_page(token):
     body = ('<div style="max-width:860px;margin:40px auto;background:#fff;border-radius:12px;padding:28px;'
             'box-shadow:0 4px 24px rgba(0,0,0,.08);font-family:-apple-system,Segoe UI,Microsoft YaHei,sans-serif">'
             '<h2 style="margin:0 0 4px;color:#1f6feb">📋 采购询价单</h2>'
-            '<p style="color:#888;font-size:13px;margin:0 0 10px">尊敬的 %s，请逐项填写含税单价，总价自动计算；交付日期/质保时间按实际填写</p>%s%s%s'
+            '<p style="color:#888;font-size:13px;margin:0 0 10px">尊敬的 %s，请逐项填写<b>不含税单价</b>与<b>税率</b>（默认13%%，可修改，如0%%），含税单价与总价自动计算；交付日期/质保时间按实际填写</p>%s%s%s'
             '<div style="background:#f5f8ff;border-radius:8px;padding:12px 16px;font-size:13px;margin-bottom:14px">'
             '<b>%s</b><br><span style="color:#888">询价编号：%s</span></div>'
             '<div style="overflow-x:auto"><table style="width:100%%;border-collapse:collapse;font-size:13px;margin-bottom:10px;min-width:700px">'
             '<tr style="background:#f5f8ff"><th style="padding:6px 8px;text-align:left">物资名称</th>'
             '<th style="padding:6px 8px;text-align:left">规格</th><th style="padding:6px 8px;text-align:left">数量</th>'
-            '<th style="padding:6px 8px;text-align:left">含税单价(元)<span style="color:#e74c3c">*</span></th><th style="padding:6px 8px;text-align:left">总价（含税含运）</th>'
+            '<th style="padding:6px 8px;text-align:left">不含税单价(元)<span style="color:#e74c3c">*</span></th><th style="padding:6px 8px;text-align:left">税率(%%)<span style="color:#e74c3c">*</span></th>'
+            '<th style="padding:6px 8px;text-align:left">含税单价(元)<span style="color:#888;font-size:11px;font-weight:normal">自动</span></th><th style="padding:6px 8px;text-align:left">总价（含税含运）</th>'
             '<th style="padding:6px 8px;text-align:left">交付日期</th><th style="padding:6px 8px;text-align:left">质保时间</th>'
             '<th style="padding:6px 8px;text-align:left">品牌</th><th style="padding:6px 8px;text-align:left">厂家备注</th></tr>%s</table></div>'
             '<div style="background:#f0faf0;border-radius:8px;padding:10px 14px;font-size:14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">'
@@ -7394,17 +7428,23 @@ def inquiry_vendor_page(token):
             '<button onclick="sub()" style="width:100%%;padding:12px;background:#1f6feb;color:#fff;border:none;border-radius:8px;font-size:15px;cursor:pointer">提交报价</button>'
             '<div id="msg" style="margin-top:10px;font-size:13px;color:#27ae60;text-align:center"></div>'
             '<script>'
-            'window.calc=function(){let t=0;document.querySelectorAll("[id^=up]").forEach((e,i)=>{const q=parseFloat(e.getAttribute("data-q"))||1;const p=parseFloat(e.value)||0;'
-            'const st=p*q;t+=st;const u=document.getElementById("ut"+i);if(u)u.textContent=st.toFixed(2)});'
+            'window.calc=function(){let t=0;document.querySelectorAll("[id^=ex]").forEach((e,i)=>{const q=parseFloat(e.getAttribute("data-q"))||1;const ex=parseFloat(e.value)||0;'
+            'const tr0=(document.getElementById("tx"+i)||{}).value;const tr=(tr0===""||tr0===undefined||isNaN(parseFloat(tr0)))?13:parseFloat(tr0);'
+            'const ht=ex*(1+tr/100);t+=ht*q;'
+            'const h=document.getElementById("ht"+i);if(h)h.textContent=ht.toFixed(2);'
+            'const u=document.getElementById("ut"+i);if(u)u.textContent=(ht*q).toFixed(2)});'
             'const _t=document.getElementById("total");if(_t)_t.textContent=t.toFixed(2)};'
-            'window.quickFill=function(){const v=prompt("请输入报价总金额(元):");if(!v||isNaN(v))return;const n=document.querySelectorAll("[id^=up]").length;'
-            'const per=parseFloat(v)/n;document.querySelectorAll("[id^=up]").forEach(e=>{e.value=per.toFixed(2)});calc();'
-            'alert("已按平均分摊到每行，可再逐行微调")};'
-            'window.sub=async function(){const rows=document.querySelectorAll("[id^=up]");const details=[];let emptyIdx=[];'
-            'rows.forEach((e,i)=>{const p=parseFloat(e.value)||0;if(p<=0)emptyIdx.push(i+1);details.push({unit_price:p,qty:parseFloat(e.getAttribute("data-q"))||1,'
+            'window.quickFill=function(){const v=prompt("请输入报价总金额(元):");if(!v||isNaN(v))return;const es=document.querySelectorAll("[id^=ex]");const n=es.length;'
+            'const per=parseFloat(v)/n;es.forEach((e,i)=>{const tr0=(document.getElementById("tx"+i)||{}).value;const tr=(tr0===""||isNaN(parseFloat(tr0)))?13:parseFloat(tr0);e.value=(per/(1+tr/100)).toFixed(2)});calc();'
+            'alert("已按平均分摊到每行(按不含税单价)，可再逐行微调")};'
+            'window.sub=async function(){const rows=document.querySelectorAll("[id^=ex]");const details=[];let emptyIdx=[];'
+            'rows.forEach((e,i)=>{const ex=parseFloat(e.value)||0;if(ex<=0)emptyIdx.push(i+1);'
+            'const tr0=(document.getElementById("tx"+i)||{}).value;const tr=(tr0===""||isNaN(parseFloat(tr0)))?13:parseFloat(tr0);'
+            'const ht=ex*(1+tr/100);'
+            'details.push({excl_price:ex,tax_rate:tr,unit_price:Math.round(ht*100)/100,qty:parseFloat(e.getAttribute("data-q"))||1,'
             'delivery:(document.getElementById("dl"+i)||{}).value||"",warranty:(document.getElementById("wr"+i)||{}).value||"",'
             'brand:(document.getElementById("br"+i)||{}).value||"",remark:(document.getElementById("rm"+i)||{}).value||""})});'
-            'if(emptyIdx.length){alert("请填写所有物料的含税单价（第"+emptyIdx.join("、")+"行未填）");return}'
+            'if(emptyIdx.length){alert("请填写所有物料的不含税单价（第"+emptyIdx.join("、")+"行未填）");return}'
             'const shipTotal=parseFloat((document.getElementById("shipTotal")||{}).value)||0;'
             'if(shipTotal<=0){alert("请填写总价（含税含运）——整单含运费的总金额");return}'
             'const supRemark=(document.getElementById("supRemark")||{}).value||"";'
@@ -7519,6 +7559,19 @@ def inquiry_vendor_quote(token):
                         _x['warranty'] = _sw  # 缺省/达标 → 按申请标准落库
         except Exception:
             pass
+    # V11.268 需求1: 不含税单价+税率 → 服务端重算含税单价(防前端篡改); 兼容旧式仅传含税单价
+    if details:
+        for _x in details:
+            try:
+                _ex0 = float(_x.get('excl_price') or 0)
+                _rt1 = _x.get('tax_rate')
+                if _ex0 > 0 and _rt1 not in (None, ''):
+                    _rtv = max(0.0, float(_rt1))
+                    _x['excl_price'] = round(_ex0, 2)
+                    _x['tax_rate'] = _rtv
+                    _x['unit_price'] = round(_ex0 * (1 + _rtv / 100.0), 2)
+            except Exception:
+                pass
     # V11.41: 行明细报价(每行单价+备注), 合计=Σ单价×数量; 兼容旧版总价提交
     # V11.162: 含运总价=商家填的 quote_price(整单含运费), 明细合计只作参考不再覆盖
     _final_price = price
@@ -7673,7 +7726,8 @@ def api_inquiry_select(iid):
         price = float(_q.get('unit_price') or 0) or 0
         amt = round(price * qty, 2)
         grand_amt += amt
-        rows.append((it['item_name'], it['spec'] or '', it['unit'] or '个', qty, price, amt))
+        # V11.268 需求2: 行税率随询价明细带入订单(无则0)
+        rows.append((it['item_name'], it['spec'] or '', it['unit'] or '个', qty, price, amt, inquiry_line_tax(_q, amt)[0]))
     # V11.259: 商家未分项报价标记(行单价=整单总价分摊参考价)
     _is_split = False
     # 兜底: 商家未填单价(旧数据) → 回退按申请参考金额比例分摊报价总额
@@ -7691,7 +7745,7 @@ def api_inquiry_select(iid):
             amt = round(amt, 2)
             price = round(amt / qty, 2) if qty else 0
             grand_amt += amt
-            rows.append((it['item_name'], it['spec'] or '', it['unit'] or '个', qty, price, amt))
+            rows.append((it['item_name'], it['spec'] or '', it['unit'] or '个', qty, price, amt, 0.0))
     first = rows[0]
     # 商家详细信息自动填入订单
     contact = (s['contact'] or '').strip()
@@ -7733,7 +7787,7 @@ def api_inquiry_select(iid):
     oid = conn.execute("SELECT id FROM purchase_orders WHERE order_no=?", (no,)).fetchone()[0]
     for r in rows:
         conn.execute("INSERT INTO order_items(order_id,item_name,spec,unit,quantity,price,amount,tax_rate,tax_amount,total_amount,remark) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                     (oid, r[0], r[1], r[2], r[3], r[4], r[5], 0, 0, r[5], ('整单总价分摊参考价(商家未分项报价)' if _is_split else '')))
+                     (oid, r[0], r[1], r[2], r[3], r[4], r[5], r[6], _tax_of(r[6], r[5]), r[5], ('整单总价分摊参考价(商家未分项报价)' if _is_split else '')))
     conn.execute("UPDATE inquiry_suppliers SET is_selected=1 WHERE id=?", (sid,))
     _trace_biz('purchase_order', 'purchase_orders', oid, '定标生成订单', '整单定标-'+s['supplier_name'], conn=conn)
     # V11.73: 定标审批通过后直接生效(领导已选定供应商,无需再次审批)
@@ -7815,7 +7869,8 @@ def api_inquiry_split_select(iid):
             amt = round(price * qty, 2)
             total += amt
             rows.append((it['item_name'], it['spec'] or '', it['unit'] or '个', qty, price, amt,
-                         (q.get('brand') or ''), (q.get('delivery') or ''), (q.get('warranty') or ''), (q.get('remark') or '')))
+                         (q.get('brand') or ''), (q.get('delivery') or ''), (q.get('warranty') or ''), (q.get('remark') or ''),
+                         inquiry_line_tax(q, amt)[0]))  # V11.268 需求2: 行税率随询价带入
         if total <= 0:
             total = float(inquiry_eff_price(dict(s), 'quote_price')) or float(s['quote_price'] or 0)
         first = rows[0]
@@ -7838,7 +7893,7 @@ def api_inquiry_split_select(iid):
         for r in rows:
             conn.execute("""INSERT INTO order_items(order_id,item_name,spec,unit,quantity,price,amount,tax_rate,tax_amount,total_amount,remark)
                 VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-                (oid, r[0], r[1], r[2], r[3], r[4], r[5], 0, 0, r[5],
+                (oid, r[0], r[1], r[2], r[3], r[4], r[5], r[10], _tax_of(r[10], r[5]), r[5],
                  '品牌:%s 交付:%s 质保:%s %s' % (r[6], r[7], r[8], r[9]) if (r[6] or r[7] or r[8]) else ''))
         conn.execute("UPDATE inquiry_suppliers SET is_selected=1 WHERE id=?", (sid,))
         _trace_biz('purchase_order', 'purchase_orders', oid, '分项定标生成订单', '分项定标-'+s['supplier_name'], conn=conn)
@@ -7862,6 +7917,136 @@ def api_inquiry_split_select(iid):
     conn.close()
     return jsonify({'success': True, 'orders': created, 'count': len(created),
                     'message': '✅ 分项定标完成，已按%d家供应商生成%d个订单' % (len(created), len(created))})
+
+@app.route('/api/inquiries/<int:iid>/approve-split-select', methods=['POST'])
+@login_required
+def api_inquiry_approve_split_select(iid):
+    """V11.268 需求4: 审批人在审批页做分项定标 — 每项物资选供应商 → 按供应商分组生成订单并直接审批通过
+    采购员提交审批前的定标能力(select/split-select)保持不变; 本操作记入审批实例(意见/签名)与操作日志"""
+    d = request.json or {}
+    picks = d.get('items') or []
+    _sig = d.get('signature') or ''
+    _cmt = (d.get('comment') or '').strip()
+    conn = db()
+    i = conn.execute("SELECT * FROM inquiries WHERE id=?", (iid,)).fetchone()
+    if not i:
+        conn.close(); return jsonify({'error': '询价单不存在'}), 404
+    if i['status'] != '定标审批中':
+        conn.close(); return jsonify({'error': '当前状态不可审批定标（仅"定标审批中"可操作）'}), 400
+    if not picks:
+        conn.close(); return jsonify({'error': '未选择任何物资的供应商'}), 400
+    # 权限: 本单待审批环节的审批人, 或 领导/管理员
+    _pend = conn.execute("SELECT * FROM approval_instances WHERE biz_type='inquiry_approval' AND biz_id=? AND status='pending' ORDER BY level_no LIMIT 1", (iid,)).fetchone()
+    _uname = session.get('user_name') or ''
+    _urole = session.get('user_role') or ''
+    _uid = str(session.get('user_id') or '')
+    _ok = _urole in ('系统管理员', '分管领导', '总经理')
+    if not _ok and _pend:
+        _apv = (_pend['approver'] or '').strip()
+        _ok = bool(_apv) and (_apv == _uname or str(_pend['approver_id'] or '') == _uid)
+    if not _ok:
+        conn.close(); return jsonify({'error': '无权限：仅本单审批人或领导可做分项定标'}), 403
+    pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (i['req_id'],)).fetchone()
+    if not pr:
+        conn.close(); return jsonify({'error': '来源申请缺失'}), 400
+    sups = {r['id']: dict(r) for r in conn.execute("SELECT * FROM inquiry_suppliers WHERE inquiry_id=?", (iid,)).fetchall()}
+    items = {r['id']: dict(r) for r in conn.execute("SELECT * FROM request_items WHERE req_id=?", (i['req_id'],)).fetchall()}
+    valid = []
+    for p in picks:
+        it = items.get(p.get('item_id'))
+        s = sups.get(p.get('supplier_id'))
+        if not it or not s:
+            conn.close(); return jsonify({'error': '选择项无效'}), 400
+        if not s.get('quote_price') or s['quote_price'] <= 0:
+            conn.close(); return jsonify({'error': '供应商%s尚未报价' % s['supplier_name']}), 400
+        valid.append((it, s))
+    if len(valid) != len(items):
+        conn.close(); return jsonify({'error': '必须为每个物资选择供应商'}), 400
+    groups = {}
+    for it, s in valid:
+        groups.setdefault(s['id'], {'sup': s, 'items': []})['items'].append(it)
+    created = []
+    all_items_list = conn.execute("SELECT * FROM request_items WHERE req_id=? ORDER BY id", (i['req_id'],)).fetchall()
+    item_pos = {it['id']: pos for pos, it in enumerate(all_items_list)}
+    for sid, g in groups.items():
+        s = g['sup']
+        its = g['items']
+        no = gen_no('CG', 'purchase_orders', 'order_no', conn)
+        qd = {}
+        try:
+            qd_list = json.loads(inquiry_eff_price(dict(s), 'quote_details'))
+            for idx, q in enumerate(qd_list):
+                qd[idx] = q
+        except Exception:
+            qd = {}
+        total = 0.0
+        rows = []
+        for it in its:
+            qty = float(it['quantity'] or 1)
+            pos = item_pos.get(it['id'], 0)
+            q = qd.get(pos, {})
+            price = float(q.get('unit_price') or 0) or 0
+            amt = round(price * qty, 2)
+            total += amt
+            rows.append((it['item_name'], it['spec'] or '', it['unit'] or '个', qty, price, amt,
+                         (q.get('brand') or ''), (q.get('delivery') or ''), (q.get('warranty') or ''), (q.get('remark') or ''),
+                         inquiry_line_tax(q, amt)[0]))  # V11.268 需求2: 行税率带入
+        if total <= 0:
+            total = float(inquiry_eff_price(dict(s), 'quote_price')) or float(s['quote_price'] or 0)
+        first = rows[0]
+        detail_parts = ['三方询价分项定标(审批人): %s' % s['supplier_name']]
+        for r in rows:
+            detail_parts.append('%s x%s ¥%.2f' % (r[0], r[3], r[5]))
+        _adj_rm = (s.get('adj_remark') or '').strip() if 'adj_remark' in s.keys() else ''
+        if _adj_rm:
+            detail_parts.append('采购议价备注: %s' % _adj_rm)
+        detail_parts.append('询价单号: %s' % i['inq_no'])
+        remark = '; '.join(detail_parts)
+        conn.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,
+            supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (no, i['req_id'], first[0], first[1], sum(r[3] for r in rows), first[2], first[4], total,
+             first[10], _tax_of(first[10], total), total,
+             s['supplier_name'], pr['requester'] or '', '后勤类', _uname, session.get('user_id'),
+             pr['target_date'] or '', '货到付款', remark, 0,
+             json.dumps([], ensure_ascii=False), '已通过'))
+        oid = conn.execute("SELECT id FROM purchase_orders WHERE order_no=?", (no,)).fetchone()[0]
+        for r in rows:
+            conn.execute("""INSERT INTO order_items(order_id,item_name,spec,unit,quantity,price,amount,tax_rate,tax_amount,total_amount,remark)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                (oid, r[0], r[1], r[2], r[3], r[4], r[5], r[10], _tax_of(r[10], r[5]), r[5],
+                 '品牌:%s 交付:%s 质保:%s %s' % (r[6], r[7], r[8], r[9]) if (r[6] or r[7] or r[8]) else ''))
+        conn.execute("UPDATE inquiry_suppliers SET is_selected=1 WHERE id=?", (sid,))
+        try:
+            _trace_biz('purchase_order', 'purchase_orders', oid, '审批分项定标生成订单', '审批分项定标-' + s['supplier_name'], conn=conn)
+        except Exception:
+            pass
+        try:
+            _rno = gen_no('RK', 'receivings', 'receive_no', conn)
+            _rqty = sum(r[3] for r in rows)
+            _rjson = json.dumps(
+                [{'item_name': r[0], 'spec': r[1] or '', 'quantity': r[3], 'unit': r[2] or '个', 'price': r[4] or 0} for r in rows],
+                ensure_ascii=False)
+            _rname = (rows[0][0] + ' 等%d项' % len(rows)) if len(rows) > 1 else rows[0][0]
+            conn.execute("INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,dept,items_json,is_est) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,0)",
+                (_rno, None, oid, _rname, '', _rqty, rows[0][2] or '个', 0, '待入库', now(),
+                 '审批分项定标: 订单%s自动进入入库板块(整批%d项)' % (no, len(rows)), pr['dept'] or '', _rjson))
+        except Exception as _re:
+            log('系统', '审批分项定标生成入库单失败', f'order{oid}: {str(_re)[:80]}')
+        created.append({'order_no': no, 'supplier': s['supplier_name'], 'total': total})
+    conn.execute("UPDATE inquiries SET status='已生成订单', updated_at=? WHERE id=?", (now(), iid))
+    conn.execute("UPDATE inquiry_approvals SET status='已完成' WHERE inquiry_id=?", (iid,))
+    # 审批实例置通过(记录审批人/意见/签名) — 多级时仅本环节, 无待审环节则整体完成
+    try:
+        conn.execute("UPDATE approval_instances SET status='approved', approver=?, comment=?, processed_at=?, signature=? WHERE biz_type='inquiry_approval' AND biz_id=? AND status='pending'",
+                     (_uname, _cmt or '同意（审批人分项定标）', now(), _sig, iid))
+    except Exception:
+        pass
+    conn.commit()
+    log(_uname, '审批分项定标', '%s → 生成%d个订单' % (i['inq_no'], len(created)))
+    conn.close()
+    return jsonify({'success': True, 'orders': created, 'count': len(created),
+                    'message': '✅ 已分项定标并审批通过，按%d家供应商生成%d个订单' % (len(created), len(created))})
+
 
 def gen_inquiry_xlsx_file(iid):
     """V11.135: 生成询价比价单Excel文件存uploads, 返回文件路径(导出接口/钉钉附件共用)
@@ -7938,7 +8123,7 @@ def api_inquiry_export(iid):
     wb = Workbook(); ws = wb.active; ws.title = '询价单'
     # V11.132: 列数提前算(4+每家7列 — V11.180: 每家加"厂家原始报价"留痕列), 标题/章节/备注框全部按全宽合并
     n_sup = len(sups)
-    col_count = 4 + n_sup * 7
+    col_count = 4 + n_sup * 9  # V11.268 需求1: 每组 7→9 列(每家新增 不含税单价/税率)
     # V11.132: 横向A4+缩放, 否则16列挤在纵向A4上必乱
     ws.page_setup.orientation = 'landscape'
     ws.page_setup.paperSize = 9  # A4
@@ -8016,16 +8201,17 @@ def api_inquiry_export(iid):
     sup_head = ['序号', '物料名称', '数量', '规格型号']
     for s in sups:
         _tag_adj = '（调整后）' if inquiry_is_adjusted(s) else ''
-        sup_head += [f"{s['supplier_name']} 含税单价{_tag_adj}", f"{s['supplier_name']} 总价（含税含运）{_tag_adj}", f"{s['supplier_name']} 品牌",
+        sup_head += [f"{s['supplier_name']} 不含税单价", f"{s['supplier_name']} 税率%",
+                     f"{s['supplier_name']} 含税单价{_tag_adj}", f"{s['supplier_name']} 总价（含税含运）{_tag_adj}", f"{s['supplier_name']} 品牌",
                      f"{s['supplier_name']} 交付", f"{s['supplier_name']} 质保", f"{s['supplier_name']} 厂家备注",
                      f"{s['supplier_name']} 厂家原始报价"]
-    # col_count 已在前面按 4+每家7列 算好
+    # col_count 已在前面按 4+每家9列 算好
     for ci, h in enumerate(sup_head, 1):
         c = ws.cell(row, ci, h); c.border = border
         c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
         # V11.188: 每家厂家的表头列组涂各自浅色(厂家名行首列), 视觉上一家一块; 文字用深色(浅底白字看不清)
         if ci > 4:
-            _si = (ci - 5) // 7
+            _si = (ci - 5) // 9
             if 0 <= _si < n_sup:
                 c.fill = _sup_fill(_si)
                 c.font = Font(name='微软雅黑', size=10, bold=True, color='1F3864')
@@ -8054,11 +8240,19 @@ def api_inquiry_export(iid):
             ori_det = sup_ori_details[si]
             unit_p = None; total_p = None; remark = ''
             ori_unit_p = None; ori_total_p = None
+            excl_p = None; tax_r = None  # V11.268 需求1: 不含税单价/税率
             if det and idx - 1 < len(det):
                 d_i = det[idx - 1]
                 if d_i.get('unit_price') is not None:
                     unit_p = float(d_i.get('unit_price') or 0)
                     total_p = unit_p * qty
+                try:
+                    if d_i.get('excl_price') not in (None, ''):
+                        excl_p = float(d_i.get('excl_price') or 0)
+                    if d_i.get('tax_rate') not in (None, ''):
+                        tax_r = float(d_i.get('tax_rate') or 0)
+                except Exception:
+                    pass
                 remark = d_i.get('remark') or ''
             if ori_det and idx - 1 < len(ori_det):
                 o_i = ori_det[idx - 1]
@@ -8075,27 +8269,30 @@ def api_inquiry_export(iid):
                 # V11.132: 金额千分位+两位小数, 领导看更专业
                 # V11.180: 末列=厂家原始报价(留痕); 未议价时原始价=调整价且标注"—"
                 _ori_txt = '{:,.2f}'.format(ori_total_p) if (ori_total_p is not None and inquiry_is_adjusted(s)) else ('{:,.2f}'.format(total_p) if ori_total_p is None else '{:,.2f}'.format(ori_total_p))
-                vals += ['{:,.2f}'.format(unit_p), '{:,.2f}'.format(total_p),
+                # V11.268 需求1: 不含税单价/税率(议价后缺字段按 含税单价÷(1+税率) 反算不含税)
+                _ex_cell = '{:,.2f}'.format(excl_p) if excl_p is not None else ('{:,.2f}'.format(unit_p / (1 + tax_r / 100.0)) if (tax_r or 0) > 0 else '')
+                _tx_cell = ('%g%%' % tax_r) if tax_r is not None else ''
+                vals += [_ex_cell, _tx_cell, '{:,.2f}'.format(unit_p), '{:,.2f}'.format(total_p),
                          brand, delivery, warranty, remark, _ori_txt]
                 total_per_sup[si] += total_p
             else:
-                vals += ['', '', brand, delivery, warranty, remark, '']
+                vals += ['', '', '', '', brand, delivery, warranty, remark, '']
             row_prices.append((unit_p, total_p))
         # 最低单价标红
         unit_prices = [p[0] for p in row_prices if p[0] is not None]
         min_unit = min(unit_prices) if unit_prices else None
         for ci, v in enumerate(vals, 1):
             c = ws.cell(row, ci, v); c.border = border
-            c.alignment = Alignment(horizontal='center' if ci <= 4 or (ci - 5) % 7 != 0 else 'left', vertical='center', wrap_text=True)
+            c.alignment = Alignment(horizontal='center' if ci <= 4 or (ci - 5) % 9 != 0 else 'left', vertical='center', wrap_text=True)
             # V11.188: 数据行厂家列组浅色底(最低价标红时红底覆盖)
             if ci > 4:
-                _si = (ci - 5) // 7
+                _si = (ci - 5) // 9
                 if 0 <= _si < n_sup:
                     c.fill = _sup_fill(_si)
-            # 单价列: 最低标红加粗+★（V11.145: 领导一眼看到每项最便宜的厂家）— V11.180: 每组7列
+            # 含税单价列: 最低标红加粗+★（V11.145: 领导一眼看到每项最便宜的厂家）— V11.268: 每组9列, 含税单价=组内偏移2
             if unit_prices and min_unit is not None:
-                k = (ci - 5) // 7
-                if 0 <= k < n_sup and (ci - 5) % 7 == 0:
+                k = (ci - 5) // 9
+                if 0 <= k < n_sup and (ci - 5) % 9 == 2:
                     if row_prices[k][0] is not None and abs(row_prices[k][0] - min_unit) < 0.001:
                         c.font = Font(name='微软雅黑', size=11, bold=True, color='C00000')
                         c.fill = PatternFill('solid', fgColor='FFEB9C')  # V11.188: 最低价深黄高亮(区别于厂家浅色组)
@@ -8112,20 +8309,22 @@ def api_inquiry_export(iid):
         ws.cell(row, cc).border = border
     total_min = None
     for si, t in enumerate(total_per_sup):
-        # V11.126: 总价落位修正到 总价列(7+si*7) — V11.180: 每组7列; V11.188: 合计行厂家组同色
-        ws.cell(row, 6 + si * 7, '').border = border
-        c = ws.cell(row, 7 + si * 7, '{:,.2f}'.format(round(t, 2)))
+        # V11.268: 每组9列 — 组起始=5+si*9; 税率/含税单价列留空, 总价落"总价列"(组内偏移3)
+        _g = 5 + si * 9
+        ws.cell(row, _g + 1, '').border = border
+        ws.cell(row, _g + 2, '').border = border
+        c = ws.cell(row, _g + 3, '{:,.2f}'.format(round(t, 2)))
         c.border = border; c.font = label_font
         c.alignment = Alignment(horizontal='center', vertical='center')
         c.fill = _sup_fill(si)
         if t > 0 and (total_min is None or t < total_min):
             total_min = t
-        for cc in range(8 + si * 7, 12 + si * 7):
+        for cc in range(_g + 4, _g + 9):
             ws.cell(row, cc).border = border
             ws.cell(row, cc).fill = _sup_fill(si)
     for si, t in enumerate(total_per_sup):
         if t > 0 and total_min is not None and abs(t - total_min) < 0.001:
-            _min_c = ws.cell(row, 7 + si * 7)
+            _min_c = ws.cell(row, 5 + si * 9 + 3)
             _min_c.font = min_font_s
             _min_c.fill = PatternFill('solid', fgColor='FFEB9C')  # V11.188: 最低总价深黄底(区别于厂家浅色)
     # V11.132: ★说明移到合计行最后列, 最低总价已标红黄底, 领导一眼看到最便宜
@@ -11834,11 +12033,20 @@ def api_contract_generate():
             doc = Document(tpl_path)
             # 方案A(2026-09-07用户拍板): 明细金额=含税含运总价(价税合计口径), 合同金额=Σ录入金额, 永不加税放大;
             # 税率>0时按价内倒拆展示税金/不含税(正式样式, 金额不变); 税率0/未配=一口价, 合同只写总价一句
+            # V11.268 需求3: 生成合同时税率可手改(优先); 默认自动取 明细首项→订单→0
+            _rq_tax = None
+            try:
+                if d.get('tax_rate') not in (None, ''):
+                    _rq_tax = max(0.0, float(d.get('tax_rate')))
+            except Exception:
+                _rq_tax = None
             if _oi:
                 total = round(sum(float(r['amount'] or 0) for r in _oi), 2)
                 rate = float(_oi[0]['tax_rate'] or 0)
                 if rate <= 0 and (o['tax_rate'] or 0):  # V11.254: 明细未录税率时回退订单税率
                     rate = float(o['tax_rate'] or 0)
+                if _rq_tax is not None:
+                    rate = _rq_tax
                 if rate > 0:
                     amt = round(total/(1+rate/100.0), 2)
                     tax = round(total - amt, 2)
@@ -11847,6 +12055,8 @@ def api_contract_generate():
             else:
                 total = round(float(o['amount'] or 0), 2)
                 rate = float(o['tax_rate'] or 0)
+                if _rq_tax is not None:
+                    rate = _rq_tax
                 if rate > 0:
                     amt = round(total/(1+rate/100.0), 2)
                     tax = round(total - amt, 2)
@@ -11856,6 +12066,10 @@ def api_contract_generate():
             try:
                 conn.execute("UPDATE purchase_orders SET amount=?, tax_amount=?, total_amount=?, tax_rate=?, updated_at=? WHERE id=?",
                              (round(total, 2), round(tax, 2), round(total, 2), rate, now(), oid))
+                # V11.268 需求3: 手改税率时同步订单明细(合同与订单口径一致)
+                if _rq_tax is not None:
+                    conn.execute("UPDATE order_items SET tax_rate=?, tax_amount=round(amount-amount/(1+?/100.0),2) WHERE order_id=?",
+                                 (rate, rate, oid))
                 conn.commit()
             except Exception:
                 pass
@@ -13029,7 +13243,7 @@ def api_order_download(oid):
     total_qty = 0.0; total_amt = 0.0
     for i, it in enumerate(items, 1):
         vals = [i, it['item_name'], it['spec'] or '', it['unit'] or '个', it['quantity'],
-                it['price'] or 0, it['tax_rate'] or 13, it['total_amount'] or it['amount'] or 0]
+                it['price'] or 0, (it['tax_rate'] if it['tax_rate'] is not None else 0), it['total_amount'] or it['amount'] or 0]
         total_qty += float(it['quantity'] or 0); total_amt += float(it['total_amount'] or it['amount'] or 0)
         for j, v in enumerate(vals, 1):
             cell = ws.cell(r, j, v); cell.border = border; cell.font = CN()

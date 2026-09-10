@@ -2565,7 +2565,7 @@ async function showOrder(ordid){
           `<button class="lnk" onclick="updateItemStatus(${it.id},'已发货')">标记发货</button>` :
           it.status==='已发货' ?
           `<button class="lnk" onclick="updateItemStatus(${it.id},'已到货')">标记到货</button>` : '';
-        return `<tr><td>${esc(it.item_name)}</td><td>${esc(it.spec||'')}</td><td>¥${(it.price||0).toFixed(2)}</td><td>${it.quantity}${esc(it.unit||'')}</td><td>${(it.tax_rate||0)>0?it.tax_rate+'%':'—'}</td><td>¥${(it.total_amount||0).toFixed(2)}</td><td><span class="tag ${statusMap[it.status]||'tg-r'}">${esc(it.status||'未联系')}</span></td><td>${statusBtns}</td></tr>`;
+        return `<tr><td>${esc(it.item_name)}</td><td>${esc(it.spec||'')}</td><td>¥${(it.price||0).toFixed(2)}</td><td>${it.quantity}${esc(it.unit||'')}</td><td>${(it.tax_rate===null||it.tax_rate===undefined)?'—':(it.tax_rate+'%')}</td><td>¥${(it.total_amount||0).toFixed(2)}</td><td><span class="tag ${statusMap[it.status]||'tg-r'}">${esc(it.status||'未联系')}</span></td><td>${statusBtns}</td></tr>`;
       }).join('')}
       <tr style="font-weight:700;background:#f4f7fd"><td colspan="3">合计</td><td>${o.total_qty||o.quantity}</td><td></td><td>¥${(o.total_amount||0).toFixed(2)}</td><td colspan="2"></td></tr></tbody></table>`;
   }
@@ -2819,6 +2819,7 @@ async function genContractInv(oid,tpl){
     <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
       <div style="font-size:10px"><label style="color:#555">🏢 公司</label> <select id="gcCompany" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option>加载中...</option></select></div>
       <div style="font-size:10px"><label style="color:#555">📁 合同类目</label> <select id="gcCategory" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="CLCG">材料采购(CLCG)</option><option value="SBCG">设备采购(SBCG)</option><option value="WXHT">维修合同(WXHT)</option><option value="GCJS">工程建设(GCJS)</option><option value="GCWZ">工程物资(GCWZ)</option><option value="JSFW">技术服务(JSFW)</option><option value="QTHT">其他合同(QTHT)</option><option value="XLXS">修理修缮(XLXS)</option></select></div>
+      <div style="font-size:10px"><label style="color:#555">🧾 税率%</label> <input id="gcTaxRate" type="number" min="0" step="0.01" placeholder="自动" style="width:70px;font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"> <span style="color:#999;font-size:9px">默认自动带出询价税率，可手改（0=不开票）</span></div>
     </div>
     <div style="font-size:10px;color:#666;margin-bottom:6px">不同合同的开票节点不一样（如：预付30%到账后开票 / 按付款进度开票 / 验收合格后开全额票），请按本合同实际约定<b>依顺序录入节点</b>；不填则按模板默认"验收合格后开具全额发票"。</div>
     <div class="invnd-box" id="gcInvNodes"></div>
@@ -2833,6 +2834,11 @@ async function genContractInv(oid,tpl){
     const csel=id('gcCompany');
     if(csel&&m&&m.companies&&m.companies.length){csel.innerHTML=m.companies.map(c=>`<option value="${esc(c.code)}">${esc(c.name)}(${esc(c.code)})</option>`).join('')}
   }catch(e){}})();
+  // V11.268 需求3: 默认带出订单明细税率(询价链路已把税率带入订单)
+  (async()=>{try{const od=await api('/orders/'+oid);const _it=(od.items||[])[0]||{};
+    const _tax=(_it.tax_rate!==null&&_it.tax_rate!==undefined)?_it.tax_rate:((od.order&&od.order.tax_rate)||0);
+    const ti=id('gcTaxRate');if(ti&&_tax)ti.value=_tax;
+  }catch(e){}})();
 }
 async function doGenContract(oid,tpl){
   // V11.150: 防连点
@@ -2845,6 +2851,9 @@ async function doGenContract(oid,tpl){
   const _gc=id('gcCompany');const _gcat=id('gcCategory');
   if(_gc&&_gc.value)_body.company=_gc.value;
   if(_gcat&&_gcat.value)_body.category=_gcat.value;
+  // V11.268 需求3: 手改税率(留空=自动取明细首项/订单税率)
+  const _trEl=id('gcTaxRate');
+  if(_trEl&&_trEl.value!==''&&_trEl.value!==null)_body.tax_rate=parseFloat(_trEl.value);
   if(_nodes&&_nodes.length){_body.nodes=_nodes}
   if(_ic){_body.invoice_clause=_ic}
   const r=await api('/contracts/generate',{method:'POST',body:JSON.stringify(_body)});
@@ -3260,10 +3269,15 @@ async function urgentRemind(bt,bid){
 async function doApprove(bt,bid,role){
   // V11.2: 电子签名 — 弹出手写签名板, 领导在线签字后同意
   // V11.217: 库管员节点(采购申请) — 先核对实物库存+填采购意见, 再签名同意
+  // V11.268 需求4: 询价定标审批 — 可为每项物资分项定标(默认最低价), 一步生成订单+审批通过
   let _invHtml='';
   if(bt=='purchase_request' && role=='库管员'){
     _invHtml='<div style="font-size:11px;margin-bottom:8px">📦 <b>库管库存核对</b>（逐项核对现有库存，可判断是否可减少采购数量）<div id="rpInvCheck" style="font-size:10px;color:#666;margin-top:4px">加载库存中...</div></div>';
   }
+  if(bt=='inquiry_approval'){
+    _invHtml='<div style="font-size:11px;margin-bottom:8px">⚖️ <b>分项定标</b>（可为每项物资分别选择供应商，默认取最低价；如不需分项，直接点「同意并签字」按原流程审批）<div id="apvSplitBox" style="font-size:10px;color:#666;margin-top:4px">加载报价中...</div></div>';
+  }
+  const _splitBtn=(bt=='inquiry_approval')?`<button class="btn btn-p btn-sm" onclick="submitSplitApprove(${bid})">⚖️ 分项定标并同意</button>`:'';
   showDetail('✍️ 审批签字',`
     <div style="font-size:11px;margin-bottom:6px">请在下方签名区<span style="color:var(--d)">手写签名</span>（鼠标或手指书写），签字后点击「同意并签字」完成审批：</div>
     ${_invHtml}
@@ -3274,11 +3288,50 @@ async function doApprove(bt,bid,role){
     <div style="margin-top:6px;font-size:10px;color:#999">审批人：<b style="color:var(--s)">${esc(ME.name||'')}</b> ｜ 签字即表示同意该单据审批</div>`,
     `<button class="btn btn-o" onclick="closeMod()">取消</button>
      <button class="btn btn-w btn-sm" onclick="clearSign()">🗑 清除重写</button>
+     ${_splitBtn}
      <button class="btn btn-p" onclick="submitSign('${bt}',${bid})">✅ 同意并签字</button>`);
   initSignPad();
   if(bt=='purchase_request' && role=='库管员'){
     loadKeeperStockCheck(bid);
   }
+  if(bt=='inquiry_approval'){
+    loadApvSplit(bid);
+  }
+}
+// V11.268 需求4: 审批页分项定标 — 拉各供应商逐项报价, 每项下拉选择(默认最低价)
+async function loadApvSplit(iid){
+  const box=id('apvSplitBox'); if(!box)return;
+  try{
+    const d=await api('/inquiries/'+iid);
+    const items=d.items||[];
+    const sups=(d.suppliers||d.sups||[]).filter(s=>(s.quote_price||0)>0);
+    if(!items.length||!sups.length){box.innerHTML='<span style="color:#999">暂无报价数据，可直接签名同意</span>';return}
+    const det={};
+    sups.forEach(s=>{try{det[s.id]=JSON.parse(s.quote_details||'[]')}catch(e){det[s.id]=[]}});
+    const rows=items.map((it,idx)=>{
+      const opts=sups.map(s=>{const q=(det[s.id]||[])[idx]||{};const up=q.unit_price;
+        return {id:s.id,name:s.supplier_name,price:(up!==null&&up!==undefined&&up!=='')?parseFloat(up):null}});
+      let best=null;opts.forEach(o=>{if(o.price!==null&&(best===null||o.price<best.price))best=o});
+      const optsHtml=opts.map(o=>`<option value="${o.id}" ${best&&o.id===best.id?'selected':''}>${esc(o.name)}${o.price!==null?' ¥'+o.price.toFixed(2):''}</option>`).join('');
+      return `<div style="display:flex;gap:6px;align-items:center;padding:3px 0;border-bottom:1px solid #f0f2f5">
+        <span style="flex:2">${esc(it.item_name)}${it.spec?` <span style="color:#999;font-size:9px">${esc(it.spec)}</span>`:''}</span>
+        <span style="flex:1">${it.quantity||0}${esc(it.unit||'')}</span>
+        <select class="apvSplitSel" data-item="${it.id}" style="flex:2.4;font-size:10px;padding:3px 4px;border:1px solid #d0d7e2;border-radius:4px">${optsHtml}</select>
+      </div>`}).join('');
+    box.innerHTML=rows+'<div style="margin-top:4px;font-size:9px;color:#888">默认已选最低价；点「⚖️ 分项定标并同意」将按以上选择生成订单并完成审批（操作留日志）。</div>';
+  }catch(e){box.innerHTML='<span style="color:#e74c3c">报价加载失败，可直接签名同意</span>'}
+}
+async function submitSplitApprove(iid){
+  const sels=[...document.querySelectorAll('.apvSplitSel')];
+  if(!sels.length){alert('无可定标数据（无报价）');return}
+  if(!confirm('确认按所选供应商分项定标并审批通过？将按供应商分别生成采购订单。'))return;
+  let sig='';
+  try{const cv=id('signPad');if(cv&&SIGN_CTX){const dd=SIGN_CTX.getImageData(0,0,cv.width,cv.height).data;let ink=0;for(let i=3;i<dd.length;i+=4){if(dd[i]>0)ink++}if(ink>=50)sig=cv.toDataURL('image/png')}}catch(e){}
+  const items=sels.map(s=>({item_id:parseInt(s.getAttribute('data-item')),supplier_id:parseInt(s.value)}));
+  const r=await api(`/inquiries/${iid}/approve-split-select`,{method:'POST',body:JSON.stringify({items,signature:sig,comment:'同意（审批人分项定标）'})});
+  if(r.success){alert('✅ '+(r.message||'已分项定标并审批通过'));closeMod();
+    try{loadApprovals&&loadApprovals()}catch(e){};try{loadInqs&&loadInqs()}catch(e){};try{loadOrders&&loadOrders()}catch(e){}}
+  else alert(r.error||'提交失败');
 }
 // V11.217: 库管员库存核对 — 拉申请物品+现库存, 每项可填建议采购数量/意见
 async function loadKeeperStockCheck(rid){
