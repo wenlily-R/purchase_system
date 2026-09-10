@@ -2229,7 +2229,7 @@ async function showInquiry(qid){
   if(d.status=='定标审批中') lowestNote = `<div style="margin:8px 0;padding:8px 10px;background:#fff8e1;border:1px solid #f5c518;border-radius:6px;font-size:11px;color:#8a6d3b">⏳ 已提交领导审批，等待领导选择采购方式（通过后这里会出现【分项定标】指引）</div>`;
   else if(d.status=='待定标') lowestNote = `<div style="margin:8px 0;padding:8px 10px;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:6px;font-size:11px;color:#2e7d32">✅ 领导已同意按各物资最低价择优采购 — 请点击【🔀 分项定标】，系统已按每项最低价默认勾选，确认后生成采购订单</div>`;
   else if(d.status=='已生成订单') lowestNote = `<div style="margin:8px 0;padding:8px 10px;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:6px;font-size:11px;color:#2e7d32">✅ 已按领导审批结果生成采购订单，可在【采购订单】查看</div>`;
-  const btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button><button class="lnk" style="color:#7c5cff" onclick="showDocOps('inquiry',${d.id},'询价单 ${esc(d.inq_no)}')">🕘 操作记录</button>${d.locked?'':`<button class="btn btn-p" onclick="exportInquiry(${d.id})">📥 导出Excel</button>`}${splitBtn}${submitBtn}`;
+  let btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button><button class="lnk" style="color:#7c5cff" onclick="showDocOps('inquiry',${d.id},'询价单 ${esc(d.inq_no)}')">🕘 操作记录</button>${d.locked?'':`<button class="btn btn-p" onclick="exportInquiry(${d.id})">📥 导出Excel</button>`}${splitBtn}${submitBtn}`;
   if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
   // V11.179: 询价审批详情也显示审批流程+驳回记录
   btns+=`<button class="btn btn-o btn-sm" style="color:#7c5cff" onclick="showChain('inquiry',${qid})">🔗 采购链路</button>`;
