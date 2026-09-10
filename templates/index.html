@@ -5700,6 +5700,8 @@ async function showForm(type){
     id('dmFooter').innerHTML=`<button class="btn btn-o" onclick="closeMod()">取消</button>
       <button class="btn btn-w" onclick="createPRequest(true)">💾 存草稿</button>
       <button class="btn btn-p" onclick="createPRequest()">提交申请</button>`;
+    // V11.265fix: 新建打开重置行计数器与表体(防上次表单残留计数→行号从4/5开始)
+    reqItemCount=0;id('reqItemList').innerHTML='';
     addReqItem();addReqItem();
     // 申请单号(前缀随部门, 序号当天总序) + 当日日期 自动带出
     reqNoByDept();
