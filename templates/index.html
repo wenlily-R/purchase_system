@@ -2230,11 +2230,15 @@ async function showInquiry(qid){
   const allQuoted = d.suppliers && d.suppliers.length > 0 && d.suppliers.every(s => (parseFloat(s.adj_price)||parseFloat(s.quote_price)) > 0);
   const submitBtn = (d.status=='询价中' && allQuoted) ? `<button class="btn btn-s" onclick="submitInquiryApproval(${d.id})" style="background:#27ae60">✅ 提交审批</button>` : '';
   // V11.270: 分项定标收窄为审批环节专属 — 采购员不再直接分项定标(入口去掉, 引导提交审批)
-  const splitBtn = '';
+  // V11.271: 待定标(领导已在钉钉选"按各物资最低价择优采购")仍须由审批人完成定标 —
+  //          恢复审批人的详情页入口(复用同一套分项定标界面), 否则采购员入口移除后该状态无路可走
+  const _isApprover = ['系统管理员','分管领导','总经理'].includes(ME.role||'');
+  const splitBtn = (d.status=='待定标' && _isApprover && allQuoted && d.suppliers.length>1)
+    ? `<button class="btn btn-p" onclick="showSplitSelect(${d.id},'approver')">🔀 分项定标（审批）</button>` : '';
   // V11.155e: 各状态醒目指引(领导审批中/待定标/已生成订单 采购员都明确下一步)
   let lowestNote = '';
   if(d.status=='定标审批中') lowestNote = `<div style="margin:8px 0;padding:8px 10px;background:#fff8e1;border:1px solid #f5c518;border-radius:6px;font-size:11px;color:#8a6d3b">⏳ 已提交领导审批 — 分项定标由审批人在审批环节操作，审批通过后系统自动生成采购订单</div>`;
-  else if(d.status=='待定标') lowestNote = `<div style="margin:8px 0;padding:8px 10px;background:#fff8e1;border:1px solid #f5c518;border-radius:6px;font-size:11px;color:#8a6d3b">⏳ 领导已同意按各物资最低价择优采购 — 分项定标由审批人完成（审批环节操作），请等待审批人定标生成订单</div>`;
+  else if(d.status=='待定标') lowestNote = `<div style="margin:8px 0;padding:8px 10px;background:#fff8e1;border:1px solid #f5c518;border-radius:6px;font-size:11px;color:#8a6d3b">⏳ 领导已同意按各物资最低价择优采购 — 分项定标由审批人完成（审批环节操作）${_isApprover?'：您可直接点右侧【🔀 分项定标（审批）】完成定标并生成采购订单':'，请等待审批人定标生成订单'}</div>`;
   else if(d.status=='已生成订单') lowestNote = `<div style="margin:8px 0;padding:8px 10px;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:6px;font-size:11px;color:#2e7d32">✅ 已按领导审批结果生成采购订单，可在【采购订单】查看</div>`;
   else if(d.status=='询价中' && allQuoted && d.suppliers.length>1) lowestNote = `<div style="margin:8px 0;padding:8px 10px;background:#eef6ff;border:1px solid #bcd9f7;border-radius:6px;font-size:11px;color:#1a4f8b">ℹ️ 分项定标由审批人在审批环节操作 — 请点击【✅ 提交审批】，提交后由审批人为每项物资选择供应商并生成采购订单</div>`;
   let btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button><button class="lnk" style="color:#7c5cff" onclick="showDocOps('inquiry',${d.id},'询价单 ${esc(d.inq_no)}')">🕘 操作记录</button>${d.locked?'':`<button class="btn btn-p" onclick="exportInquiry(${d.id})">📥 导出Excel</button>`}${splitBtn}${submitBtn}`;
