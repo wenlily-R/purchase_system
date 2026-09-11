@@ -6041,6 +6041,8 @@ def api_orders_execution_list():
             where.append("status IN (" + ','.join('?' * len(_sl)) + ")"); args += _sl
     if kw:
         where.append("(item_name LIKE ? OR order_no LIKE ?)"); args += [f'%{kw}%', f'%{kw}%']
+    # V11.271: 维修委托订单不进入"订单执行明细(到货跟踪)"——维修不走入库
+    where.append("(req_id IS NULL OR req_id NOT IN (SELECT id FROM purchase_requests WHERE req_type='设备维修'))")
     wsql = (' WHERE ' + ' AND '.join(where)) if where else ''
     rows = c.execute(f"SELECT * FROM purchase_orders{wsql} ORDER BY id DESC LIMIT 300", args).fetchall()
     out = []

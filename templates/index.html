@@ -359,7 +359,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
   </div>
 </div>
 <div class="page" id="pinquiries"><h2>🔍 三方询价</h2><div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="showInquiryForm()">+ 发起三方询价</button><button class="btn btn-w btn-sm" onclick="loadInquiries()">🔄 刷新</button></div><div class="card"><div class="cb" id="inquiriesTable"><div class="loading">加载中...</div></div></div></div>
-<div class="page" id="porders"><h2>📋 采购订单</h2><div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="showForm('order')">+ 新建订单</button><button class="btn btn-o btn-sm" onclick="showOrderExecList()">📋 订单执行明细表</button></div><div class="card"><div class="cb" id="ordersTable"><div class="loading">加载中...</div></div></div></div>
+<div class="page" id="porders"><h2>📋 采购订单</h2><div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-p btn-sm" id="ordNewBtn" onclick="showForm('order')">+ 新建订单</button><button class="btn btn-o btn-sm" onclick="showOrderExecList()">📋 订单执行明细表</button><span style="margin-left:auto;display:flex;gap:4px"><button class="btn btn-p btn-sm" id="ordTabAll" onclick="ordTab('')">全部</button><button class="btn btn-o btn-sm" id="ordTabMat" onclick="ordTab('mat')">📦 物资订单</button><button class="btn btn-o btn-sm" id="ordTabRep" onclick="ordTab('rep')">🔧 维修订单</button></span></div><div id="ordTip" style="display:none;font-size:10px;color:#8a4b0f;background:#fff8f0;border:1px solid #f0d9b5;border-radius:4px;padding:4px 8px;margin-bottom:4px">🔧 <b>维修委托订单</b>：由「维修询价 → 定标」自动生成（无需手工新建）；维修件不走验收入库，维修完成后在关联维修申请上点「✅ 登记完工」闭环。</div><div class="card"><div class="cb" id="ordersTable"><div class="loading">加载中...</div></div></div></div>
 <div class="page" id="papprovals"><h2>✅ 审批中心 <span style="font-size:10px;color:#999;font-weight:normal">(维修类申请与存量定损单审批请切换🔧维修审批中心办理)</span></h2>
   <div class="tabs" id="apprCenterTabs" style="margin-bottom:4px">
     <button class="act" data-c="buy" onclick="apprCenter('buy')">📦 采购审批中心</button>
@@ -2491,9 +2491,24 @@ async function selectInquirySupplier(iid,sid){
 }
 
 // Orders
+// V11.271: 订单页类型视图(全部/物资/维修) — 与申请、审批中心口径一致
+let ORD_TAB='';
+function ordTab(t){
+  ORD_TAB=t;
+  const map={'':'ordTabAll','mat':'ordTabMat','rep':'ordTabRep'};
+  Object.entries(map).forEach(([k,el])=>{const b=id(el);if(b){b.classList.toggle('btn-p',k===t);b.classList.toggle('btn-o',k!==t)}});
+  const tip=id('ordTip'); if(tip)tip.style.display=(t==='rep')?'':'none';
+  const nb=id('ordNewBtn'); if(nb)nb.style.display=(t==='rep')?'none':'';
+  loadOrders();
+}
 async function loadOrders(){
   const o=await api('/orders');
-  id('ordersTable').innerHTML=groupRnder(o, r=>r.created_at,['单号','物资','供应商','模式','金额','状态','采购进度','驳回','操作'],
+  const rep=o.filter(x=>x.req_type=='设备维修'), mat=o.filter(x=>x.req_type!='设备维修');
+  if(id('ordTabAll'))id('ordTabAll').textContent='全部 '+o.length;
+  if(id('ordTabMat'))id('ordTabMat').textContent='📦 物资订单 '+mat.length;
+  if(id('ordTabRep'))id('ordTabRep').textContent='🔧 维修订单 '+rep.length;
+  const list=ORD_TAB==='rep'?rep:(ORD_TAB==='mat'?mat:o);
+  id('ordersTable').innerHTML=groupRnder(list, r=>r.created_at,['单号','物资','供应商','模式','金额','状态','采购进度','驳回','操作'],
     r=>{
       // 采购进度：根据items状态计算; V11.258: 维修委托订单=完工登记进度
       const pg = r.req_type=='设备维修'
@@ -2506,7 +2521,7 @@ async function loadOrders(){
       <td><span class="tag ${r.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(r.trade_mode||'货到付款')}</span></td>
       <td>¥${(r.total_amount||0).toFixed(0)}</td><td>${tag(r.status)}</td><td>${pg}</td>
       ${rejCell(r)}
-      <td><button class="lnk" onclick="showOrder(${r.id})">详情</button> <button class="lnk" style="color:#0d9488" onclick="showOrderExec(${r.id})">📋执行明细</button> <button class="lnk" style="color:#b08900" onclick="editDoc('purchase_order',${r.id},'采购订单')">✏️修改</button>
+      <td><button class="lnk" onclick="showOrder(${r.id})">详情</button> ${r.req_type=='设备维修'?'':`<button class="lnk" style="color:#0d9488" onclick="showOrderExec(${r.id})">📋执行明细</button> `}<button class="lnk" style="color:#b08900" onclick="editDoc('purchase_order',${r.id},'采购订单')">✏️修改</button>
       
       ${(r.status=='待审批'||r.status=='已通过'||r.status=='审批通过')?` <button class="lnk" style="color:var(--o)" onclick="withdrawDoc('purchase_order',${r.id},'采购订单')">↩️撤回</button>`:''}${(r.status=='待审批'||r.status=='已驳回'||r.status=='草稿')?` <button class="lnk" style="color:var(--d)" onclick="delDoc('purchase_order',${r.id},'采购订单')">🗑️删除</button>`:''}</td>`;
     });
