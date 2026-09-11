@@ -16542,7 +16542,7 @@ def api_dashboard_overview():
     own = sc is not None
     wo, po_o = _dash_w(f, 'purchase_orders')                       # 订单口径
     wr, po_r = _dash_w(f, 'purchase_requests', sup_col=None)        # 申请口径(无供应商列)
-    wc, po_c = _dash_w(f, 'contracts', date_col='sign_date', use_dept=False, use_cat=False, use_wh=False)
+    wc, po_c = _dash_w(f, 'contracts', date_col='sign_date', use_cat=False, use_wh=False)   # V11.278: 部门经 订单→申请 生效
     wi, po_i = _dash_w(f, 'inventory', date_col=None, sup_col=None, use_dept=False)
     wp, po_p = _dash_w(f, 'payment_requests', use_dept=False, use_cat=False, use_wh=False)
     wrep, po_rep = _dash_w(f, 'repair_plans', sup_col='repair_company')
@@ -16566,7 +16566,7 @@ def api_dashboard_overview():
     avg_last = (last_o[0] / last_o[1]) if last_o[1] else 0
     # 应付余额 = 合同金额(受筛选) - 已付款(受筛选); 较年初=年初前口径
     # 时点口径(余额): 不受时段筛选影响, 只受供应商筛选 —— 余额是"此刻欠多少", 不是"本期发生额"
-    wc_nt, po_c_nt = _dash_w(dict(f, range='all'), 'contracts', date_col='sign_date', use_dept=False, use_cat=False, use_wh=False)
+    wc_nt, po_c_nt = _dash_w(dict(f, range='all'), 'contracts', date_col='sign_date', use_cat=False, use_wh=False)
     wp_nt, po_p_nt = _dash_w(dict(f, range='all'), 'payment_requests', use_dept=False, use_cat=False, use_wh=False)
     con_total = ex1("SELECT COALESCE(SUM(amount),0) FROM contracts WHERE 1=1" + wc_nt, tuple(po_c_nt))
     pay_total = ex1("SELECT COALESCE(SUM(amount),0) FROM payment_requests WHERE 1=1" + wp_nt, tuple(po_p_nt))
@@ -16644,7 +16644,7 @@ def api_dashboard_purchase():
     own = sc is not None
     wr, po_r = _dash_w(f, 'purchase_requests', sup_col=None)
     wo, po_o = _dash_w(f, 'purchase_orders')
-    wi, po_i = _dash_w(f, 'inquiries', sup_col=None, use_dept=False, use_cat=False, use_wh=False)
+    wi, po_i = _dash_w(f, 'inquiries', sup_col=None, use_cat=False, use_wh=False)   # V11.278: 询价经来源申请取部门
 
     def ex1(sql, ps=()):
         r = c.execute(sql, ps).fetchone()
@@ -16765,8 +16765,8 @@ def api_dashboard_finance():
         return jsonify({'error': '无财务分析查看权限'}), 403
     f = _dash_f()
     c = db()
-    wc, po_c = _dash_w(f, 'contracts', date_col='sign_date', use_dept=False, use_cat=False, use_wh=False)
-    wv, po_v = _dash_w(f, 'invoices', use_dept=False, use_cat=False, use_wh=False)
+    wc, po_c = _dash_w(f, 'contracts', date_col='sign_date', use_cat=False, use_wh=False)   # V11.278: 部门经 订单→申请 生效
+    wv, po_v = _dash_w(f, 'invoices', use_cat=False, use_wh=False)                          # V11.278: 发票经订单→申请取部门
     wp, po_p = _dash_w(f, 'payment_requests', use_dept=False, use_cat=False, use_wh=False)
 
     def ex1(sql, ps=()):
@@ -16775,7 +16775,7 @@ def api_dashboard_finance():
     con_amt = ex1("SELECT COALESCE(SUM(amount),0) FROM contracts WHERE 1=1" + wc, tuple(po_c))
     inv_amt = ex1("SELECT COALESCE(SUM(amount),0) FROM invoices WHERE 1=1" + wv, tuple(po_v))
     pay_amt = ex1("SELECT COALESCE(SUM(amount),0) FROM payment_requests WHERE 1=1" + wp, tuple(po_p))
-    wc_nt, po_c_nt = _dash_w(dict(f, range='all'), 'contracts', date_col='sign_date', use_dept=False, use_cat=False, use_wh=False)
+    wc_nt, po_c_nt = _dash_w(dict(f, range='all'), 'contracts', date_col='sign_date', use_cat=False, use_wh=False)
     wp_nt, po_p_nt = _dash_w(dict(f, range='all'), 'payment_requests', use_dept=False, use_cat=False, use_wh=False)
     ap_bal = ex1("SELECT COALESCE(SUM(amount),0) FROM contracts WHERE 1=1" + wc_nt, tuple(po_c_nt)) - ex1("SELECT COALESCE(SUM(amount),0) FROM payment_requests WHERE 1=1" + wp_nt, tuple(po_p_nt))
     due_n = ex1("SELECT COUNT(*) FROM contracts WHERE inv_collect_status IN ('已催收待回','待收票','待催收')" + wc_nt, tuple(po_c_nt))
