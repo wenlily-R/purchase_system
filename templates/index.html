@@ -360,7 +360,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
 </div>
 <div class="page" id="pinquiries"><h2>🔍 三方询价</h2><div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="showInquiryForm()">+ 发起三方询价</button><button class="btn btn-w btn-sm" onclick="loadInquiries()">🔄 刷新</button></div><div class="card"><div class="cb" id="inquiriesTable"><div class="loading">加载中...</div></div></div></div>
 <div class="page" id="porders"><h2>📋 采购订单</h2><div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="showForm('order')">+ 新建订单</button><button class="btn btn-o btn-sm" onclick="showOrderExecList()">📋 订单执行明细表</button></div><div class="card"><div class="cb" id="ordersTable"><div class="loading">加载中...</div></div></div></div>
-<div class="page" id="papprovals"><h2>✅ 审批中心 <span style="font-size:10px;color:#999;font-weight:normal">(维修定损等存量单据审批请在🔧维修审批中心办理收尾)</span></h2>
+<div class="page" id="papprovals"><h2>✅ 审批中心 <span style="font-size:10px;color:#999;font-weight:normal">(维修类申请与存量定损单审批请切换🔧维修审批中心办理)</span></h2>
   <div class="tabs" id="apprCenterTabs" style="margin-bottom:4px">
     <button class="act" data-c="buy" onclick="apprCenter('buy')">📦 采购审批中心</button>
     <button data-c="repair" onclick="apprCenter('repair')">🔧 维修审批中心</button>
@@ -2918,9 +2918,12 @@ const APPR_TM={purchase_request:['📝采购申请','#2f6fed'],purchase_order:['
 let APPR_CENTER='buy';  // V11.221: 审批中心双中心 buy=采购 / repair=维修
 const APPR_CENTER_TABS={
   buy:[['','全部'],['purchase_request','📝采购申请'],['inquiry_approval','🔍比价单'],['contract','📄合同'],['receiving','📦入库'],['collect_accept','👥集体验收'],['requisition','📤出库'],['return_request','↩️退库'],['payment','💰付款'],['rejected','❌未通过']],
-  repair:[['','全部'],['repair_plan','🔧维修审批'],['rejected','❌未通过']]
+  repair:[['','全部'],['repair_req','🛠维修申请'],['repair_plan','🔧存量定损'],['rejected','❌未通过']]
 };
-const APPR_REPAIR_TYPES=['repair_plan'];  // 维修中心单据类型(与采购完全隔离)
+const APPR_REPAIR_TYPES=['repair_plan'];  // 维修中心旧类型(存量定损单)
+// V11.269: 维修类判定 — 旧定损单 + 维修类采购申请(req_type=设备维修) 均归维修中心
+const _isRepairRow=x=>APPR_REPAIR_TYPES.includes(x.biz_type)||(x.biz_type==='purchase_request'&&(x.req_type||'')==='设备维修');
+const _apprMatch=(x,t)=> t===''?true : (t==='repair_req' ? (x.biz_type==='purchase_request'&&(x.req_type||'')==='设备维修') : x.biz_type===t);
 function apprCenter(c){
   APPR_CENTER=c; APPR_FILTER='';
   document.querySelectorAll('#apprCenterTabs button').forEach(b=>{b.classList.toggle('act',b.dataset.c===c)});
@@ -2935,9 +2938,9 @@ function renderApprTabs(){
     return `<button class="${act}" data-t="${t}" onclick="apprTab('${t}')"${t==='rejected'?' style="color:#ea4335"':''}>${lab}</button>`;
   }).join('');
 }
-function _apprCenterRows(a){  // 按当前中心过滤待办(采购中心不含维修, 维修中心只含维修)
+function _apprCenterRows(a){  // V11.269: 按当前中心过滤待办 — 采购中心不含维修(含维修类采购申请), 维修中心只含维修(申请+存量定损)
   const a2=a.filter(x=>x.biz_type!=='purchase_order');
-  return APPR_CENTER==='repair'?a2.filter(x=>APPR_REPAIR_TYPES.includes(x.biz_type)):a2.filter(x=>!APPR_REPAIR_TYPES.includes(x.biz_type));
+  return APPR_CENTER==='repair'?a2.filter(_isRepairRow):a2.filter(x=>!_isRepairRow(x));
 }
 function apprTab(t){
   APPR_FILTER=t;
@@ -2947,7 +2950,8 @@ function apprTab(t){
 async function loadApprovals(){
   if(APPR_FILTER=='rejected'){
     const all=(await api('/approvals/rejected'));
-    const rj=_apprCenterRows(all);
+    const _rows=APPR_CENTER==='repair'?all.filter(_isRepairRow):all.filter(x=>!_isRepairRow(x));  // V11.269: 驳回记录也按中心归口
+    const rj=_apprCenterRows(_rows);
     if(!rj.length){id('approvalsTable').innerHTML='<div style="padding:24px;text-align:center;color:#999;font-size:10px">✅ 暂无驳回单据</div>';return}
     const groups={};rj.forEach(x=>{groups[x.biz_type]=(groups[x.biz_type]||[]).concat(x)});
     id('approvalsTable').innerHTML=Object.entries(groups).map(([bt,list])=>{
@@ -2959,14 +2963,15 @@ async function loadApprovals(){
     return;
   }
   const a=_apprCenterRows(await api('/approvals/all-pending'));
-  const cnt={};a.forEach(x=>{cnt[x.biz_type]=(cnt[x.biz_type]||0)+1});
-  id('apprTabs').innerHTML=(APPR_CENTER_TABS[APPR_CENTER]||APPR_CENTER_TABS.buy).map(x=>{
+  const _tabs=(APPR_CENTER_TABS[APPR_CENTER]||APPR_CENTER_TABS.buy);
+  const cnt={};a.forEach(x=>{_tabs.forEach(([t])=>{if(t&&t!=='rejected'&&_apprMatch(x,t))cnt[t]=(cnt[t]||0)+1})});
+  id('apprTabs').innerHTML=_tabs.map(x=>{
     const t=x[0], lab=x[1];
     if(t==='rejected')return `<button data-t="rejected" style="color:#ea4335" onclick="apprTab('rejected')">${lab}</button>`;
     const n=t===''?a.length:(cnt[t]||0);
     return `<button data-t="${t}" class="${(APPR_FILTER||'')===t?'act':''}" onclick="apprTab('${t}')">${lab} <span style="background:var(--d);color:#fff;border-radius:8px;padding:0 6px;font-size:8px">${n}</span></button>`;
   }).join('');
-  const list=APPR_FILTER?a.filter(x=>x.biz_type==APPR_FILTER):a;
+  const list=APPR_FILTER?a.filter(x=>_apprMatch(x,APPR_FILTER)):a;
   if(!list.length){id('approvalsTable').innerHTML='<div style="padding:24px;text-align:center;color:#999;font-size:10px">✅ 暂无待审批单据</div>';return}
   id('approvalsTable').innerHTML=rnder(list,['biz_type','biz_no','biz_name','biz_amount','role','approver','approver_id','created_at','id'],['类型','单据号','内容','金额','待审角色','审批人','发起时间','操作'],
     r=>{const tm=APPR_TM[r.biz_type]||[r.biz_type,'#888'];

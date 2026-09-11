@@ -4903,7 +4903,8 @@ def api_approvals_pending():
 def api_approvals_rejected():
     """55.docx需求4: 审批未通过数据独立板块(按业务类别分组汇总)"""
     conn = db()
-    rows = conn.execute("""SELECT ai.biz_type,
+    rows = conn.execute("""SELECT ai.biz_type, ai.biz_id,
+        (CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.req_type FROM purchase_requests pr WHERE pr.id=ai.biz_id) ELSE '' END) as req_type,
         %s as biz_no,
              MAX(ai.comment) last_comment, COUNT(*) cnt, MAX(ai.processed_at) processed_at
         FROM approval_instances ai WHERE ai.status='rejected'
@@ -4916,7 +4917,8 @@ def api_approvals_rejected():
 def api_all_pending():
     conn = db()
     rows = conn.execute("""
-        SELECT ai.*, %s as biz_no, %s as biz_name, %s as biz_amount
+        SELECT ai.*, %s as biz_no, %s as biz_name, %s as biz_amount,
+               (CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.req_type FROM purchase_requests pr WHERE pr.id=ai.biz_id) ELSE '' END) as req_type
         FROM approval_instances ai WHERE ai.status='pending'
         AND NOT EXISTS (SELECT 1 FROM approval_instances y WHERE y.biz_type=ai.biz_type AND y.biz_id=ai.biz_id AND y.status='pending' AND y.level_no < ai.level_no)
         ORDER BY ai.id DESC LIMIT 50
