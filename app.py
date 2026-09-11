@@ -7359,11 +7359,11 @@ def inquiry_vendor_page(token):
             '<td style="padding:6px 8px;text-align:left;border-bottom:1px solid #eef">%s</td>'
             '<td style="padding:6px 8px;text-align:left;border-bottom:1px solid #eef;color:#888;font-size:12px">%s</td>'
             '<td style="padding:6px 8px;text-align:left;border-bottom:1px solid #eef;white-space:nowrap">%s%s</td>'
-            '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input type="number" min="0" step="0.01" placeholder="不含税单价" '
-            'oninput="calc()" data-q="%s" id="ex%d" value="%s" style="width:76px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;text-align:right"></td>'
+            '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input type="number" min="0" step="0.01" placeholder="含税单价" '
+            'oninput="calc()" data-q="%s" id="ip%d" value="%s" style="width:76px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;text-align:right"></td>'
             '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input type="number" min="0" step="0.01" placeholder="13" '
             'oninput="calc()" id="tx%d" value="%s" style="width:52px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;text-align:right"></td>'
-            '<td style="padding:6px 8px;border-bottom:1px solid #eef;text-align:right;font-weight:600;color:#2e7d32;white-space:nowrap">¥<span id="ht%d">0.00</span></td>'
+            '<td style="padding:6px 8px;border-bottom:1px solid #eef;text-align:right;color:#888;white-space:nowrap">¥<span id="ex%d">0.00</span></td>'
             '<td style="padding:6px 8px;border-bottom:1px solid #eef;text-align:right;font-weight:600;color:#2e7d32;white-space:nowrap">¥<span id="ut%d">0.00</span></td>'
             '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="如7天" id="dl%d" value="%s" style="width:52px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
             + _wr_cell + _brand_cell +
@@ -7371,7 +7371,7 @@ def inquiry_vendor_page(token):
             '</tr>') % (
                 esc_html(it['item_name']), esc_html(it['spec'] or ''),
                 str(_qty) + esc_html(it['unit'] or '个'), _ref,
-                str(_qty), idx, _v_ex,
+                str(_qty), idx, _v_price,
                 idx, _v_tx,
                 idx, idx,
                 idx, esc_html(_pv.get('delivery') or ''),
@@ -7405,15 +7405,15 @@ def inquiry_vendor_page(token):
     body = ('<div style="max-width:860px;margin:40px auto;background:#fff;border-radius:12px;padding:28px;'
             'box-shadow:0 4px 24px rgba(0,0,0,.08);font-family:-apple-system,Segoe UI,Microsoft YaHei,sans-serif">'
             '<h2 style="margin:0 0 4px;color:#1f6feb">📋 采购询价单</h2>'
-            '<p style="color:#888;font-size:13px;margin:0 0 10px">尊敬的 %s，请逐项填写<b>不含税单价</b>与<b>税率</b>（默认13%%，可修改，如0%%），含税单价与总价自动计算；交付日期/质保时间按实际填写</p>%s%s%s'
+            '<p style="color:#888;font-size:13px;margin:0 0 10px">尊敬的 %s，请逐项填写<b>含税单价</b>与<b>税率</b>（默认13%%，可修改，如0%%），不含税单价与总价自动计算；交付日期按<b>天数</b>、质保时间按<b>月数</b>填写</p>%s%s%s'
             '<div style="background:#f5f8ff;border-radius:8px;padding:12px 16px;font-size:13px;margin-bottom:14px">'
             '<b>%s</b><br><span style="color:#888">询价编号：%s</span></div>'
             '<div style="overflow-x:auto"><table style="width:100%%;border-collapse:collapse;font-size:13px;margin-bottom:10px;min-width:700px">'
             '<tr style="background:#f5f8ff"><th style="padding:6px 8px;text-align:left">物资名称</th>'
             '<th style="padding:6px 8px;text-align:left">规格</th><th style="padding:6px 8px;text-align:left">数量</th>'
-            '<th style="padding:6px 8px;text-align:left">不含税单价(元)<span style="color:#e74c3c">*</span></th><th style="padding:6px 8px;text-align:left">税率(%%)<span style="color:#e74c3c">*</span></th>'
-            '<th style="padding:6px 8px;text-align:left">含税单价(元)<span style="color:#888;font-size:11px;font-weight:normal">自动</span></th><th style="padding:6px 8px;text-align:left">总价（含税含运）</th>'
-            '<th style="padding:6px 8px;text-align:left">交付日期</th><th style="padding:6px 8px;text-align:left">质保时间</th>'
+            '<th style="padding:6px 8px;text-align:left">含税单价(元)<span style="color:#e74c3c">*</span></th><th style="padding:6px 8px;text-align:left">税率(%%)<span style="color:#e74c3c">*</span></th>'
+            '<th style="padding:6px 8px;text-align:left">不含税单价(元)<span style="color:#888;font-size:11px;font-weight:normal">自动</span></th><th style="padding:6px 8px;text-align:left">总价（含税含运）</th>'
+            '<th style="padding:6px 8px;text-align:left">交付日期(天)</th><th style="padding:6px 8px;text-align:left">质保时间(月)</th>'
             '<th style="padding:6px 8px;text-align:left">品牌</th><th style="padding:6px 8px;text-align:left">厂家备注</th></tr>%s</table></div>'
             '<div style="background:#f0faf0;border-radius:8px;padding:10px 14px;font-size:14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">'
             '<span style="color:#2e7d32"><b>总价（含税含运）合计：¥<span id="total">0.00</span></b></span>'
@@ -7430,23 +7430,23 @@ def inquiry_vendor_page(token):
             '<button onclick="sub()" style="width:100%%;padding:12px;background:#1f6feb;color:#fff;border:none;border-radius:8px;font-size:15px;cursor:pointer">提交报价</button>'
             '<div id="msg" style="margin-top:10px;font-size:13px;color:#27ae60;text-align:center"></div>'
             '<script>'
-            'window.calc=function(){let t=0;document.querySelectorAll("[id^=ex]").forEach((e,i)=>{const q=parseFloat(e.getAttribute("data-q"))||1;const ex=parseFloat(e.value)||0;'
+            'window.calc=function(){let t=0;document.querySelectorAll("[id^=ip]").forEach((e,i)=>{const q=parseFloat(e.getAttribute("data-q"))||1;const ip=parseFloat(e.value)||0;'
             'const tr0=(document.getElementById("tx"+i)||{}).value;const tr=(tr0===""||tr0===undefined||isNaN(parseFloat(tr0)))?13:parseFloat(tr0);'
-            'const ht=ex*(1+tr/100);t+=ht*q;'
-            'const h=document.getElementById("ht"+i);if(h)h.textContent=ht.toFixed(2);'
-            'const u=document.getElementById("ut"+i);if(u)u.textContent=(ht*q).toFixed(2)});'
+            'const ex=(tr>0)?ip/(1+tr/100):ip;t+=ip*q;'
+            'const h=document.getElementById("ex"+i);if(h)h.textContent=ex.toFixed(2);'
+            'const u=document.getElementById("ut"+i);if(u)u.textContent=(ip*q).toFixed(2)});'
             'const _t=document.getElementById("total");if(_t)_t.textContent=t.toFixed(2)};'
-            'window.quickFill=function(){const v=prompt("请输入报价总金额(元):");if(!v||isNaN(v))return;const es=document.querySelectorAll("[id^=ex]");const n=es.length;'
-            'const per=parseFloat(v)/n;es.forEach((e,i)=>{const tr0=(document.getElementById("tx"+i)||{}).value;const tr=(tr0===""||isNaN(parseFloat(tr0)))?13:parseFloat(tr0);e.value=(per/(1+tr/100)).toFixed(2)});calc();'
-            'alert("已按平均分摊到每行(按不含税单价)，可再逐行微调")};'
-            'window.sub=async function(){const rows=document.querySelectorAll("[id^=ex]");const details=[];let emptyIdx=[];'
-            'rows.forEach((e,i)=>{const ex=parseFloat(e.value)||0;if(ex<=0)emptyIdx.push(i+1);'
+            'window.quickFill=function(){const v=prompt("请输入报价总金额(元,含税):");if(!v||isNaN(v))return;const es=document.querySelectorAll("[id^=ip]");const n=es.length;'
+            'const per=parseFloat(v)/n;es.forEach((e,i)=>{e.value=per.toFixed(2)});calc();'
+            'alert("已按平均分摊到每行(含税单价)，可再逐行微调")};'
+            'window.sub=async function(){const rows=document.querySelectorAll("[id^=ip]");const details=[];let emptyIdx=[];'
+            'rows.forEach((e,i)=>{const ip=parseFloat(e.value)||0;if(ip<=0)emptyIdx.push(i+1);'
             'const tr0=(document.getElementById("tx"+i)||{}).value;const tr=(tr0===""||isNaN(parseFloat(tr0)))?13:parseFloat(tr0);'
-            'const ht=ex*(1+tr/100);'
-            'details.push({excl_price:ex,tax_rate:tr,unit_price:Math.round(ht*100)/100,qty:parseFloat(e.getAttribute("data-q"))||1,'
+            'const ex=Math.round((tr>0?ip/(1+tr/100):ip)*100)/100;'
+            'details.push({unit_price:Math.round(ip*100)/100,excl_price:ex,tax_rate:tr,qty:parseFloat(e.getAttribute("data-q"))||1,'
             'delivery:(document.getElementById("dl"+i)||{}).value||"",warranty:(document.getElementById("wr"+i)||{}).value||"",'
             'brand:(document.getElementById("br"+i)||{}).value||"",remark:(document.getElementById("rm"+i)||{}).value||""})});'
-            'if(emptyIdx.length){alert("请填写所有物料的不含税单价（第"+emptyIdx.join("、")+"行未填）");return}'
+            'if(emptyIdx.length){alert("请填写所有物料的含税单价（第"+emptyIdx.join("、")+"行未填）");return}'
             'const shipTotal=parseFloat((document.getElementById("shipTotal")||{}).value)||0;'
             'if(shipTotal<=0){alert("请填写总价（含税含运）——整单含运费的总金额");return}'
             'const supRemark=(document.getElementById("supRemark")||{}).value||"";'
@@ -7561,14 +7561,19 @@ def inquiry_vendor_quote(token):
                         _x['warranty'] = _sw  # 缺省/达标 → 按申请标准落库
         except Exception:
             pass
-    # V11.268 需求1: 不含税单价+税率 → 服务端重算含税单价(防前端篡改); 兼容旧式仅传含税单价
+    # V11.270 用户要求(改为含税单价录入): 明细以含税单价为基准 → 服务端倒算不含税单价(防前端篡改); 兼容旧式仅传不含税单价
     if details:
         for _x in details:
             try:
+                _up0 = float(_x.get('unit_price') or 0)
                 _ex0 = float(_x.get('excl_price') or 0)
                 _rt1 = _x.get('tax_rate')
-                if _ex0 > 0 and _rt1 not in (None, ''):
-                    _rtv = max(0.0, float(_rt1))
+                _rtv = max(0.0, float(_rt1)) if _rt1 not in (None, '') else None
+                if _up0 > 0 and _rtv is not None:
+                    _x['unit_price'] = round(_up0, 2)
+                    _x['tax_rate'] = _rtv
+                    _x['excl_price'] = round(_up0 / (1 + _rtv / 100.0), 2) if _rtv > 0 else round(_up0, 2)
+                elif _ex0 > 0 and _rtv is not None:
                     _x['excl_price'] = round(_ex0, 2)
                     _x['tax_rate'] = _rtv
                     _x['unit_price'] = round(_ex0 * (1 + _rtv / 100.0), 2)
