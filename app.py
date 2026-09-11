@@ -16490,8 +16490,14 @@ def _dash_w(f, tbl, alias='', date_col='created_at', sup_col='supplier',
             sql += ' AND %scategory=?' % a; ps.append(f['category'])
         elif 'cat_code' in cols:
             sql += " AND %scat_code=(SELECT code FROM categories WHERE name=? LIMIT 1)" % a; ps.append(f['category'])
-    if f['dept'] and use_dept and 'dept' in cols:
-        sql += ' AND %sdept=?' % a; ps.append(f['dept'])
+    if f['dept'] and use_dept:
+        if 'dept' in cols:
+            sql += ' AND %sdept=?' % a; ps.append(f['dept'])
+        elif 'req_id' in cols:      # 订单等无部门列的表: 经来源采购申请取部门(避免'部门'筛选在订单上失效)
+            sql += ' AND EXISTS(SELECT 1 FROM purchase_requests _pr WHERE _pr.id=%sreq_id AND _pr.dept=?)' % a; ps.append(f['dept'])
+        elif 'order_id' in cols:    # 合同/入库等: 经订单→来源申请取部门
+            sql += (' AND EXISTS(SELECT 1 FROM purchase_orders _po JOIN purchase_requests _pr ON _pr.id=_po.req_id'
+                    ' WHERE _po.id=%sorder_id AND _pr.dept=?)') % a; ps.append(f['dept'])
     if f['warehouse'] and use_wh and 'warehouse' in cols:
         sql += ' AND %swarehouse=?' % a; ps.append(f['warehouse'])
     return sql, ps
