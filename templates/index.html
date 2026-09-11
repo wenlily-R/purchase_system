@@ -1803,7 +1803,7 @@ async function editPRequest(oid){
       <label class="fl2" id="reqDetailTitle">采购物资明细</label>
       <div style="font-size:9px;color:#8a6d3b;background:#fff8e6;border-radius:4px;padding:3px 6px;margin:2px 0" id="reqDetailTip">✏️ <b>品牌由采购员指定</b>（如 联想/格力，或填"不限"）——发起询价后商家按指定品牌报价；<b>指定质保期(如24个月)同为必填</b>，外网报价不得低于；填品名自动带出库存；用途见上方"用途说明"。表格较宽可左右滑动。</div>
       <div style="overflow-x:auto"><table class="tb" style="font-size:10px;min-width:930px;margin-top:3px"><thead id="reqThHead"></thead><tbody id="reqItemList"></tbody></table></div>
-        <div id="reqAddBtns" style="margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button class="btn btn-o btn-sm" onclick="addReqItem()">+ 添加一行</button><button class="btn btn-o btn-sm" onclick="reqPasteFromExcel()">📋 从Excel粘贴</button><span style="color:#999;font-size:9px">粘贴识别 品牌/名称/规格/数量 等列</span></div>
+        <div id="reqAddBtns" style="margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button class="btn btn-o btn-sm" onclick="addReqItem()">+ 添加一行</button><button class="btn btn-o btn-sm reqmatonly" onclick="reqPasteFromExcel()">📋 从Excel粘贴</button><span class="reqmatonly" style="color:#999;font-size:9px">粘贴识别 品牌/名称/规格/数量 等列</span></div>
     </div>`;
   id('detailModal').classList.add('show');
   id('dmFooter').innerHTML=`<button class="btn btn-o" onclick="closeMod()">取消</button>
@@ -5832,7 +5832,7 @@ async function showForm(type){
         <label class="fl2" id="reqDetailTitle">采购物资明细</label>
         <div style="font-size:9px;color:#8a6d3b;background:#fff8e6;border-radius:4px;padding:3px 6px;margin:2px 0" id="reqDetailTip">✏️ <b>品牌由采购员指定</b>（如 联想/格力，或填"不限"）——发起询价后商家按指定品牌报价；<b>指定质保期(如24个月)同为必填</b>，外网报价不得低于；填品名自动带出库存；用途见上方"用途说明"。表格较宽可左右滑动。</div>
         <div style="overflow-x:auto"><table class="tb" style="font-size:10px;min-width:930px;margin-top:3px"><thead id="reqThHead"></thead><tbody id="reqItemList"></tbody></table></div>
-          <div id="reqAddBtns" style="margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button class="btn btn-o btn-sm" onclick="addReqItem()">+ 添加一行</button><button class="btn btn-o btn-sm" onclick="reqPasteFromExcel()">📋 从Excel粘贴</button><span style="color:#999;font-size:9px">粘贴识别 品牌/名称/规格/数量 等列</span></div>
+          <div id="reqAddBtns" style="margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button class="btn btn-o btn-sm" onclick="addReqItem()">+ 添加一行</button><button class="btn btn-o btn-sm reqmatonly" onclick="reqPasteFromExcel()">📋 从Excel粘贴</button><span class="reqmatonly" style="color:#999;font-size:9px">粘贴识别 品牌/名称/规格/数量 等列</span></div>
       </div>`;
     id('detailModal').classList.add('show');
     id('dmFooter').innerHTML=`<button class="btn btn-o" onclick="closeMod()">取消</button>
@@ -6207,9 +6207,9 @@ function reqModeTable(fromUser){
       ? '<tr><th style="width:22px">#</th><th style="min-width:150px">维修项目/备件名称 *</th><th style="min-width:80px">规格/说明</th><th style="width:52px">单位</th><th style="width:62px">数量 *</th><th style="width:96px">预估金额(元)</th><th style="min-width:110px">备注/质保</th></tr>'
       : '<tr><th style="width:22px">#</th><th style="min-width:100px">物品名称 *</th><th style="min-width:62px">规格型号</th><th style="width:38px">单位</th><th style="width:56px">库存</th><th style="width:64px">请购数量 *</th><th style="min-width:106px">品牌（指定）</th><th style="width:84px">采购类别</th><th style="min-width:72px">备注</th><th style="min-width:128px">到货日/附图</th></tr>';
   }
-  const btns=id('reqAddBtns');
-  if(btns)btns.style.display=(isRep)?'none':'flex';
-  // 维修模式预填提示行(若空表且维修模式 → 自动放一条"待定损说明"占位说明不建行; 不自动加行)
+  // V11.268b: 维修模式仅隐藏"粘贴导入"(物资专用), 保留"+ 添加一行"; 维修模式空表自动放一行便于直接填
+  document.querySelectorAll('.reqmatonly').forEach(e=>{e.style.display=isRep?'none':''});
+  if(isRep && tb && !tb.querySelectorAll('tr[id^="ritem"]').length){ addReqItem(); }
 }
 // V11.255: 到货/完工时间管控(需求文档(四)) — 必填; 不早于今天; ≤明天且非加急 → 现货提示确认
 // 返回: null=通过 / 'err:...'=直接拦截 / 'ask:...'=需confirm确认
