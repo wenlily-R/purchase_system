@@ -10989,80 +10989,210 @@ def api_toolbox_query():
     return jsonify({'cols': cols, 'rows': out[:300], 'total': len(rows)})
 
 
+def _trace_build(conn, t):
+    """V11.280 任意单据编号溯源: 智能识别输入单据类型 → 回溯到来源采购申请 → 以采购申请为溯源根返回整条链。
+    支持输入: 采购申请号/主业务号/询价号/订单号(含 订单号-批次)/合同号/入库单号/出库领用单号/付款单号/挂账单号/库存流水号。
+    链序: 采购申请(根) → 询价 → 订单 → 合同 → 入库单 → 库存流水 → 出库领用。返回字段与旧版兼容。"""
+    def _f(sql, p=()):
+        return conn.execute(sql, p).fetchone()
+
+    def _all(sql, p=()):
+        return conn.execute(sql, p).fetchall()
+
+    def _req_of_inquiry(iid):
+        if not iid:
+            return None
+        r = _f("SELECT req_id FROM inquiries WHERE id=?", (iid,))
+        return r['req_id'] if r else None
+
+    def _req_of_order(oid):
+        if not oid:
+            return None
+        r = _f("SELECT req_id, inquiry_id FROM purchase_orders WHERE id=?", (oid,))
+        if not r:
+            return None
+        return r['req_id'] or _req_of_inquiry(r['inquiry_id'])
+
+    def _order_by_no(no):
+        """按订单号或 订单号-批次 查订单行(先精确后去批次尾)"""
+        if not no:
+            return None
+        r = _f("SELECT id, req_id, inquiry_id, order_no FROM purchase_orders WHERE order_no=?", (no,))
+        if r is None and re.search(r'-\d{1,4}$', no):
+            r = _f("SELECT id, req_id, inquiry_id, order_no FROM purchase_orders WHERE order_no=?", (re.sub(r'-\d{1,4}$', '', no),))
+        return r
+
+    matched_type, matched_no, req_id = '', t, None
+
+    # ① 采购申请号 / 主业务号
+    r = _f("SELECT id FROM purchase_requests WHERE req_no=?", (t,))
+    if r:
+        req_id, matched_type = r['id'], '采购申请号'
+    else:
+        r = _f("SELECT id FROM purchase_requests WHERE COALESCE(biz_no,'')<>'' AND biz_no=?", (t,))
+        if r:
+            req_id, matched_type = r['id'], '主业务号'
+    # ② 询价号
+    if req_id is None:
+        r = _f("SELECT id, req_id FROM inquiries WHERE inq_no=?", (t,))
+        if r:
+            matched_type, req_id = '询价号', r['req_id']
+    # ③ 订单号(含 订单号-批次)
+    if req_id is None:
+        r = _order_by_no(t)
+        if r:
+            matched_type, matched_no = '采购订单号', r['order_no']
+            req_id = r['req_id'] or _req_of_inquiry(r['inquiry_id'])
+    # ④ 合同号
+    if req_id is None:
+        r = _f("SELECT id, order_id FROM contracts WHERE contract_no=?", (t,))
+        if r:
+            matched_type, req_id = '合同号', _req_of_order(r['order_id'])
+    # ⑤ 入库单号
+    if req_id is None:
+        r = _f("SELECT id, order_id FROM receivings WHERE receive_no=?", (t,))
+        if r:
+            matched_type, req_id = '入库单号', _req_of_order(r['order_id'])
+    # ⑥ 出库/领用单号 (经 出库明细溯源号 → 订单号 → 申请)
+    if req_id is None:
+        r = _f("SELECT id FROM requisitions WHERE req_no=?", (t,))
+        if r:
+            matched_type = '出库领用单号'
+            for cn in [x['trace_no'] for x in _all("SELECT trace_no FROM requisition_items WHERE requisition_id=? AND COALESCE(trace_no,'')<>''", (r['id'],))]:
+                o = _order_by_no(cn)
+                if o:
+                    req_id = o['req_id'] or _req_of_inquiry(o['inquiry_id'])
+                    break
+    # ⑦ 付款单号 (经 挂账单 → 订单, 或 合同 → 订单)
+    if req_id is None:
+        r = _f("SELECT id, credit_id, contract_id FROM payment_requests WHERE payment_no=?", (t,))
+        if r:
+            matched_type = '付款单号'
+            if r['credit_id']:
+                cn = _f("SELECT order_id FROM credit_notes WHERE id=?", (r['credit_id'],))
+                if cn:
+                    req_id = _req_of_order(cn['order_id'])
+            if req_id is None and r['contract_id']:
+                ct = _f("SELECT order_id FROM contracts WHERE id=?", (r['contract_id'],))
+                if ct:
+                    req_id = _req_of_order(ct['order_id'])
+    # ⑧ 挂账单号
+    if req_id is None:
+        r = _f("SELECT id, order_id FROM credit_notes WHERE credit_no=?", (t,))
+        if r:
+            matched_type, req_id = '挂账单号', _req_of_order(r['order_id'])
+    # ⑨ 库存流水单号 / 溯源号
+    if req_id is None:
+        r = _f("SELECT trace_no, doc_no FROM inventory_flows WHERE doc_no=? OR trace_no=? ORDER BY id LIMIT 1", (t, t))
+        if r:
+            matched_type = '库存流水号'
+            for cn in (r['trace_no'], r['doc_no']):
+                o = _order_by_no(cn)
+                if o:
+                    req_id = o['req_id'] or _req_of_inquiry(o['inquiry_id'])
+                    break
+
+    out = {'trace_no': t, 'matched_type': matched_type, 'matched_no': matched_no,
+           'root_req_no': '', 'root_order_no': '', 'request': None, 'order': None, 'orders': [],
+           'inquiries': [], 'contracts': [], 'receivings': [], 'flows': [], 'requisitions': []}
+
+    if req_id is None:
+        out['note'] = '该编号未关联到采购申请(可能是无源单据)，已尽力展示匹配到的单据本身。'
+        o = _order_by_no(t)
+        if o:
+            out['order'] = dict_row(_f("SELECT * FROM purchase_orders WHERE id=?", (o['id'],)))
+        return out
+
+    req = _f("SELECT * FROM purchase_requests WHERE id=?", (req_id,))
+    out['request'] = dict_row(req)
+    out['root_req_no'] = req['req_no']
+    if req['biz_no']:
+        out['biz_no'] = req['biz_no']
+    # 询价
+    inqs = _all("SELECT * FROM inquiries WHERE req_id=? ORDER BY id", (req_id,))
+    out['inquiries'] = [dict_row(r) for r in inqs]
+    inq_ids = [r['id'] for r in inqs]
+    # 订单(经申请 或 经该申请下的询价)
+    _oc, _op = ["req_id=?"], [req_id]
+    if inq_ids:
+        _oc.append("inquiry_id IN (%s)" % ','.join('?' * len(inq_ids)))
+        _op += inq_ids
+    ords = _all("SELECT * FROM purchase_orders WHERE " + ' OR '.join(_oc) + " ORDER BY id", _op)
+    out['orders'] = [dict_row(r) for r in ords]
+    out['order'] = out['orders'][0] if out['orders'] else None
+    oids = [r['id'] for r in ords]
+    onos = [r['order_no'] for r in ords if r['order_no']]
+    out['root_order_no'] = onos[0] if onos else ''
+
+    def _filt(tbl, conds, params):
+        if not conds:
+            return []
+        return [dict_row(r) for r in _all("SELECT * FROM %s WHERE %s ORDER BY id" % (tbl, ' OR '.join(conds)), params)]
+
+    # 合同(经订单 或 溯源号回填)
+    _cc, _cp = [], []
+    if oids:
+        _cc.append("order_id IN (%s)" % ','.join('?' * len(oids))); _cp += oids
+    if onos:
+        _cc.append("trace_no IN (%s)" % ','.join('?' * len(onos))); _cp += onos
+    cts = _filt('contracts', _cc, _cp)
+    out['contracts'] = cts
+    cids = [r['id'] for r in cts]
+    cnos = [r['contract_no'] for r in cts if r.get('contract_no')]
+    # 入库单(经订单/合同 或 溯源号)
+    _rc, _rp = [], []
+    if oids:
+        _rc.append("order_id IN (%s)" % ','.join('?' * len(oids))); _rp += oids
+    if cids:
+        _rc.append("contract_id IN (%s)" % ','.join('?' * len(cids))); _rp += cids
+    if cnos:
+        _rc.append("contract_no IN (%s)" % ','.join('?' * len(cnos))); _rp += cnos
+    if onos:
+        _rc.append("trace_no IN (%s)" % ','.join('?' * len(onos))); _rp += onos
+        for _o in onos:
+            _rc.append("trace_no LIKE ?"); _rp.append(_o + '-%')
+    rcs = _filt('receivings', _rc, _rp)
+    out['receivings'] = rcs
+    rids = [r['id'] for r in rcs]
+    rtraces = [r['trace_no'] for r in rcs if r.get('trace_no')]
+    # 库存流水(经入库单 或 溯源号)
+    _fc, _fp = [], []
+    if rids:
+        _fc.append("(doc_type='receiving' AND doc_id IN (%s))" % ','.join('?' * len(rids))); _fp += rids
+    for _t2 in onos + rtraces:
+        _fc.append("trace_no=?"); _fp.append(_t2)
+    for _o in onos:
+        _fc.append("trace_no LIKE ?"); _fp.append(_o + '-%')
+    if _fc:
+        out['flows'] = [dict_row(r) for r in _all("SELECT * FROM inventory_flows WHERE " + ' OR '.join(_fc) + " ORDER BY id", _fp)]
+    # 出库领用(经出库明细溯源号)
+    _qc, _qp = [], []
+    for _t2 in onos + rtraces:
+        _qc.append("ri.trace_no=?"); _qp.append(_t2)
+    for _o in onos:
+        _qc.append("ri.trace_no LIKE ?"); _qp.append(_o + '-%')
+    if _qc:
+        out['requisitions'] = [dict_row(r) for r in _all(
+            "SELECT ri.*, rq.req_no, rq.requester, rq.receive_dept FROM requisition_items ri "
+            "LEFT JOIN requisitions rq ON rq.id=ri.requisition_id WHERE " + ' OR '.join(_qc) + " ORDER BY ri.id", _qp)]
+    return out
+
+
 @app.route('/api/trace/<path:trace_no>')
 @login_required
 def api_trace_query(trace_no):
-    """V11.251 溯源穿透查询: 输入溯源编号一次性查看整条链路 采购订单→询价→合同→入库明细→库存流水→出库领用
-    溯源根=采购订单号(订单即根); 分批入库溯源号=订单号-批次序(CGxxx-01) → 以根号+全号双口径匹配"""
+    """V11.280 溯源穿透查询(任意单据编号): 输入申请号/询价号/订单号/合同号/入库单号/出库领用/付款/挂账/主业务号,
+    自动识别单据类型并回溯到来源采购申请, 以采购申请为溯源根展示整条链: 采购申请→询价→订单→合同→入库单→库存流水→出库领用。
+    兼容旧口径(订单号/订单号-批次/主业务号)。"""
     t = str(trace_no or '').strip()
     if not t:
-        return jsonify({'error': '请输入溯源编号'}), 400
+        return jsonify({'error': '请输入单据编号'}), 400
     conn = db()
-    # V11.254: 主业务流水号入口 — 输入主业务号(如 HQZC20260909001)直接串联该业务全链单据(申请→订单→合同→入库→流水→出库)
-    _req_by_biz = conn.execute("SELECT * FROM purchase_requests WHERE biz_no=?", (t,)).fetchone()
-    if _req_by_biz:
-        _ords = conn.execute("SELECT * FROM purchase_orders WHERE req_id=? ORDER BY id", (_req_by_biz['id'],)).fetchall()
-        _oid_l = [r['id'] for r in _ords]
-        out = {'trace_no': t, 'biz_no': t, 'root_order_no': (_ords[0]['order_no'] if _ords else ''),
-               'request': dict_row(_req_by_biz),
-               'order': dict_row(_ords[0]) if _ords else None,
-               'orders': [dict_row(r) for r in _ords]}
-        if _oid_l:
-            _ph = ','.join('?' * len(_oid_l))
-            out['contracts'] = [dict_row(r) for r in conn.execute("SELECT * FROM contracts WHERE order_id IN (" + _ph + ")", _oid_l).fetchall()]
-            out['receivings'] = [dict_row(r) for r in conn.execute("SELECT * FROM receivings WHERE order_id IN (" + _ph + ")", _oid_l).fetchall()]
-            _rcv_ids = [r['id'] for r in conn.execute("SELECT id FROM receivings WHERE order_id IN (" + _ph + ")", _oid_l).fetchall()]
-            if _rcv_ids:
-                _ph2 = ','.join('?' * len(_rcv_ids))
-                out['flows'] = [dict_row(r) for r in conn.execute("SELECT * FROM inventory_flows WHERE doc_type='receiving' AND doc_id IN (" + _ph2 + ") ORDER BY id", _rcv_ids).fetchall()]
-                out['requisitions'] = [dict_row(r) for r in conn.execute("SELECT ri.*, rq.req_no, rq.requester, rq.receive_dept FROM requisition_items ri LEFT JOIN requisitions rq ON rq.id=ri.requisition_id WHERE ri.trace_no IN (" + _ph2 + ") OR ri.trace_no LIKE ?", _rcv_ids + [(_ords[0]['order_no'] if _ords else '') + '-%']).fetchall()]
-            else:
-                out['flows'] = []
-                out['requisitions'] = []
-        else:
-            out['contracts'] = []
-            out['receivings'] = []
-            out['flows'] = []
-            out['requisitions'] = []
-        # 询价(经订单 inquiry 来源)
-        _inids = [r['inquiry_id'] for r in _ords if r['inquiry_id']]
-        if _inids:
-            _ph3 = ','.join('?' * len(_inids))
-            out['inquiries'] = [dict_row(r) for r in conn.execute("SELECT * FROM inquiries WHERE id IN (" + _ph3 + ")", _inids).fetchall()]
-        else:
-            out['inquiries'] = []
-        conn.close()
-        return jsonify(out)
-    # 根订单号推导: 订单号自身含连字符(CG-202609-0001), 不能按'-'拆分 —
-    # 若 t 是某入库单的批次溯源号(订单号-批次)则经入库单反查其订单; 否则 t 即根
-    _po_by_rcv = conn.execute("SELECT po.order_no FROM receivings r JOIN purchase_orders po ON po.id=r.order_id WHERE r.trace_no=? LIMIT 1", (t,)).fetchone()
-    root = _po_by_rcv[0] if _po_by_rcv else t
-    out = {'trace_no': t, 'root_order_no': root}
     try:
-        po = conn.execute("SELECT * FROM purchase_orders WHERE order_no=? OR EXISTS(SELECT 1 FROM receivings r WHERE r.order_id=purchase_orders.id AND r.trace_no=?)",
-                          (t, t)).fetchone()
-        out['order'] = dict_row(po) if po else None
-        if po:
-            # 询价(溯源号回填或同申请来源)
-            inqs = conn.execute("SELECT * FROM inquiries WHERE (trace_no=? OR trace_no=? OR trace_no LIKE ?) OR (req_id=? AND status NOT IN ('已作废','已取消','已撤回'))",
-                                (t, root, root + '-%', po['req_id'])).fetchall() if po['req_id'] else conn.execute(
-                                "SELECT * FROM inquiries WHERE trace_no=? OR trace_no=? OR trace_no LIKE ?", (t, root, root + '-%')).fetchall()
-            out['inquiries'] = [dict_row(r) for r in inqs]
-        else:
-            inqs = conn.execute("SELECT * FROM inquiries WHERE trace_no=? OR trace_no=? OR trace_no LIKE ?", (t, root, root + '-%')).fetchall()
-            out['inquiries'] = [dict_row(r) for r in inqs]
-        cts = conn.execute("SELECT * FROM contracts WHERE trace_no=? OR trace_no=? OR trace_no LIKE ?", (t, root, root + '-%')).fetchall()
-        out['contracts'] = [dict_row(r) for r in cts]
-        rcs = conn.execute("SELECT * FROM receivings WHERE trace_no=? OR trace_no=? OR trace_no LIKE ?", (t, root, root + '-%')).fetchall()
-        out['receivings'] = [dict_row(r) for r in rcs]
-        fls = conn.execute("SELECT * FROM inventory_flows WHERE trace_no=? OR trace_no=? OR trace_no LIKE ? ORDER BY id", (t, root, root + '-%')).fetchall()
-        out['flows'] = [dict_row(r) for r in fls]
-        # 出库: 出库明细带溯源号 → 关联出库单
-        rits = conn.execute("SELECT ri.*, r.req_no, r.requester, r.receive_dept, r.created_at AS r_created FROM requisition_items ri LEFT JOIN requisitions r ON r.id=ri.requisition_id WHERE ri.trace_no=? OR ri.trace_no=? OR ri.trace_no LIKE ?", (t, root, root + '-%')).fetchall()
-        out['requisitions'] = [dict_row(r) for r in rits]
+        out = _trace_build(conn, t)
     except Exception as e:
         conn.close()
-        return jsonify({'error': '查询失败: %s' % str(e)[:100]}), 500
+        return jsonify({'error': '查询失败: %s' % str(e)[:160]}), 500
     conn.close()
     return jsonify(out)
 

@@ -532,11 +532,11 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
         </div>
         <div id="estTableWrap"><div style="color:#999;font-size:10px">点击上方标签查看各表明细</div></div>
       </div></div>
-    <div class="card" style="margin-bottom:6px"><div class="ch"><h3>🔍 商品溯源穿透查询（V11.251）</h3></div>
+    <div class="card" style="margin-bottom:6px"><div class="ch"><h3>🔍 商品溯源穿透查询（V11.280）</h3></div>
       <div class="cb" style="font-size:9px;line-height:1.7">
-        <div style="color:#666;margin-bottom:4px">输入<b>溯源编号</b>（采购订单号，如 CG-202609-0001；分批入库可用 订单号-批次 如 CG-202609-0001-01），一次性查看整条链路：采购订单 → 询价 → 合同 → 入库明细 → 库存流水 → 出库领用。</div>
+        <div style="color:#666;margin-bottom:4px">输入<b>任意单据编号</b>（采购申请号 如 ZH2026090903、询价号 XJ-202609-0008、订单号 CG-202609-0010、合同号 HQZC-GCWZ-001-2026、入库单号 RK-202609-0006，另支持出库领用单号/付款单号/主业务号），系统自动识别单据类型并回溯到<b>来源采购申请</b>，一次性查看整条链路：<b>采购申请（溯源根）</b> → 三方询价 → 采购订单 → 采购合同 → 入库单 → 库存流水 → 出库领用。分批入库仍可用 订单号-批次（如 CG-202609-0014-01）。</div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-          <input id="traceQ" placeholder="溯源编号/采购订单号/主业务号(如HQZC20260909001)" style="width:240px;padding:5px 8px;border:1px solid var(--b);border-radius:4px;font-size:11px" onkeydown="if(event.key==='Enter')traceQuery()">
+          <input id="traceQ" placeholder="任意单据编号(申请号/询价号/订单号/合同号/入库单号…)" style="width:300px;padding:5px 8px;border:1px solid var(--b);border-radius:4px;font-size:11px" onkeydown="if(event.key==='Enter')traceQuery()">
           <button class="btn btn-p btn-sm" onclick="traceQuery()">🔍 查询全链路</button>
           ${ME&&ME.can_config?`<button class="btn btn-o btn-sm" onclick="backfillTrace()" title="扫描历史单据(入库/合同/询价/流水/库存)空溯源号, 按关联订单批量回填">🛠 存量溯源补录</button>`:''}
         </div>
@@ -7799,23 +7799,24 @@ async function saveCompanyCodes(){
   const r=await api('/admin/company-codes',{method:'POST',body:JSON.stringify({map:mp})});
   if(r&&r.success){alert('✅ 已保存');companyCodesCard()}else alert((r&&r.error)||'保存失败');
 }
-// V11.251: 溯源穿透查询 — 输入溯源编号查看整条链路
+// V11.280: 溯源穿透查询 — 输入任意单据编号, 回溯到来源采购申请为溯源根查看整条链路
 async function traceQuery(){
   const box=id('traceBox');if(!box)return;
   const t=(id('traceQ').value||'').trim();
-  if(!t){alert('请输入溯源编号');return}
+  if(!t){alert('请输入单据编号');return}
   box.innerHTML='<div class="loading">查询全链路中...</div>';
   try{
     const d=await api('/trace/'+encodeURIComponent(t));
     if(!d||d.error){box.innerHTML='<div style="color:#c0392b">⚠️ '+(d&&d.error?esc(d.error):'查询失败')+'</div>';return}
-    let h=`<div style="font-size:10px;background:#f0f7ff;border:1px solid #d6e8ff;border-radius:6px;padding:6px 8px;margin-bottom:6px">🔗 溯源编号 <b>${esc(d.trace_no)}</b>（根订单 ${esc(d.root_order_no)}）— 全链路 ${d.order?'含采购订单':''}${d.inquiries.length?'/询价':''}${d.contracts.length?'/合同':''}${d.receivings.length?'/入库':''}${d.flows.length?'/库存流水':''}${d.requisitions.length?'/出库':''}</div>`;
+    const _ords=(d.orders&&d.orders.length)?d.orders:(d.order?[d.order]:[]);
+    let h=`<div style="font-size:10px;background:#f0f7ff;border:1px solid #d6e8ff;border-radius:6px;padding:6px 8px;margin-bottom:6px">🔗 输入编号 <b>${esc(d.trace_no)}</b>${d.matched_type?`（识别为 ${esc(d.matched_type)}）`:''} — 溯源根 <b>采购申请 ${esc(d.root_req_no||'-')}</b>${d.root_order_no?` · 根订单 ${esc(d.root_order_no)}`:''}<br>全链路：${_ords.length?'采购订单':''}${d.inquiries.length?'/询价':''}${d.contracts.length?'/合同':''}${d.receivings.length?'/入库':''}${d.flows.length?'/库存流水':''}${d.requisitions.length?'/出库领用':''}</div>`;
     const sec=(title,rows,cols,fmt)=>rows&&rows.length?`<div style="margin-top:6px"><b style="font-size:10px">${title}（${rows.length}）</b>
-      <table class="tb" style="font-size:8.5px;margin-top:2px"><tr>${cols.map(c=>`<th style="text-align:left">${c}</th>`).join('')}</tr>${rows.map(fmt).join('')}</table></div>`:'';
+      <div style="overflow-x:auto"><table class="tb" style="font-size:8.5px;margin-top:2px;min-width:100%"><tr>${cols.map(c=>`<th style="text-align:left">${c}</th>`).join('')}</tr>${rows.map(fmt).join('')}</table></div></div>`:'';
+    if(d.note)h+=`<div style="font-size:10px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:5px 8px;margin-bottom:4px">ℹ️ ${esc(d.note)}</div>`;
     if(d.biz_no)h+=`<div style="font-size:10px;background:#eef2ff;border:1px solid #d6e0ff;border-radius:6px;padding:5px 8px;margin-bottom:4px">🔖 主业务流水号 <b>${esc(d.biz_no)}</b>（该业务申请/订单/入库共用，可区分公司）</div>`;
-    if(d.request)h+=sec('📝 采购申请',[d.request],['申请单号','部门','事由/物资','状态'],x=>`<tr><td><b>${esc(x.req_no)}</b></td><td>${esc(x.dept||'-')}</td><td>${esc((x.purpose||x.item_name||'').slice(0,30))}</td><td>${tag(x.status)}</td></tr>`);
-    if(d.orders&&d.orders.length>1)h+=sec('📋 关联订单(多张)',d.orders,['单号','物资','金额','状态'],x=>`<tr><td><b>${esc(x.order_no)}</b></td><td>${esc(x.item_name||'')}</td><td>¥${(x.total_amount||0).toFixed(0)}</td><td>${tag(x.status)}</td></tr>`);
-    if(d.order)h+=sec('📋 采购订单(溯源根)',[d.order],['单号','物资','数量','供应商','状态','金额'],x=>`<tr><td><b>${esc(x.order_no)}</b></td><td>${esc(x.item_name)}</td><td>${x.quantity}${esc(x.unit||'')}</td><td>${esc(x.supplier||'-')}</td><td>${tag(x.status)}</td><td>¥${(x.total_amount||0).toFixed(0)}</td></tr>`);
+    if(d.request)h+=sec('📝 采购申请（溯源根）',[d.request],['申请单号','部门','事由/物资','状态','申请日期'],x=>`<tr><td><b>${esc(x.req_no)}</b></td><td>${esc(x.dept||'-')}</td><td>${esc((x.purpose||x.item_name||'').slice(0,30))}</td><td>${tag(x.status)}</td><td>${esc((x.apply_date||x.created_at||'').slice(0,10))}</td></tr>`);
     h+=sec('🔍 三方询价',d.inquiries,['询价单号','标题','状态','溯源号'],x=>`<tr><td><b>${esc(x.inq_no)}</b></td><td>${esc(x.title||'-')}</td><td>${tag(x.status)}</td><td style="font-size:8px">${esc(x.trace_no||'-')}</td></tr>`);
+    h+=sec('📋 采购订单',_ords,['单号','物资','数量','供应商','状态','金额'],x=>`<tr><td><b>${esc(x.order_no)}</b></td><td>${esc(x.item_name||'')}</td><td>${x.quantity||''}${esc(x.unit||'')}</td><td>${esc(x.supplier||'-')}</td><td>${tag(x.status)}</td><td>¥${(x.total_amount||0).toFixed(0)}</td></tr>`);
     h+=sec('📄 采购合同',d.contracts,['合同号','名称','金额','模板','状态'],x=>`<tr><td><b>${esc(x.contract_no)}</b></td><td>${esc(x.contract_name||'-')}</td><td>¥${(x.amount||0).toFixed(0)}</td><td style="font-size:8px">${esc((x.template_name||'').replace('买卖合同-','')||'-')}</td><td>${tag(x.status)}</td></tr>`);
     h+=sec('📦 入库单',d.receivings,['入库单号','物资','数量','批次','溯源号','状态'],x=>`<tr><td><b>${esc(x.receive_no)}</b></td><td>${esc(x.item_name||'-')}</td><td>${x.quantity}</td><td>${esc(x.batch_no||'整批')}</td><td style="font-size:8px">${esc(x.trace_no||'-')}</td><td>${tag(x.status)}</td></tr>`);
     h+=sec('🏢 库存流水',d.flows,['时间','物资','类型','数量','结存','单据','溯源号'],x=>`<tr><td style="font-size:8px">${esc((x.created_at||'').slice(5,16))}</td><td>${esc(x.item_name)}</td><td>${esc(x.flow_type)}</td><td>${x.qty}</td><td>${x.balance_after}</td><td style="font-size:8px">${esc(x.doc_no||'-')}</td><td style="font-size:8px">${esc(x.trace_no||'-')}</td></tr>`);
