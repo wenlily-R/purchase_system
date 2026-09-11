@@ -20,6 +20,14 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 APP = os.path.join(BASE, 'app.py')
 HTML = os.path.join(BASE, 'templates', 'index.html')
 
+# V11.272修复: Windows 下被守护脚本以管道(PIPE)调用时, stdout 编码为 GBK(cp936),
+# 打印 ✅/❌ 等符号会抛 UnicodeEncodeError 导致脚本非零退出 → 守护误判"自检未通过"而拒绝重启, 本机服务长期挂掉。
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
 errors = []
 warnings = []
 

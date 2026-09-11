@@ -30,6 +30,7 @@ WATCH_EXTS = ('.py', '.html', '.js', '.css')
 
 proc = None
 running = True
+_last_try = 0  # V11.272: 自检被拒/启动失败后的重试节流时间戳
 
 def snapshot():
     """返回 {相对路径: 内容md5} 用于检测变化"""
@@ -56,11 +57,18 @@ def start_app():
     global proc
     # 自检: 代码有低级错误(语法/裸百分号/session后台线程等)时不重启
     try:
+        # V11.272: 子进程强制 UTF-8(否则 Windows 管道默认 GBK, 自检打印 ✅ 即崩→误判"自检未通过");
+        #          同时回显 stderr, 便于定位真实失败原因
+        _env = dict(os.environ)
+        _env['PYTHONUTF8'] = '1'
+        _env['PYTHONIOENCODING'] = 'utf-8'
         r = subprocess.run([VENV_PY, os.path.join(BASE, 'check_code.py')],
-                           capture_output=True, text=True, timeout=60)
+                           capture_output=True, text=True, encoding='utf-8', errors='replace',
+                           timeout=60, env=_env)
         if r.returncode != 0:
             print('[%s] ⛔ 自检未通过, 拒绝重启(保持当前版本运行)!' % time.strftime('%H:%M:%S'))
-            print(r.stdout[-800:])
+            print((r.stdout or '')[-800:])
+            print((r.stderr or '')[-800:])
             return
     except Exception as e:
         print('[%s] ⚠️ 自检执行异常(放行): %s' % (time.strftime('%H:%M:%S'), e))
@@ -71,9 +79,14 @@ def start_app():
         except Exception:
             pass
     print('[%s] 启动/重启系统...' % time.strftime('%H:%M:%S'))
+    # V11.272: stdin=DEVNULL + 新进程组, 否则 app.py 会因继承无效 stdin/控制台信号以 0xC000013A(STATUS_CONTROL_C_EXIT) 反复崩
+    _kw = {}
+    if os.name == 'nt':
+        _kw['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
     proc = subprocess.Popen([VENV_PY, APP], cwd=BASE,
                             stdout=open(os.path.join(BASE, 'data', 'app_watchdog.log'), 'a'),
-                            stderr=subprocess.STDOUT)
+                            stderr=subprocess.STDOUT,
+                            stdin=subprocess.DEVNULL, **_kw)
     return proc
 
 def stop():
@@ -92,11 +105,15 @@ time.sleep(1)
 
 while running:
     time.sleep(2)
-    # 系统进程意外退出 → 拉起
-    if proc and proc.poll() is not None:
-        print('[%s] 系统进程退出 code=%s, 自动拉起' % (time.strftime('%H:%M:%S'), proc.returncode))
-        start_app()
-        last = snapshot()
+    # 系统进程未运行 → 拉起。
+    # V11.272修复: 原实现只在 proc 非空时检查, 一旦自检未通过(proc 保持 None)就永远不会再启动 → 本机服务长期挂死。
+    if proc is None or proc.poll() is not None:
+        if proc is not None:
+            print('[%s] 系统进程退出 code=%s, 自动拉起' % (time.strftime('%H:%M:%S'), proc.returncode))
+        if time.time() - _last_try >= 60:   # 60 秒一次重试(自检未通过时不过度刷屏)
+            _last_try = time.time()
+            start_app()
+            last = snapshot()
         time.sleep(1)
         continue
     # 代码变化 → 重启

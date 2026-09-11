@@ -840,18 +840,46 @@ def init_db():
         conn.execute("ALTER TABLE inquiries ADD COLUMN access_unlocked INTEGER DEFAULT 0")
     # V11.265 订单头数量=明细合计 一致性维护: 历史一次纠偏 + 触发器防再错
     # (定标/自动下单路径曾把 header quantity 写死为1, 与 order_items 明细不一致 → 头部数量显示错误/卡点误判)
-    try:
-        _fix = conn.execute("""UPDATE purchase_orders SET quantity=COALESCE((SELECT SUM(quantity) FROM order_items WHERE order_id=purchase_orders.id), quantity)
-            WHERE EXISTS (SELECT 1 FROM order_items WHERE order_id=purchase_orders.id)""").rowcount
-        if _fix:
-            log('系统', '订单数量一致性修复', f'订单头部数量与明细不符, 已按明细合计修正 {_fix} 单')
+    # V11.272 修复(ran): ①触发器先建(原顺序下 UPDATE 一遇并发锁即抛错 → 触发器从未创建, 线上实测 0 个) ②整块重试3次+busy_timeout
+    for _try265 in range(3):
+      try:
+        conn.execute("PRAGMA busy_timeout=30000")
         for _tg in ('trg_po_qty_i', 'trg_po_qty_u', 'trg_po_qty_d'):
             conn.execute(f"DROP TRIGGER IF EXISTS {_tg}")
         conn.execute("CREATE TRIGGER trg_po_qty_i AFTER INSERT ON order_items BEGIN UPDATE purchase_orders SET quantity=COALESCE((SELECT SUM(quantity) FROM order_items WHERE order_id=NEW.order_id),0) WHERE id=NEW.order_id; END")
         conn.execute("CREATE TRIGGER trg_po_qty_u AFTER UPDATE ON order_items BEGIN UPDATE purchase_orders SET quantity=COALESCE((SELECT SUM(quantity) FROM order_items WHERE order_id=NEW.order_id),0) WHERE id=NEW.order_id; END")
         conn.execute("CREATE TRIGGER trg_po_qty_d AFTER DELETE ON order_items BEGIN UPDATE purchase_orders SET quantity=COALESCE((SELECT SUM(quantity) FROM order_items WHERE order_id=OLD.order_id),0) WHERE id=OLD.order_id; END")
-    except Exception as _e:
-        print('V11.265 订单数量一致性维护失败:', _e)
+        conn.commit()
+        _fix = conn.execute("""UPDATE purchase_orders SET quantity=COALESCE((SELECT SUM(quantity) FROM order_items WHERE order_id=purchase_orders.id), quantity)
+            WHERE EXISTS (SELECT 1 FROM order_items WHERE order_id=purchase_orders.id)""").rowcount
+        conn.commit()
+        if _fix:
+            log('系统', '订单数量一致性修复', f'订单头部数量与明细不符, 已按明细合计修正 {_fix} 单')
+        break
+      except Exception as _e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        if _try265 >= 2:
+            print('V11.265 订单数量一致性维护失败:', _e)
+        else:
+            time.sleep(1.5)
+    # ---- V11.272 公共列补齐: 通用审批/驳回/撤回/编辑链路依赖的公共列(付款等精简表缺列曾致审批 500)
+    for _t, _cs in (('payment_requests', (('updated_at', "TEXT DEFAULT ''"), ('reject_count', 'INTEGER DEFAULT 0'),
+                                          ('rejected_items', "TEXT DEFAULT ''"), ('last_edit_by', "TEXT DEFAULT ''"),
+                                          ('last_edit_at', "TEXT DEFAULT ''"))),
+                    ('credit_notes', (('reject_count', 'INTEGER DEFAULT 0'), ('rejected_items', "TEXT DEFAULT ''"),
+                                      ('last_edit_by', "TEXT DEFAULT ''"), ('last_edit_at', "TEXT DEFAULT ''"))),
+                    ('expenses', (('updated_at', "TEXT DEFAULT ''"),))):
+        try:
+            _have = {r[1] for r in conn.execute(f"PRAGMA table_info({_t})").fetchall()}
+            for _cn, _cd in _cs:
+                if _cn not in _have:
+                    conn.execute(f"ALTER TABLE {_t} ADD COLUMN {_cn} {_cd}")
+            conn.commit()
+        except Exception as _e272:
+            print('V11.272 公共列补齐失败', _t, _e272)
     # ---- V11.206 集体验收: 标记是否需集体验收 + 验收状态(空=常规, 1=需集体验收; collect_status: 空/待集体验收/已集体验收) ----
     if 'collect_accept' not in _rcvcols:
         conn.execute("ALTER TABLE receivings ADD COLUMN collect_accept INTEGER DEFAULT 0")
@@ -2071,14 +2099,24 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
             c.execute("UPDATE inquiries SET status=?, updated_at=? WHERE id=?", (st, now(), biz_id))
     else:
         _tbl = biz_table(biz_type)
-        # V11.185: 驳回退回闭环 — 累计驳回次数+标记条目(通用表); 通过/正常只改状态
+        # V11.272 修复(ran回归发现): payment_requests 等表无 updated_at/reject_count/rejected_items 列,
+        #   原实现无脑 UPDATE ... SET status=?, updated_at=? → sqlite3.OperationalError: no such column: updated_at
+        #   → 付款(及同类表)审批/驳回必然 500(前端表现为审批点不动)。改为按真实列动态拼 SET。
+        try:
+            _cols = {r[1] for r in c.execute(f"PRAGMA table_info({_tbl})").fetchall()}
+        except Exception:
+            _cols = set()
+        _sets, _args = ['status=?'], [st]
+        if 'updated_at' in _cols:
+            _sets.append('updated_at=?'); _args.append(now())
         if result != 'ok' and _tbl:
-            _rc = c.execute(f"SELECT COALESCE(reject_count,0) FROM {_tbl} WHERE id=?", (biz_id,)).fetchone()
-            _rc_n = (_rc[0] if _rc else 0) + 1
-            c.execute(f"UPDATE {_tbl} SET status=?, updated_at=?, reject_count=?, rejected_items=? WHERE id=?",
-                      (st, now(), _rc_n, rejected_items if rejected_items is not None else '__all__', biz_id))
-        else:
-            c.execute(f"UPDATE {_tbl} SET status=?, updated_at=? WHERE id=?", (st, now(), biz_id))
+            if 'reject_count' in _cols:
+                _rc = c.execute(f"SELECT COALESCE(reject_count,0) FROM {_tbl} WHERE id=?", (biz_id,)).fetchone()
+                _sets.append('reject_count=?'); _args.append((_rc[0] if _rc else 0) + 1)
+            if 'rejected_items' in _cols:
+                _sets.append('rejected_items=?'); _args.append(rejected_items if rejected_items is not None else '__all__')
+        _args.append(biz_id)
+        c.execute(f"UPDATE {_tbl} SET {', '.join(_sets)} WHERE id=?", _args)
     # V11.260: 审批流转统一操作留痕(每张单时间线: 创建→审批通过/驳回→后续动作, 修复操作记录空白)
     try:
         if biz_type != 'collect_accept':
@@ -11673,7 +11711,8 @@ def api_trace():
         # 询价(物料名)
         if _item:
             try:
-                for t2 in c.execute("SELECT id,inq_no,item_name,status FROM inquiries WHERE item_name=? OR purpose LIKE ? LIMIT 5", (_item, f'%{_item}%')).fetchall():
+                # V11.272 修复(ran): inquiries 无 item_name 列(SELECT 必抛 no such column, 被 except 吞掉 → 溯源询价恒为空)
+                for t2 in c.execute("SELECT i.id,i.inq_no,i.purpose,i.status FROM inquiries i WHERE i.purpose LIKE ? OR i.title LIKE ? OR EXISTS(SELECT 1 FROM request_items ri WHERE ri.req_id=i.req_id AND (ri.item_name=? OR ri.spec=?)) LIMIT 5", (f'%{_item}%', f'%{_item}%', _item, _item)).fetchall():
                     out['upstream']['inquiries'].append(dict(t2))
             except Exception:
                 pass
@@ -11709,7 +11748,8 @@ def api_trace():
             except Exception:
                 pass
             try:
-                for t2 in c.execute("SELECT id,return_no,item_name,quantity,status FROM return_requests WHERE item_name=? LIMIT 5", (_item,)).fetchall():
+                # V11.272 修复(ran): return_requests 无 item_name/quantity 列 → 溯源退库恒为空; 改由 return_items 明细关联
+                for t2 in c.execute("SELECT r.id,r.return_no,r.source_req_no,r.total_amount,r.status FROM return_requests r WHERE EXISTS(SELECT 1 FROM return_items ri WHERE ri.return_id=r.id AND ri.item_name=?) LIMIT 5", (_item,)).fetchall():
                     out['downstream']['returns'].append(dict(t2))
             except Exception:
                 pass
@@ -13421,6 +13461,54 @@ def api_void_credit(cid):
     return jsonify({'success': True})
 
 
+@app.route('/api/payments', methods=['POST'])
+@login_required
+def api_create_payment():
+    """V11.272 修复(ran回归发现): 提交付款申请 — 前端【提交】一直在调, 后端原无此路由(404, 付款单建不出来)
+    提交即进入付款审批流(biz_type='payment'); 审批通过后由财务执行付款(已付款/paid_at)"""
+    d = request.json or {}
+    amt = float(d.get('amount') or 0)
+    reason = str(d.get('payment_reason') or '').strip()
+    date = str(d.get('expect_pay_date') or '').strip()
+    payee = str(d.get('payee_name') or '').strip()
+    acc = str(d.get('payee_account') or '').strip()
+    if not reason:
+        return jsonify({'error': '请填写付款事由(必填)'}), 400
+    if amt <= 0:
+        return jsonify({'error': '请填写正确的付款金额(必填)'}), 400
+    if not date:
+        return jsonify({'error': '请选择期望付款日期(必填)'}), 400
+    if not payee or not acc:
+        return jsonify({'error': '请填写收款人全称与收款账户(必填)'}), 400
+    if str(d.get('has_contract') or '') == '是' and not str(d.get('contract_attachment') or '').strip():
+        return jsonify({'error': '已选择签订合同, 请上传合同附件(必填)'}), 400
+    conn = db()
+    no = gen_no('FK', 'payment_requests', 'payment_no', conn)
+    _atts = d.get('attachments') or []
+    conn.execute("""INSERT INTO payment_requests(payment_no,credit_id,payment_type,supplier,amount,contract_id,status,remark,
+        trade_mode,urgent,payment_reason,expect_pay_date,invoice_type,has_contract,contract_attachment,payee_name,payee_account,attachments)
+        VALUES(?,?,?,?,?,?,'待审批','',?,?,?,?,?,?,?,?,?,?)""",
+                 (no, d.get('credit_id'), d.get('payment_type') or ('合同付款' if d.get('contract_id') else '费用付款'),
+                  d.get('supplier', ''), amt, d.get('contract_id'),
+                  d.get('trade_mode', '货到付款'), 1 if d.get('urgent') else 0, reason, date,
+                  d.get('invoice_type', ''), str(d.get('has_contract') or ''),
+                  str(d.get('contract_attachment') or ''), payee, acc,
+                  json.dumps(_atts, ensure_ascii=False) if isinstance(_atts, list) else (_atts or '')))
+    pid = conn.execute("SELECT id FROM payment_requests WHERE payment_no=?", (no,)).fetchone()[0]
+    conn.commit(); conn.close()
+    try:
+        create_approvals('payment', pid, amt, submitter=session['user_name'])
+        start_instances('payment', pid)
+    except Exception as _e:
+        print('payment approval start:', _e)
+    log(session['user_name'], '提交付款申请', f'{no} {d.get("supplier","")} ¥{amt:.2f}')
+    try:
+        _trace_create('payment', 'payment_requests', 'payment_no=?', no, node='提交付款申请')
+    except Exception:
+        pass
+    return jsonify({'success': True, 'payment_no': no, 'id': pid})
+
+
 @app.route('/api/payment_requests')
 @login_required
 def api_payment_requests():
@@ -13470,13 +13558,30 @@ def api_credits():
         c.close()
         return jsonify(out)
     d = request.json or {}
+    if float(d.get('amount') or 0) <= 0:
+        c.close(); return jsonify({'error': '请填写挂账金额'}), 400
+    if not str(d.get('supplier') or '').strip():
+        c.close(); return jsonify({'error': '请选择供应商'}), 400
     no = gen_no('GZ', 'credit_notes', 'credit_no', c)
     c.execute("INSERT INTO credit_notes(credit_no,order_id,category,supplier,item_name,amount,invoice_no,remark,status) VALUES(?,?,?,?,?,?,?,?,?)",
               (no, int(d.get('order_id') or 0), d.get('category') or '', d.get('supplier') or '', d.get('item_name') or '',
                float(d.get('amount') or 0), d.get('invoice_no') or '', d.get('remark') or '', '待审批'))
+    cid = c.execute("SELECT id FROM credit_notes WHERE credit_no=?", (no,)).fetchone()[0]
     c.commit(); c.close()
+    # V11.272 补(ran): 挂账单必须进入审批流(approval_flow_config 已配 5 级/审批中心有挂账分类),
+    #   原实现只插 '待审批' 不建审批实例 → 审批中心看不到、无人可批, 挂账流程走不通
+    _amt_c = float(d.get('amount') or 0)
+    try:
+        create_approvals('credit', cid, _amt_c, submitter=session['user_name'])
+        start_instances('credit', cid)
+    except Exception as _e:
+        print('credit approval start:', _e)
     log(session['user_name'], '登记挂账', no)
-    return jsonify({'success': True, 'credit_no': no})
+    try:
+        _trace_create('credit', 'credit_notes', 'credit_no=?', no, node='登记挂账')
+    except Exception:
+        pass
+    return jsonify({'success': True, 'credit_no': no, 'id': cid})
 
 
 @app.route('/api/payments', methods=['GET'])
@@ -14849,8 +14954,11 @@ def api_requisition_void(rid):
                 new_q = inv['quantity'] - f['qty']  # f['qty'] 为负值, 减负=加回
                 c.execute("UPDATE inventory SET quantity=?, updated_at=? WHERE id=?", (new_q, now(), inv['id']))
             else:
-                c.execute("INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,created_at) VALUES(?,?,?,?,?,?)",
-                          (f['item_name'], f['spec'] or '', f['unit'] or '个', -f['qty'], '主库房', now()))
+                c.execute("INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,updated_at) VALUES(?,?,?,?,?,?)",
+                          (f['item_name'], f['spec'] or '', f['unit'] or '个', 0, '主库房', now()))
+                # V11.272 修复(ran): 容忍 inventory 唯一索引(名称+规格+仓库) — 已存在同名行时按名称+规格回写
+                c.execute("UPDATE inventory SET quantity=quantity+?, updated_at=? WHERE item_name=? AND spec=?",
+                          (-f['qty'], now(), f['item_name'], f['spec'] or ''))
         c.execute("DELETE FROM inventory_flows WHERE doc_type='requisition' AND doc_id=?", (rid,))
         c.execute("UPDATE requisitions SET status='已作废', updated_at=? WHERE id=?", (now(), rid))
         c.execute("UPDATE approval_instances SET status='rejected', comment='单据作废' WHERE biz_type='requisition' AND biz_id=? AND status='pending'", (rid,))

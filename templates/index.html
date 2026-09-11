@@ -3746,7 +3746,7 @@ async function saveContractEdit(oid){
   const r=await api(`/contracts/${oid}/content`,{method:'POST',body:JSON.stringify({content})});
   if(r.success){alert('✅ 已保存并归档，可在 合同管理→下载 查看最新文件');closeMod();loadContracts()}else alert(r.error||'保存失败');
 }
-async function loadDeliveries(){const d=await api('/deliveries');id('deliveriesTable').innerHTML=rnder(d,['delivery_no','item_name','supplier','quantity','sign_status','id'],['单号','物资','供应商','数量','签收','操作'],r=>`<td><b>${esc(r.delivery_no)}</b></td><td>${esc(r.item_name)}</td><td>${esc(r.supplier)}</td><td>${r.quantity}${esc(r.unit)}</td><td>${tag(r.sign_status)}</td><td>${r.sign_status=='待签收'?`<button class="lnk" style="color:var(--s)" onclick="signDel(${r.id})">签收</button>`:''}</td>`)}
+async function loadDeliveries(){const d=await api('/deliveries');const _dtb=id('deliveriesTable');if(!_dtb)return;_dtb.innerHTML=rnder(d,['delivery_no','item_name','supplier','quantity','sign_status','id'],['单号','物资','供应商','数量','签收','操作'],r=>`<td><b>${esc(r.delivery_no)}</b></td><td>${esc(r.item_name)}</td><td>${esc(r.supplier)}</td><td>${r.quantity}${esc(r.unit)}</td><td>${tag(r.sign_status)}</td><td>${r.sign_status=='待签收'?`<button class="lnk" style="color:var(--s)" onclick="signDel(${r.id})">签收</button>`:''}</td>`)}
 async function signDel(id){const n=prompt('签收人:','库房');if(!n)return;await api(`/deliveries/${id}/sign`,{method:'POST',body:JSON.stringify({receiver:n})});loadDeliveries();loadOrders()}
 async function showRcvDetail(id){
   // V11.150: 防连点 + 最新打开者优先
@@ -4193,7 +4193,7 @@ async function submitRcvBatch(oid,n){
   if(r.success){alert('✅ '+r.message+'（🟠暂估）');closeMod();loadOrders();loadReceivings();loadDashboard()}
   else alert(r.error||'提交失败');
 }
-async function loadCredits(){const c=await api('/credits');id('creditsTable').innerHTML=groupRnder(c, r=>r.created_at,['编号','内容','金额','状态','驳回'],r=>`<td><b>${esc(r.credit_no)}</b></td><td>${esc(r.item_name)}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}</td>${rejCell(r)}`)}
+async function loadCredits(){const c=await api('/credits');const _ctb=id('creditsTable');if(!_ctb)return;_ctb.innerHTML=groupRnder(c, r=>r.created_at,['编号','内容','金额','状态','驳回'],r=>`<td><b>${esc(r.credit_no)}</b></td><td>${esc(r.item_name)}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}</td>${rejCell(r)}`)}
 async function loadPayments(){const p=await api('/payments');id('paymentsTable').innerHTML=groupRnder(p, r=>r.created_at,['编号','类型','金额','状态','驳回','操作'],r=>`<td><b>${esc(r.payment_no)}</b></td><td>${esc(r.payment_type)}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}</td>${rejCell(r)}<td>${r.status=='已通过'?`<button class="lnk" style="color:var(--s)" onclick="doPay(${r.id})">付款</button>`:''} ${(r.status=='待审批'||r.status=='已驳回'||r.status=='草稿')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('payment',${r.id},'付款单')">🗑️删除</button>`:''}</td>`)}
 async function doPay(id){if(!confirm('确认付款?'))return;await api(`/payments/${id}/pay`,{method:'POST',body:JSON.stringify({})});loadPayments()}
 let invSortKey='id',invSortDir=1;
@@ -7628,7 +7628,8 @@ async function loadApprTodo(){
     const groups={purchase_request:'采购申请',purchase_order:'采购订单',contract:'合同',credit:'挂账',payment:'付款'};
     const cnt={};
     a.forEach(x=>{cnt[x.biz_type]=(cnt[x.biz_type]||0)+1});
-    id('apprTodoBox').innerHTML=Object.entries(cnt).map(([k,v])=>`<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--b);font-size:9px">
+    const _atb=id('apprTodoBox');if(!_atb)return; // V11.272: 容器缺失时直接返回, 避免 TypeError 中断渲染
+    _atb.innerHTML=Object.entries(cnt).map(([k,v])=>`<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--b);font-size:9px">
       <span class="tag tg-o">${esc(groups[k]||k)}</span><b>${v}</b> 条待审批
       <button class="btn btn-o btn-sm" style="margin-left:auto" onclick="sw('approvals')">去处理</button></div>`).join('')||'<div style="color:#999;padding:4px;font-size:9px">✅ 暂无待审批</div>';
   }catch(e){}
