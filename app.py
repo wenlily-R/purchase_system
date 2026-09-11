@@ -708,6 +708,7 @@ def init_db():
         ('contracts', 'template_name', "ALTER TABLE contracts ADD COLUMN template_name TEXT DEFAULT ''"),
         # ---- V11.251 采购全流程溯源编号: 各业务环节表挂 trace_no(源=采购订单号, 分批入库=订单号-批次序) ----
         ('inquiries', 'trace_no', "ALTER TABLE inquiries ADD COLUMN trace_no TEXT DEFAULT ''"),
+        ('inquiries', 'approve_note', "ALTER TABLE inquiries ADD COLUMN approve_note TEXT DEFAULT ''"),
         ('contracts', 'trace_no', "ALTER TABLE contracts ADD COLUMN trace_no TEXT DEFAULT ''"),
         ('receivings', 'trace_no', "ALTER TABLE receivings ADD COLUMN trace_no TEXT DEFAULT ''"),
         ('inventory', 'trace_no', "ALTER TABLE inventory ADD COLUMN trace_no TEXT DEFAULT ''"),
@@ -7851,7 +7852,11 @@ def api_inquiry_select(iid):
 def api_inquiry_split_select(iid):
     """V11.145: 分项定标 — 每个物资可指定不同供应商, 按供应商分组生成多个订单
     请求: {items: [{item_id, supplier_id}, ...]}  item_id=request_items.id, supplier_id=inquiry_suppliers.id
-    每项取该供应商对该物资的报价; 生成N个订单(按供应商分组)"""
+    每项取该供应商对该物资的报价; 生成N个订单(按供应商分组)
+    V11.270: 本接口停用 — 分项定标收窄为审批环节专属(改由 /approve-split-select 承担)"""
+    # V11.270: 三方询价分项定标收窄为审批人专属 — 采购员不可直接分项定标、生成采购订单
+    # (如需恢复采购员定标能力, 删除本 return 即可)
+    return jsonify({'error': '分项定标已改为审批环节操作：请点击【✅ 提交审批】，由审批人在审批环节完成分项定标（自动生成采购订单）'}), 403
     d = request.json or {}
     picks = d.get('items') or []
     conn = db()
@@ -7978,8 +7983,9 @@ def api_inquiry_approve_split_select(iid):
     i = conn.execute("SELECT * FROM inquiries WHERE id=?", (iid,)).fetchone()
     if not i:
         conn.close(); return jsonify({'error': '询价单不存在'}), 404
-    if i['status'] != '定标审批中':
-        conn.close(); return jsonify({'error': '当前状态不可审批定标（仅"定标审批中"可操作）'}), 400
+    # V11.270: 允许"定标审批中"(审批环节直接定标) 与 "待定标"(审批已通过按最低价, 由审批人继续完成定标)
+    if i['status'] not in ('定标审批中', '待定标'):
+        conn.close(); return jsonify({'error': '当前状态不可分项定标（仅"定标审批中/待定标"可操作）'}), 400
     if not picks:
         conn.close(); return jsonify({'error': '未选择任何物资的供应商'}), 400
     # 权限: 本单待审批环节的审批人, 或 领导/管理员
@@ -8012,6 +8018,11 @@ def api_inquiry_approve_split_select(iid):
     groups = {}
     for it, s in valid:
         groups.setdefault(s['id'], {'sup': s, 'items': []})['items'].append(it)
+    # V11.270: 定标留痕(操作人/时间/每项选定供应商) — 写入审批意见/操作日志/订单备注/询价备注
+    _prev_st = i['status']
+    _trace_ts = now()
+    _pick_txt = '；'.join('%s → %s' % (it['item_name'], s['supplier_name']) for it, s in valid)
+    _trace_line = '分项定标：%s（操作人：%s，时间：%s）' % (_pick_txt, _uname, _trace_ts)
     created = []
     all_items_list = conn.execute("SELECT * FROM request_items WHERE req_id=? ORDER BY id", (i['req_id'],)).fetchall()
     item_pos = {it['id']: pos for pos, it in enumerate(all_items_list)}
@@ -8041,7 +8052,7 @@ def api_inquiry_approve_split_select(iid):
         if total <= 0:
             total = float(inquiry_eff_price(dict(s), 'quote_price')) or float(s['quote_price'] or 0)
         first = rows[0]
-        detail_parts = ['三方询价分项定标(审批人): %s' % s['supplier_name']]
+        detail_parts = ['三方询价分项定标(审批人 %s @ %s): %s' % (_uname, _trace_ts, s['supplier_name'])]
         for r in rows:
             detail_parts.append('%s x%s ¥%.2f' % (r[0], r[3], r[5]))
         _adj_rm = (s.get('adj_remark') or '').strip() if 'adj_remark' in s.keys() else ''
@@ -8082,17 +8093,24 @@ def api_inquiry_approve_split_select(iid):
         created.append({'order_no': no, 'supplier': s['supplier_name'], 'total': total})
     conn.execute("UPDATE inquiries SET status='已生成订单', updated_at=? WHERE id=?", (now(), iid))
     conn.execute("UPDATE inquiry_approvals SET status='已完成' WHERE inquiry_id=?", (iid,))
-    # 审批实例置通过(记录审批人/意见/签名) — 多级时仅本环节, 无待审环节则整体完成
+    # V11.270: 留痕 — 审批意见含"每项选定供应商+操作人+时间"; 台账/详情可查
+    _cmt_full = ((_cmt + ' ') if _cmt else '同意（审批人分项定标）') + _trace_line
     try:
         conn.execute("UPDATE approval_instances SET status='approved', approver=?, comment=?, processed_at=?, signature=? WHERE biz_type='inquiry_approval' AND biz_id=? AND status='pending'",
-                     (_uname, _cmt or '同意（审批人分项定标）', now(), _sig, iid))
+                     (_uname, _cmt_full, _trace_ts, _sig, iid))
     except Exception:
         pass
+    try:
+        conn.execute("ALTER TABLE inquiries ADD COLUMN approve_note TEXT DEFAULT ''")
+    except Exception:
+        pass
+    conn.execute("UPDATE inquiries SET approve_note=? WHERE id=?", ('审批人分项定标：' + _pick_txt, iid))
     conn.commit()
-    log(_uname, '审批分项定标', '%s → 生成%d个订单' % (i['inq_no'], len(created)))
+    log(_uname, '审批分项定标', '%s → 生成%d个订单 | %s' % (i['inq_no'], len(created), _pick_txt))
     conn.close()
-    return jsonify({'success': True, 'orders': created, 'count': len(created),
-                    'message': '✅ 已分项定标并审批通过，按%d家供应商生成%d个订单' % (len(created), len(created))})
+    _msg = ('✅ 已分项定标并审批通过，按%d家供应商生成%d个订单' % (len(created), len(created))) if _prev_st == '定标审批中' \
+        else ('✅ 已按各物资择优完成分项定标，生成%d个订单' % len(created))
+    return jsonify({'success': True, 'orders': created, 'count': len(created), 'message': _msg, 'trace': _trace_line})
 
 
 def gen_inquiry_xlsx_file(iid):

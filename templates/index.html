@@ -2229,14 +2229,14 @@ async function showInquiry(qid){
   // V11.93: 所有供应商报价后显示"提交审批"按钮 — V11.180: 议价完成后(已报价)即可提交, 由采购手动点
   const allQuoted = d.suppliers && d.suppliers.length > 0 && d.suppliers.every(s => (parseFloat(s.adj_price)||parseFloat(s.quote_price)) > 0);
   const submitBtn = (d.status=='询价中' && allQuoted) ? `<button class="btn btn-s" onclick="submitInquiryApproval(${d.id})" style="background:#27ae60">✅ 提交审批</button>` : '';
-  // V11.145: 分项定标按钮(审批通过后采购员拆单用; 询价中且已报价即可用)
-  // V11.155: 待定标(领导同意按最低价)时显示醒目提示+分项定标按钮
-  const splitBtn = ((d.status=='询价中'||d.status=='待定标') && allQuoted && d.suppliers.length>1) ? `<button class="btn btn-p" onclick="showSplitSelect(${d.id})">🔀 分项定标</button>` : '';
+  // V11.270: 分项定标收窄为审批环节专属 — 采购员不再直接分项定标(入口去掉, 引导提交审批)
+  const splitBtn = '';
   // V11.155e: 各状态醒目指引(领导审批中/待定标/已生成订单 采购员都明确下一步)
   let lowestNote = '';
-  if(d.status=='定标审批中') lowestNote = `<div style="margin:8px 0;padding:8px 10px;background:#fff8e1;border:1px solid #f5c518;border-radius:6px;font-size:11px;color:#8a6d3b">⏳ 已提交领导审批，等待领导选择采购方式（通过后这里会出现【分项定标】指引）</div>`;
-  else if(d.status=='待定标') lowestNote = `<div style="margin:8px 0;padding:8px 10px;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:6px;font-size:11px;color:#2e7d32">✅ 领导已同意按各物资最低价择优采购 — 请点击【🔀 分项定标】，系统已按每项最低价默认勾选，确认后生成采购订单</div>`;
+  if(d.status=='定标审批中') lowestNote = `<div style="margin:8px 0;padding:8px 10px;background:#fff8e1;border:1px solid #f5c518;border-radius:6px;font-size:11px;color:#8a6d3b">⏳ 已提交领导审批 — 分项定标由审批人在审批环节操作，审批通过后系统自动生成采购订单</div>`;
+  else if(d.status=='待定标') lowestNote = `<div style="margin:8px 0;padding:8px 10px;background:#fff8e1;border:1px solid #f5c518;border-radius:6px;font-size:11px;color:#8a6d3b">⏳ 领导已同意按各物资最低价择优采购 — 分项定标由审批人完成（审批环节操作），请等待审批人定标生成订单</div>`;
   else if(d.status=='已生成订单') lowestNote = `<div style="margin:8px 0;padding:8px 10px;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:6px;font-size:11px;color:#2e7d32">✅ 已按领导审批结果生成采购订单，可在【采购订单】查看</div>`;
+  else if(d.status=='询价中' && allQuoted && d.suppliers.length>1) lowestNote = `<div style="margin:8px 0;padding:8px 10px;background:#eef6ff;border:1px solid #bcd9f7;border-radius:6px;font-size:11px;color:#1a4f8b">ℹ️ 分项定标由审批人在审批环节操作 — 请点击【✅ 提交审批】，提交后由审批人为每项物资选择供应商并生成采购订单</div>`;
   let btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button><button class="lnk" style="color:#7c5cff" onclick="showDocOps('inquiry',${d.id},'询价单 ${esc(d.inq_no)}')">🕘 操作记录</button>${d.locked?'':`<button class="btn btn-p" onclick="exportInquiry(${d.id})">📥 导出Excel</button>`}${splitBtn}${submitBtn}`;
   if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
   // V11.179: 询价审批详情也显示审批流程+驳回记录
@@ -2332,11 +2332,13 @@ async function saveAdjust(iid, sid){
   else alert(r.error||'保存失败');
 }
 // V11.145: 分项定标弹窗 — 每个物资逐项选供应商, 支持一键智能选最低价
-async function showSplitSelect(iid){
+// V11.270: 收窄为审批环节专属 — mode='approver' 时底部带审批签名, 提交走审批定标接口(布局/字段与页面完全一致)
+async function showSplitSelect(iid, mode){
+  const _apv=(mode==='approver');
   // V11.150: 防连点 + 最新打开者优先
-  if(__guardOpen('split:'+iid))return;
+  if(__guardOpen('split:'+iid+':'+(mode||'buyer')))return;
   const my=++__dmSeq;
-  showDetail('🔀 分项定标', '<div class="loading">加载中...</div>', '<button class="btn btn-o" onclick="closeMod()">取消</button>');
+  showDetail(_apv?'🔀 分项定标（审批）':'🔀 分项定标', '<div class="loading">加载中...</div>', '<button class="btn btn-o" onclick="closeMod()">取消</button>');
   let d;
   try{d=await api(`/inquiries/${iid}`)}catch(e){if(my!==__dmSeq)return;id('dmBody').innerHTML='<div style="padding:20px;text-align:center;color:#c0392b;font-size:11px">⚠️ 加载失败，请重试</div>';return}
   if(!d.items||!d.items.length){id('dmBody').innerHTML='<div style="padding:20px;color:#999">无物资明细</div>';return}
@@ -2376,25 +2378,42 @@ async function showSplitSelect(iid){
   });
   if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
   id('dmBody').innerHTML=`
-    <div style="font-size:10px;color:#666;margin-bottom:8px">为每个物资选择供应商（已按最低价默认勾选★，可手动改选）→ 系统自动按供应商拆成多个订单</div>
-    ${rows}`;
+    <div style="font-size:10px;color:#666;margin-bottom:8px">为每个物资选择供应商（已按最低价默认勾选★，可手动改选）→ 系统自动按供应商拆成多个订单${_apv?'；确认后即完成审批并生成采购订单':''}</div>
+    ${rows}
+    ${_apv?`<div style="margin-top:8px;font-size:11px;font-weight:700">审批签名 <span style="color:var(--d)">*</span></div>
+      <div style="position:relative;border:2px dashed #c9d4e8;border-radius:6px;background:#fafcff;touch-action:none">
+        <canvas id="signPad" width="560" height="150" style="width:100%;height:150px;display:block;cursor:crosshair"></canvas>
+        <div id="signHint" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:#c3cfdf;font-size:12px;pointer-events:none">✍️ 请在此处签名</div>
+      </div>
+      <div style="margin-top:4px;font-size:10px;color:#999">审批人：<b style="color:var(--s)">${esc(ME.name||'')}</b> ｜ 签字即表示同意并确认以上分项定标结果（操作人/时间/选定供应商自动留痕）</div>`:''}`;
   id('dmFooter').innerHTML=`
     <button class="btn btn-o" onclick="closeMod()">取消</button>
-    <button class="btn btn-p" onclick="doSplitSelect(${iid})">✅ 确认分项定标</button>`;
+    ${_apv?'<button class="btn btn-w btn-sm" onclick="clearSign()">🗑 清除重写</button>':''}
+    <button class="btn btn-p" onclick="doSplitSelect(${iid},'${_apv?'approver':''}')">${_apv?'✅ 分项定标并通过审批':'✅ 确认分项定标'}</button>`;
+  if(_apv){try{initSignPad()}catch(e){}}
 }
-async function doSplitSelect(iid){
+async function doSplitSelect(iid, mode){
+  const _apv=(mode==='approver');
   // V11.150: 防连点(连点会叠多个确认框/重复提交)
-  if(__guardOpen('dsp:'+iid))return;
+  if(__guardOpen('dsp:'+iid+':'+(mode||'buyer')))return;
   const radios=document.querySelectorAll('#dmBody input[type=radio]:checked');
   if(!radios.length){alert('请为每个物资选择供应商');return}
   const items=[...radios].map(r=>({item_id:parseInt(r.name.split('_')[1]),supplier_id:parseInt(r.value)}));
   // V11.155g: 提示按实际供应商数(不是物资项数) — 按所选供应商分组生成订单, 如9项物资选2家→2个订单
   const supCount=new Set(items.map(i=>i.supplier_id)).size;
-  if(!confirm(`确认分项定标？将按所选供应商生成 ${supCount} 个订单`))return;
-  const r=await api(`/inquiries/${iid}/split-select`,{method:'POST',body:JSON.stringify({items})});
+  const body={items};
+  if(_apv){
+    // V11.270: 审批环节定标须签名(留痕)
+    let sig='';
+    try{const cv=id('signPad');if(cv&&SIGN_CTX){const dd=SIGN_CTX.getImageData(0,0,cv.width,cv.height).data;let ink=0;for(let i=3;i<dd.length;i+=4){if(dd[i]>0)ink++}if(ink>=50)sig=cv.toDataURL('image/png')}}catch(e){}
+    if(!sig){alert('请先在签名区手写签名（审批留痕需要）');return}
+    body.signature=sig;body.comment='同意（审批人分项定标）';
+  }
+  if(!confirm(_apv?`确认分项定标并通过审批？将按所选供应商生成 ${supCount} 个订单`:`确认分项定标？将按所选供应商生成 ${supCount} 个订单`))return;
+  const r=await api(`/inquiries/${iid}/${_apv?'approve-split-select':'split-select'}`,{method:'POST',body:JSON.stringify(body)});
   if(r.success){
-    alert(`✅ ${r.message}\n${r.orders.map(o=>'  '+o.order_no+' → '+o.supplier+' ¥'+(o.total||0).toFixed(2)).join('\n')}`);
-    closeMod();loadInquiries();loadOrders();
+    alert(`✅ ${r.message}\n${(r.orders||[]).map(o=>'  '+o.order_no+' → '+o.supplier+' ¥'+(o.total||0).toFixed(2)).join('\n')}`);
+    closeMod();loadInquiries();loadOrders();try{loadApprovals&&loadApprovals()}catch(e){}
   }
   else alert(r.error||'分项定标失败');
 }
@@ -3293,9 +3312,9 @@ async function doApprove(bt,bid,role){
     _invHtml='<div style="font-size:11px;margin-bottom:8px">📦 <b>库管库存核对</b>（逐项核对现有库存，可判断是否可减少采购数量）<div id="rpInvCheck" style="font-size:10px;color:#666;margin-top:4px">加载库存中...</div></div>';
   }
   if(bt=='inquiry_approval'){
-    _invHtml='<div style="font-size:11px;margin-bottom:8px">⚖️ <b>分项定标</b>（可为每项物资分别选择供应商，默认取最低价；如不需分项，直接点「同意并签字」按原流程审批）<div id="apvSplitBox" style="font-size:10px;color:#666;margin-top:4px">加载报价中...</div></div>';
+    _invHtml='<div style="font-size:11px;margin-bottom:8px">⚖️ <b>分项定标（审批环节）</b>：可为每项物资分别选择供应商，界面与询价单分项定标一致（默认已选最低价）。<div style="font-size:10px;color:#666;margin-top:4px">需分项定标 → 点下方「🔀 分项定标（审批）」；如按原流程整单通过 → 直接在签名区签字后点「✅ 同意并签字」。</div></div>';
   }
-  const _splitBtn=(bt=='inquiry_approval')?`<button class="btn btn-p btn-sm" onclick="submitSplitApprove(${bid})">⚖️ 分项定标并同意</button>`:'';
+  const _splitBtn=(bt=='inquiry_approval')?`<button class="btn btn-p btn-sm" onclick="showSplitSelect(${bid},'approver')">🔀 分项定标（审批）</button>`:'';
   showDetail('✍️ 审批签字',`
     <div style="font-size:11px;margin-bottom:6px">请在下方签名区<span style="color:var(--d)">手写签名</span>（鼠标或手指书写），签字后点击「同意并签字」完成审批：</div>
     ${_invHtml}
@@ -3312,44 +3331,6 @@ async function doApprove(bt,bid,role){
   if(bt=='purchase_request' && role=='库管员'){
     loadKeeperStockCheck(bid);
   }
-  if(bt=='inquiry_approval'){
-    loadApvSplit(bid);
-  }
-}
-// V11.268 需求4: 审批页分项定标 — 拉各供应商逐项报价, 每项下拉选择(默认最低价)
-async function loadApvSplit(iid){
-  const box=id('apvSplitBox'); if(!box)return;
-  try{
-    const d=await api('/inquiries/'+iid);
-    const items=d.items||[];
-    const sups=(d.suppliers||d.sups||[]).filter(s=>(s.quote_price||0)>0);
-    if(!items.length||!sups.length){box.innerHTML='<span style="color:#999">暂无报价数据，可直接签名同意</span>';return}
-    const det={};
-    sups.forEach(s=>{try{det[s.id]=JSON.parse(s.quote_details||'[]')}catch(e){det[s.id]=[]}});
-    const rows=items.map((it,idx)=>{
-      const opts=sups.map(s=>{const q=(det[s.id]||[])[idx]||{};const up=q.unit_price;
-        return {id:s.id,name:s.supplier_name,price:(up!==null&&up!==undefined&&up!=='')?parseFloat(up):null}});
-      let best=null;opts.forEach(o=>{if(o.price!==null&&(best===null||o.price<best.price))best=o});
-      const optsHtml=opts.map(o=>`<option value="${o.id}" ${best&&o.id===best.id?'selected':''}>${esc(o.name)}${o.price!==null?' ¥'+o.price.toFixed(2):''}</option>`).join('');
-      return `<div style="display:flex;gap:6px;align-items:center;padding:3px 0;border-bottom:1px solid #f0f2f5">
-        <span style="flex:2">${esc(it.item_name)}${it.spec?` <span style="color:#999;font-size:9px">${esc(it.spec)}</span>`:''}</span>
-        <span style="flex:1">${it.quantity||0}${esc(it.unit||'')}</span>
-        <select class="apvSplitSel" data-item="${it.id}" style="flex:2.4;font-size:10px;padding:3px 4px;border:1px solid #d0d7e2;border-radius:4px">${optsHtml}</select>
-      </div>`}).join('');
-    box.innerHTML=rows+'<div style="margin-top:4px;font-size:9px;color:#888">默认已选最低价；点「⚖️ 分项定标并同意」将按以上选择生成订单并完成审批（操作留日志）。</div>';
-  }catch(e){box.innerHTML='<span style="color:#e74c3c">报价加载失败，可直接签名同意</span>'}
-}
-async function submitSplitApprove(iid){
-  const sels=[...document.querySelectorAll('.apvSplitSel')];
-  if(!sels.length){alert('无可定标数据（无报价）');return}
-  if(!confirm('确认按所选供应商分项定标并审批通过？将按供应商分别生成采购订单。'))return;
-  let sig='';
-  try{const cv=id('signPad');if(cv&&SIGN_CTX){const dd=SIGN_CTX.getImageData(0,0,cv.width,cv.height).data;let ink=0;for(let i=3;i<dd.length;i+=4){if(dd[i]>0)ink++}if(ink>=50)sig=cv.toDataURL('image/png')}}catch(e){}
-  const items=sels.map(s=>({item_id:parseInt(s.getAttribute('data-item')),supplier_id:parseInt(s.value)}));
-  const r=await api(`/inquiries/${iid}/approve-split-select`,{method:'POST',body:JSON.stringify({items,signature:sig,comment:'同意（审批人分项定标）'})});
-  if(r.success){alert('✅ '+(r.message||'已分项定标并审批通过'));closeMod();
-    try{loadApprovals&&loadApprovals()}catch(e){};try{loadInqs&&loadInqs()}catch(e){};try{loadOrders&&loadOrders()}catch(e){}}
-  else alert(r.error||'提交失败');
 }
 // V11.217: 库管员库存核对 — 拉申请物品+现库存, 每项可填建议采购数量/意见
 async function loadKeeperStockCheck(rid){
