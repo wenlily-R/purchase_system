@@ -79,6 +79,12 @@ body.zen .filters,.body.zen .tabs-hide{display:none}
 body.zen .hd{position:static}
 body.zen .body{padding-top:6px}
 .badge{font-size:10px;color:#8fa3b8;border:1px solid var(--bd);padding:1px 6px;border-radius:8px;margin-left:6px}
+/* V11.276: 当前筛选实时回显 —— 让每次切换都有可见反馈(避免"数字没变=以为筛选是死的") */
+.fchips{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 18px;background:rgba(10,22,40,.35);border-bottom:1px solid var(--bd);font-size:11.5px;color:var(--sub)}
+.fchips .lb{color:#7f93a8}
+.fchip{border:1px solid rgba(0,212,255,.35);background:rgba(0,212,255,.08);color:#bfe9ff;border-radius:10px;padding:1px 9px}
+.fchip.off{border-color:var(--bd);background:transparent;color:#8fa3b8}
+.fchips .hint{color:#6d8296;margin-left:auto}
 </style>
 </head>
 <body>
@@ -110,6 +116,7 @@ body.zen .body{padding-top:6px}
   <div class="t" data-tab="finance" onclick="switchTab('finance')"><span class="ic">💰</span>财务分析</div>
   <div class="t" data-tab="repair" onclick="switchTab('repair')"><span class="ic">🔧</span>维修分析</div>
 </div>
+<div class="fchips" id="fchips"></div>
 
 <div class="body" id="body">
 <!-- ============ Tab1 经营总览 ============ -->
@@ -253,7 +260,17 @@ async function loadMeta(){META=await api('/api/dashboard/meta');
 /* ---- Tab 切换 / 数据装载 ---- */
 function switchTab(t){CUR=t;document.querySelectorAll('.tabs .t').forEach(x=>x.classList.toggle('on',x.dataset.tab===t));
   document.querySelectorAll('.sec').forEach(x=>x.classList.toggle('on',x.id==='sec-'+t));loadTab(t)}
-async function refreshAll(){Object.keys(charts).forEach(k=>{charts[k].dispose()});charts={};loadTab(CUR)}
+function renderChips(){
+  const box=$('fchips');if(!box)return;
+  const g=(id)=>{const e=$(id);return e?(e.value||''):''};
+  const txt=(id)=>g(id)?(($(id).selectedOptions[0]||{}).text||g(id)):'';
+  const parts=[['会计年度',g('fYear')||'—'],['供应商',txt('fSup')||'全部'],['物料类别',txt('fCat')||'全部'],
+               ['部门',txt('fDep')||'全部'],['仓库',txt('fWh')||'全部'],['时段',txt('fRange')||'按年度']];
+  box.innerHTML='<span class="lb">当前筛选</span>'+parts.map(([k,v])=>
+      '<span class="fchip'+((v==='全部'||v==='—')?' off':'')+'">'+esc(k)+'：'+esc(v)+'</span>').join('')+
+    '<span class="hint">说明：时段优先于会计年度；库存为实时快照(不受时段影响)；余额/账龄为时点口径(只受供应商影响)</span>';
+}
+async function refreshAll(){renderChips();Object.keys(charts).forEach(k=>{charts[k].dispose()});charts={};loadTab(CUR)}
 async function loadTab(t){
   if(t==='finance'&&META&&META.role&&!['系统管理员','分管领导','总经理','财务'].includes(META.role)){
     $('sec-finance').innerHTML='<div class="tt" style="padding:60px">🔒 财务分析仅对 财务/管理 角色开放</div>';return}
@@ -299,6 +316,7 @@ function renderPu(d){$('pu-cards').innerHTML=d.cards.map(cardHtml).join('');
     yAxis:Object.assign({type:'category',data:(d.sup_top||[]).map(x=>x.supplier).reverse()},AX),
     series:[{type:'bar',barWidth:13,data:(d.sup_top||[]).map((x,i)=>({value:x.amt/10000,itemStyle:{color:new E.graphic.LinearGradient(0,0,1,0,[{offset:0,color:'#00d4ff'},{offset:1,color:'#7dd3fc'}])}})).reverse()}]});
   st.on('click',p=>drillSup(p.name));
+  const pu2=charts['ch-pu2'];if(pu2)pu2.on('click',p=>drillCat(p.name));
   renderTable($('pu-tab0'),d.tables.req,[['req_no','申请单号'],['dept','部门'],['requester','申请人'],['created_at','申请时间'],['purpose','用途'],['total_estimated','金额'],['status','状态']],
     x=>'<tr><td>'+noLink(x.req_no)+'</td><td>'+esc(x.dept)+'</td><td>'+esc(x.requester)+'</td><td>'+esc((x.created_at||'').slice(0,10))+'</td><td>'+esc((x.purpose||'').slice(0,26))+'</td><td class="amt">'+fmtMoney(x.total_estimated)+'</td><td>'+esc(x.status)+'</td></tr>');
   renderTable($('pu-tab1'),d.tables.ord,[['order_no','订单号'],['supplier','供应商'],['total_amount','金额'],['created_at','下单时间'],['status','状态']],
@@ -311,8 +329,9 @@ function renderIn(d){$('in-cards').innerHTML=d.cards.map(cardHtml).join('');
     xAxis:Object.assign({type:'category',data:d.io.months},AX),yAxis:Object.assign({type:'value'},AX),
     series:[{name:'入库',type:'line',smooth:true,data:d.io.in,itemStyle:{color:'#00c853'},lineStyle:{color:'#00c853'}},
       {name:'出库',type:'line',smooth:true,data:d.io.out,itemStyle:{color:'#ff5252'},lineStyle:{color:'#ff5252'}}]});
-  echart('ch-in2',{tooltip:{trigger:'item',formatter:'{b}: ¥{c} ({d}%)'},legend:{orient:'vertical',right:6,textStyle:{color:'#a0b0c0'}},
+  const in2=echart('ch-in2',{tooltip:{trigger:'item',formatter:'{b}: ¥{c} ({d}%)'},legend:{orient:'vertical',right:6,textStyle:{color:'#a0b0c0'}},
     series:[{type:'pie',radius:['42%','66%'],center:['40%','52%'],data:d.cat_pie.map((x,i)=>({name:x.name,value:x.value,itemStyle:{color:C_COLORS[i%C_COLORS.length]}})),label:{color:'#cfd8e6'},labelLine:{lineStyle:{color:'rgba(255,255,255,.2)'}}}]});
+  in2.on('click',p=>drillCat(p.name));
   echart('ch-in3',{tooltip:{trigger:'axis'},grid:{left:50,right:20,top:20,bottom:24},
     xAxis:Object.assign({type:'category',data:d.quarter_turn.quarters},AX),yAxis:Object.assign({type:'value'},AX),
     series:[{name:'周转(‰)',type:'bar',data:d.quarter_turn.turn,barWidth:26,itemStyle:{borderRadius:[4,4,0,0],color:new E.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#a855f7'},{offset:1,color:'#4a1a7a'}])}}]});
@@ -364,7 +383,7 @@ function renderRp(d){$('rp-cards').innerHTML=d.cards.map(cardHtml).join('');
   renderTable($('rp-tab1'),d.tables.change,[['plan_no','工单号'],['add_part','变更项目'],['add_price','变更费用'],['status','确认状态'],['confirm1_by','提交人'],['created_at','时间']],
     x=>'<tr><td>'+noLink(x.plan_no)+'</td><td>'+esc(x.add_part||x.add_labor||'-')+'</td><td class="amt">'+fmtMoney(x.add_price)+'</td><td>'+esc(x.status)+'</td><td>'+esc(x.confirm1_by||'-')+'</td><td>'+esc((x.created_at||'').slice(0,10))+'</td></tr>');
   renderTable($('rp-tab2'),d.tables.vendor,[['company','服务商'],['n','合作工单数'],['amt','维修总费用']],
-    x=>'<tr><td>'+esc(x.company)+'</td><td>'+x.n+'</td><td class="amt">'+fmtMoney(x.amt)+'</td></tr>')}
+    x=>'<tr><td><span class="no" onclick="drillVendor(\''+String(x.company||'').replace(/'/g,'')+'\')">'+esc(x.company)+'</span></td><td>'+x.n+'</td><td class="amt">'+fmtMoney(x.amt)+'</td></tr>')}
 /* ---- echarts helper ---- */
 function echart(elId,opt){if(charts[elId])charts[elId].dispose();
   const ch=E.init($(elId));ch.setOption(opt);charts[elId]=ch;
@@ -374,12 +393,27 @@ function subTab(el,prefix){const i=el.dataset.i;
   document.querySelectorAll('#'+prefix+'-sub .st').forEach(x=>x.classList.toggle('on',x===el));
   for(let k=0;k<6;k++){const t=$(prefix+'-tab'+k);if(t)t.style.display=k==i?'block':'none'}}
 /* ---- 下钻 ---- */
-function drillMonths(tab,label,mName,data){openDlg(label+' · '+mName,
-  '<table class="tbl"><thead><tr><th>月份</th><th>金额(万元)</th></tr></thead><tbody><tr><td>'+esc(mName)+'</td><td class="amt">'+fmtW(data)+'</td></tr></tbody></table>')}
-function drillSup(name){openDlg('供应商下钻 · '+esc(name),
-  '<div class="tt">供应商维度明细请至 采购分析→采购订单明细 / 经营总览→明细 中查看：'+esc(name)+'</div>')}
-function drillDev(name){openDlg('设备下钻 · '+esc(name),
-  '<div class="tt">该设备维修明细请至 维修分析→维修工单明细 查看：'+esc(name)+'</div>')}
+async function loadDrill(kind,key,title){
+  openDlg(title,'<div class="tt">加载中…</div>');
+  try{
+    const d=await api('/api/dashboard/drill?tab='+CUR+'&kind='+kind+'&'+qs()+'&key='+encodeURIComponent(key));
+    let h='';
+    for(const nm_ of Object.keys(d.rows||{})){
+      const rows=d.rows[nm_]||[];
+      h+='<div style="font-weight:600;color:#bfe9ff;margin:8px 0 3px">'+esc(nm_)+'（'+rows.length+'）</div>';
+      if(!rows.length){h+='<div class="tt">无记录</div>';continue}
+      const cols=Object.keys(rows[0]);
+      h+='<table class="tbl"><thead><tr>'+cols.map(c=>'<th>'+esc(c)+'</th>').join('')+'</tr></thead><tbody>'+
+         rows.map(r=>'<tr>'+cols.map(c=>'<td>'+esc(r[c]===null?'':r[c])+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
+    }
+    $('dlgB').innerHTML=h||'<div class="tt">无记录</div>';
+  }catch(e){$('dlgB').innerHTML='<div class="tt">下钻失败，请刷新后重试</div>'}
+}
+function drillMonths(tab,label,mName,data){loadDrill('month',String(mName),esc(label)+' · '+esc(mName))}
+function drillSup(name){loadDrill('supplier',name,'供应商下钻 · '+esc(name))}
+function drillDev(name){loadDrill('device',name,'设备下钻 · '+esc(name))}
+function drillVendor(name){loadDrill('vendor',name,'服务商下钻 · '+esc(name))}
+function drillCat(name){loadDrill('category',name,'物料类别下钻 · '+esc(name))}
 function openDlg(title,html){$('dlgT').textContent=title;$('dlgB').innerHTML=html;$('mask').classList.add('on')}
 function closeDlg(){$('mask').classList.remove('on')}
 /* ---- 导出 / 截图 / 大屏 ---- */
@@ -398,7 +432,7 @@ function applyAuto(btn,m,silent){autoOn=m>0;btn.style.borderColor=autoOn?'var(--
 function autoRefresh(btn){const i=Math.max(0,AUTO_OPTS.indexOf(+(localStorage.dashAutoMin||0)));
   const m=AUTO_OPTS[(i+1)%AUTO_OPTS.length];localStorage.dashAutoMin=m;applyAuto(btn,m,false)}
 /* ---- init ---- */
-(async function(){const ab=document.getElementById('autoBtn');if(ab)applyAuto(ab,+(localStorage.dashAutoMin||0),true);await loadMeta();refreshAll()})()
+(async function(){const ab=document.getElementById('autoBtn');if(ab)applyAuto(ab,+(localStorage.dashAutoMin||0),true);await loadMeta();renderChips();refreshAll()})()
 </script>
 </body>
 </html>

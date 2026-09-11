@@ -16869,6 +16869,65 @@ def api_dashboard_repair():
                     'tables': {'work': wd_det, 'change': chg_det,
                                'vendor': [{'company': r[0], 'n': r[1], 'amt': r[2]} for r in sup_stat]}})
 
+@app.route('/api/dashboard/drill')
+@login_required
+def api_dashboard_drill():
+    """V11.276 看板下钻: 月份/供应商/设备/服务商 点进去看真实单据(沿用当前筛选条件)"""
+    f = _dash_f()
+    tab = (request.args.get('tab') or '').strip()
+    kind = (request.args.get('kind') or '').strip()
+    key = (request.args.get('key') or '').strip()
+    c = db()
+    lim = ' LIMIT 300'
+    if kind == 'month':
+        # 轴标签 → 月份键: '9月'→'YYYY-09'(年度取筛选年); '2025年10月'→'2025-10'
+        _k = key.strip()
+        _m = re.search(r'(\d{4})\s*年\s*(\d{1,2})\s*月', _k)
+        if _m:
+            mon = '%04d-%02d' % (int(_m.group(1)), int(_m.group(2)))
+        else:
+            _m2 = re.search(r'(\d{1,2})\s*月', _k)
+            _yr = f['year'] or str(datetime.date.today().year)
+            mon = ('%s-%02d' % (_yr, int(_m2.group(1)))) if _m2 else (_k[:7] if len(_k) >= 7 else _k)
+        if tab in ('overview', 'purchase'):
+            w, ps = _dash_w(dict(f, range='all'), 'purchase_orders')
+            ws_, pss = _dash_w(dict(f, range='all'), 'purchase_requests', sup_col=None)
+            rows = {'订单': _dash_rows(c, "SELECT order_no 单号, supplier 供应商, item_name 物资, total_amount 金额, status 状态, created_at 时间 FROM purchase_orders WHERE 1=1" + w + " AND substr(created_at,1,7)=? ORDER BY created_at DESC" + lim, tuple(ps) + (mon,)),
+                    '申请': _dash_rows(c, "SELECT req_no 单号, dept 部门, requester 申请人, total_estimated 金额, status 状态, created_at 时间 FROM purchase_requests WHERE 1=1" + ws_ + " AND substr(created_at,1,7)=? ORDER BY created_at DESC" + lim, tuple(pss) + (mon,))}
+        elif tab == 'repair':
+            w, ps = _dash_w(dict(f, range='all'), 'repair_plans', sup_col='repair_company')
+            rows = {'维修工单': _dash_rows(c, "SELECT plan_no 单号, device_name 设备, dept 部门, est_cost 预估, quote_total 报价, invoice_amount 发票额, status 状态, created_at 时间 FROM repair_plans WHERE 1=1" + w + " AND substr(created_at,1,7)=? ORDER BY created_at DESC" + lim, tuple(ps) + (mon,))}
+        elif tab == 'inventory':
+            w, ps = _dash_w(dict(f, range='all'), 'receivings')
+            rows = {'入库': _dash_rows(c, "SELECT receive_no 单号, item_name 物资, quantity 数量, warehouse 仓库, status 状态, created_at 时间 FROM receivings WHERE 1=1" + w + " AND substr(created_at,1,7)=? ORDER BY created_at DESC" + lim, tuple(ps) + (mon,))}
+        else:
+            w, ps = _dash_w(dict(f, range='all'), 'contracts', date_col='sign_date', use_dept=False, use_cat=False, use_wh=False)
+            rows = {'合同': _dash_rows(c, "SELECT contract_no 单号, supplier 供应商, amount 金额, status 状态, sign_date 时间 FROM contracts WHERE 1=1" + w + " AND substr(sign_date,1,7)=? ORDER BY sign_date DESC" + lim, tuple(ps) + (mon,))}
+        title = '月份下钻 · ' + mon
+    elif kind == 'supplier':
+        w, ps = _dash_w(dict(f, range='all', supplier=''), 'purchase_orders')
+        rows = {'采购订单': _dash_rows(c, "SELECT order_no 单号, item_name 物资, quantity 数量, total_amount 金额, status 状态, created_at 时间 FROM purchase_orders WHERE 1=1" + w + " AND supplier=? ORDER BY created_at DESC" + lim, tuple(ps) + (key,))}
+        w2, ps2 = _dash_w(dict(f, range='all', supplier=''), 'contracts', date_col='sign_date', use_dept=False, use_cat=False, use_wh=False)
+        rows['合同'] = _dash_rows(c, "SELECT contract_no 单号, amount 金额, status 状态, sign_date 时间 FROM contracts WHERE 1=1" + w2 + " AND supplier=? ORDER BY sign_date DESC" + lim, tuple(ps2) + (key,))
+        title = '供应商下钻 · ' + key
+    elif kind == 'device':
+        w, ps = _dash_w(dict(f, range='all'), 'repair_plans', sup_col='repair_company')
+        rows = {'维修工单': _dash_rows(c, "SELECT plan_no 单号, fault_desc 故障, repair_type 类型, dept 部门, est_cost 预估, quote_total 报价, invoice_amount 发票额, status 状态, created_at 时间 FROM repair_plans WHERE 1=1" + w + " AND device_name=? ORDER BY created_at DESC" + lim, tuple(ps) + (key,))}
+        title = '设备下钻 · ' + key
+    elif kind == 'vendor':
+        w, ps = _dash_w(dict(f, range='all', supplier=''), 'repair_plans', sup_col='repair_company')
+        rows = {'维修工单': _dash_rows(c, "SELECT plan_no 单号, device_name 设备, quote_total 报价, invoice_amount 发票额, status 状态, created_at 时间 FROM repair_plans WHERE 1=1" + w + " AND repair_company=? ORDER BY created_at DESC" + lim, tuple(ps) + (key,))}
+        title = '服务商下钻 · ' + key
+    elif kind == 'category':
+        w, ps = _dash_w(dict(f, range='all', category=''), 'inventory', date_col=None, sup_col=None, use_dept=False)
+        rows = {'库存': _dash_rows(c, "SELECT item_name 物资, spec 规格, quantity 数量, price 单价, (quantity*price) 金额, warehouse 仓库 FROM inventory WHERE 1=1" + w + " AND cat_code=(SELECT code FROM categories WHERE name=? LIMIT 1) ORDER BY 金额 DESC" + lim, tuple(ps) + (key,))}
+        title = '类别下钻 · ' + key
+    else:
+        c.close(); return jsonify({'error': '不支持下钻类型'}), 400
+    c.close()
+    return jsonify({'title': title, 'rows': rows})
+
+
 @app.route('/dashboard')
 @login_required
 def page_dashboard():
@@ -16886,9 +16945,16 @@ def api_dashboard_export():
         return jsonify({'error': '导出组件缺失'}), 500
     tab = request.args.get('tab') or 'overview'
     y = request.args.get('year') or str(datetime.date.today().year)
+    # V11.276 修复: 原实现把 supplier/category/dept/warehouse 写死为空 → 导出的 Excel 永远'全年全量',
+    #   与屏幕筛选结果不一致(按筛选导出会对不上账)。现原样透传当前筛选(含时间范围), 并在表头写明口径。
+    _qs = request.query_string.decode('utf-8', 'replace')
+    _fl = _dash_f()
+    _fl_desc = ('年度=' + (_fl['year'] or y) + ' 时段=' + ({'': '按年度', 'q': '本季度', 'm': '本月', '12m': '近12个月', 'all': '全部时间'}.get(_fl['range'], _fl['range'] or '按年度')) +
+                ' 供应商=' + (_fl['supplier'] or '全部') + ' 类别=' + (_fl['category'] or '全部') +
+                ' 部门=' + (_fl['dept'] or '全部') + ' 仓库=' + (_fl['warehouse'] or '全部'))
     wb = openpyxl.Workbook()
     ws = wb.active; ws.title = '看板指标'
-    ws.append(['数据看板导出', 'Tab=' + tab, '年度=' + y, '导出时间=' + now()])
+    ws.append(['数据看板导出', 'Tab=' + tab, _fl_desc, '导出时间=' + now()])
     hdr_fill = PatternFill('solid', fgColor='1a2a4a'); hdr_font = Font(color='FFFFFF', bold=True)
     def sheet_from(name, headers, rows):
         s = wb.create_sheet(re.sub(r'[\\/?*\[\]:]', '_', name)[:31])
@@ -16913,7 +16979,7 @@ def api_dashboard_export():
                   ('finance', 'finance'), ('repair', 'repair')]:
         try:
             # 模拟请求参数取数(直接调用聚合函数; 注入当前用户会话以通过login_required)
-            with app.test_request_context('/api/dashboard/' + ep + '?year=' + y + '&supplier=&category=&dept=&warehouse='):
+            with app.test_request_context('/api/dashboard/' + ep + ('?' + _qs if _qs else '')):
                 session['user_id'] = session.get('user_id') or 1
                 session['user_name'] = session.get('user_name') or '导出'
                 session['user_role'] = session.get('user_role') or '系统管理员'
