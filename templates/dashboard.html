@@ -94,7 +94,7 @@ body.zen .body{padding-top:6px}
     <select class="sel" id="fCat" title="物料类别"><option value="">全部物料类别</option></select>
     <select class="sel" id="fDep" title="部门"><option value="">全部部门</option></select>
     <select class="sel" id="fWh" title="仓库"><option value="">全部仓库</option></select>
-    <select class="sel" id="fRange" title="时间范围"><option value="">本年</option><option value="q">本季度</option><option value="m">本月</option><option value="12m">近12个月</option></select>
+    <select class="sel" id="fRange" title="时间范围(优先于会计年度)"><option value="">按年度</option><option value="q">本季度</option><option value="m">本月</option><option value="12m">近12个月</option><option value="all">全部时间</option></select>
   </span>
   <button class="btn pri" onclick="refreshAll()">🔄 刷新</button>
   <button class="btn" id="autoBtn" onclick="autoRefresh(this)">⏱ 自动</button>
@@ -234,7 +234,9 @@ function renderTable(el,rows,cols,fn){if(!rows||!rows.length){el.innerHTML='<div
   el.innerHTML='<table class="tbl"><thead><tr>'+cols.map(c=>'<th>'+c[1]+'</th>').join('')+'</tr></thead><tbody>'+rows.map(fn).join('')+'</tbody></table>'}
 /* ---- 筛选 / 元数据 ---- */
 function qs(){const p=new URLSearchParams();
-  p.set('year',$('fYear').value||'');const s=$('fSup').value,c=$('fCat').value,d=$('fDep').value,w=$('fWh').value;
+  p.set('year',$('fYear').value||'');
+  const rg=$('fRange').value;if(rg)p.set('range',rg);   // V11.275: 时间范围原本根本没发给后端 → 形同装饰
+  const s=$('fSup').value,c=$('fCat').value,d=$('fDep').value,w=$('fWh').value;
   if(s)p.set('supplier',s);if(c)p.set('category',c);if(d)p.set('dept',d);if(w)p.set('warehouse',w);return p.toString()}
 async function loadMeta(){META=await api('/api/dashboard/meta');
   $('fYear').innerHTML=META.years.map(y=>'<option'+(y==new Date().getFullYear()?' selected':'')+'>'+y+'</option>').join('')||'<option>'+new Date().getFullYear()+'</option>';
@@ -243,7 +245,11 @@ async function loadMeta(){META=await api('/api/dashboard/meta');
   $('fDep').innerHTML='<option value="">全部部门</option>'+META.departments.map(x=>'<option>'+esc(x)+'</option>').join('');
   $('fWh').innerHTML='<option value="">全部仓库</option>'+META.warehouses.map(x=>'<option>'+esc(x)+'</option>').join('');
   if(META.scope==='own')toast('当前为普通员工视图：仅显示与您相关的数据');
-  ['fYear','fSup','fCat','fDep','fWh'].forEach(i=>$(i).onchange=refreshAll);$('fRange').onchange=refreshAll}
+  ['fYear','fSup','fCat','fDep','fWh'].forEach(i=>$(i).onchange=refreshAll);
+  $('fRange').onchange=()=>{const rg=$('fRange').value;
+    if(rg&&rg!=='all')toast('已按「'+$('fRange').selectedOptions[0].text+'」统计（时段优先于会计年度）');
+    else if(rg==='all')toast('已切换为「全部时间」统计');
+    refreshAll()}}
 /* ---- Tab 切换 / 数据装载 ---- */
 function switchTab(t){CUR=t;document.querySelectorAll('.tabs .t').forEach(x=>x.classList.toggle('on',x.dataset.tab===t));
   document.querySelectorAll('.sec').forEach(x=>x.classList.toggle('on',x.id==='sec-'+t));loadTab(t)}
