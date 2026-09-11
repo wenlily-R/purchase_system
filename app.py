@@ -2191,7 +2191,7 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
                             c.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,
                                 supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status,inquiry_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                                       (_no, _iq['req_id'], _iq['title'][:50], '', 1, '个', _total, _total, 0, 0, _total,
-                                       _sup['supplier_name'], _iq['created_by'], '后勤类', _iq['created_by'], 1, (_iq['deadline'] or '')[:10], '货到付款',
+                                       _sup['supplier_name'], _iq['created_by'], '后勤类', session['user_name'], session['user_id'], (_iq['deadline'] or '')[:10], '货到付款',
                                        _remark, 0, json.dumps([], ensure_ascii=False), '已通过', _iq['id']))
                             _oid = c.execute("SELECT id FROM purchase_orders WHERE order_no=?", (_no,)).fetchone()[0]
                             # V11.251 溯源编号: 订单号为溯源根 — 回填来源询价单 trace_no
@@ -5842,7 +5842,7 @@ def api_orders():
     # V11.159: 订单列表 — 员工仅看自己发起的(采购/库管/财务/领导/管理员全看)
     if session.get('user_role') == '员工':
         conn = db()
-        rows = conn.execute("SELECT * FROM purchase_orders WHERE requester_id=? ORDER BY id DESC LIMIT 100", (session.get('user_id', 0),)).fetchall()
+        rows = conn.execute("SELECT * FROM purchase_orders WHERE requester=? ORDER BY id DESC LIMIT 100", (session.get('user_name', ''),)).fetchall()
         out = []
         for r in rows:
             d = dict_row(r)
@@ -7667,7 +7667,7 @@ def api_inquiry_submit(iid):
         conn.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,
             supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status,inquiry_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (gen_no('CG', 'purchase_orders', 'order_no', conn), i['req_id'], i['title'][:50], '', 1, '个', 0, total, 0, 0, total,
-             cheapest['supplier_name'] if cheapest else '待定', i['created_by'], '后勤类', i['created_by'], 1, (i['deadline'] or '')[:10], '货到付款',
+             cheapest['supplier_name'] if cheapest else '待定', i['created_by'], '后勤类', session['user_name'], session['user_id'], (i['deadline'] or '')[:10], '货到付款',
              remark, 0, json.dumps([], ensure_ascii=False), '草稿', i['id']))
     # V11.251 溯源编号: 订单号为溯源根 — 回填来源询价单 trace_no(询价记录/报价/比价全部关联该编号)
     _tno = conn.execute("SELECT order_no FROM purchase_orders WHERE inquiry_id=? ORDER BY id DESC LIMIT 1", (iid,)).fetchone()
@@ -8461,7 +8461,7 @@ def api_contracts():
     _ws, _args = '', ()
     f_trace = (request.args.get('trace') or '').strip()
     if session.get('user_role') == '员工':
-        _ws, _args = ' WHERE po.requester_id=?', (session.get('user_id', 0),)
+        _ws, _args = ' WHERE po.requester=?', (session.get('user_name', ''),)
     if f_trace:
         _ws = (_ws + ' AND ' if _ws else ' WHERE ') + "(c.trace_no=? OR po.order_no=?)"
         _args = _args + (f_trace, f_trace)
@@ -13435,7 +13435,51 @@ def api_payment_requests():
         out.append(d)
     conn.close()
     return jsonify(out)
-@app.route('/api/payments')
+@app.route('/api/expenses', methods=['GET', 'POST'])
+@login_required
+def api_expenses():
+    """V11.273: 费用登记 — 查询/登记(仅财务/领导/管理员); 修复前端调 /expenses 404(页面无数据)"""
+    if session.get('user_role') not in ('财务', '分管领导', '总经理', '系统管理员'):
+        return jsonify([]) if request.method == 'GET' else (jsonify({'error': '无权限：费用登记仅限财务/领导'}), 403)
+    c = db()
+    if request.method == 'GET':
+        rows = c.execute("SELECT * FROM expenses ORDER BY id DESC LIMIT 200").fetchall()
+        out = [dict_row(r) for r in rows]
+        c.close()
+        return jsonify(out)
+    d = request.json or {}
+    no = gen_no('FY', 'expenses', 'expense_no', c)
+    c.execute("INSERT INTO expenses(expense_no,expense_date,category,amount,reason,supplier,invoice_no,remark,created_by) VALUES(?,?,?,?,?,?,?,?,?)",
+              (no, (d.get('expense_date') or now())[:19], d.get('category') or '', float(d.get('amount') or 0),
+               d.get('reason') or '', d.get('supplier') or '', d.get('invoice_no') or '', d.get('remark') or '', session['user_name']))
+    c.commit(); c.close()
+    log(session['user_name'], '登记费用', no)
+    return jsonify({'success': True, 'expense_no': no})
+
+
+@app.route('/api/credits', methods=['GET', 'POST'])
+@login_required
+def api_credits():
+    """V11.273: 挂账单 — 查询/登记(仅财务/领导/管理员); 修复前端调 /credits 404"""
+    if session.get('user_role') not in ('财务', '分管领导', '总经理', '系统管理员'):
+        return jsonify([]) if request.method == 'GET' else (jsonify({'error': '无权限：挂账登记仅限财务/领导'}), 403)
+    c = db()
+    if request.method == 'GET':
+        rows = c.execute("SELECT * FROM credit_notes ORDER BY id DESC LIMIT 200").fetchall()
+        out = [dict_row(r) for r in rows]
+        c.close()
+        return jsonify(out)
+    d = request.json or {}
+    no = gen_no('GZ', 'credit_notes', 'credit_no', c)
+    c.execute("INSERT INTO credit_notes(credit_no,order_id,category,supplier,item_name,amount,invoice_no,remark,status) VALUES(?,?,?,?,?,?,?,?,?)",
+              (no, int(d.get('order_id') or 0), d.get('category') or '', d.get('supplier') or '', d.get('item_name') or '',
+               float(d.get('amount') or 0), d.get('invoice_no') or '', d.get('remark') or '', '待审批'))
+    c.commit(); c.close()
+    log(session['user_name'], '登记挂账', no)
+    return jsonify({'success': True, 'credit_no': no})
+
+
+@app.route('/api/payments', methods=['GET'])
 @login_required
 def api_payments():
     """获取付款列表 — V11.159: 仅 财务/领导/管理员 可见"""
@@ -13450,6 +13494,26 @@ def api_payments():
     conn.close()
     return jsonify(out)
 
+@app.route('/api/payments/<int:pid>/pay', methods=['POST'])
+@login_required
+def api_pay_payment(pid):
+    """V11.273: 确认付款(已通过→已付款+记录付款时间) — 仅 财务/领导/管理员; 修复前端"付款"按钮 404"""
+    if session.get('user_role') not in ('财务', '分管领导', '总经理', '系统管理员'):
+        return jsonify({'error': '无权限：付款管理仅限财务/领导'}), 403
+    c = db()
+    r = c.execute("SELECT * FROM payment_requests WHERE id=?", (pid,)).fetchone()
+    if not r:
+        c.close(); return jsonify({'error': '付款单不存在'}), 404
+    if r['status'] == '已付款':
+        c.close(); return jsonify({'error': '该付款单已完成付款'}), 400
+    if r['status'] == '已作废':
+        c.close(); return jsonify({'error': '该付款单已作废，不能付款'}), 400
+    c.execute("UPDATE payment_requests SET status='已付款', paid_at=? WHERE id=?", (now(), pid))
+    c.commit(); c.close()
+    log(session['user_name'], '确认付款', '#%d' % pid)
+    return jsonify({'success': True})
+
+
 @app.route('/api/payments/<int:pid>/void', methods=['POST'])
 @login_required
 def api_void_payment(pid):
@@ -13459,6 +13523,29 @@ def api_void_payment(pid):
     c = db(); c.execute("UPDATE payment_requests SET status='已作废' WHERE id=?", (pid,)); c.commit(); c.close()
     log(session['user_name'], '作废付款', f'#{pid}')
     return jsonify({'success': True})
+
+@app.route('/api/receivings/<int:rid>')
+@login_required
+def api_receiving_detail(rid):
+    """V11.273: 入库单详情(含明细) — 审批驳回时前端需拉明细供条目级驳回; 修复 /receivings/<id>/detail 404"""
+    c = db()
+    r = c.execute("SELECT * FROM receivings WHERE id=?", (rid,)).fetchone()
+    if not r:
+        c.close(); return jsonify({'error': '入库单不存在'}), 404
+    d = dict_row(r)
+    items = []
+    try:
+        if d.get('items_json'):
+            items = json.loads(d['items_json']) or []
+    except Exception:
+        items = []
+    if not items:
+        items = [{'id': d.get('id'), 'item_name': d.get('item_name'), 'spec': d.get('spec'), 'unit': d.get('unit'),
+                  'quantity': d.get('quantity'), 'qualified_qty': d.get('qualified_qty'), 'defective_qty': d.get('defective_qty')}]
+    d['items'] = items
+    c.close()
+    return jsonify(d)
+
 
 @app.route('/api/receivings/<int:rid>/void', methods=['POST'])
 @login_required

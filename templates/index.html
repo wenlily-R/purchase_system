@@ -1254,6 +1254,7 @@ function sw(name){
     'counts':()=>{loadAdjustments()},
     'returns':loadReturns,
     'settlements':loadSettlements,'invoices':loadInvoicePage,'ledger':loadLedger,'system':loadSystem,
+    'expenses':loadExpenses,
     'small':loadSmallLedger,'alerts':loadAlertCenter};
   // V11.66: 页面级权限拦截 — 无权限角色看到友好提示(数据级过滤已在后端兜底)
   if(!__pageAllowed(name)){
@@ -3469,9 +3470,9 @@ async function doReject(bt,bid){
   let items=[];
   try{
     if(bt=='purchase_request'){const d=await api(`/prequests/${bid}`);items=(d.items||[]).map((x,i)=>({id:x.id||('i'+i),name:(x.item_name||'')+(x.spec?' '+x.spec:''),qty:x.quantity,unit:x.unit||''}))}
-    else if(bt=='purchase_order'){const d=await api(`/orders/${bid}/detail`);items=(d.items||d.order_items||[]).map((x,i)=>({id:x.id||('i'+i),name:(x.item_name||'')+(x.spec?' '+x.spec:''),qty:x.quantity,unit:x.unit||''}))}
-    else if(bt=='receiving'){const d=await api(`/receivings/${bid}/detail`);items=(d.items||[]).map((x,i)=>({id:x.id||('i'+i),name:(x.item_name||'')+(x.spec?' '+x.spec:''),qty:x.quantity,unit:x.unit||''}))}
-    else if(bt=='requisition'){const d=await api(`/requisitions/${bid}/detail`);items=(d.items||[]).map((x,i)=>({id:x.id||('i'+i),name:(x.item_name||'')+(x.spec?' '+x.spec:''),qty:x.quantity,unit:x.unit||''}))}
+    else if(bt=='purchase_order'){const d=await api(`/orders/${bid}`);items=(d.items||d.order_items||[]).map((x,i)=>({id:x.id||('i'+i),name:(x.item_name||'')+(x.spec?' '+x.spec:''),qty:x.quantity,unit:x.unit||''}))}
+    else if(bt=='receiving'){const d=await api(`/receivings/${bid}`);items=(d.items||[]).map((x,i)=>({id:x.id||('i'+i),name:(x.item_name||'')+(x.spec?' '+x.spec:''),qty:x.quantity,unit:x.unit||''}))}
+    else if(bt=='requisition'){const d=await api(`/requisitions/${bid}`);items=(d.items||[]).map((x,i)=>({id:x.id||('i'+i),name:(x.item_name||'')+(x.spec?' '+x.spec:''),qty:x.quantity,unit:x.unit||''}))}
   }catch(e){}
   const itemHtml=items.length?`<div style="margin:8px 0 4px;font-size:11px;font-weight:700">请勾选有问题的物资条目（不勾选=整单驳回）:</div>
     <div style="max-height:180px;overflow:auto;border:1px solid #e3e9f2;border-radius:6px;padding:6px;background:#fafbfc">
