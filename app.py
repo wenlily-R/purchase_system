@@ -8639,7 +8639,7 @@ def api_receivings():
     f_type = (request.args.get('type') or '').strip()
     f_trace = (request.args.get('trace') or '').strip()
     conn = db()
-    sql = "SELECT r.*, po.trade_mode, po.order_no, po.supplier FROM receivings r LEFT JOIN purchase_orders po ON r.order_id=po.id"
+    sql = "SELECT r.*, po.trade_mode, po.order_no, po.supplier, po.is_sealed AS order_sealed FROM receivings r LEFT JOIN purchase_orders po ON r.order_id=po.id"
     where = []; args = []
     if f_trace:
         where.append("(r.trace_no=? OR po.order_no=?)"); args += [f_trace, f_trace]
@@ -8657,24 +8657,39 @@ def api_receivings():
     sql += " ORDER BY r.id DESC LIMIT 80"
     rows = conn.execute(sql, args).fetchall()
     out = []
+    _st_cache = {}
     for r in rows:
         d = dict_row(r)
+        # V11.269: 明细优先本单 items_json(本次实际入库数量/单价/税率), 无则回退订单明细(老整批单兼容)
         items = []
-        if r['order_id']:
-            items = [dict_row(x) for x in conn.execute("SELECT * FROM order_items WHERE order_id=? ORDER BY id", (r['order_id'],)).fetchall()]
-            cnt = conn.execute("SELECT COUNT(*), COALESCE(SUM(quantity),0) FROM order_items WHERE order_id=?", (r['order_id'],)).fetchone()
-            if cnt and cnt[0]:
-                d['item_count'] = cnt[0]
-                # V11.198: 数量列显示本单实际验收量(qualified_qty优先, 分批入库时不再是订单整批总量)
-                d['total_qty'] = r['qualified_qty'] if (r['qualified_qty'] or 0) > 0 else (r['quantity'] or cnt[1])
-                d['order_total_qty'] = cnt[1]  # 订单总量(详情可对比剩余)
-        if not items and r['items_json']:
+        if r['items_json']:
             try:
-                items = json.loads(r['items_json'])
+                items = json.loads(r['items_json']) or []
             except Exception:
                 items = []
+        if not items and r['order_id']:
+            items = [dict_row(x) for x in conn.execute("SELECT * FROM order_items WHERE order_id=? ORDER BY id", (r['order_id'],)).fetchall()]
         if not items:
             items = [{'item_name': r['item_name'], 'spec': r['spec'], 'quantity': r['quantity'], 'unit': r['unit']}]
+        # 本单实际入库数量/金额(与入库存、导出口径一致); 订单原始订购量仅后台留存供分批校验, 前端不展示
+        d['total_qty'] = _rcv_doc_qty(d)
+        try:
+            d['amount'] = round(sum(float(x.get('quantity') or 0) * float(x.get('price') or 0) for x in items if isinstance(x, dict)), 2)
+        except Exception:
+            d['amount'] = 0.0
+        if r['order_id']:
+            if r['order_id'] not in _st_cache:
+                try:
+                    _st_cache[r['order_id']] = _order_rcv_stats(conn, r['order_id'])
+                except Exception:
+                    _st_cache[r['order_id']] = None
+            _stx = _st_cache[r['order_id']]
+            if _stx:
+                d['order_total_qty'] = _stx['order_total']       # 后台留存(分批校验用)
+                d['order_accepted_qty'] = _stx['accepted']
+                d['order_pending_qty'] = _stx['pending']         # 剩余待入库(可继续入库)
+        d['item_count'] = len(items)
+        d['order_sealed'] = bool(r['order_sealed']) if 'order_sealed' in r.keys() else False
         # V11.152: 有明细时列表物资名显示完整(首项+共N项)
         if len(items) > 1:
             d['item_name'] = items[0]['item_name'] + ' 等%d项' % len(items)
@@ -9093,16 +9108,8 @@ def api_receiving_download(rid):
     conn.close()
     supplier = (po['supplier'] if po else '') or ''
     rows = []
-    if oi:
-        for it in oi:
-            price = float(it['price'] or 0)
-            tr = float(it['tax_rate'] or 13)
-            rows.append({'name': it['item_name'], 'spec': it['spec'] or '', 'qty': float(it['quantity'] or 0),
-                         'unit': it['unit'] or '个', 'price': price, 'tax': tr,
-                         'amt_no': price * float(it['quantity'] or 0),
-                         'amt_tax': price * float(it['quantity'] or 0) * (1 + tr / 100),
-                         'remark': (dict(it).get('remark') or '')})
-    elif rn['items_json']:
+    # V11.269: 导出取本单实际入库数量/金额(items_json 优先); 无明细才回退订单明细(老整批单兼容)
+    if rn['items_json']:
         try:
             for it in json.loads(rn['items_json']):
                 price = float(it.get('price') or 0); tr = float(it.get('tax_rate') or 13)
@@ -9113,6 +9120,15 @@ def api_receiving_download(rid):
                              'remark': it.get('remark') or ''})
         except Exception:
             rows = []
+    if not rows and oi:
+        for it in oi:
+            price = float(it['price'] or 0)
+            tr = float(it['tax_rate'] or 13)
+            q = float(it['quantity'] or 0)
+            rows.append({'name': it['item_name'], 'spec': it['spec'] or '', 'qty': q,
+                         'unit': it['unit'] or '个', 'price': price, 'tax': tr,
+                         'amt_no': price * q, 'amt_tax': price * q * (1 + tr / 100),
+                         'remark': (dict(it).get('remark') or '')})
     if not rows:
         price = float((po['price'] if po else 0) or 0); tr = 13
         q = float(rn['quantity'] or 0)
