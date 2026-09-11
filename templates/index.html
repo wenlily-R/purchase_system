@@ -359,7 +359,11 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
   </div>
 </div>
 <div class="page" id="pinquiries"><h2>🔍 三方询价</h2><div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="showInquiryForm()">+ 发起三方询价</button><button class="btn btn-w btn-sm" onclick="loadInquiries()">🔄 刷新</button></div><div class="card"><div class="cb" id="inquiriesTable"><div class="loading">加载中...</div></div></div></div>
-<div class="page" id="porders"><h2>📋 采购订单</h2><div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-p btn-sm" id="ordNewBtn" onclick="showForm('order')">+ 新建订单</button><button class="btn btn-o btn-sm" onclick="showOrderExecList()">📋 订单执行明细表</button><span style="margin-left:auto;display:flex;gap:4px"><button class="btn btn-p btn-sm" id="ordTabAll" onclick="ordTab('')">全部</button><button class="btn btn-o btn-sm" id="ordTabMat" onclick="ordTab('mat')">📦 物资订单</button><button class="btn btn-o btn-sm" id="ordTabRep" onclick="ordTab('rep')">🔧 维修订单</button></span></div><div id="ordTip" style="display:none;font-size:10px;color:#8a4b0f;background:#fff8f0;border:1px solid #f0d9b5;border-radius:4px;padding:4px 8px;margin-bottom:4px">🔧 <b>维修委托订单</b>：由「维修询价 → 定标」自动生成（无需手工新建）；维修件不走验收入库，维修完成后在关联维修申请上点「✅ 登记完工」闭环。</div><div class="card"><div class="cb" id="ordersTable"><div class="loading">加载中...</div></div></div></div>
+<div class="page" id="porders"><h2>📋 采购订单 <span style="font-size:10px;color:#999;font-weight:normal">(📦物资订单 / 🔧维修订单 分类查看)</span></h2>
+  <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap"><button class="btn btn-p btn-sm" style="margin-left:auto" id="ordNewBtn" onclick="showForm('order')">+ 新建订单</button><button class="btn btn-o btn-sm" onclick="showOrderExecList()">📋 订单执行明细表</button></div>
+  <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap"><select id="ordTypeFilter" onchange="loadOrders()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="" selected>全部类型</option><option value="物资采购">📦 物资订单</option><option value="设备维修">🔧 维修订单</option></select><select id="ordStatusFilter" onchange="loadOrders()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="">全部状态</option><option>草稿</option><option>待审批</option><option>已通过</option><option>已入库</option><option>已驳回</option><option>已作废</option></select><span style="font-size:9px;color:#999">类型/状态筛选可叠加；🔧=维修 📦=物资</span></div>
+  <div id="ordTip" style="display:none;font-size:10px;color:#8a4b0f;background:#fff8f0;border:1px solid #f0d9b5;border-radius:4px;padding:4px 8px;margin-bottom:4px">🔧 <b>维修委托订单</b>：由「维修询价 → 定标」自动生成（无需手工新建）；维修件不走验收入库，维修完成后在关联维修申请上点「✅ 登记完工」闭环。</div>
+  <div class="card"><div class="cb" id="ordersTable"><div class="loading">加载中...</div></div></div></div>
 <div class="page" id="papprovals"><h2>✅ 审批中心 <span style="font-size:10px;color:#999;font-weight:normal">(维修类申请与存量定损单审批请切换🔧维修审批中心办理)</span></h2>
   <div class="tabs" id="apprCenterTabs" style="margin-bottom:4px">
     <button class="act" data-c="buy" onclick="apprCenter('buy')">📦 采购审批中心</button>
@@ -2491,23 +2495,16 @@ async function selectInquirySupplier(iid,sid){
 }
 
 // Orders
-// V11.271: 订单页类型视图(全部/物资/维修) — 与申请、审批中心口径一致
-let ORD_TAB='';
-function ordTab(t){
-  ORD_TAB=t;
-  const map={'':'ordTabAll','mat':'ordTabMat','rep':'ordTabRep'};
-  Object.entries(map).forEach(([k,el])=>{const b=id(el);if(b){b.classList.toggle('btn-p',k===t);b.classList.toggle('btn-o',k!==t)}});
-  const tip=id('ordTip'); if(tip)tip.style.display=(t==='rep')?'':'none';
-  const nb=id('ordNewBtn'); if(nb)nb.style.display=(t==='rep')?'none':'';
-  loadOrders();
-}
+// V11.272: 订单页筛选(类型/状态下拉) — 与采购申请页头部形态保持一致(用户要求)
 async function loadOrders(){
   const o=await api('/orders');
+  const tf=(id('ordTypeFilter')||{}).value||'', sf=(id('ordStatusFilter')||{}).value||'';
   const rep=o.filter(x=>x.req_type=='设备维修'), mat=o.filter(x=>x.req_type!='设备维修');
-  if(id('ordTabAll'))id('ordTabAll').textContent='全部 '+o.length;
-  if(id('ordTabMat'))id('ordTabMat').textContent='📦 物资订单 '+mat.length;
-  if(id('ordTabRep'))id('ordTabRep').textContent='🔧 维修订单 '+rep.length;
-  const list=ORD_TAB==='rep'?rep:(ORD_TAB==='mat'?mat:o);
+  const tip=id('ordTip'); if(tip)tip.style.display=(tf==='设备维修')?'':'none';
+  const nb=id('ordNewBtn'); if(nb)nb.style.display=(tf==='设备维修')?'none':'';
+  let list=o;
+  if(tf==='设备维修')list=rep; else if(tf==='物资采购')list=mat;
+  if(sf)list=list.filter(x=>(x.status||'')===sf);
   id('ordersTable').innerHTML=groupRnder(list, r=>r.created_at,['单号','物资','供应商','模式','金额','状态','采购进度','驳回','操作'],
     r=>{
       // 采购进度：根据items状态计算; V11.258: 维修委托订单=完工登记进度
