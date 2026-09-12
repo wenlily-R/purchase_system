@@ -358,7 +358,9 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <div class="card"><div class="cb" id="prequestsTable"><div class="loading">加载中...</div></div></div>
   </div>
 </div>
-<div class="page" id="pinquiries"><h2>🔍 三方询价</h2><div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="showInquiryForm()">+ 发起三方询价</button><button class="btn btn-w btn-sm" onclick="loadInquiries()">🔄 刷新</button></div><div class="card"><div class="cb" id="inquiriesTable"><div class="loading">加载中...</div></div></div></div>
+<div class="page" id="pinquiries"><h2>🔍 三方询价 <span style="font-size:10px;color:#999;font-weight:normal">(📦物资询价 / 🔧维修询价 分类查看)</span></h2>
+  <div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-p btn-sm" style="margin-left:auto" onclick="showInquiryForm()">+ 发起三方询价</button><button class="btn btn-w btn-sm" onclick="loadInquiries()">🔄 刷新</button></div>
+  <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap"><select id="inqTypeFilter" onchange="loadInquiries()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="" selected>全部类型</option><option value="物资采购">📦 物资询价</option><option value="设备维修">🔧 维修询价</option></select><select id="inqStatusFilter" onchange="loadInquiries()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="">全部状态</option><option>询价中</option><option>待比价</option><option>待定标</option><option>定标审批中</option><option>已生成订单</option><option>已撤回</option><option>已作废</option></select><span style="font-size:9px;color:#999">类型/状态筛选可叠加；🛠=维修 📦=物资</span></div><div class="card"><div class="cb" id="inquiriesTable"><div class="loading">加载中...</div></div></div></div>
 <div class="page" id="porders"><h2>📋 采购订单 <span style="font-size:10px;color:#999;font-weight:normal">(📦物资订单 / 🔧维修订单 分类查看)</span></h2>
   <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap"><button class="btn btn-p btn-sm" style="margin-left:auto" id="ordNewBtn" onclick="showForm('order')">+ 新建订单</button><button class="btn btn-o btn-sm" onclick="showOrderExecList()">📋 订单执行明细表</button></div>
   <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap"><select id="ordTypeFilter" onchange="loadOrders()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="" selected>全部类型</option><option value="物资采购">📦 物资订单</option><option value="设备维修">🔧 维修订单</option></select><select id="ordStatusFilter" onchange="loadOrders()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="">全部状态</option><option>草稿</option><option>待审批</option><option>已通过</option><option>部分到货，待继续验收</option><option>已入库</option><option>已签合同</option><option>执行中</option><option>已驳回</option><option>已作废</option></select><span style="font-size:9px;color:#999">类型/状态筛选可叠加；🔧=维修 📦=物资</span></div>
@@ -371,7 +373,9 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
   </div>
   <div class="tabs" id="apprTabs"></div>
   <div class="card"><div class="cb" id="approvalsTable"><div class="loading">加载中...</div></div></div></div>
-<div class="page" id="pcontracts"><h2>📄 合同管理</h2><div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="showForm('contract')">+ 新建合同</button><button class="btn btn-w btn-sm" onclick="loadMonthlySummary()">📅 月结汇总</button></div><div class="card"><div class="cb" id="contractsTable"><div class="loading">加载中...</div></div></div></div>
+<div class="page" id="pcontracts"><h2>📄 合同管理 <span style="font-size:10px;color:#999;font-weight:normal">(📦物资合同 / 🔧维修合同 分类查看)</span></h2>
+  <div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-p btn-sm" style="margin-left:auto" onclick="showForm('contract')">+ 新建合同</button><button class="btn btn-w btn-sm" onclick="loadMonthlySummary()">📅 月结汇总</button></div>
+  <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap"><select id="ctTypeFilter" onchange="loadContracts()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="" selected>全部类型</option><option value="物资采购">📦 物资合同</option><option value="设备维修">🔧 维修合同</option></select><select id="ctStatusFilter" onchange="loadContracts()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="">全部状态</option><option>待审批</option><option>已通过</option><option>执行中</option><option>已完成</option><option>已撤回</option><option>已作废</option></select><span style="font-size:9px;color:#999">类型/状态筛选可叠加；🛠=维修合同 📦=物资合同</span></div><div class="card"><div class="cb" id="contractsTable"><div class="loading">加载中...</div></div></div></div>
 <div class="page" id="preceivings"><h2>📦 入库验收</h2>
   <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap">
     <span style="font-size:9px;color:#666">入库三步：①选部门 ②选物资数量 ③提交审批；审批通过自动增加库存</span>
@@ -1994,14 +1998,22 @@ async function showPRequest(pid){
 let IQ_SUPS=0;
 async function loadInquiries(){
   const rows=await api('/inquiries');
-  id('inquiriesTable').innerHTML=groupRnder(rows, r=>r.created_at,
-    ['询价单号','申请单号','采购事由','供应商数','已报价','最低报价','状态','审批状态','操作'],
+  // V11.295(重做V11.289, 上次被另一台机器的merge覆盖): 询价按 物资/维修 分类查看
+  const _fT=id('inqTypeFilter')?.value||'', _fS=id('inqStatusFilter')?.value||'';
+  let list=rows;
+  if(_fT) list=list.filter(x=>((x.req_type||'物资采购')===_fT));
+  if(_fS) list=list.filter(x=>(x.status||'')===_fS);
+  id('inquiriesTable').innerHTML=groupRnder(list, r=>r.created_at,
+    ['询价单号','类型','申请单号','采购事由','供应商数','已报价','最低报价','状态','审批状态','操作'],
     r=>{
+      const _tp=((r.req_type||'物资采购')==='设备维修')
+        ? '<span style="color:#8a6d3b;background:#f8f0e3;padding:1px 6px;border-radius:3px;font-size:9px">🛠 维修</span>'
+        : '<span style="color:#666;background:#f0f0f0;padding:1px 6px;border-radius:3px;font-size:9px">📦 物资</span>';
       let approvalHtml = '';
       if(r.approval_status=='审批中') approvalHtml='<span style="color:#e67e22;font-size:9px">⏳审批中</span>';
       else if(r.approval_status=='已通过'||r.approval_status=='已批准') approvalHtml='<span style="color:#27ae60;font-size:9px">✅已通过</span>';
       else if(r.approval_status=='已驳回') approvalHtml='<span style="color:#e74c3c;font-size:9px">❌已驳回</span>';
-      return `<td><b>${esc(r.inq_no)}</b></td><td>${esc(r.req_no||('#'+r.req_id))}</td><td>${esc(r.purpose||'')}</td>
+      return `<td><b>${esc(r.inq_no)}</b></td><td>${_tp}</td><td>${esc(r.req_no||('#'+r.req_id))}</td><td>${esc(r.purpose||'')}</td>
       <td>${r.sup_count||0}家</td><td style="color:${(r.quoted_count||0)>0?'#27ae60':'#999'}">${r.quoted_count||0}/${r.sup_count||0} 已报价</td>
       <td>${r.min_price?('¥'+(r.min_price||0).toFixed(0)):'<span style="color:#999">🔒待开标</span>'}</td><td>${tag(r.status)}</td><td>${approvalHtml}</td>
       <td style="white-space:nowrap"><button class="lnk" onclick="showInquiry(${r.id})">详情/比价</button>
@@ -3593,8 +3605,17 @@ async function genMonthlyContract(supplier){
   if(r.success){alert(`✅ 月度合同 ${r.contract_no} 已生成(汇总${r.count}单, ¥${(r.amount||0).toFixed(0)}), 已进入合同审批`);loadContracts()}
   else alert(r.error||'生成失败');
 }
-async function loadContracts(){const c=await api('/contracts');id('contractsTable').innerHTML=groupRnder(c, r=>r.created_at,['编号','名称','供应商','模板','溯源号','金额','状态','驳回','操作'],r=>`<td><b>${esc(r.contract_no)}</b></td><td>${esc(r.contract_name)}</td><td>${esc(r.supplier)}</td><td>${r.template_name?`<span class="tag" style="background:#eef2ff;color:#4338ca">${esc(r.template_name.replace('买卖合同-',''))}</span>`:'<span style="color:#ccc">-</span>'}</td><td style="font-size:8px;color:#0d9488">${r.trace_no?`<a style="cursor:pointer" onclick="openTrace('${esc(r.trace_no)}')">${esc(r.trace_no)}</a>`:'<span style="color:#ccc">-</span>'}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}</td>${rejCell(r)}
-  <td style="white-space:nowrap"><button class="lnk" onclick="showContract(${r.id})">查看</button>${r.file_path?` <button class="lnk" style="color:var(--s)" onclick="window.open('/uploads/${esc(r.file_path)}','_blank')">📄下载</button>`:''} <button class="lnk" style="color:#b08900" onclick="editDoc('contract',${r.id},'合同')">✏️修改</button> ${(r.status=='待审批'||r.status=='已通过'||r.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('contract',${r.id},'合同')">↩️撤回</button>`:''}${(r.status=='待审批'||r.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('contract',${r.id},'合同')">🗑️删除</button>`:''}</td>`)}
+async function loadContracts(){
+  const c=await api('/contracts');
+  // V11.294: 合同管理按 物资/维修 分类查看(与采购申请、三方询价、采购订单口径一致)
+  const _fT=id('ctTypeFilter')?.value||'', _fS=id('ctStatusFilter')?.value||'';
+  let list=c;
+  if(_fT) list=list.filter(x=>((x.req_type||'物资采购')===_fT));
+  if(_fS) list=list.filter(x=>(x.status||'')===_fS);
+  id('contractsTable').innerHTML=groupRnder(list, r=>r.created_at,['编号','类型','名称','供应商','模板','溯源号','金额','状态','驳回','操作'],r=>{
+  const _tp=((r.req_type||'物资采购')==='设备维修')?'<span style="color:#8a6d3b;background:#f8f0e3;padding:1px 6px;border-radius:3px;font-size:9px">🛠 维修</span>':'<span style="color:#666;background:#f0f0f0;padding:1px 6px;border-radius:3px;font-size:9px">📦 物资</span>';
+  return `<td><b>${esc(r.contract_no)}</b></td><td>${_tp}</td><td>${esc(r.contract_name)}</td><td>${esc(r.supplier)}</td><td>${r.template_name?`<span class="tag" style="background:#eef2ff;color:#4338ca">${esc(r.template_name.replace('买卖合同-','').replace('设备维修服务合同-','维修-'))}</span>`:'<span style="color:#ccc">-</span>'}</td><td style="font-size:8px;color:#0d9488">${r.trace_no?`<a style="cursor:pointer" onclick="openTrace('${esc(r.trace_no)}')">${esc(r.trace_no)}</a>`:'<span style="color:#ccc">-</span>'}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}</td>${rejCell(r)}
+  <td style="white-space:nowrap"><button class="lnk" onclick="showContract(${r.id})">查看</button>${r.file_path?` <button class="lnk" style="color:var(--s)" onclick="window.open('/uploads/${esc(r.file_path)}','_blank')">📄下载</button>`:''} <button class="lnk" style="color:#b08900" onclick="editDoc('contract',${r.id},'合同')">✏️修改</button> ${(r.status=='待审批'||r.status=='已通过'||r.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('contract',${r.id},'合同')">↩️撤回</button>`:''}${(r.status=='待审批'||r.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('contract',${r.id},'合同')">🗑️删除</button>`:''}</td>`})}
 async function showContract(id){
   // V11.150: 防连点 + 最新打开者优先
   if(__guardOpen('ct:'+id))return;

@@ -7073,7 +7073,7 @@ def api_inquiries():
     V11.217: 三家未全部报价前 min_price 返回 None(列表不提前泄露最低价); 全部报价后才显示"""
     conn = db()
     rows = conn.execute("""
-        SELECT i.*, pr.req_no, pr.purpose, pr.dept,
+        SELECT i.*, pr.req_no, pr.purpose, pr.dept, COALESCE(pr.req_type, '物资采购') AS req_type,
             (SELECT COUNT(*) FROM inquiry_suppliers s WHERE s.inquiry_id=i.id) AS sup_count,
             (SELECT COUNT(*) FROM inquiry_suppliers s WHERE s.inquiry_id=i.id AND s.quote_price>0) AS quoted_count,
             (SELECT status FROM inquiry_approvals WHERE inquiry_id=i.id ORDER BY id DESC LIMIT 1) AS approval_status
@@ -8852,7 +8852,7 @@ def api_contracts():
         _ws = (_ws + ' AND ' if _ws else ' WHERE ') + "(c.trace_no=? OR po.order_no=?)"
         _args = _args + (f_trace, f_trace)
     conn = db()
-    rows = conn.execute("SELECT c.*,po.order_no FROM contracts c LEFT JOIN purchase_orders po ON c.order_id=po.id" + _ws + " ORDER BY c.id DESC LIMIT 50", _args).fetchall()
+    rows = conn.execute("SELECT c.*,po.order_no,COALESCE(pr.req_type,'物资采购') AS req_type FROM contracts c LEFT JOIN purchase_orders po ON c.order_id=po.id LEFT JOIN purchase_requests pr ON pr.id=po.req_id" + _ws + " ORDER BY c.id DESC LIMIT 50", _args).fetchall()
     _atts = {}
     for _a in conn.execute("SELECT contract_id AS cid,id,file_name,file_path,file_kind,uploaded_by,created_at FROM contract_attachments ORDER BY id DESC").fetchall():
         _atts.setdefault(_a['cid'], []).append(dict_row(_a))
