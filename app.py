@@ -1570,6 +1570,19 @@ def create_approvals(biz_type, biz_id, amount, submitter=''):
                 _cfg_biz = 'repair_plan'
         except Exception:
             pass
+    # V11.292: 维修类订单生成的合同 → 按维修口径走分管领导审批(配置 repair_contract); 物资合同仍用 contract 链
+    if biz_type == 'contract':
+        try:
+            _c1 = db()
+            _ct1 = _c1.execute("SELECT order_id FROM contracts WHERE id=?", (biz_id,)).fetchone()
+            _rq1 = None
+            if _ct1 and _ct1['order_id']:
+                _rq1 = _c1.execute("SELECT pr.req_type FROM purchase_orders po LEFT JOIN purchase_requests pr ON pr.id=po.req_id WHERE po.id=?", (_ct1['order_id'],)).fetchone()
+            _c1.close()
+            if _rq1 and (_rq1['req_type'] or '') == '设备维修':
+                _cfg_biz = 'repair_contract'
+        except Exception:
+            pass
     configs = get_approval_config(_cfg_biz, amount)
     conn = db()
     for cfg in configs:
