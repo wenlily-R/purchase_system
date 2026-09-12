@@ -437,7 +437,7 @@ async function loadDrill(kind,key,title){
       if(!rows.length){h+='<div class="tt">无记录</div>';continue}
       const cols=Object.keys(rows[0]);
       h+='<table class="tbl"><thead><tr>'+cols.map(c=>'<th>'+esc(c)+'</th>').join('')+'</tr></thead><tbody>'+
-         rows.map(r=>'<tr>'+cols.map(c=>'<td>'+esc(r[c]===null?'':r[c])+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
+         rows.map(r=>'<tr>'+cols.map(c=>{const v=(r[c]===null?'':r[c]);const isNo=/(单号|号|编号)/.test(c)&&v;return '<td>'+(isNo?noLink(String(v)):esc(v))+'</td>'}).join('')+'</tr>').join('')+'</tbody></table>';
     }
     $('dlgB').innerHTML=h||'<div class="tt">无记录</div>';
   }catch(e){$('dlgB').innerHTML='<div class="tt">下钻失败，请刷新后重试</div>'}
