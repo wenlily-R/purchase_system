@@ -341,7 +341,8 @@ function renderChips(){
 }
 async function refreshAll(){renderChips();Object.keys(charts).forEach(k=>{charts[k].dispose()});charts={};loadTab(CUR)}
 async function loadTab(t){
-  if(t==='finance'&&META&&META.role&&!['系统管理员','分管领导','总经理','财务'].includes(META.role)){
+  const _fr=(window.DCFG&&DCFG.tab_roles&&DCFG.tab_roles.finance)||[];
+  if(t==='finance'&&META&&META.role&&!['系统管理员','分管领导','总经理','财务'].concat(_fr).includes(META.role)){
     $('sec-finance').innerHTML='<div class="tt" style="padding:60px">🔒 财务分析仅对 财务/管理 角色开放</div>';return}
   const y=qs();let d;
   try{d=await api('/api/dashboard/'+t+(y?'?'+y:''))}catch(e){return}
@@ -546,12 +547,14 @@ async function openDashCfg(){
     '<div class="cfgrow" style="margin-top:12px"><b>风险阈值</b>到货及时率下限 <input type="number" id="cfgRate" value="'+esc(risk.arrive_rate_min!==undefined?risk.arrive_rate_min:90)+'">%'+
     '　暂估挂账预警 <input type="number" id="cfgEst" value="'+esc(risk.est_days!==undefined?risk.est_days:15)+'">天</div>'+
     '<div class="cfgrow"><b>自动刷新</b><input type="number" id="cfgSec" value="'+esc(c.refresh_sec||60)+'">秒/次（0=不自动刷新）</div>'+
+    '<div class="cfgrow"><b>财务页签额外授权角色</b><input type="text" id="cfgRoles" style="width:240px" value="'+esc(((c.tab_roles||{}).finance||[]).join(','))+'"><span style="color:#6b8299">多个用英文逗号分隔</span></div>'+
     '<div style="margin-top:14px"><button class="btn" onclick="saveDashCfg()">💾 保存配置</button></div>';
   openDlg('📊 数据看板配置', box);
 }
 async function saveDashCfg(){
   const hid=[];document.querySelectorAll('[data-kpi]').forEach(x=>{if(!x.checked)hid.push(x.dataset.kpi)});
-  const body={kpi_hidden:hid,risk:{arrive_rate_min:+(($('cfgRate')||{}).value||90),est_days:+(($('cfgEst')||{}).value||15)},refresh_sec:+(($('cfgSec')||{}).value||0)};
+  const _r=((($('cfgRoles')||{}).value||'').split(/[,，]/).map(x=>x.trim()).filter(x=>x));
+  const body={kpi_hidden:hid,risk:{arrive_rate_min:+(($('cfgRate')||{}).value||90),est_days:+(($('cfgEst')||{}).value||15)},refresh_sec:+(($('cfgSec')||{}).value||0),tab_roles:{finance:_r}};
   try{const r=await api('/api/dashboard/config');const res=await fetch('/api/dashboard/config',{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'fetch'},body:JSON.stringify(body)});
     if(!res.ok){toast('保存失败');return}
     toast('✅ 看板配置已保存');closeDlg();await loadConfig();refreshAll();

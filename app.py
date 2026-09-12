@@ -17287,6 +17287,21 @@ def _dash_annot(cards, c, f, specs, own=None, own_ps=()):
     return cards
 
 
+def _dash_tab_roles(tab):
+    """看板页签可访问角色(默认内置, 可在看板配置中追加授权角色)"""
+    base = ['系统管理员', '分管领导', '总经理', '财务'] if tab == 'finance' else ['系统管理员', '分管领导', '总经理']
+    try:
+        c = db()
+        extra = _dash_cfg_get(c, 'dash_tab_roles', {}) or {}
+        c.close()
+        v = extra.get(tab) or []
+        if isinstance(v, list):
+            base = list(dict.fromkeys(base + [str(x) for x in v]))
+    except Exception:
+        pass
+    return tuple(base)
+
+
 def _dash_cfg_risk(c):
     """看板风险阈值配置(系统设置→看板配置)"""
     v = _dash_cfg_get(c, 'dash_risk_thresholds', {})
@@ -17669,7 +17684,7 @@ def api_dashboard_inventory():
 @login_required
 def api_dashboard_finance():
     """Tab4 财务分析: 6指标 + 合同月度柱 + 开票vs付款双折线 + 账龄饼 + 4明细(全部受统一筛选)"""
-    if session.get('user_role') not in _DASH_FULL_ROLES:
+    if session.get('user_role') not in _dash_tab_roles('finance'):   # V11.291 支持看板配置追加授权角色
         return jsonify({'error': '无财务分析查看权限'}), 403
     f = _dash_f()
     c = db()
