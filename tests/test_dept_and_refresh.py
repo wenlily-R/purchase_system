@@ -62,7 +62,8 @@ def main():
     ck('空库 init_db 不再崩溃(原 contract_invoices 补列早于建表)', crashed is None, crashed)
     c = sqlite3.connect(empty)
     names = [x[0] for x in c.execute("SELECT name FROM departments").fetchall()]
-    ck('空库含 5 个基础部门 + 8 个新增 = 13', len(names) == 13 and all(d in names for d in NEW8), names)
+    ck('空库部门=5基础+10补种=15 且与生产库一致', sorted(names) == sorted(EXPECT_ORDER), names)
+    ck('8个新增部门 + 工程部/信息部 均入库', all(d in names for d in NEW8 + ['工程部', '信息部']), names)
     cols = [x[1] for x in c.execute("PRAGMA table_info(contract_invoices)").fetchall()]
     ck('contract_invoices.node_id 已补列', 'node_id' in cols, cols)
     c.close()

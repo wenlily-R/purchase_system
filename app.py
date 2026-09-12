@@ -1180,10 +1180,11 @@ def init_db():
         _cols = [r[1] for r in conn.execute(f"PRAGMA table_info({_t})").fetchall()]
         if _col not in _cols:
             conn.execute(_ddl)
-    # V11.293: 新增部门(用户要求: 机电部/磅房/采购部/安监部/人事部/厨房/绿化部/生产车队) — 幂等补种,
-    # 老库也走这一段(不受上面"部门表为空才种子"限制), 各机启动即自动补齐; 名称/编码已存在则跳过
+    # V11.293/294: 部门幂等补种 — 老库也走这一段(不受上面"部门表为空才种子"限制), 各机启动即自动补齐; 名称/编码已存在则跳过
+    #   前8个=用户要求新增; 后2个=历史手工加过、之前不在种子里(新机部署会缺), 一并补上
     for _dn, _dc in (('安监部', 'AJB'), ('磅房', 'BF'), ('采购部', 'CGB'), ('机电部', 'JD'),
-                     ('绿化部', 'LHB'), ('人事部', 'RSB'), ('厨房', 'CF'), ('生产车队', 'SCC')):
+                     ('绿化部', 'LHB'), ('人事部', 'RSB'), ('厨房', 'CF'), ('生产车队', 'SCC'),
+                     ('工程部', 'GC'), ('信息部', 'XX')):
         conn.execute("INSERT OR IGNORE INTO departments(name,code) VALUES(?,?)", (_dn, _dc))
     conn.commit(); conn.close()
 
