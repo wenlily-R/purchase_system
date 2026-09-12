@@ -1186,6 +1186,11 @@ _BRAND_AI_CACHE = {}
 _BRAND_AI_CACHE_TTL = 86400  # 24小时
 _BRAND_AI_DOWN_UNTIL = 0
 
+def _no_req_access():
+    """V11.282b 采购申请类接口角色闸: 库管员不参与采购申请(前端菜单已隐藏, 接口同步拦截)"""
+    return session.get('user_role') == '库管员'
+
+
 def _data_scope_denied(requester_id=None, requester=None, owner_id=None, owner=None):
     """V11.281b 数据范围: 员工/部门负责人 只能查看自己发起的单据(申请/订单/合同/入库/下载/链路)
     返回 True = 拒绝(无权查看); 其它角色一律放行。"""
@@ -5469,6 +5474,8 @@ def stamp_leader_sign(ws, sign_row, biz_type='', biz_id=0):
 @app.route('/api/prequests')
 @login_required
 def api_prequests():
+    if _no_req_access():
+        return jsonify([])  # V11.282b: 库管员不参与采购申请
     # V11.64: 数据权限 — 员工/部门负责人只看自己的; 采购员/财务/领导/库管员看各自域
     role = session.get('user_role')
     scope = filter_scope(role)
@@ -5518,6 +5525,8 @@ def api_prequest(rid):
     pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (rid,)).fetchone()
     if not pr:
         conn.close(); return jsonify({'error': '申请单不存在'}), 404
+    if _no_req_access():
+        conn.close(); return jsonify({'error': '无权限查看采购申请（库管员职责为库存/入库管理）'}), 403
     if _data_scope_denied(requester_id=pr['requester_id'], requester=pr['requester']):
         conn.close(); return jsonify({'error': '无权查看该单据（数据范围仅限本人单据）'}), 403
     items = conn.execute("SELECT * FROM request_items WHERE req_id=?", (rid,)).fetchall()
@@ -13428,6 +13437,8 @@ def api_prequest_download(rid):
     pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (rid,)).fetchone()
     if not pr:
         conn.close(); return jsonify({'error': '申请单不存在'}), 404
+    if _no_req_access():
+        conn.close(); return jsonify({'error': '无权限查看采购申请（库管员职责为库存/入库管理）'}), 403
     if _data_scope_denied(requester_id=pr['requester_id'], requester=pr['requester']):
         conn.close(); return jsonify({'error': '无权下载该单据'}), 403
     items = conn.execute("SELECT * FROM request_items WHERE req_id=? ORDER BY id", (rid,)).fetchall()
