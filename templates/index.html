@@ -1900,6 +1900,8 @@ async function showPRequest(pid){
       _entrustTxt=`<div style="background:#fff3e0;border:1px solid #f5cba7;color:#a05a12;border-radius:4px;padding:4px 8px;font-size:9px;margin-top:4px">🔨 维修询价 <b>${esc(d.inq.inq_no)}</b>（${esc(d.inq.status)}，统一开标比价确定维修商后，回到本单登记完工）</div>`;
     } else if(d.inq){
       _entrustTxt=`<div style="background:#f5f5f5;border:1px solid #ddd;color:#777;border-radius:4px;padding:4px 8px;font-size:9px;margin-top:4px">🔨 维修询价 <b>${esc(d.inq.inq_no)}</b>（${esc(d.inq.status)}）</div>`;
+    } else if(r.repair_done_date && !(d.inq && ['询价中','待定标','定标审批中'].includes(d.inq.status))){  // V11.283: 已完工→不再显示"补充定损清单/发起询价"等误点按钮
+      _entrustTxt=`<div style="background:#e8f5e9;border:1px solid #b7dfc0;color:#1b7a3d;border-radius:4px;padding:4px 8px;font-size:9px;margin-top:4px">✅ 已完成维修（完工登记 ${esc(r.repair_done_date)}）${r.repair_result?'：'+esc(String(r.repair_result).slice(0,60)):''} ｜ 维修件不进库存，本单已闭环。定损资料见下方「📎 附件」</div>`;
     } else if(['已通过','已下单'].includes(r.status) && _canOp){
       _entrustTxt=`<div style="color:#b7791f;font-size:9px;margin-top:4px">⏳ 待选商：厂家拆解定损后 ①点「📎 补充定损清单」录入维修项目/备件及估价 → ②发起维修询价（3-4家，24小时统一开标）或小额透明维修直接委托（压高压胶管/打黄油/补胎补气，不走询价）；维修项目不是库存物资，完成后点「✅ 登记完工」闭环（不进库存）</div>`;
       _entrustBtns=`<div style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-o btn-sm" onclick="appendRepairItems(${r.id})">📎 补充定损清单</button> <button class="btn btn-o btn-sm" onclick="showInquiryForm(${r.id})">🔨 发起维修询价</button> <button class="btn btn-o btn-sm" style="color:#8a4b0f;border-color:#d9a05b" onclick="repairDirect(${r.id})">🤝 小额直接委托</button> <button class="btn btn-o btn-sm" style="color:#c0392b;border-color:#e6a5a5" onclick="convertPReq(${r.id})">🔁 定损不可修→转物资</button></div>`;
@@ -2070,8 +2072,10 @@ async function raiUp(){
   const f=document.getElementById('raiFile'); if(!f||!f.files||!f.files[0])return;
   const fd=new FormData(); fd.append('file',f.files[0]);
   const r=await fetch('/api/upload',{method:'POST',body:fd,credentials:'include'}).then(x=>x.json()).catch(()=>({}));
-  if(r.path||r.url||r.filename){ const p=r.path||r.url; window.__raiAtts=(window.__raiAtts||[]).concat(p); document.getElementById('raiAttList').textContent='📎 已上传定损图 '+(window.__raiAtts.length)+' 张'; }
-  else alert('图片上传失败，请重试');
+  // V11.283: 后端返回字段为 file_path(原判断 r.path||r.url||r.filename 恒不命中 → 误报"上传失败"且附件丢失)
+  const p=r.file_path||r.path||r.url||r.filename;
+  if(p){ window.__raiAtts=(window.__raiAtts||[]).concat(p); document.getElementById('raiAttList').textContent='📎 已上传定损图 '+window.__raiAtts.length+' 张'; }
+  else alert('图片上传失败：'+(r.error||'请重试'));
 }
 async function doAppendRepairItems(rid){
   const rows=[];
