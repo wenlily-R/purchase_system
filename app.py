@@ -1184,7 +1184,32 @@ def init_db():
 # V11.161: 品牌AI分析缓存(同品牌24小时只调一次AI, 避免询价详情/列表反复卡10秒)
 _BRAND_AI_CACHE = {}
 _BRAND_AI_CACHE_TTL = 86400  # 24小时
-_BRAND_AI_DOWN_UNTIL = 0  # V11.281: AI服务不可用时熔断时间戳(避免逐品牌等3秒超时+刷日志)
+_BRAND_AI_DOWN_UNTIL = 0
+
+def _data_scope_denied(requester_id=None, requester=None, owner_id=None, owner=None):
+    """V11.281b 数据范围: 员工/部门负责人 只能查看自己发起的单据(申请/订单/合同/入库/下载/链路)
+    返回 True = 拒绝(无权查看); 其它角色一律放行。"""
+    role = session.get('user_role')
+    if role not in ('员工', '部门负责人'):
+        return False
+    _uid = session.get('user_id', 0)
+    _un = (session.get('user_name', '') or '').strip()
+    try:
+        if requester_id is not None and int(requester_id or 0) > 0 and int(requester_id or 0) == int(_uid or 0):
+            return False
+    except Exception:
+        pass
+    if _un and requester and str(requester).strip() == _un:
+        return False
+    try:
+        if owner_id is not None and int(owner_id or 0) > 0 and int(owner_id or 0) == int(_uid or 0):
+            return False
+    except Exception:
+        pass
+    if _un and owner and str(owner).strip() == _un:
+        return False
+    return True
+  # V11.281: AI服务不可用时熔断时间戳(避免逐品牌等3秒超时+刷日志)
 
 def ai_analyze_brand(brand_name):
     """V11.115: 调用AI分析品牌优缺点 — V11.161: 加24h内存缓存+超时降至3s(修复详情加载卡死)"""
@@ -5491,6 +5516,10 @@ def api_prequest_next_no():
 def api_prequest(rid):
     conn = db()
     pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (rid,)).fetchone()
+    if not pr:
+        conn.close(); return jsonify({'error': '申请单不存在'}), 404
+    if _data_scope_denied(requester_id=pr['requester_id'], requester=pr['requester']):
+        conn.close(); return jsonify({'error': '无权查看该单据（数据范围仅限本人单据）'}), 403
     items = conn.execute("SELECT * FROM request_items WHERE req_id=?", (rid,)).fetchall()
     approvals = conn.execute("SELECT * FROM approval_instances WHERE biz_type='purchase_request' AND biz_id=? ORDER BY level_no", (rid,)).fetchall()
     # V11.245: 每项附实时库存(按品名汇总) — 详情/审批/导出库存列同源
@@ -5514,6 +5543,15 @@ def api_create_prequest():
     d = request.json
     conn = db()
     items = d.get('items', [])
+    # V11.281b: 文本限长(前端已限, 后端兜底防绕过接口)
+    for _k, _lim in (('purpose', 200), ('remark', 300), ('repair_device', 100), ('repair_fault', 300)):
+        if isinstance(d.get(_k), str) and len(d[_k]) > _lim:
+            d[_k] = d[_k][:_lim]
+    for _it in (items or []):
+        for _k, _lim in (('item_name', 100), ('spec', 100), ('remark', 200), ('brand_param', 50), ('unit', 20)):
+            if isinstance(_it.get(_k), str) and len(_it[_k]) > _lim:
+                _it[_k] = _it[_k][:_lim]
+
     total = sum(float(i.get('quantity',1)) * float(i.get('estimated_price',0)) for i in items)
     apply_date = d.get('apply_date') or datetime.date.today().strftime('%Y-%m-%d')
     # V11.199: 提交审批(非草稿)必填采购事由/部门 — 空事由钉钉必填控件发起报820001, 源头拦截
@@ -5961,6 +5999,10 @@ def api_order(oid):
     o = conn.execute("SELECT * FROM purchase_orders WHERE id=?", (oid,)).fetchone()
     if not o:  # V11.281: 订单不存在时返回404(原实现对 None 仍赋值 → 500)
         conn.close(); return jsonify({'error': '订单不存在'}), 404
+    if _data_scope_denied(requester=(o['requester'] if 'requester' in o.keys() else None),
+                          owner=(o['owner'] if 'owner' in o.keys() else None),
+                          owner_id=(o['owner_id'] if 'owner_id' in o.keys() else None)):
+        conn.close(); return jsonify({'error': '无权查看该单据（数据范围仅限本人单据）'}), 403
     # V11.258: 订单来源申请类型(维修委托订单: 前端按此区分 完工登记/禁入库)
     _oreq = None
     if o and (o['req_id'] if 'req_id' in o.keys() else None):
@@ -6004,6 +6046,10 @@ def api_order_execution(oid):
     o = conn.execute("SELECT * FROM purchase_orders WHERE id=?", (oid,)).fetchone()
     if not o:
         conn.close(); return jsonify({'error': '订单不存在'}), 404
+    if _data_scope_denied(requester=(o['requester'] if 'requester' in o.keys() else None),
+                          owner=(o['owner'] if 'owner' in o.keys() else None),
+                          owner_id=(o['owner_id'] if 'owner_id' in o.keys() else None)):
+        conn.close(); return jsonify({'error': '无权下载该单据'}), 403
     od = dict(o)
     nodes = []
     # 1. 创建节点
@@ -8798,6 +8844,10 @@ def api_receiving_arrived(rid):
     rn = conn.execute("SELECT * FROM receivings WHERE id=?", (rid,)).fetchone()
     if not rn:
         conn.close(); return jsonify({'error': '入库单不存在'}), 404
+    if rn['order_id']:
+        _po1 = conn.execute("SELECT requester,owner,owner_id FROM purchase_orders WHERE id=?", (rn['order_id'],)).fetchone()
+        if _po1 and _data_scope_denied(requester=_po1['requester'], owner=_po1['owner'], owner_id=_po1['owner_id']):
+            conn.close(); return jsonify({'error': '无权下载该单据'}), 403
     if rn['status'] != '待入库':
         conn.close(); return jsonify({'error': f'当前状态({rn["status"]})无需确认到货'}), 400
     collect_flag = 1 if d.get('collect_accept') else 0
@@ -9187,6 +9237,10 @@ def api_receiving_download(rid):
     if not rn:
         conn.close(); return jsonify({'error': '入库单不存在'}), 404
     po = None
+    if rn['order_id']:
+        _po2 = conn.execute("SELECT requester,owner,owner_id FROM purchase_orders WHERE id=?", (rn['order_id'],)).fetchone()
+        if _po2 and _data_scope_denied(requester=_po2['requester'], owner=_po2['owner'], owner_id=_po2['owner_id']):
+            conn.close(); return jsonify({'error': '无权下载该单据'}), 403
     if rn['order_id']:
         po = conn.execute("SELECT * FROM purchase_orders WHERE id=?", (rn['order_id'],)).fetchone()
     oi = []
@@ -9592,18 +9646,16 @@ def api_create_receiving():
     _inspector = (d.get('inspector') or '').strip() or session.get('user_name', '') or '系统'
     conn.execute("INSERT INTO receivings(receive_no,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,items_json,attachments,dept,is_est,est_amount,inspector,trace_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                  (no, d.get('order_id'), first['item_name'], first.get('spec', ''), total_q,
-                  first.get('unit', '个'), 0, '待审批', now(), '手动入库单: %d项商品' % len(items),
+                  first.get('unit', '个'), 0, '待入库', now(), '手动入库单: %d项商品' % len(items),
                   json.dumps(items, ensure_ascii=False), _atts_json, _dept, _is_est, _est_amt, _inspector, _trace))
     rid = conn.execute("SELECT id FROM receivings WHERE receive_no=?", (no,)).fetchone()[0]
     # 手动入库单没有 order_items, 明细暂存 remark; 审批通过时按 quantity 入库
     conn.commit()
-    create_approvals('receiving', rid, 0, submitter=session['user_name'])
+    # V11.281b 入库审批合并为一次(B方案): 创建入库单不再送审 — 待库管员"验收提交"时一次性送审, 通过即入库
     conn.close()
-    try: start_instances('receiving', rid)
-    except Exception as e: print('receiving start_instances err:', e)
-    log(session['user_name'], '新建入库单', f'{no} {len(items)}项 {total_q}件 待审批')
-    _trace_create('receiving', 'receivings', 'receive_no=?', no, node='新建提交审批(暂估)')
-    return jsonify({'success': True, 'receive_no': no, 'message': f'入库单 {no} 已提交审批，审批通过后自动增加库存'})
+    log(session['user_name'], '新建入库单', f'{no} {len(items)}项 {total_q}件 待入库')
+    _trace_create('receiving', 'receivings', 'receive_no=?', no, node='新建入库单(待入库·暂估)')
+    return jsonify({'success': True, 'receive_no': no, 'message': f'入库单 {no} 已创建（待入库）：请在列表点【提交审批】填写验收数量后送审，审批通过自动增加库存'})
 
 @app.route('/api/inventory')
 @login_required
@@ -11233,6 +11285,12 @@ def api_trace_query(trace_no):
     except Exception as e:
         conn.close()
         return jsonify({'error': '查询失败: %s' % str(e)[:160]}), 500
+    # V11.281b: 员工/部门负责人 仅能查看与自己相关的单据链路
+    if session.get('user_role') in ('员工', '部门负责人') and isinstance(out, dict):
+        _rr = out.get('request')
+        if isinstance(_rr, dict) and _data_scope_denied(requester_id=_rr.get('requester_id'), requester=_rr.get('requester'),
+                                                        owner_id=_rr.get('owner_id'), owner=_rr.get('owner')):
+            conn.close(); return jsonify({'error': '无权查看该单据链路（数据范围仅限本人单据）'}), 403
     conn.close()
     return jsonify(out)
 
@@ -11848,6 +11906,16 @@ def api_trace():
         if not r: c.close(); return jsonify(out)
         row = dict(r)
         out['self'] = {'biz_type': biz_type, 'id': r['id'], 'no': row.get(no_col, ''), 'data': row}
+        # V11.281b: 员工/部门负责人 仅能查看与自己相关的单据链路
+        if session.get('user_role') in ('员工', '部门负责人'):
+            _rq = row.get('requester'); _rqid = row.get('requester_id')
+            _ow = row.get('owner'); _owid = row.get('owner_id')
+            if (not _rq and not _rqid) and row.get('order_id'):
+                _oo = c.execute("SELECT requester,owner,owner_id FROM purchase_orders WHERE id=?", (row.get('order_id'),)).fetchone()
+                if _oo:
+                    _rq = _oo['requester']; _ow = _oo['owner']; _owid = _oo['owner_id']
+            if _data_scope_denied(requester_id=_rqid, requester=_rq, owner_id=_owid, owner=_ow):
+                c.close(); return jsonify({'error': '无权查看该单据链路（数据范围仅限本人单据）'}), 403
         # 时间轴: 单据创建
         _ct = row.get('created_at') or row.get('received_at') or row.get('issued_at') or ''
         if _ct: out['timeline'].append({'t': _ct, 'event': f'单据创建({no_col}={row.get(no_col, "")})'})
@@ -13360,6 +13428,8 @@ def api_prequest_download(rid):
     pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (rid,)).fetchone()
     if not pr:
         conn.close(); return jsonify({'error': '申请单不存在'}), 404
+    if _data_scope_denied(requester_id=pr['requester_id'], requester=pr['requester']):
+        conn.close(); return jsonify({'error': '无权下载该单据'}), 403
     items = conn.execute("SELECT * FROM request_items WHERE req_id=? ORDER BY id", (rid,)).fetchall()
     # 库存量(按物品名称汇总, 供 J列展示)
     stock_map = {}
@@ -13489,6 +13559,10 @@ def api_order_download(oid):
     o = conn.execute("SELECT * FROM purchase_orders WHERE id=?", (oid,)).fetchone()
     if not o:
         conn.close(); return jsonify({'error': '订单不存在'}), 404
+    if _data_scope_denied(requester=(o['requester'] if 'requester' in o.keys() else None),
+                          owner=(o['owner'] if 'owner' in o.keys() else None),
+                          owner_id=(o['owner_id'] if 'owner_id' in o.keys() else None)):
+        conn.close(); return jsonify({'error': '无权下载该单据'}), 403
     items = conn.execute("SELECT * FROM order_items WHERE order_id=? ORDER BY id", (oid,)).fetchall()
     approvals = conn.execute("SELECT * FROM approval_instances WHERE biz_type='purchase_order' AND biz_id=? ORDER BY level_no", (oid,)).fetchall()
     pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (o['req_id'],)).fetchone() if o['req_id'] else None
@@ -13877,6 +13951,13 @@ def api_receiving_detail(rid):
     if not r:
         c.close(); return jsonify({'error': '入库单不存在'}), 404
     d = dict_row(r)
+    _po = None
+    if d.get('order_id'):
+        _po = c.execute("SELECT requester,owner,owner_id FROM purchase_orders WHERE id=?", (d.get('order_id'),)).fetchone()
+    if _data_scope_denied(requester=(_po['requester'] if _po else None),
+                          owner=(_po['owner'] if _po else None),
+                          owner_id=(_po['owner_id'] if _po else None)):
+        c.close(); return jsonify({'error': '无权查看该单据（数据范围仅限本人单据）'}), 403
     items = []
     try:
         if d.get('items_json'):

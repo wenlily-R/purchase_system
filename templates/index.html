@@ -1791,15 +1791,15 @@ async function editPRequest(oid){
     <div class="fg"><label class="fl2" id="fReqTypeTip" style="color:#b76e00;font-size:9px;align-self:center">📦 买物资: 填物资名称/规格/数量</label></div></div>
     <div id="repairFields" style="display:none;border:1px solid #f0d9b5;background:#fffaf2;border-radius:6px;padding:6px;margin-bottom:6px">
       <div style="font-size:9px;color:#8a6d3b;margin-bottom:4px">🔧 维修信息（维修业务并入采购申请办理；压高压胶管/打黄油/补胎补气等小额透明维修也在此发起）</div>
-      <div class="fr"><div class="fg"><label class="fl2">故障设备名称 *</label><input class="fc" id="fReqDev" placeholder="如: 3号装载机变速箱"></div>
-      <div class="fg"><label class="fl2">故障描述 / 维修内容 *</label><input class="fc" id="fReqFault" placeholder="如: 异响漏油, 需厂家拆解定损"></div></div>
+      <div class="fr"><div class="fg"><label class="fl2">故障设备名称 *</label><input class="fc" id="fReqDev" maxlength="100" placeholder="如: 3号装载机变速箱"></div>
+      <div class="fg"><label class="fl2">故障描述 / 维修内容 *</label><input class="fc" id="fReqFault" maxlength="300" placeholder="如: 异响漏油, 需厂家拆解定损"></div></div>
       <div style="font-size:8px;color:#999;margin-top:3px">设备送厂家拆解定损后，维修项目清单可补录到下方明细表（物品=维修项目/备件）或整单附图上传定损单。</div>
     </div>
     <div class="fr"><div class="fg"><label class="fl2">申请部门</label><select class="fc" id="fReqDept"><option value="">请选择（选填）</option>${depts.map(x=>`<option ${x.name==r.dept?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div>
     <div class="fg"><label class="fl2">预算科目</label><select class="fc" id="fReqBud"><option value="">无</option></select></div></div>
-    <div class="fr"><div class="fg"><label class="fl2">用途说明 *</label><input class="fc" id="fReqPurp" value="${esc(r.purpose||'')}"></div>
+    <div class="fr"><div class="fg"><label class="fl2">用途说明 *</label><input class="fc" id="fReqPurp" maxlength="200" value="${esc(r.purpose||'')}"></div>
     <div class="fg"><label class="fl2" id="fReqDateLbl">目标到货日 *</label><input class="fc" id="fReqDate" type="date" value="${esc(r.target_date||'')}"></div></div>
-    <div class="fg"><label class="fl2">备注</label><input class="fc" id="fReqRem" value="${esc(r.remark||'')}"></div>
+    <div class="fg"><label class="fl2">备注</label><input class="fc" id="fReqRem" maxlength="300" value="${esc(r.remark||'')}"></div>
     <div class="fr"><div class="fg" style="display:flex;align-items:center;gap:6px;padding-top:6px"><input type="checkbox" id="fReqUrgent" style="width:14px;height:14px" ${r.urgent?'checked':''}> <label style="color:#e74c3c;font-weight:600">加急审批</label></div>
     <div class="fg"><label class="fl2">附件上传</label><input class="fc" id="fReqFiles" type="file" multiple onchange="uploadReqAtt(this)"></div></div>
     <div id="reqAttList" style="font-size:9px;color:#666;margin-top:2px"></div>
@@ -4051,7 +4051,7 @@ async function createRcv(){
   if(!dept){alert('请选择归属部门（这批货是给哪个部门的）');return}
   // V11.249: 入库统一暂估(票后发票核对红冲转正式), 不再选暂估/正式
   const r=await api('/receivings',{method:'POST',body:JSON.stringify({items,attachments:window._rcvAtts||[],dept,is_est:1})});
-  if(r.success){alert(`✅ ${r.receive_no} 已提交入库审批（🟠暂估），发票回来后请做【发票核对】红冲转正式；审批通过后自动增加库存`);closeMod();loadReceivings();loadDashboard()}
+  if(r.success){alert(`✅ ${r.receive_no} 已创建（待入库）。请在列表点【📤 提交审批】填写验收数量后送审；审批通过自动增加库存（🟠暂估），发票回来后做【发票核对】红冲转正式`);closeMod();loadReceivings();loadDashboard()}
   else alert(r.error||'提交失败');
 }
 async function voidRcv(id){
@@ -5819,8 +5819,8 @@ async function showForm(type){
       <div class="fg"><label class="fl2" id="fReqTypeTip" style="color:#b76e00;font-size:9px;align-self:center">📦 买物资: 填物资名称/规格/数量</label></div></div>
       <div id="repairFields" style="display:none;border:1px solid #f0d9b5;background:#fffaf2;border-radius:6px;padding:6px;margin-bottom:6px">
         <div style="font-size:9px;color:#8a6d3b;margin-bottom:4px">🔧 维修信息（维修业务并入采购申请办理；压高压胶管/打黄油/补胎补气等小额透明维修也在此发起）</div>
-        <div class="fr"><div class="fg"><label class="fl2">故障设备名称 *</label><input class="fc" id="fReqDev" placeholder="如: 3号装载机变速箱"></div>
-        <div class="fg"><label class="fl2">故障描述 / 维修内容 *</label><input class="fc" id="fReqFault" placeholder="如: 异响漏油, 需厂家拆解定损"></div></div>
+        <div class="fr"><div class="fg"><label class="fl2">故障设备名称 *</label><input class="fc" id="fReqDev" maxlength="100" placeholder="如: 3号装载机变速箱"></div>
+        <div class="fg"><label class="fl2">故障描述 / 维修内容 *</label><input class="fc" id="fReqFault" maxlength="300" placeholder="如: 异响漏油, 需厂家拆解定损"></div></div>
         <div style="font-size:8px;color:#999;margin-top:3px">设备送厂家拆解定损后，维修项目清单可补录到下方明细表（物品=维修项目/备件）或整单附图上传定损单。</div>
       </div>
       <div class="fr"><div class="fg"><label class="fl2">申请部门</label><select class="fc" id="fReqDept" onchange="reqNoByDept()"><option value="">请选择（选填）</option>${depts.map(d=>`<option>${esc(d.name)}</option>`).join('')}</select></div>
@@ -5984,26 +5984,26 @@ function addReqItem(it){
     id('reqItemList').insertAdjacentHTML('beforeend',
       `<tr id="ritem${c}">
         <td class="rn" style="text-align:center;color:#999">${c}</td>
-        <td><input placeholder="维修项目/备件名称 *" id="rin${c}" value="${esc(_it.item_name||'')}" style="width:100%;min-width:120px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px"></td>
-        <td><input placeholder="规格/说明(如: 原厂件/含工时)" id="ris${c}" value="${esc(_it.spec||'')}" style="width:100%;min-width:70px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px"></td>
+        <td><input maxlength="100" placeholder="维修项目/备件名称 *" id="rin${c}" value="${esc(_it.item_name||'')}" style="width:100%;min-width:120px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px"></td>
+        <td><input maxlength="100" placeholder="规格/说明(如: 原厂件/含工时)" id="ris${c}" value="${esc(_it.spec||'')}" style="width:100%;min-width:70px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px"></td>
         <td><input placeholder="项" id="riu${c}" value="${esc(_it.unit||'项')}" style="width:44px;padding:2px;border:1px solid var(--b);border-radius:3px;font-size:10px"></td>
         <td><input type="number" min="1" step="any" id="riq${c}" value="${_q}" style="width:54px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px" title="数量(必填, 大于0)"></td>
         <td><input type="number" min="0" step="0.01" id="rip${c}" value="${_it.estimated_price!=null&&_it.estimated_price?_it.estimated_price:''}" placeholder="0.00" style="width:84px;padding:2px 4px;border:1px solid #c9a86a;border-radius:3px;font-size:10px;background:#fffdf5" title="该维修项目/备件预估金额(元)"></td>
-        <td style="white-space:nowrap"><input placeholder="备注(如备件质保说明)" id="rir${c}" value="${esc(_it.remark||'')}" style="width:100%;min-width:90px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px"><span onclick="delReqItem(this)" style="cursor:pointer;color:var(--d);font-size:12px;margin-left:4px" title="删除本行">✕</span></td>
+        <td style="white-space:nowrap"><input maxlength="200" placeholder="备注(如备件质保说明)" id="rir${c}" value="${esc(_it.remark||'')}" style="width:100%;min-width:90px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px"><span onclick="delReqItem(this)" style="cursor:pointer;color:var(--d);font-size:12px;margin-left:4px" title="删除本行">✕</span></td>
       </tr>`);
     return;
   }
   id('reqItemList').insertAdjacentHTML('beforeend',
     `<tr id="ritem${c}">
       <td class="rn" style="text-align:center;color:#999">${c}</td>
-      <td><input placeholder="物资名称 *" id="rin${c}" value="${esc(_it.item_name||'')}" style="width:100%;min-width:96px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px" onchange="checkStock(this,${c})"></td>
-      <td><input placeholder="规格型号" id="ris${c}" value="${esc(_it.spec||'')}" style="width:100%;min-width:60px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px"></td>
+      <td><input maxlength="100" placeholder="物资名称 *" id="rin${c}" value="${esc(_it.item_name||'')}" style="width:100%;min-width:96px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px" onchange="checkStock(this,${c})"></td>
+      <td><input maxlength="100" placeholder="规格型号" id="ris${c}" value="${esc(_it.spec||'')}" style="width:100%;min-width:60px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px"></td>
       <td><input placeholder="单位" id="riu${c}" value="${esc(_it.unit||'个')}" style="width:32px;padding:2px;border:1px solid var(--b);border-radius:3px;font-size:10px"></td>
       <td style="text-align:center"><span id="rstk${c}" style="font-size:9px;color:#999;white-space:nowrap">—</span></td>
       <td><input type="number" min="1" step="any" id="riq${c}" value="${_q}" style="width:52px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px" title="请购数量(必填, 须大于0)"></td>
-      <td><input placeholder="指定品牌，如 联想 / 不限（必填）" id="rib${c}" value="${esc(_it.brand_param||'')}" style="width:100%;min-width:104px;padding:2px 4px;border:1px solid #c9a86a;border-radius:3px;font-size:10px;background:#fffdf5" title="品牌由采购员指定并锁死标准，发起询价后商家按此品牌报价（必填）"><br><select id="riw${c}" style="width:100%;min-width:104px;margin-top:2px;padding:2px 4px;border:1px solid #c9a86a;border-radius:3px;font-size:10px;background:#fffdf5" title="质保期(必填)：只能从列表选择，外网报价不得低于"><option value="">质保期(必填)</option>${['1个月','3个月','5个月','12个月','2年','3年'].map(o=>`<option ${String(_it.warranty_param||'')===o?'selected':''}>${o}</option>`).join('')}</select></td>
+      <td><input maxlength="50" placeholder="指定品牌，如 联想 / 不限（必填）" id="rib${c}" value="${esc(_it.brand_param||'')}" style="width:100%;min-width:104px;padding:2px 4px;border:1px solid #c9a86a;border-radius:3px;font-size:10px;background:#fffdf5" title="品牌由采购员指定并锁死标准，发起询价后商家按此品牌报价（必填）"><br><select id="riw${c}" style="width:100%;min-width:104px;margin-top:2px;padding:2px 4px;border:1px solid #c9a86a;border-radius:3px;font-size:10px;background:#fffdf5" title="质保期(必填)：只能从列表选择，外网报价不得低于"><option value="">质保期(必填)</option>${['1个月','3个月','5个月','12个月','2年','3年'].map(o=>`<option ${String(_it.warranty_param||'')===o?'selected':''}>${o}</option>`).join('')}</select></td>
       <td><select id="ric${c}" style="width:82px;padding:2px;border:1px solid var(--b);border-radius:3px;font-size:10px"><option value="">采购类别</option>${cats.map(x=>`<option ${x==_cat?'selected':''}>${esc(x)}</option>`).join('')}</select></td>
-      <td><input placeholder="备注(选填)" id="rir${c}" value="${esc(_it.remark||'')}" style="width:100%;min-width:66px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px"></td>
+      <td><input maxlength="200" placeholder="备注(选填)" id="rir${c}" value="${esc(_it.remark||'')}" style="width:100%;min-width:66px;padding:2px 4px;border:1px solid var(--b);border-radius:3px;font-size:10px"></td>
       <td style="white-space:nowrap">
         <input type="hidden" id="rip${c}" value="${_it.estimated_price!=null?_it.estimated_price:0}">
         <input type="date" id="ria${c}" value="${esc(_it.arrival_date||'')}" title="需到货日期(选填)" style="width:94px;padding:1px 2px;border:1px solid var(--b);border-radius:3px;font-size:9px">
