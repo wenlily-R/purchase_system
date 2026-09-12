@@ -43,7 +43,20 @@ padding:5px 12px;cursor:pointer;font-size:12px;transition:.2s}
 .card .k{color:var(--sub);font-size:11.5px;margin-bottom:6px}
 .card .v{font-size:26px;font-weight:700;color:#fff;line-height:1.1;font-variant-numeric:tabular-nums}
 .card .v i{font-style:normal;font-size:12px;color:var(--sub);font-weight:400;margin-left:3px}
-.card .cmp{margin-top:7px;font-size:11px;color:var(--sub)}
+.card ".cmp{margin-top:7px;font-size:11px;color:var(--sub)}
+.cmp .lab{color:#6b8299;margin-right:2px}
+.card.risk{border-color:#7f2b2b;background:linear-gradient(180deg,#2a1116,#141b2b)}
+.card.risk .v{color:#ff6262}
+.card.risk::before{background:linear-gradient(180deg,#ff3b3b,transparent)!important}
+.card.click{cursor:pointer;transition:border-color .15s,transform .15s}
+.card.click:hover{border-color:var(--cyan);transform:translateY(-1px)}
+.hqi{display:inline-block;margin-left:6px;font-size:10px;line-height:14px;padding:0 5px;border:1px solid #35506e;border-radius:8px;color:#7fb6e8;cursor:help}
+.dimsel{background:#0f1c2e;color:#cfe3f7;border:1px solid var(--bd);border-radius:6px;padding:1px 6px;font-size:11px;margin-left:8px}
+.dchip{display:inline-flex;align-items:center;gap:6px;background:#132a44;border:1px solid #2b5a86;color:#9fd4ff;border-radius:10px;padding:2px 8px;font-size:11px;margin-left:10px;font-weight:400}
+.dchip i{cursor:pointer;font-style:normal;color:#ff9c9c}
+.cfgrow{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:12px;color:#cfe3f7}
+.cfgrow input[type=number],.cfgrow input[type=text]{background:#0f1c2e;color:#dff1ff;border:1px solid var(--bd);border-radius:6px;padding:3px 6px;width:90px}
+.cfgkpi{display:inline-flex;align-items:center;gap:4px;background:#101d30;border:1px solid #24405e;border-radius:12px;padding:2px 8px;margin:3px 4px;font-size:11px;color:#bcd6ee}
 .card .cmp b.up{color:var(--green)}.card .cmp b.down{color:var(--red)}.card .cmp b.flat{color:var(--sub)}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
 .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px}
@@ -112,6 +125,7 @@ body.zen .body{padding-top:6px}
   <button class="btn" onclick="exportExcel()">⬇ Excel</button>
   <button class="btn" onclick="shotPng()">📷 截图</button>
   <button class="btn" onclick="toggleZen()">🖥 大屏</button>
+  <button class="btn" id="cfgBtn" onclick="openDashCfg()">⚙️ 配置</button>
 </div>
 
 <div class="tabs tabs-hide" id="tabs">
@@ -132,6 +146,10 @@ body.zen .body{padding-top:6px}
     <div class="panel"><h3>本年月度采购趋势</h3><div class="chart" id="ch-ovm"></div></div>
     <div class="panel"><h3>采购类别占比</h3><div class="chart" id="ch-ov3"></div></div>
   </div>
+  <div class="grid2">
+    <div class="panel"><h3>异常预警汇总 <span style="float:right;font-size:11px;color:#ff8f8f;font-weight:400" id="ov-al-t"></span></h3><div class="chart" id="ch-ov-al1"></div></div>
+    <div class="panel"><h3>预警类型分布（未闭环）</h3><div class="chart" id="ch-ov-al2"></div></div>
+  </div>
   <div class="panel"><h3>明细</h3>
     <div class="subtabs" id="ov-sub">
       <div class="st on" data-i="0" onclick="subTab(this,'ov')">物料降本分析</div>
@@ -148,7 +166,9 @@ body.zen .body{padding-top:6px}
   <div class="cards" id="pu-cards"></div>
   <div class="grid3">
     <div class="panel"><h3>申请 vs 订单(月度)</h3><div class="chart" id="ch-pu1"></div></div>
-    <div class="panel"><h3>采购类别占比</h3><div class="chart" id="ch-pu2"></div></div>
+    <div class="panel"><h3>占比分析 <select id="catDim" class="dimsel" onchange="changeCatDim(this.value)">
+      <option value="category">按物料类别</option><option value="supplier">按供应商</option>
+      <option value="dept">按部门</option><option value="warehouse">按仓库</option></select></h3><div class="chart" id="ch-pu2"></div></div>
     <div class="panel"><h3>供应商采购 TOP10</h3><div class="chart" id="ch-pu3"></div></div>
   </div>
   <div class="panel"><h3>明细</h3>
@@ -239,7 +259,20 @@ function fmtMoney(v){v=Number(v||0);return '¥'+(v>=10000?(v/10000).toFixed(2)+'
 function fmtW(v){return (Number(v||0)).toLocaleString('zh-CN',{maximumFractionDigits:2})}
 function arrow(cmp){if(cmp===null||cmp===undefined)return '<b class="flat">—</b>';
   const up=cmp>=0,cls=up?'up':'down',ic=up?'▲':'▼';return '<b class="'+cls+'">'+ic+' '+Math.abs(cmp).toFixed(1)+'%</b>'}
-function cardHtml(c,i){const cls=['','c2','c3','c4','c5','c6'][i%6];return '<div class="card '+cls+'"><div class="k">'+esc(c.k)+'</div><div class="v">'+fmtW(c.v)+'<i>'+esc(c.unit||'')+'</i></div><div class="cmp">'+esc(c.cmp_label||'')+' '+(c.cmp!==undefined?arrow(c.cmp):'<b class="flat">—</b>')+'</div></div>'}
+function cardHtml(c,i){const cls=['','c2','c3','c4','c5','c6'][i%6];
+  if(window.KPI_POOL)KPI_POOL.add(c.k);
+  const risk=(c.risk&&c.risk_level==='red')?' risk':'';
+  const hint=c.hint?'<span class="hqi" title="'+esc(c.hint)+'">口径</span>':'';
+  const parts=[];
+  if(c.cmp!==undefined&&c.cmp!==null)parts.push('<span class="lab">同比</span>'+arrow(c.cmp));
+  else if(c.cmp_new)parts.push('<span class="lab">同比</span><b class="up">▲ 新增</b>');
+  if(c.cmp2!==undefined&&c.cmp2!==null)parts.push('<span class="lab">环比</span>'+arrow(c.cmp2));
+  else if(c.cmp2_new)parts.push('<span class="lab">环比</span><b class="up">▲ 新增</b>');
+  const cmp=parts.length?parts.join('　'):'<b class="flat">—</b>';
+  const rk=(c.risk&&c.risk_level==='red')?'<b class="down">● 风险</b> ':'';
+  return '<div class="card click'+cls+risk+'" title="'+esc(c.hint||'')+'" onclick="cardDrill(\''+esc(c.k).replace(/'/g,'')+'\')">'+
+    '<div class="k">'+esc(c.k)+hint+'</div><div class="v">'+fmtW(c.v)+'<i>'+esc(c.unit||'')+'</i></div>'+
+    '<div class="cmp">'+rk+esc(c.cmp_label||'')+' '+cmp+'</div></div>'}
 function esc(s){return String(s===undefined||s===null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 function noLink(v){return '<span class="no" onclick="openDoc(\''+esc(v).replace(/'/g,'')+'\')">'+esc(v)+'</span>'}
 async function openDoc(no){
@@ -278,7 +311,9 @@ function qs(){const p=new URLSearchParams();
   p.set('year',$('fYear').value||'');
   const rg=$('fRange').value;if(rg)p.set('range',rg);   // V11.275: 时间范围原本根本没发给后端 → 形同装饰
   const s=$('fSup').value,c=$('fCat').value,d=$('fDep').value,w=$('fWh').value;
-  if(s)p.set('supplier',s);if(c)p.set('category',c);if(d)p.set('dept',d);if(w)p.set('warehouse',w);return p.toString()}
+  if(s)p.set('supplier',s);if(c)p.set('category',c);if(d)p.set('dept',d);if(w)p.set('warehouse',w);
+  if(CUR==='purchase'&&window.CAT_DIM)p.set('cat_by',CAT_DIM);return p.toString()}
+function changeCatDim(v){window.CAT_DIM=v;refreshAll()}
 async function loadMeta(){META=await api('/api/dashboard/meta');
   $('fYear').innerHTML=META.years.map(y=>'<option'+(y==new Date().getFullYear()?' selected':'')+'>'+y+'</option>').join('')||'<option>'+new Date().getFullYear()+'</option>';
   $('fSup').innerHTML='<option value="">全部供应商</option>'+META.suppliers.map(x=>'<option>'+esc(x)+'</option>').join('');
@@ -310,6 +345,7 @@ async function loadTab(t){
     $('sec-finance').innerHTML='<div class="tt" style="padding:60px">🔒 财务分析仅对 财务/管理 角色开放</div>';return}
   const y=qs();let d;
   try{d=await api('/api/dashboard/'+t+(y?'?'+y:''))}catch(e){return}
+  if(t==='purchase'&&window.CAT_DIM&&$('catDim'))$('catDim').value=window.CAT_DIM;
   if(t==='overview')renderOv(d);else if(t==='purchase')renderPu(d);else if(t==='inventory')renderIn(d);
   else if(t==='finance')renderFi(d);else if(t==='repair')renderRp(d)}
 /* ===== Tab1 经营总览 ===== */
@@ -326,6 +362,7 @@ function renderOv(d){$('ov-cards').innerHTML=d.cards.map(cardHtml).join('');
     series:[{name:'采购金额',type:'line',smooth:true,symbolSize:6,data:d.months,
       itemStyle:{color:'#ff9500'},lineStyle:{color:'#ff9500',width:2.5},
       areaStyle:{color:new E.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(255,149,0,.45)'},{offset:1,color:'rgba(255,149,0,.02)'}])}}]});
+  if(d.yoy_m&&d.yoy_m.length){mk.setOption({series:[{name:'上年同期',type:'line',smooth:true,symbol:'none',data:d.yoy_m,itemStyle:{color:'#8aa2b8'},lineStyle:{color:'#8aa2b8',type:'dashed',width:1.5}}]});mk.setOption({legend:{textStyle:{color:'#a0b0c0'},top:0}})}
   mk.on('click',p=>drillMonths('ov','采购金额',p.name,d.months));
   const ov3=echart('ch-ov3',{tooltip:{trigger:'item',formatter:'{b}: ¥{c} ({d}%)'},legend:{orient:'vertical',right:6,textStyle:{color:'#a0b0c0'}},
     series:[{type:'pie',radius:['42%','66%'],center:['40%','52%'],data:(d.cat_pie||[]).map((x,i)=>({name:x.name,value:x.value,itemStyle:{color:C_COLORS[i%C_COLORS.length]}})),label:{color:'#cfd8e6'},labelLine:{lineStyle:{color:'rgba(255,255,255,.2)'}}}]});
@@ -336,6 +373,14 @@ function renderOv(d){$('ov-cards').innerHTML=d.cards.map(cardHtml).join('');
     x=>{const d=x.down;return '<tr><td>'+esc(x.supplier)+'</td><td class="amt">'+fmtMoney(x.last_amt)+'</td><td class="amt">'+fmtMoney(x.this_amt)+'</td><td>'+(d===null||d===undefined?'<b class="flat">—</b>':(d>=0?'<b class="up">▲ ':'<b class="down">▼ ')+Math.abs(d).toFixed(1)+'%</b>')+'</td><td>'+x.orders+'</td></tr>'});
   renderTable($('ov-tab2'),(d.tables.supplier_rank||[]),[['supplier','供应商'],['orders','订单数'],['amt','采购金额']],
     x=>'<tr><td>'+esc(x.supplier)+'</td><td>'+x.orders+'</td><td class="amt">'+fmtMoney(x.amt)+'</td></tr>');
+  if(d.alert_sum){const lv=d.alert_sum.levels||[],tp=d.alert_sum.types||[];
+    echart('ch-ov-al1',{tooltip:{trigger:'item',formatter:'{b}: {c} 条'},legend:{bottom:0,textStyle:{color:'#a0b0c0'}},
+      series:[{type:'pie',radius:['40%','64%'],center:['50%','44%'],data:lv.map((x,i)=>({name:x.name,value:x.value,itemStyle:{color:['#ff4d4f','#ffa940','#ffd666','#8aa2b8'][i%4]}})),label:{color:'#cfd8e6'}}]});
+    const al2=echart('ch-ov-al2',{tooltip:{trigger:'axis'},grid:{left:130,right:36,top:14,bottom:20},
+      xAxis:Object.assign({type:'value'},AX),yAxis:Object.assign({type:'category',data:tp.map(x=>x.name).reverse()},AX),
+      series:[{type:'bar',data:tp.map(x=>x.value).reverse(),barWidth:12,itemStyle:{color:'#ff9500',borderRadius:[0,4,4,0]}}]});
+    al2.on('click',p=>toast('预警类型：'+p.name+'（'+p.value+' 条），可在预警中心处理'));
+    const _t=$('ov-al-t');if(_t)_t.textContent='未闭环 '+(d.alert_sum.open_total||0)+' 条';}
   renderTable($('ov-tab3'),(d.tables.ap_detail||[]),[['contract_no','合同号'],['supplier','供应商'],['amount','合同金额'],['paid','已付'],['bal','应付余额']],
     x=>{const b=x.amount-x.paid;return '<tr><td>'+noLink(x.contract_no)+'</td><td>'+esc(x.supplier)+'</td><td class="amt">'+fmtMoney(x.amount)+'</td><td class="amt">'+fmtMoney(x.paid)+'</td><td class="amt '+(b>0?'':'up')+'">'+fmtMoney(b)+'</td></tr>'})}
 /* ===== Tab2 采购分析 ===== */
@@ -344,7 +389,8 @@ function renderPu(d){$('pu-cards').innerHTML=d.cards.map(cardHtml).join('');
     xAxis:Object.assign({type:'category',data:d.req_vs_ord.months},AX),
     yAxis:Object.assign({type:'value',name:'万元',nameTextStyle:{color:'#a0b0c0'}},AX),
     series:[{name:'申请金额',type:'bar',data:d.req_vs_ord.req,barWidth:8,itemStyle:{color:new E.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#00d4ff'},{offset:1,color:'#0a4a7a'}])}},
-      {name:'订单金额',type:'bar',data:d.req_vs_ord.ord,barWidth:8,itemStyle:{color:new E.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#ff9500'},{offset:1,color:'#7a4a0a'}])}}]});
+      {name:'订单金额',type:'bar',data:d.req_vs_ord.ord,barWidth:8,itemStyle:{color:new E.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#ff9500'},{offset:1,color:'#7a4a0a'}])}},
+      {name:'上年订单同期',type:'line',smooth:true,symbol:'none',data:d.yoy_ord||[],itemStyle:{color:'#8aa2b8'},lineStyle:{color:'#8aa2b8',type:'dashed',width:1.5}}]});
   echart('ch-pu2',{tooltip:{trigger:'item',formatter:'{b}: ¥{c} ({d}%)'},legend:{orient:'vertical',right:6,textStyle:{color:'#a0b0c0'}},
     series:[{type:'pie',radius:['42%','66%'],center:['40%','52%'],data:d.cat_pie.map((x,i)=>({name:x.name,value:x.value,itemStyle:{color:C_COLORS[i%C_COLORS.length]}})),
       label:{color:'#cfd8e6'},labelLine:{lineStyle:{color:'rgba(255,255,255,.2)'}}}]});
@@ -365,7 +411,8 @@ function renderIn(d){$('in-cards').innerHTML=d.cards.map(cardHtml).join('');
   echart('ch-in1',{tooltip:{trigger:'axis'},legend:{textStyle:{color:'#a0b0c0'},top:0},grid:{left:50,right:20,top:34,bottom:24},
     xAxis:Object.assign({type:'category',data:d.io.months},AX),yAxis:Object.assign({type:'value'},AX),
     series:[{name:'入库',type:'line',smooth:true,data:d.io.in,itemStyle:{color:'#00c853'},lineStyle:{color:'#00c853'}},
-      {name:'出库',type:'line',smooth:true,data:d.io.out,itemStyle:{color:'#ff5252'},lineStyle:{color:'#ff5252'}}]});
+      {name:'出库',type:'line',smooth:true,data:d.io.out,itemStyle:{color:'#ff5252'},lineStyle:{color:'#ff5252'}},
+      {name:'上年入库同期',type:'line',smooth:true,symbol:'none',data:d.yoy_in||[],itemStyle:{color:'#8aa2b8'},lineStyle:{color:'#8aa2b8',type:'dashed',width:1.5}}]});
   const in2=echart('ch-in2',{tooltip:{trigger:'item',formatter:'{b}: ¥{c} ({d}%)'},legend:{orient:'vertical',right:6,textStyle:{color:'#a0b0c0'}},
     series:[{type:'pie',radius:['42%','66%'],center:['40%','52%'],data:d.cat_pie.map((x,i)=>({name:x.name,value:x.value,itemStyle:{color:C_COLORS[i%C_COLORS.length]}})),label:{color:'#cfd8e6'},labelLine:{lineStyle:{color:'rgba(255,255,255,.2)'}}}]});
   in2.on('click',p=>drillCat(p.name));
@@ -384,7 +431,9 @@ function renderIn(d){$('in-cards').innerHTML=d.cards.map(cardHtml).join('');
 function renderFi(d){$('fi-cards').innerHTML=d.cards.map(cardHtml).join('');
   echart('ch-fi1',{tooltip:{trigger:'axis'},grid:{left:50,right:20,top:20,bottom:24},
     xAxis:Object.assign({type:'category',data:d.months},AX),yAxis:Object.assign({type:'value',name:'万元',nameTextStyle:{color:'#a0b0c0'}},AX),
-    series:[{name:'合同金额',type:'bar',data:d.con_m,barWidth:16,itemStyle:{borderRadius:[4,4,0,0],color:new E.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#00d4ff'},{offset:1,color:'#0066aa'}])}}]});
+    legend:{textStyle:{color:'#a0b0c0'},top:0},
+    series:[{name:'合同金额',type:'bar',data:d.con_m,barWidth:16,itemStyle:{borderRadius:[4,4,0,0],color:new E.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#00d4ff'},{offset:1,color:'#0066aa'}])}},
+      {name:'上年同期',type:'line',smooth:true,symbol:'none',data:d.yoy_con||[],itemStyle:{color:'#8aa2b8'},lineStyle:{color:'#8aa2b8',type:'dashed',width:1.5}}]});
   echart('ch-fi2',{tooltip:{trigger:'axis'},legend:{textStyle:{color:'#a0b0c0'},top:0},grid:{left:50,right:20,top:34,bottom:24},
     xAxis:Object.assign({type:'category',data:d.months},AX),yAxis:Object.assign({type:'value',name:'万元',nameTextStyle:{color:'#a0b0c0'}},AX),
     series:[{name:'已开票',type:'line',smooth:true,data:d.inv_m,itemStyle:{color:'#00c853'},lineStyle:{color:'#00c853'},areaStyle:{color:new E.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(0,200,83,.35)'},{offset:1,color:'rgba(0,200,83,.02)'}])}},
@@ -405,7 +454,9 @@ function renderRp(d){$('rp-cards').innerHTML=d.cards.map(cardHtml).join('');
   const cm=echart('ch-rp1',{tooltip:{trigger:'axis'},grid:{left:50,right:20,top:20,bottom:24},
     xAxis:Object.assign({type:'category',data:d.months},AX),yAxis:Object.assign({type:'value',name:'万元',nameTextStyle:{color:'#a0b0c0'}},AX),
     series:[{name:'维修费用',type:'line',smooth:true,symbolSize:6,data:d.cost_m,itemStyle:{color:'#ff9500'},lineStyle:{color:'#ff9500',width:2.5},
-      areaStyle:{color:new E.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(255,149,0,.4)'},{offset:1,color:'rgba(255,149,0,.02)'}])}}]});
+      areaStyle:{color:new E.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(255,149,0,.4)'},{offset:1,color:'rgba(255,149,0,.02)'}])}},
+      {name:'上年同期',type:'line',smooth:true,symbol:'none',data:d.yoy_cost||[],itemStyle:{color:'#8aa2b8'},lineStyle:{color:'#8aa2b8',type:'dashed',width:1.5}}]});
+  echart('ch-rp1',{legend:{textStyle:{color:'#a0b0c0'},top:0}});
   cm.on('click',p=>drillMonths('rp','维修费用',p.name,d.cost_m));
   echart('ch-rp2',{tooltip:{trigger:'item',formatter:'{b}: ¥{c} ({d}%)'},legend:{bottom:0,textStyle:{color:'#a0b0c0'}},
     series:[{type:'pie',radius:['40%','64%'],center:['50%','44%'],data:d.type_pie.map((x,i)=>({name:x.name||'未定损',value:x.value,itemStyle:{color:C_COLORS[i%C_COLORS.length]}})),
@@ -446,11 +497,68 @@ async function loadDrill(kind,key,title){
     $('dlgB').innerHTML=h||'<div class="tt">无记录</div>';
   }catch(e){$('dlgB').innerHTML='<div class="tt">下钻失败，请刷新后重试</div>'}
 }
-function drillMonths(tab,label,mName,data){loadDrill('month',String(mName),esc(label)+' · '+esc(mName))}
-function drillSup(name){loadDrill('supplier',name,'供应商下钻 · '+esc(name))}
-function drillDev(name){loadDrill('device',name,'设备下钻 · '+esc(name))}
-function drillVendor(name){loadDrill('vendor',name,'服务商下钻 · '+esc(name))}
-function drillCat(name){loadDrill('category',name,'物料类别下钻 · '+esc(name))}
+function drillMonths(tab,label,mName,data){const mm=String(mName).replace('月','');const y=(($('fYear')||{}).value||new Date().getFullYear());
+  linkDetail(label+' '+mName,y+'-'+String(mm).padStart(2,'0'));loadDrill('month',String(mName),esc(label)+' · '+esc(mName))}
+function drillSup(name){linkDetail('供应商',name);loadDrill('supplier',name,'供应商下钻 · '+esc(name))}
+function drillDev(name){linkDetail('设备',name);loadDrill('device',name,'设备下钻 · '+esc(name))}
+function drillVendor(name){linkDetail('服务商',name);loadDrill('vendor',name,'服务商下钻 · '+esc(name))}
+function drillCat(name){linkDetail('物料类别',name);loadDrill('category',name,'物料类别下钻 · '+esc(name))}
+/* ===== V11.291 三级下钻: KPI → 记录列表 → 单据详情 ===== */
+if(!window.KPI_POOL)window.KPI_POOL=new Set();
+const KPI_DRILL={'到货及时率':'arrive','逾期订单数':'overdue','暂估挂账金额':'est'};
+const TABPFX={overview:'ov',purchase:'pu',inventory:'in',finance:'fi',repair:'rp'};
+const KPI_SUB={'采购申请总数':['purchase',0],'采购申请总金额':['purchase',0],'采购订单总数':['purchase',1],'采购订单总金额':['purchase',1],
+  '本年采购总额':['purchase',1],'询价比价次数':['purchase',2],'当前库存总数量':['inventory',0],'当前库存总金额':['inventory',0],
+  '入库总数量':['inventory',1],'出库总数量':['inventory',2],'库存预警物料数':['inventory',3],'合同总金额':['finance',0],
+  '已开票金额':['finance',1],'已付款金额':['finance',2],'维修工单总数':['repair',0],'维修费用总额':['repair',0],'外委维修费用':['repair',0]};
+function cardDrill(k){
+  k=String(k).replace(/口径$/,'');
+  const kind=KPI_DRILL[k];
+  if(kind){loadDrill('kpi',kind,k+' · 明细');return}
+  const t=KPI_SUB[k];
+  if(!t){toast('「'+k+'」为汇总口径，无对应明细表');return}
+  switchTab(t[0]);
+  setTimeout(()=>{const p=TABPFX[t[0]];const el=document.querySelector('#'+p+'-sub .st[data-i="'+t[1]+'"]');if(el)subTab(el,p);
+    const blk=document.querySelector('#sec-'+t[0]+' .panel:last-of-type');if(blk)blk.scrollIntoView({behavior:'smooth',block:'nearest'});},420);
+}
+/* ===== 图表点击 → 联动过滤明细 ===== */
+function linkDetail(label,val){
+  const sec=$('sec-'+CUR);if(!sec)return;
+  const v=String(val===undefined||val===null?'':val).trim();
+  let rows=sec.querySelectorAll('.wrap table.tbl tbody tr');
+  rows.forEach(tr=>{tr.style.display=(!v||tr.textContent.indexOf(v)>=0)?'':'none'});
+  let chip=$('dfchip');
+  if(!chip){chip=document.createElement('span');chip.id='dfchip';chip.className='dchip';
+    const ps=sec.querySelectorAll('.panel h3');if(ps.length)ps[ps.length-1].appendChild(chip);else return}
+  chip.innerHTML='明细已过滤：'+esc(label)+(v?'（'+esc(v)+'）':'')+' <i onclick="clearDetail()">✕ 清除</i>';
+  toast('明细已按「'+label+'」过滤'+(v?'（含 '+esc(v)+'）':''));
+}
+function clearDetail(){const sec=$('sec-'+CUR);if(sec)sec.querySelectorAll('.wrap table.tbl tbody tr').forEach(tr=>tr.style.display='');
+  const chip=$('dfchip');if(chip)chip.remove()}
+/* ===== V11.291 看板配置(指标开关/风险阈值/刷新频率) ===== */
+async function openDashCfg(){
+  let c;try{c=await api('/api/dashboard/config')}catch(e){return}
+  window.DCFG=c;
+  const hid=new Set(c.kpi_hidden||[]);
+  const risk=c.risk||{};
+  const box='<div class="cfgrow"><b>指标开关</b><span class="lab" style="color:#6b8299">(取消勾选即从看板隐藏)</span></div>'+
+    '<div>'+Array.from(window.KPI_POOL||[]).map(k=>'<label class="cfgkpi"><input type="checkbox" data-kpi="'+esc(k)+'"'+(hid.has(k)?'':' checked')+'>'+esc(k)+'</label>').join('')+'</div>'+
+    '<div class="cfgrow" style="margin-top:12px"><b>风险阈值</b>到货及时率下限 <input type="number" id="cfgRate" value="'+esc(risk.arrive_rate_min!==undefined?risk.arrive_rate_min:90)+'">%'+
+    '　暂估挂账预警 <input type="number" id="cfgEst" value="'+esc(risk.est_days!==undefined?risk.est_days:15)+'">天</div>'+
+    '<div class="cfgrow"><b>自动刷新</b><input type="number" id="cfgSec" value="'+esc(c.refresh_sec||60)+'">秒/次（0=不自动刷新）</div>'+
+    '<div style="margin-top:14px"><button class="btn" onclick="saveDashCfg()">💾 保存配置</button></div>';
+  openDlg('📊 数据看板配置', box);
+}
+async function saveDashCfg(){
+  const hid=[];document.querySelectorAll('[data-kpi]').forEach(x=>{if(!x.checked)hid.push(x.dataset.kpi)});
+  const body={kpi_hidden:hid,risk:{arrive_rate_min:+(($('cfgRate')||{}).value||90),est_days:+(($('cfgEst')||{}).value||15)},refresh_sec:+(($('cfgSec')||{}).value||0)};
+  try{const r=await api('/api/dashboard/config');const res=await fetch('/api/dashboard/config',{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'fetch'},body:JSON.stringify(body)});
+    if(!res.ok){toast('保存失败');return}
+    toast('✅ 看板配置已保存');closeDlg();await loadConfig();refreshAll();
+  }catch(e){toast('保存失败: '+e.message)}
+}
+async function loadConfig(){try{const c=await api('/api/dashboard/config');window.DCFG=c;
+  if(c&&c.refresh_sec>0){const btn=$('autoBtn');if(btn)applyAuto(btn,c.refresh_sec/60,true)}}catch(e){}}
 function openDlg(title,html){$('dlgT').textContent=title;$('dlgB').innerHTML=html;$('mask').classList.add('on')}
 function closeDlg(){$('mask').classList.remove('on')}
 /* ---- 导出 / 截图 / 大屏 ---- */
@@ -469,7 +577,12 @@ function applyAuto(btn,m,silent){autoOn=m>0;btn.style.borderColor=autoOn?'var(--
 function autoRefresh(btn){const i=Math.max(0,AUTO_OPTS.indexOf(+(localStorage.dashAutoMin||0)));
   const m=AUTO_OPTS[(i+1)%AUTO_OPTS.length];localStorage.dashAutoMin=m;applyAuto(btn,m,false)}
 /* ---- init ---- */
-(async function(){const ab=document.getElementById('autoBtn');if(ab)applyAuto(ab,+(localStorage.dashAutoMin||0),true);await loadMeta();renderChips();refreshAll()})()
+(async function(){const ab=document.getElementById('autoBtn');if(ab)applyAuto(ab,+(localStorage.dashAutoMin||0),true);
+  await loadMeta();renderChips();
+  try{await loadConfig()}catch(e){}
+  const cb=document.getElementById('cfgBtn');
+  if(cb&&META&&META.role&&!['系统管理员','分管领导','总经理'].includes(META.role))cb.style.display='none';
+  refreshAll()})()
 </script>
 </body>
 </html>

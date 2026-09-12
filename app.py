@@ -17061,8 +17061,16 @@ def _dash_w(f, tbl, alias='', date_col='created_at', sup_col='supplier',
     cols = _dcol(tbl)
     sql, ps = '', []
     if date_col and date_col in cols and f['range'] != 'all':
-        _k, _l, start = _dash_axis(f)
-        if start:
+        _st, _en = f.get('_start'), f.get('_end')
+        if _st or _en:      # V11.291 同比/环比: 显式时段边界
+            if _st:
+                sql += ' AND %s%s>=?' % (a, date_col); ps.append(_st)
+            if _en:
+                sql += ' AND %s%s<?' % (a, date_col); ps.append(_en)
+            _k = _l = start = None
+        else:
+            _k, _l, start = _dash_axis(f)
+        if not (_st or _en) and start:
             sql += ' AND %s%s>=?' % (a, date_col); ps.append(start)
         else:
             sql += ' AND substr(%s%s,1,4)=?' % (a, date_col); ps.append(f['year'] or str(datetime.date.today().year))
@@ -17100,6 +17108,257 @@ def _dash_mfill(c, f, sql, ps=(), div=10000.0):
         out.append(round(v / div, 2) if div else v)
     return out, labels
 
+
+
+# ================= V11.291 数据看板升级(对标金蝶云星空) =================
+def _add_months(d, n):
+    """日期加/减 n 个月(保持日=1 的月末安全)"""
+    y, m = d.year, d.month + n
+    y += (m - 1) // 12
+    m = (m - 1) % 12 + 1
+    return datetime.date(y, m, 1)
+
+
+def _dash_shift(f, mode):
+    """时段平移: mode='yoy'(去年同期) / 'prev'(上一时段). 全部时间口径不可比 → None"""
+    rng = (f.get('range') or 'year')
+    if rng == 'all':
+        return None
+    y = int(f.get('year') or datetime.date.today().year)
+    today = datetime.date.today()
+    if rng == 'month':
+        s = today.replace(day=1); e = _add_months(s, 1); dlt = 1
+    elif rng == 'quarter':
+        q = (today.month - 1) // 3
+        s = datetime.date(today.year, q * 3 + 1, 1); e = _add_months(s, 3); dlt = 3
+    elif rng == '12m':
+        e = today + datetime.timedelta(days=1); s = _add_months(e, -12); dlt = 12
+    else:
+        s = datetime.date(y, 1, 1); e = datetime.date(y + 1, 1, 1); dlt = 12
+    if mode == 'yoy':
+        shift = 12
+    else:
+        shift = dlt
+    g = dict(f)
+    g['_start'] = _add_months(s, -shift).strftime('%Y-%m-%d')
+    g['_end'] = _add_months(e, -shift).strftime('%Y-%m-%d')
+    return g
+
+
+def _pct(cur, base):
+    """同比/环比百分比(基数为0或缺失返回 None)"""
+    try:
+        cur = float(cur or 0); base = float(base or 0)
+    except Exception:
+        return None
+    if abs(base) < 1e-9:
+        return None
+    return round((cur - base) / abs(base) * 100.0, 1)
+
+
+def _dash_metric(c, f, tbl, expr, div=1.0, digits=2, sup_col='supplier', join='', extra='',
+                 own=None, own_ps=(), use_dept=True, use_cat=True, use_wh=True, date_col='created_at'):
+    """同一指标在 当前/去年同期/上一时段 三个口径下的值
+    返回 {'v','yoy','prev','trend','cmp_label','cmp2_label'}"""
+    out = {}
+    for tag in ('cur', 'yoy', 'prev'):
+        ff = f if tag == 'cur' else _dash_shift(f, tag)
+        if ff is None:
+            out[tag] = None; continue
+        frag, ps = _dash_w(ff, tbl, sup_col=sup_col, use_dept=use_dept, use_cat=use_cat, use_wh=use_wh, date_col=date_col)
+        sql = "SELECT %s FROM %s%s WHERE 1=1" % (expr, tbl, join) + frag + extra + (own or '')
+        pss = tuple(ps) + (tuple(own_ps) if own else ())
+        try:
+            row = c.execute(sql, pss).fetchone()
+            v = (row[0] if row and row[0] is not None else 0)
+        except Exception:
+            v = 0
+        out[tag] = round(v / div, digits) if div else v
+    cur, yoy, prv = out['cur'], out['yoy'], out['prev']
+    y_pct = _pct(cur, yoy) if yoy is not None else None
+    p_pct = _pct(cur, prv) if prv is not None else None
+    trend = 'flat'
+    ref = y_pct if y_pct is not None else p_pct
+    if ref is not None:
+        trend = 'up' if ref > 0.05 else ('down' if ref < -0.05 else 'flat')
+    out.update({'yoy_new': (yoy is not None and abs(float(yoy or 0)) < 1e-9 and float(cur or 0) > 0),
+                'prev_new': (prv is not None and abs(float(prv or 0)) < 1e-9 and float(cur or 0) > 0),
+                'yoy_pct': y_pct, 'prev_pct': p_pct, 'trend': trend,
+                'cmp_label': ('同比' if yoy is not None else '—'), 'cmp2_label': ('环比' if prv is not None else '—')})
+    return out
+
+
+# 每张指标卡的口径说明(悬浮提示) —— 术语与页面/报表中心一致
+DASH_HINTS = {
+    '本年采购总额': '口径：所选年度内采购订单含税金额合计（剔除草稿/已驳回/已作废），与报表中心「采购订单汇总」同源。',
+    '采购订单总数': '口径：所选年度内采购订单有效单据数（剔除草稿/已驳回/已作废）。',
+    '平均单笔金额': '口径：本年采购总额 ÷ 采购订单总数；「降本」= 单价较上年同期变化。',
+    '应付账款余额': '时点口径：合同金额 − 已付款金额；不受时段筛选影响，仅受供应商筛选影响。',
+    '库存总金额': '时点口径：Σ(库存数量 × 单价)，实时快照，不受时段筛选影响。',
+    '维修费用总额': '口径：维修工单实际结算金额合计（未完工按定损/报价金额），剔除草稿/已驳回/已作废。',
+    '采购申请总数': '口径：采购申请有效单据数（剔除草稿/已驳回/已作废/已撤销）。',
+    '采购申请总金额': '口径：采购申请预估金额合计（预估金额未填则为0）。',
+    '采购订单总金额': '口径：采购订单含税金额合计，与报表中心「采购订单汇总」同源。',
+    '询价比价次数': '口径：有效询价单数（剔除草稿/已驳回/已作废/已撤销），与下方「询价比价明细」同源。',
+    '采购节约金额': '口径：max(采购申请预估总额 − 采购订单总额, 0)，预估金额维护完整时才有意义。',
+    '到货及时率': '口径：按订单交期统计，入库日期 ≤ 订单交期 的入库单占比；低于阈值(默认90%)红色预警。',
+    '逾期订单数': '口径：已过订单交期(target_date)且尚未完成入库的有效订单数，红色预警。',
+    '暂估挂账金额': '口径：货到票未到的暂估入库金额合计（入库单 is_est=1），长期挂账影响成本核算。',
+    '入库总数量': '口径：入库单实收数量合计（剔除草稿/已驳回/已作废/已撤回）。',
+    '出库总数量': '口径：出库单数量合计（剔除草稿/已驳回/已作废）。',
+    '当前库存总数量': '时点口径：库存台账实时数量合计（实时快照）。',
+    '当前库存总金额': '时点口径：Σ(库存数量 × 单价)，实时快照。',
+    '低库存物料数': '口径：库存数量 ≤ 安全库存 的物料数（安全库存未维护则不参与）。',
+    '合同总金额': '口径：所选年度内合同金额合计（剔除已驳回/已作废），按签订日期归属。',
+    '合同总数': '口径：所选年度内有效合同数量。',
+    '已开票金额': '口径：发票金额合计（剔除作废），按开票日期归属。',
+    '已付款金额': '口径：付款单金额合计（已付款/审批通过口径），与报表中心「付款汇总」同源。',
+    '待付款金额': '口径：付款申请中未完成付款的金额合计。',
+    '维修工单总数': '口径：所选年度内维修工单数（剔除草稿/已驳回/已作废）。',
+    '外委维修费用': '口径：维修类型=委外维修 的结算金额合计。',
+    '内部自修费用': '口径：维修类型=内部自修 的预估/结算金额合计。',
+    '维修变更次数': '口径：维修变更单数量（含待四方确认、已确认），反映过程变更频次。',
+    '平均维修周期': '口径：完工工单 (实际完工日期 − 报修日期) 的平均天数。',
+    '库存周转率': '口径：出库金额 ÷ (库存金额+1) 的估算值，反映库存周转快慢，仅供趋势参考。',
+    '库存预警物料数': '口径：库存数量 ≤ 安全库存 的物料种数（安全库存未维护的物料不参与）。',
+    '异常预警总数': '口径：当前筛选范围内未闭环的业务预警条目数（红/橙/黄三级）。',
+}
+
+
+def _dash_annot(cards, c, f, specs, own=None, own_ps=()):
+    """给指标卡补齐: 同比/环比/趋势箭头/口径说明/风险标记
+    specs: {卡名: dict(tbl=, expr=, div=, sup_col=, join=, extra=, risk=, digits=)}
+    risk=True 表示越大越危险(前端红色高亮并翻转箭头语义)"""
+    sp = specs or {}
+    _hid = _dash_cfg_get(c, 'dash_kpi_hidden', []) or []   # V11.291 看板配置: 指标开关
+    if _hid:
+        cards[:] = [x for x in cards if x.get('k') not in set(_hid)]
+    for cd in cards:
+        k = cd.get('k')
+        cd['hint'] = DASH_HINTS.get(k, '')
+        spc = sp.get(k)
+        if not spc:
+            cd.setdefault('cmp', None)
+            continue
+        m = _dash_metric(c, f, spc['tbl'], spc['expr'], div=spc.get('div', 1.0), digits=spc.get('digits', 2),
+                         sup_col=spc.get('sup_col', 'supplier'), join=spc.get('join', ''), extra=spc.get('extra', ''),
+                         own=spc.get('own', own), own_ps=spc.get('own_ps', own_ps),
+                         use_dept=spc.get('use_dept', True), use_cat=spc.get('use_cat', True),
+                         use_wh=spc.get('use_wh', True), date_col=spc.get('date_col', 'created_at'))
+        cd['cmp'] = m['yoy_pct']
+        cd['cmp_label'] = m['cmp_label']
+        cd['cmp2'] = m['prev_pct']
+        cd['cmp_new'] = m.get('yoy_new')
+        cd['cmp2_new'] = m.get('prev_new')
+        cd['cmp2_label'] = m['cmp2_label']
+        cd['trend'] = m['trend']
+        if spc.get('risk'):
+            cd['risk'] = True
+            thr = spc.get('threshold')
+            if thr is not None:
+                bad = (m['v'] < thr) if spc.get('low_bad') else (m['v'] > thr)
+                cd['risk_level'] = 'red' if bad else 'ok'
+    return cards
+
+
+def _dash_cfg_risk(c):
+    """看板风险阈值配置(系统设置→看板配置)"""
+    v = _dash_cfg_get(c, 'dash_risk_thresholds', {})
+    return v if isinstance(v, dict) else {}
+
+
+def _dash_risk_cards(c, f, own=None, own_ps=(), thresholds=None, only=None):
+    """风险指标(过程+风险): 到货及时率 / 逾期订单数 / 暂估挂账金额 —— 红色高亮"""
+    th = thresholds or {}
+    rate_min = float(th.get('arrive_rate_min', 90) or 90)
+    est_days = int(th.get('est_days', 15) or 15)
+    rf, ps_r = _dash_w(f, 'receivings', sup_col=None, use_dept=True, use_cat=False, use_wh=True)
+    arrive = 0.0
+    try:
+        row = c.execute("SELECT COUNT(*), SUM(CASE WHEN COALESCE(o.target_date,'')!='' AND substr(r.received_at,1,10)<=o.target_date THEN 1 ELSE 0 END) "
+                        "FROM receivings r LEFT JOIN purchase_orders o ON o.id=r.order_id WHERE 1=1" + _rpq2(rf, 'r') +
+                        (own or ''), tuple(ps_r) + (tuple(own_ps) if own else ())).fetchone()
+        if row and row[0]:
+            arrive = round(100.0 * (row[1] or 0) / row[0], 1)
+    except Exception:
+        arrive = 0.0
+    overdue = 0
+    try:
+        of, ps_o = _dash_w(f, 'purchase_orders')
+        overdue = c.execute("SELECT COUNT(*) FROM purchase_orders WHERE 1=1" + of + (own or '') +
+                            " AND COALESCE(target_date,'')!='' AND date(target_date) < date('now')"
+                            " AND status NOT IN ('已驳回','已作废','已完成','已收货','已入库','已结清')",
+                            tuple(ps_o) + (tuple(own_ps) if own else ())).fetchone()[0] or 0
+    except Exception:
+        overdue = 0
+    est_amt = 0.0
+    try:
+        est_amt = c.execute("SELECT COALESCE(SUM(COALESCE(NULLIF(est_amount,0), total_inc_tax, 0)),0) FROM receivings WHERE 1=1" + rf +
+                            (own or '') + " AND COALESCE(is_est,0)=1", tuple(ps_r) + (tuple(own_ps) if own else ())).fetchone()[0] or 0
+    except Exception:
+        est_amt = 0.0
+    _all = [
+        {'k': '到货及时率', 'v': arrive, 'unit': '%', 'cmp': None, 'cmp_label': '按订单交期', 'hint': DASH_HINTS['到货及时率'],
+         'risk': True, 'risk_level': ('red' if arrive < rate_min else 'ok')},
+        {'k': '逾期订单数', 'v': overdue, 'unit': '单', 'cmp': None, 'cmp_label': '已过交期未入库', 'hint': DASH_HINTS['逾期订单数'],
+         'risk': True, 'risk_level': ('red' if overdue > 0 else 'ok')},
+        {'k': '暂估挂账金额', 'v': round(est_amt / 10000.0, 2), 'unit': '万元', 'cmp': None, 'cmp_label': '已入库未开票', 'hint': DASH_HINTS['暂估挂账金额'],
+         'risk': True, 'risk_level': ('red' if est_amt > 0 else 'ok')},
+    ]
+    if only:
+        _m = {'arrive': '到货及时率', 'overdue': '逾期订单数', 'est': '暂估挂账金额'}
+        _keep = set(_m[x] for x in only if x in _m)
+        return [x for x in _all if x['k'] in _keep]
+    return _all
+
+
+def _rpq2(frag, alias):
+    """带表别名的筛选片段改写(用于 JOIN 场景, 时间/状态列加前缀)"""
+    return (frag.replace(' AND substr(created_at,1,4)=?', ' AND substr(%s.created_at,1,4)=?' % alias)
+                .replace(' AND created_at>=?', ' AND %s.created_at>=?' % alias)
+                .replace(' AND created_at<?', ' AND %s.created_at<?' % alias)
+                .replace(' AND status NOT IN', ' AND %s.status NOT IN' % alias)
+                .replace(' AND dept=?', ' AND %s.dept=?' % alias)
+                .replace(' AND warehouse=?', ' AND %s.warehouse=?' % alias))
+
+
+def _dash_alerts(c, f):
+    """异常预警汇总(总览用): 未闭环预警按级别/类型统计 + 列表"""
+    yr = f.get('year') or str(datetime.date.today().year)
+    try:
+        lv = c.execute("SELECT COALESCE(level,'yellow') l, COUNT(*) n FROM alert_items "
+                       "WHERE COALESCE(status,'') NOT IN ('closed') AND substr(created_at,1,4)=? GROUP BY l", (str(yr),)).fetchall()
+        tp = c.execute("SELECT COALESCE(alert_type,'其他') t, COUNT(*) n FROM alert_items "
+                       "WHERE COALESCE(status,'') NOT IN ('closed') AND substr(created_at,1,4)=? GROUP BY t ORDER BY n DESC LIMIT 8", (str(yr),)).fetchall()
+        rows = _dash_rows(c, "SELECT id, alert_type, level, title, content, status, created_at FROM alert_items "
+                             "WHERE COALESCE(status,'') NOT IN ('closed') AND substr(created_at,1,4)=? ORDER BY "
+                             "CASE level WHEN 'red' THEN 1 WHEN 'orange' THEN 2 ELSE 3 END, created_at DESC LIMIT 100", (str(yr),))
+    except Exception:
+        lv, tp, rows = [], [], []
+    nm = {'red': '高风险', 'orange': '中风险', 'yellow': '低风险'}
+    return {'levels': [{'name': nm.get(r[0], r[0]), 'value': r[1]} for r in lv],
+            'types': [{'name': r[0], 'value': r[1]} for r in tp],
+            'open_total': sum(r[1] for r in lv), 'rows': rows}
+
+
+def _dash_yoy_series(c, f, sql_tpl, ps=(), div=10000.0, tbl='purchase_orders', extra='', extra_ps=()):
+    """月度趋势的「上年同期」序列(与当前轴对齐)"""
+    yf = _dash_shift(f, 'yoy')
+    if yf is None:
+        return []
+    frag, ps2 = _dash_w(yf, tbl)
+    out, _l = _dash_mfill(c, f, sql_tpl + frag + (extra or ''), tuple(ps2) + tuple(extra_ps), div=div)
+    return out
+
+
+def _dash_cfg_get(c, key, default=None):
+    try:
+        r = c.execute("SELECT value FROM sys_config WHERE key=?", (key,)).fetchone()
+        if r and r[0] not in (None, ''):
+            return json.loads(r[0]) if isinstance(default, (dict, list)) else r[0]
+    except Exception:
+        pass
+    return default
 
 def _dash_rows(c, sql, ps=()):
     cur = c.execute(sql, ps)
@@ -17216,8 +17475,18 @@ def api_dashboard_overview():
     cat_pie = [{'name': (r[0] or '未分类'), 'value': round(r[1], 0)} for r in c.execute(
         "SELECT COALESCE(category,'未分类') t, COALESCE(SUM(total_amount),0) a FROM purchase_orders WHERE 1=1" + wo + (sc['ord'] if own else '') +
         " GROUP BY t ORDER BY a DESC LIMIT 12", tuple(po_o) + (tuple(own_ps) if own else ())).fetchall()] or [{'name': '暂无', 'value': 0}]
+    # V11.291 同比/环比 + 口径说明 + 风险指标 + 异常预警汇总(对标金蝶云星空)
+    _dash_annot(cards, c, f, {
+        '本年采购总额': {'tbl': 'purchase_orders', 'expr': 'COALESCE(SUM(total_amount),0)', 'div': 10000.0, 'own': (sc['ord'] if own else None)},
+        '采购订单总数': {'tbl': 'purchase_orders', 'expr': 'COUNT(*)', 'div': 1, 'digits': 0, 'own': (sc['ord'] if own else None)},
+        '平均单笔金额': {'tbl': 'purchase_orders', 'expr': 'COALESCE(AVG(total_amount),0)', 'div': 1, 'digits': 2, 'own': (sc['ord'] if own else None)},
+        '维修费用总额': {'tbl': 'repair_plans', 'expr': 'COALESCE(SUM(CASE WHEN invoice_amount>0 THEN invoice_amount WHEN quote_total>0 THEN quote_total ELSE est_cost END),0)', 'div': 10000.0},
+    }, own=None, own_ps=own_ps)
+    cards.extend(_dash_risk_cards(c, f, own=None, own_ps=own_ps, thresholds=_dash_cfg_risk(c)))
+    alert_sum = _dash_alerts(c, f)
+    yoy_m = _dash_yoy_series(c, f, 'SELECT substr(created_at,1,7) k, COALESCE(SUM(total_amount),0) FROM purchase_orders WHERE 1=1', div=10000.0, extra=(sc['ord'] if own else ''), extra_ps=(own_ps if own else ()))
     c.close()
-    return jsonify({'cards': cards, 'years5': years5, 'months': months, 'labels_m': labels_m, 'cat_pie': cat_pie,
+    return jsonify({'cards': cards, 'yoy_m': yoy_m, 'alert_sum': alert_sum, 'years5': years5, 'months': months, 'labels_m': labels_m, 'cat_pie': cat_pie,
                     'filters': {'year': f['year'] or yyyy, 'range': f['range']},
                     'tables': {'material_drop': material_drop, 'supplier_rank': supplier_rank,
                                'supplier_save': supplier_save[:30], 'ap_detail': ap_detail}})
@@ -17253,7 +17522,14 @@ def api_dashboard_purchase():
     req_m, _l = _dash_mfill(c, f, "SELECT substr(created_at,1,7) k, COALESCE(SUM(total_estimated),0) FROM purchase_requests WHERE 1=1" + wr + (sc['req'] if own else '') + " GROUP BY k", tuple(po_r) + (tuple(own_ps) if own else ()))
     ord_m, labels = _dash_mfill(c, f, "SELECT substr(created_at,1,7) k, COALESCE(SUM(total_amount),0) FROM purchase_orders WHERE 1=1" + wo + (sc['ord'] if own else '') + " GROUP BY k", tuple(po_o) + (tuple(own_ps) if own else ()))
     # 类别占比: 有类别筛选时按物料类别(订单category)细分, 否则按 物资/维修 两类
-    cat_rows = c.execute("SELECT COALESCE(category,'未分类') t, COALESCE(SUM(total_amount),0) a FROM purchase_orders WHERE 1=1" + wo + (sc['ord'] if own else '') + " GROUP BY t ORDER BY a DESC LIMIT 12", tuple(po_o) + (tuple(own_ps) if own else ())).fetchall()
+    # V11.291 品类占比支持多维度切换: 物料类别/供应商/部门/仓库
+    cat_dim = (request.args.get('cat_by') or 'category').strip()
+    _dims = {'category': "COALESCE(category,'未分类')",
+             'supplier': "COALESCE(NULLIF(supplier,''),'未指定')",
+             'dept': "COALESCE((SELECT pr.dept FROM purchase_requests pr WHERE pr.id=purchase_orders.req_id),'未指定')",
+             'warehouse': "COALESCE((SELECT r2.warehouse FROM receivings r2 WHERE r2.order_id=purchase_orders.id LIMIT 1),'未入库')"}
+    _dcol = _dims.get(cat_dim, _dims['category'])
+    cat_rows = c.execute("SELECT " + _dcol + " t, COALESCE(SUM(total_amount),0) a FROM purchase_orders WHERE 1=1" + wo + (sc['ord'] if own else '') + " GROUP BY t ORDER BY a DESC LIMIT 12", tuple(po_o) + (tuple(own_ps) if own else ())).fetchall()
     cat_pie = [{'name': r[0] or '未分类', 'value': round(r[1], 0)} for r in cat_rows] or [{'name': '暂无', 'value': 0}]
     sup_top = c.execute("SELECT supplier, COALESCE(SUM(total_amount),0) a, COUNT(*) n FROM purchase_orders WHERE 1=1 AND COALESCE(supplier,'')!=''" + wo + (sc['ord'] if own else '') + " GROUP BY supplier ORDER BY a DESC LIMIT 10",
                         tuple(po_o) + (tuple(own_ps) if own else ())).fetchall()
@@ -17263,8 +17539,18 @@ def api_dashboard_purchase():
     iq_det = _dash_rows(c, "SELECT i.inq_no, i.title, i.status, i.created_at, (SELECT COUNT(*) FROM inquiry_suppliers s WHERE s.inquiry_id=i.id) sup_cnt FROM inquiries i WHERE 1=1" +
                         wi.replace(' AND substr(created_at,1,4)=?', ' AND substr(i.created_at,1,4)=?').replace(' AND created_at>=?', ' AND i.created_at>=?') + (sc['inqa'] if own else '') +
                         " ORDER BY i.created_at DESC" + lim, tuple(po_i) + ((session.get('user_name', ''),) if own else ()))
+    # V11.291 同比/环比 + 口径说明 + 过程风险指标(到货及时率/逾期订单数) + 上年同期
+    _dash_annot(cards, c, f, {
+        '采购申请总数': {'tbl': 'purchase_requests', 'expr': 'COUNT(*)', 'div': 1, 'digits': 0, 'own': (sc['req'] if own else None)},
+        '采购申请总金额': {'tbl': 'purchase_requests', 'expr': 'COALESCE(SUM(total_estimated),0)', 'div': 10000.0, 'own': (sc['req'] if own else None)},
+        '采购订单总数': {'tbl': 'purchase_orders', 'expr': 'COUNT(*)', 'div': 1, 'digits': 0, 'own': (sc['ord'] if own else None)},
+        '采购订单总金额': {'tbl': 'purchase_orders', 'expr': 'COALESCE(SUM(total_amount),0)', 'div': 10000.0, 'own': (sc['ord'] if own else None)},
+        '询价比价次数': {'tbl': 'inquiries', 'expr': 'COUNT(*)', 'div': 1, 'digits': 0, 'own': (sc['inq'] if own else None), 'own_ps': ((session.get('user_name', ''),) if own else ())},
+    }, own=None, own_ps=own_ps)
+    cards.extend(_dash_risk_cards(c, f, own=None, own_ps=own_ps, thresholds=_dash_cfg_risk(c), only=('arrive', 'overdue')))
+    yoy_ord = _dash_yoy_series(c, f, 'SELECT substr(created_at,1,7) k, COALESCE(SUM(total_amount),0) FROM purchase_orders WHERE 1=1', div=10000.0, tbl='purchase_orders', extra=(sc['ord'] if own else ''), extra_ps=(own_ps if own else ()))
     c.close()
-    return jsonify({'cards': cards,
+    return jsonify({'cards': cards, 'yoy_ord': yoy_ord, 'cat_dim': cat_dim,
                     'req_vs_ord': {'months': labels, 'req': req_m, 'ord': ord_m},
                     'cat_pie': cat_pie,
                     'sup_top': [dict_row({'supplier': r[0], 'amt': r[1], 'orders': r[2]}) for r in sup_top],
@@ -17338,8 +17624,15 @@ def api_dashboard_inventory():
     in_det = _dash_rows(c, "SELECT receive_no, item_name, quantity, est_amount, is_est, received_at, warehouse FROM receivings WHERE 1=1" + wrv + " ORDER BY created_at DESC" + lim, tuple(po_rv))
     out_det = _dash_rows(c, "SELECT req_no, item_name, quantity, dept, receiver, created_at FROM requisitions WHERE 1=1" + wq + (sc['req'] if own else '') + " ORDER BY created_at DESC" + lim, tuple(po_q) + (tuple(own_ps) if own else ()))
     low_det = _dash_rows(c, "SELECT item_name, quantity, safe_stock, (safe_stock-quantity) gap FROM inventory WHERE quantity < safe_stock AND safe_stock > 0" + wi + " ORDER BY gap DESC LIMIT 100", tuple(po_i))
+    # V11.291 同比/环比 + 风险指标(暂估挂账) + 上年同期
+    _dash_annot(cards, c, f, {
+        '入库总数量': {'tbl': 'receivings', 'expr': 'COALESCE(SUM(quantity),0)', 'div': 1, 'digits': 0, 'sup_col': None},
+        '出库总数量': {'tbl': 'requisitions', 'expr': 'COALESCE(SUM(quantity),0)', 'div': 1, 'digits': 0, 'sup_col': None, 'own': (sc['req'] if own else None)},
+    }, own=None, own_ps=own_ps)
+    cards.extend(_dash_risk_cards(c, f, own=None, own_ps=own_ps, thresholds=_dash_cfg_risk(c), only=('est',)))
+    yoy_in = _dash_yoy_series(c, f, 'SELECT substr(created_at,1,7) k, COALESCE(SUM(quantity),0) FROM receivings WHERE 1=1', div=1.0, tbl='receivings')
     c.close()
-    return jsonify({'cards': cards,
+    return jsonify({'cards': cards, 'yoy_in': yoy_in,
                     'io': {'months': labels, 'in': in_m, 'out': out_m},
                     'cat_pie': cat_list,
                     'quarter_turn': {'quarters': q_labels, 'turn': q_turn},
@@ -17406,8 +17699,16 @@ def api_dashboard_finance():
     inv_det = _dash_rows(c, "SELECT invoice_no, supplier, amount, invoice_date, status FROM invoices WHERE 1=1" + wv + " ORDER BY invoice_date DESC" + lim, tuple(po_v))
     pay_det = _dash_rows(c, "SELECT payment_no, supplier, amount, COALESCE(NULLIF(paid_at,''),created_at) paid_at, payment_type FROM payment_requests WHERE 1=1" + wp + " ORDER BY created_at DESC" + lim, tuple(po_p))
     due_det = _dash_rows(c, "SELECT contract_no, supplier, amount, invoice_clause, inv_collect_status FROM contracts WHERE inv_collect_status IN ('已催收待回','待收票','待催收')" + wc_nt + " LIMIT 100", tuple(po_c_nt))
+    # V11.291 同比/环比 + 风险指标(暂估挂账) + 上年同期
+    _dash_annot(cards, c, f, {
+        '合同总金额': {'tbl': 'contracts', 'expr': 'COALESCE(SUM(amount),0)', 'div': 10000.0},
+        '已开票金额': {'tbl': 'invoices', 'expr': 'COALESCE(SUM(amount),0)', 'div': 10000.0, 'sup_col': None},
+        '已付款金额': {'tbl': 'payment_requests', 'expr': 'COALESCE(SUM(amount),0)', 'div': 10000.0},
+    }, own=None, own_ps=())
+    cards.extend(_dash_risk_cards(c, f, own=None, own_ps=(), thresholds=_dash_cfg_risk(c), only=('est',)))
+    yoy_con = _dash_yoy_series(c, f, 'SELECT substr(sign_date,1,7) k, COALESCE(SUM(amount),0) FROM contracts WHERE 1=1', div=10000.0, tbl='contracts')
     c.close()
-    return jsonify({'cards': cards, 'con_m': con_m, 'inv_m': inv_m, 'pay_m': pay_m,
+    return jsonify({'cards': cards, 'yoy_con': yoy_con, 'con_m': con_m, 'inv_m': inv_m, 'pay_m': pay_m,
                     'months': labels, 'aging_pie': aging_pie,
                     'tables': {'con': con_det, 'inv': inv_det, 'pay': pay_det, 'due': due_det}})
 
@@ -17457,8 +17758,17 @@ def api_dashboard_repair():
     wd_det = _dash_rows(c, "SELECT plan_no, device_name, fault_desc, dept, requester, created_at, repair_type, est_cost, quote_total, invoice_amount, status FROM repair_plans WHERE 1=1" + sfx + " ORDER BY created_at DESC" + lim, ps)
     chg_det = _dash_rows(c, "SELECT rp.plan_no, rc.add_part, rc.add_labor, rc.add_price, rc.status, rc.confirm1_by, rc.created_at FROM repair_changes rc JOIN repair_plans rp ON rp.id=rc.plan_id WHERE 1=1" + _rpq(wp) + " ORDER BY rc.created_at DESC" + lim, ps)
     sup_stat = c.execute("SELECT repair_company, COUNT(*) n, COALESCE(SUM(%s),0) a FROM repair_plans WHERE COALESCE(repair_company,'')!=''" % cost + sfx + " GROUP BY repair_company ORDER BY a DESC LIMIT 50", ps).fetchall()
+    # V11.291 同比/环比 + 上年同期
+    _cost_expr = 'COALESCE(SUM(%s),0)' % cost
+    _dash_annot(cards, c, f, {
+        '维修工单总数': {'tbl': 'repair_plans', 'expr': 'COUNT(*)', 'div': 1, 'digits': 0, 'sup_col': None},
+        '维修费用总额': {'tbl': 'repair_plans', 'expr': _cost_expr, 'div': 10000.0, 'sup_col': None},
+        '外委维修费用': {'tbl': 'repair_plans', 'expr': _cost_expr, 'div': 10000.0, 'sup_col': None, 'extra': " AND repair_type='委外维修'"},
+        '内部自修费用': {'tbl': 'repair_plans', 'expr': 'COALESCE(SUM(est_cost),0)', 'div': 10000.0, 'sup_col': None, 'extra': " AND repair_type='内部自修'"},
+    }, own=None, own_ps=own_ps)
+    yoy_cost = _dash_yoy_series(c, f, 'SELECT substr(created_at,1,7) k, COALESCE(SUM(%s),0) FROM repair_plans WHERE 1=1' % cost, div=10000.0, tbl='repair_plans')
     c.close()
-    return jsonify({'cards': cards, 'cost_m': cost_m, 'months': labels,
+    return jsonify({'cards': cards, 'yoy_cost': yoy_cost, 'cost_m': cost_m, 'months': labels,
                     'type_pie': type_pie,
                     'dev_top': [dict_row({'device_name': r[0], 'amt': r[1], 'n': r[2]}) for r in dev_top],
                     'tables': {'work': wd_det, 'change': chg_det,
@@ -17474,6 +17784,26 @@ def api_dashboard_drill():
     key = (request.args.get('key') or '').strip()
     c = db()
     lim = ' LIMIT 300'
+    if kind == 'kpi':
+        # V11.291 指标下钻(KPI → 记录列表 → 单据详情)
+        of, ps_o = _dash_w(f, 'purchase_orders')
+        rf, ps_r = _dash_w(f, 'receivings', sup_col=None, use_cat=False)
+        if key == 'overdue':
+            rows = {'逾期订单': _dash_rows(c, "SELECT order_no 单号, supplier 供应商, item_name 物资, quantity 数量, target_date 交期,"
+                     " CAST(julianday('now')-julianday(target_date) AS INT) 逾期天数, status 状态 FROM purchase_orders WHERE 1=1" + of +
+                     " AND COALESCE(target_date,'')!='' AND date(target_date) < date('now') AND status NOT IN ('已驳回','已作废','已完成','已收货','已入库','已结清')"
+                     " ORDER BY target_date LIMIT 300", tuple(ps_o))}
+        elif key == 'arrive':
+            rows = {'超期到货记录': _dash_rows(c, "SELECT r.receive_no 单号, o.order_no 订单号, r.item_name 物资, o.target_date 应到货日, r.received_at 实际到货,"
+                     " CAST(julianday(substr(r.received_at,1,10))-julianday(o.target_date) AS INT) 超期天数 FROM receivings r LEFT JOIN purchase_orders o ON o.id=r.order_id"
+                     " WHERE 1=1" + _rpq2(rf, 'r') + " AND COALESCE(o.target_date,'')!='' AND substr(r.received_at,1,10)>o.target_date ORDER BY r.received_at DESC LIMIT 300",
+                     tuple(ps_r))}
+        else:
+            rows = {'暂估挂账明细': _dash_rows(c, "SELECT receive_no 单号, item_name 物资, COALESCE(NULLIF(est_amount,0), total_inc_tax, 0) 暂估金额, received_at 入库时间,"
+                     " CAST(julianday('now')-julianday(substr(received_at,1,10)) AS INT) 挂账天数, warehouse 仓库 FROM receivings WHERE 1=1" + rf +
+                     " AND COALESCE(is_est,0)=1 ORDER BY received_at LIMIT 300", tuple(ps_r))}
+        c.close()
+        return jsonify({'rows': rows})
     if kind == 'month':
         # 轴标签 → 月份键: '9月'→'YYYY-09'(年度取筛选年); '2025年10月'→'2025-10'
         _k = key.strip()
@@ -17691,6 +18021,39 @@ def api_dashboard_doc():
 @login_required
 def page_dashboard():
     return render_template('dashboard.html')
+
+
+@app.route('/api/dashboard/config', methods=['GET', 'POST'])
+@login_required
+def api_dashboard_config():
+    """V11.291 看板配置页: 指标开关 / 风险阈值 / 自动刷新频率 / 页签权限"""
+    if request.method == 'GET':
+        c = db()
+        cfg = {'kpi_hidden': _dash_cfg_get(c, 'dash_kpi_hidden', []),
+               'risk': _dash_cfg_get(c, 'dash_risk_thresholds', {}),
+               'refresh_sec': _dash_cfg_get(c, 'dash_refresh_sec', 60),
+               'tab_roles': _dash_cfg_get(c, 'dash_tab_roles', {})}
+        c.close()
+        return jsonify(cfg)
+    if not can_manage_config():
+        return jsonify({'error': '仅系统管理员可操作看板配置'}), 403
+    d = request.get_json(force=True, silent=True) or {}
+    c = db()
+    try:
+        _kv = (('dash_kpi_hidden', d.get('kpi_hidden')), ('dash_risk_thresholds', d.get('risk')),
+               ('dash_tab_roles', d.get('tab_roles')))
+        for _k, _v in _kv:
+            if _v is None:
+                continue
+            c.execute("INSERT INTO sys_config(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                      (_k, json.dumps(_v, ensure_ascii=False)))
+        if d.get('refresh_sec') is not None:
+            c.execute("INSERT INTO sys_config(key,value) VALUES('dash_refresh_sec',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                      (str(int(d['refresh_sec'])),))
+        c.commit()
+    finally:
+        c.close()
+    return jsonify({'ok': True})
 
 
 @app.route('/api/dashboard/export')
