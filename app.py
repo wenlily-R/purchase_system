@@ -2426,6 +2426,13 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
             _po = c.execute("SELECT * FROM purchase_orders WHERE id=?", (_ct['order_id'],)).fetchone()
             if _po:
                 _exist = c.execute("SELECT 1 FROM receivings WHERE order_id=? AND status!='已入库'", (_po['id'],)).fetchone()
+                # V11.296: 维修类订单不自动生成入库单(维修件不入库)
+                try:
+                    _prT0 = c.execute("SELECT req_type FROM purchase_requests WHERE id=?", (_po['req_id'],)).fetchone() if _po['req_id'] else None
+                    if _prT0 and (_prT0['req_type'] or '') == '设备维修':
+                        _exist = {'skip_repair': True}
+                except Exception:
+                    pass
                 if not _exist:
                     _oi = c.execute("SELECT * FROM order_items WHERE order_id=? ORDER BY id", (_po['id'],)).fetchall()
                     _name = _oi[0]['item_name'] if _oi else _po['item_name']
@@ -8095,14 +8102,21 @@ def api_inquiry_select(iid):
         _qd_map = {}
     rows = []
     grand_amt = 0.0
+    _skipped = []
     for idx, it in enumerate(items):
         qty = float(it['quantity'] or 1)
         _q = _qd_map.get(idx, {})
         price = float(_q.get('unit_price') or 0) or 0
+        if price <= 0:
+            # V11.296: 商家未报价的行不生成订单明细(原实现会写入 0 元明细, 造成订单/合同/入库单出现0元行)
+            _skipped.append(it['item_name'])
+            continue
         amt = round(price * qty, 2)
         grand_amt += amt
         # V11.268 需求2: 行税率随询价明细带入订单(无则0)
         rows.append((it['item_name'], it['spec'] or '', it['unit'] or '个', qty, price, amt, inquiry_line_tax(_q, amt)[0]))
+    if not rows:
+        grand_amt = 0.0  # 全部行均未分项报价 → 交由下方兜底按申请金额比例分摊
     # V11.259: 商家未分项报价标记(行单价=整单总价分摊参考价)
     _is_split = False
     # 兜底: 商家未填单价(旧数据) → 回退按申请参考金额比例分摊报价总额
@@ -8137,6 +8151,8 @@ def api_inquiry_select(iid):
         detail_parts.append('交付日期: %s' % quote_delivery)
     if quote_warranty:
         detail_parts.append('质保时间: %s' % quote_warranty)
+    if _skipped:
+        detail_parts.append('未报价行(本次未纳入订单): %s' % '、'.join(_skipped[:6]))  # V11.296
     if quote_remark:
         detail_parts.append('备注: %s' % quote_remark)
     # V11.180: 采购内部备注同步订单(给领导看议价情况)
@@ -8278,6 +8294,11 @@ def api_inquiry_split_select(iid):
         _trace_biz('purchase_order', 'purchase_orders', oid, '分项定标生成订单', '分项定标-'+s['supplier_name'], conn=conn)
         # V11.158c: 分项定标生成的订单(货到付款)自动生成待入库单 → 入库验收模块同步显示
         try:
+            # V11.296: 维修类订单不生成入库单(维修件不入库) — 原实现分项定标路径漏判, 导致维修订单也生成待入库单
+            _prR0 = conn.execute("SELECT req_type FROM purchase_requests WHERE id=?", (i['req_id'],)).fetchone()
+            if _prR0 and (_prR0['req_type'] or '') == '设备维修':
+                conn.commit()  # 先提交订单事务, 避免 except 中 log() 新建连接时 database is locked
+                raise RuntimeError('维修类订单不生成入库单(V11.296): req_id=%s' % i['req_id'])
             _rno = gen_no('RK', 'receivings', 'receive_no', conn)
             _rqty = sum(r[3] for r in rows)
             _rjson = json.dumps(
@@ -8406,6 +8427,11 @@ def api_inquiry_approve_split_select(iid):
         except Exception:
             pass
         try:
+            # V11.296: 维修类订单不生成入库单(维修件不入库) — 原实现分项定标路径漏判, 导致维修订单也生成待入库单
+            _prR0 = conn.execute("SELECT req_type FROM purchase_requests WHERE id=?", (i['req_id'],)).fetchone()
+            if _prR0 and (_prR0['req_type'] or '') == '设备维修':
+                conn.commit()  # 先提交订单事务, 避免 except 中 log() 新建连接时 database is locked
+                raise RuntimeError('维修类订单不生成入库单(V11.296): req_id=%s' % i['req_id'])
             _rno = gen_no('RK', 'receivings', 'receive_no', conn)
             _rqty = sum(r[3] for r in rows)
             _rjson = json.dumps(
