@@ -173,6 +173,16 @@ tr:hover td{background:var(--bg)}
 .fl input:focus,.fl select:focus{outline:none;border-color:var(--p)}
 .fg{margin-bottom:4px}.fl2{font-size:8px;font-weight:600;color:var(--t2);margin-bottom:1px;display:block}
 .fc{width:100%;padding:3px 5px;border:1px solid var(--b);border-radius:4px;font-size:9px;background:var(--c);color:var(--t)}.fc:focus{outline:none;border-color:var(--p)}
+/* V11.293: 申请部门下拉(可滚动) — 原生 select 弹层无法限高/加滚动条, 部门变多后翻不动; 改为只读输入框+可滚动面板 */
+.dsel{position:relative}
+.dselIn{cursor:pointer;background:var(--c)}
+.dselP{display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);z-index:60;background:#fff;border:1px solid var(--b);border-radius:6px;box-shadow:0 8px 20px rgba(0,0,0,.16);max-height:198px;overflow-y:auto}
+.dselP.up{top:auto;bottom:calc(100% + 2px)}
+.dselP.show{display:block}
+.dselP .o{padding:5px 8px;font-size:11px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dselP .o:hover{background:#eef4ff}
+.dselP .o.on{background:#e8f0fe;font-weight:600}
+.dselP .o.mut{color:#999}
 .fr{display:grid;grid-template-columns:1fr 1fr;gap:4px}
 .ftr{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px}
 .c2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
@@ -359,7 +369,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
   </div>
 </div>
 <div class="page" id="pinquiries"><h2>🔍 三方询价 <span style="font-size:10px;color:#999;font-weight:normal">(📦物资询价 / 🔧维修询价 分类查看)</span></h2>
-  <div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-p btn-sm" style="margin-left:auto" onclick="showInquiryForm()">+ 发起三方询价</button><button class="btn btn-w btn-sm" onclick="loadInquiries()">🔄 刷新</button></div>
+  <div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-p btn-sm" style="margin-left:auto" onclick="showInquiryForm()">+ 发起三方询价</button></div>
   <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap"><select id="inqTypeFilter" onchange="loadInquiries()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="" selected>全部类型</option><option value="物资采购">📦 物资询价</option><option value="设备维修">🔧 维修询价</option></select><select id="inqStatusFilter" onchange="loadInquiries()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="">全部状态</option><option>询价中</option><option>待比价</option><option>待定标</option><option>定标审批中</option><option>已生成订单</option><option>已撤回</option><option>已作废</option></select><span style="font-size:9px;color:#999">类型/状态筛选可叠加；🛠=维修 📦=物资</span></div><div class="card"><div class="cb" id="inquiriesTable"><div class="loading">加载中...</div></div></div></div>
 <div class="page" id="porders"><h2>📋 采购订单 <span style="font-size:10px;color:#999;font-weight:normal">(📦物资订单 / 🔧维修订单 分类查看)</span></h2>
   <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap"><button class="btn btn-p btn-sm" style="margin-left:auto" id="ordNewBtn" onclick="showForm('order')">+ 新建订单</button><button class="btn btn-o btn-sm" onclick="showOrderExecList()">📋 订单执行明细表</button></div>
@@ -1824,7 +1834,7 @@ async function editPRequest(oid){
       <div class="fg"><label class="fl2">故障描述 / 维修内容 *</label><input class="fc" id="fReqFault" maxlength="300" placeholder="如: 异响漏油, 需厂家拆解定损"></div></div>
       <div style="font-size:8px;color:#999;margin-top:3px">设备送厂家拆解定损后，维修项目清单可补录到下方明细表（物品=维修项目/备件）或整单附图上传定损单。</div>
     </div>
-    <div class="fr"><div class="fg"><label class="fl2">申请部门</label><select class="fc" id="fReqDept"><option value="">请选择（选填）</option>${depts.map(x=>`<option ${x.name==r.dept?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div>
+    <div class="fr"><div class="fg"><label class="fl2">申请部门</label>${dselHtml('fReqDept',depts,r.dept,'请选择（选填）','')}</div>
     <div class="fg"><label class="fl2">预算科目</label><select class="fc" id="fReqBud"><option value="">无</option></select></div></div>
     <div class="fr"><div class="fg"><label class="fl2">用途说明 *</label><input class="fc" id="fReqPurp" maxlength="200" value="${esc(r.purpose||'')}"></div>
     <div class="fg"><label class="fl2" id="fReqDateLbl">目标到货日 *</label><input class="fc" id="fReqDate" type="date" value="${esc(r.target_date||'')}"></div></div>
@@ -4697,7 +4707,7 @@ async function showRepairForm(rid){
   id('dmTitle').textContent=_editing?('✏️ 编辑维修计划 '+(_pre.plan_no||'')):'🔧 新建维修计划';
   id('dmBody').innerHTML=`
     <div style="font-size:9px;color:#666;margin-bottom:6px">设备故障报修：提交后由定损角色（机电/机修/生产负责人，系统设置配置）技术判定。带 * 为必填。</div>
-    <div class="fr"><div class="fg"><label class="fl2">申请部门 *</label><select class="fc" id="rpDept"><option value="">请选择</option>${depts.map(x=>`<option ${x.name==(_pre.dept||ME.dept_name)?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div>
+    <div class="fr"><div class="fg"><label class="fl2">申请部门 *</label>${dselHtml('rpDept',depts,_pre.dept||ME.dept_name,'请选择','')}</div>
     <div class="fg"><label class="fl2">紧急等级 *</label><select class="fc" id="rpUrg"><option ${_pre.urgency=='紧急'?'':'selected'}>普通</option><option ${_pre.urgency=='紧急'?'selected':''}>紧急</option></select></div></div>
     <div class="fr"><div class="fg"><label class="fl2">维修物件分类 *</label><select class="fc" id="rpItemClass"><option value="小件" ${_pre.item_class!='大件'?'selected':''}>小件(高压胶管/阀件等)</option><option value="大件" ${_pre.item_class=='大件'?'selected':''}>大件(大型电机/减速机等)</option></select></div>
     <div class="fg"><label class="fl2">故障设备名称 *</label><input class="fc" id="rpDev" value="${esc(_pre.device_name||'')}" placeholder="如: 3号传送带电机"></div></div>
@@ -5889,6 +5899,70 @@ async function reqNoByDept(){
   }catch(e){}
 }
 
+// ── V11.293b: 各业务模块页「🔄 刷新」按钮 — 样式同三方询价原按钮(btn-w btn-sm), 统一挂在页面标题左侧;
+//    点击=重新拉取当前列表, 沿用页面筛选条件(各 loader 自身从筛选控件读值, 故筛选不丢) ──
+const PAGE_REFRESH={
+  pprequests:()=>loadPRequests(), pinquiries:()=>loadInquiries(), porders:()=>loadOrders(),
+  papprovals:()=>loadApprovals(), pcontracts:()=>loadContracts(), preceivings:()=>loadReceivings(),
+  ppayments:()=>loadPayments(),
+  prequisitions:()=>reqTab(((document.querySelector('#reqTabs button.act')||{}).dataset||{}).z||'inv'),
+  preturns:()=>loadReturns(), pcounts:()=>{loadCounts();loadAdjustments()}, pexpenses:()=>loadExpenses(),
+  pinventory:()=>loadInventory(id('invCatFilter')?id('invCatFilter').value:''),
+  psuppliers:()=>loadSuppliers(), psettlements:()=>loadSettlements(), pinvoices:()=>loadInvoicePage(),
+  pledger:()=>loadLedger(), psmall:()=>loadSmallLedger(), palerts:()=>loadAlertCenter()
+};
+function pageRefresh(pid){
+  const f=PAGE_REFRESH[pid];
+  if(!f){alert('本页无列表可刷新');return}
+  try{const r=f();if(r&&typeof r.catch==='function')r.catch(()=>{})}
+  catch(e){alert('刷新失败: '+((e&&e.message)||e))}
+}
+function injectRefreshBtns(){
+  document.querySelectorAll('.page').forEach(pg=>{
+    if(!PAGE_REFRESH[pg.id]||pg.querySelector('.pgRefresh'))return;
+    const h=pg.querySelector('h2');if(!h)return;
+    const b=document.createElement('button');
+    b.type='button';b.className='btn btn-w btn-sm pgRefresh';b.textContent='🔄 刷新';
+    b.onclick=function(){pageRefresh(pg.id)};
+    h.insertBefore(b,h.firstChild);  // 标题左侧(不是最右侧)
+  });
+}
+document.addEventListener('DOMContentLoaded',injectRefreshBtns);
+try{injectRefreshBtns()}catch(e){}
+
+// ── V11.293: 申请部门下拉(可滚动) — 原生 select 的弹层无法限高/加滚动条, 部门变多后翻不动;
+//    改为"只读输入框 + 可滚动面板": 最多约 8 行, 超出可滚轮/上下滑动浏览。值仍存在同 id 输入框里, 不影响原有取值/提交 ──
+function dselHtml(selId, opts, cur, ph, after){
+  const v0=cur||'', ph0=ph||'请选择';
+  const list=(opts||[]).map(o=>typeof o==='string'?o:(o.name||'')).filter(x=>x).map(v=>`<div class="o${v===v0?' on':''}" onclick="dselPick('${selId}',this,'${after||''}')">${esc(v)}</div>`).join('');
+  return `<div class="dsel" id="${selId}_w"><input class="fc dselIn" id="${selId}" readonly value="${esc(v0)}" placeholder="${esc(ph0)}" onclick="dselToggle('${selId}')"><div class="dselP" id="${selId}_p"><div class="o mut" onclick="dselPick('${selId}',this,'${after||''}')">${esc(ph0)}</div>${list}</div></div>`;
+}
+function dselToggle(selId){
+  const p=id(selId+'_p');if(!p)return;
+  const wasOpen=p.classList.contains('show');dselCloseAll();
+  if(wasOpen)return;
+  p.classList.add('show');
+  try{  // 面板向下超出弹窗可视区则向上展开(弹窗 .mc 是 max-height:85vh + overflow, 否则会被裁掉)
+    const w=id(selId+'_w'),box=w&&w.closest('.mc');
+    if(box){const wr=w.getBoundingClientRect(),br=box.getBoundingClientRect();if(wr.bottom+p.offsetHeight>br.bottom-4)p.classList.add('up')}
+  }catch(e){}
+}
+function dselPick(selId,el,after){
+  const inp=id(selId), isMut=el.classList.contains('mut');
+  if(inp)inp.value=isMut?'':(el.textContent||'').trim();
+  const p=id(selId+'_p');
+  if(p)p.querySelectorAll('.o').forEach(x=>x.classList.toggle('on',x===el));
+  dselCloseAll();
+  if(after&&typeof window[after]==='function')window[after]();
+}
+function dselSet(selId,v){  // 程序化设值(草稿回填/编辑回显)时同步高亮
+  const inp=id(selId);if(inp)inp.value=v||'';
+  const p=id(selId+'_p');
+  if(p)p.querySelectorAll('.o').forEach(x=>x.classList.toggle('on',!x.classList.contains('mut')&&(x.textContent||'').trim()===(v||'')));
+}
+function dselCloseAll(){document.querySelectorAll('.dselP.show').forEach(x=>x.classList.remove('show','up'))}
+document.addEventListener('click',e=>{if(!(e.target.closest&&e.target.closest('.dsel')))dselCloseAll()},true);
+
 // Forms
 async function showForm(type){
   window.__prDraftOn=false; // V11.237: 仅"新建采购申请"分支内开启本地草稿
@@ -5907,7 +5981,7 @@ async function showForm(type){
         <div class="fg"><label class="fl2">故障描述 / 维修内容 *</label><input class="fc" id="fReqFault" maxlength="300" placeholder="如: 异响漏油, 需厂家拆解定损"></div></div>
         <div style="font-size:8px;color:#999;margin-top:3px">设备送厂家拆解定损后，维修项目清单可补录到下方明细表（物品=维修项目/备件）或整单附图上传定损单。</div>
       </div>
-      <div class="fr"><div class="fg"><label class="fl2">申请部门</label><select class="fc" id="fReqDept" onchange="reqNoByDept()"><option value="">请选择（选填）</option>${depts.map(d=>`<option>${esc(d.name)}</option>`).join('')}</select></div>
+      <div class="fr"><div class="fg"><label class="fl2">申请部门</label>${dselHtml('fReqDept',depts,'','请选择（选填）','reqNoByDept')}</div>
       <div class="fg"><label class="fl2">预算科目</label><select class="fc" id="fReqBud"><option value="">无</option></select></div></div>
       <div class="fr"><div class="fg"><label class="fl2">用途说明 *</label><input class="fc" id="fReqPurp"></div>
       <div class="fg"><label class="fl2" id="fReqDateLbl">目标到货日 *</label><input class="fc" id="fReqDate" type="date"></div></div>
@@ -6220,7 +6294,7 @@ function prTryRestore(){
   let o=null;try{o=JSON.parse(raw)}catch(e){}
   if(!o||!o.d)return;
   const d=o.d;
-  if(d.dept&&id('fReqDept'))id('fReqDept').value=d.dept;
+  if(d.dept&&id('fReqDept'))dselSet('fReqDept',d.dept);
   if(id('fReqPurp'))id('fReqPurp').value=d.purpose||'';
   if(id('fReqDate'))id('fReqDate').value=d.target_date||'';
   if(id('fReqRem'))id('fReqRem').value=d.remark||'';

@@ -703,7 +703,6 @@ def init_db():
         ('contracts', 'invoice_est_first', "ALTER TABLE contracts ADD COLUMN invoice_est_first TEXT DEFAULT ''"),
         ('contracts', 'invoice_est_done', "ALTER TABLE contracts ADD COLUMN invoice_est_done TEXT DEFAULT ''"),
         ('contracts', 'inv_collect_status', "ALTER TABLE contracts ADD COLUMN inv_collect_status TEXT DEFAULT ''"),
-        ('contract_invoices', 'node_id', "ALTER TABLE contract_invoices ADD COLUMN node_id INTEGER DEFAULT 0"),
         # ---- V11.228 合同: 收款账户信息快照(仅系统面板留存, 禁止写入合同正文docx) ----
         ('contracts', 'bank_info', "ALTER TABLE contracts ADD COLUMN bank_info TEXT DEFAULT ''"),
         # V11.233: 合同模板名称(现结/按月结算/预付款+验收后尾款) — 需求: 合同表记录选用模板, 列表/详情展示
@@ -747,6 +746,10 @@ def init_db():
             UNIQUE(contract_id, remind_date, kind)
         );
     """)
+    # V11.293 修: contract_invoices.node_id 原登记在上面的通用补列循环里, 但该表在本行之后才 CREATE
+    # → 空库首跑 init_db 抛 "no such table: contract_invoices" 启动崩溃(老库有表故从未暴露)。挪到建表之后补列。
+    if 'node_id' not in [r[1] for r in conn.execute("PRAGMA table_info(contract_invoices)").fetchall()]:
+        conn.execute("ALTER TABLE contract_invoices ADD COLUMN node_id INTEGER DEFAULT 0")
     # V11.236 三方询价外部链接鉴权(需求: 链接不绑权限, 绑定供应商身份手机号): 访问密码+会话令牌(幂等补列)
     _iqs = [r[1] for r in conn.execute("PRAGMA table_info(inquiry_suppliers)").fetchall()]
     for _iqc, _iqd in [('access_code', "TEXT DEFAULT ''"), ('auth_token', "TEXT DEFAULT ''"),
@@ -1177,6 +1180,11 @@ def init_db():
         _cols = [r[1] for r in conn.execute(f"PRAGMA table_info({_t})").fetchall()]
         if _col not in _cols:
             conn.execute(_ddl)
+    # V11.293: 新增部门(用户要求: 机电部/磅房/采购部/安监部/人事部/厨房/绿化部/生产车队) — 幂等补种,
+    # 老库也走这一段(不受上面"部门表为空才种子"限制), 各机启动即自动补齐; 名称/编码已存在则跳过
+    for _dn, _dc in (('安监部', 'AJB'), ('磅房', 'BF'), ('采购部', 'CGB'), ('机电部', 'JD'),
+                     ('绿化部', 'LHB'), ('人事部', 'RSB'), ('厨房', 'CF'), ('生产车队', 'SCC')):
+        conn.execute("INSERT OR IGNORE INTO departments(name,code) VALUES(?,?)", (_dn, _dc))
     conn.commit(); conn.close()
 
 # ============================================================
@@ -1535,11 +1543,29 @@ def api_change_password():
     log(session.get('user_name',''), '修改密码', '用户 %s 修改了登录密码' % u['name'])
     return jsonify({'success': True, 'message': '密码已更新'})
 
+# V11.293: 部门下拉/筛选统一按"拼音首字母"排序展示(A→Z) — departments 表按入库顺序返回, 杂乱;
+# SQLite 无法按拼音排, 故用映射: 已知部门按全拼(同首字母内也是拼音序), 新部门按首字归组, 都不认识排最后
+_DEPT_PY = {'安监部': 'anjianbu', '磅房': 'bangfang', '采购部': 'caigoubu', '财务部': 'caiwubu',
+            '厨房': 'chufang', '工程部': 'gongchengbu', '后勤部': 'houqinbu', '机电部': 'jidianbu',
+            '绿化部': 'lvhuabu', '人事部': 'renshibu', '生产部': 'shengchanbu',
+            '生产车队': 'shengchanchedui', '维修车间': 'weixiuchejian', '信息部': 'xinxibu',
+            '综合办': 'zongheban'}
+_PY_CHAR = {'安': 'a', '磅': 'b', '保': 'b', '采': 'c', '财': 'c', '厨': 'c', '车': 'c', '党': 'd',
+            '电': 'd', '法': 'f', '服': 'f', '工': 'g', '供': 'g', '后': 'h', '化': 'h', '环': 'h',
+            '机': 'j', '计': 'j', '技': 'j', '节': 'j', '客': 'k', '绿': 'l', '流': 'l', '能': 'n',
+            '人': 'r', '生': 's', '审': 's', '设': 's', '市': 's', '物': 'w', '维': 'w', '信': 'x',
+            '销': 'x', '行': 'x', '研': 'y', '运': 'y', '质': 'z', '综': 'z', '政': 'z'}
+def dept_sort_key(name):
+    """部门排序键: 已知→全拼; 未知→首字拼音首字母+名称; 首字也不认识→zz 排最后"""
+    n = (name or '').strip()
+    return _DEPT_PY.get(n) or (_PY_CHAR.get(n[:1], 'zz') + n)
+
+
 @app.route('/api/departments')
 @login_required
 def api_departments():
     conn = db(); rows = conn.execute("SELECT * FROM departments").fetchall(); conn.close()
-    return jsonify([dict_row(r) for r in rows])
+    return jsonify([dict_row(r) for r in sorted(rows, key=lambda r: dept_sort_key(r['name']))])
 
 # ============================================================
 # ── APPROVAL FLOW HELPER ──
