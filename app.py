@@ -1963,6 +1963,8 @@ def biz_table(biz_type):
             'return_request': 'return_requests',  # V11.193 退库
             'collect_accept': 'receivings',  # V11.206 集体验收: 父单据=入库单
             'repair_plan': 'repair_plans',  # V11.208 维修采购
+            'repair_change': 'purchase_requests',  # V11.285 维修定损变更确认(父单据=维修申请)
+            'repair_direct': 'purchase_requests',  # V11.285 小额直接委托确认
             'inquiry_approval': 'inquiries'}[biz_type]  # V11.133: biz_id=询价单id
 
 # ============================================================
@@ -2143,6 +2145,21 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
                             attachments or [], _src_of(approver, approver_id), instance_code, conn=c)
         # V11.186: 驳回后单据回到"草稿"(可编辑后重新提交) — 非终态'已驳回'
         st = '草稿'
+    # V11.285: 维修变更确认 / 小额直接委托确认 — 只回写申请上的标记, 不动申请主状态机
+    if biz_type in ('repair_change', 'repair_direct'):
+        try:
+            if biz_type == 'repair_change':
+                c.execute("UPDATE purchase_requests SET repair_change_status=?, updated_at=? WHERE id=?",
+                          ('已确认' if result == 'ok' else '已驳回', now(), biz_id))
+            else:
+                c.execute("UPDATE purchase_requests SET repair_entrust_type=?, updated_at=? WHERE id=?",
+                          ('direct' if result == 'ok' else 'direct_rejected', now(), biz_id))
+            c.commit()
+        except Exception as e:
+            print('repair change/direct finish err:', e)
+        c.close()
+        return True
+
     # V11.206: 集体验收审批 — 独立处理: 父单据=receivings, 通过只置 collect_status(不动 status 状态机, 由常规入库审批继续流转)
     if biz_type == 'collect_accept':
         if result == 'ok':
@@ -5905,14 +5922,21 @@ def api_prequest_repair_direct(rid):
         conn.close(); return jsonify({'error': '仅审批通过的维修申请可登记委托（当前%s）' % pr['status']}), 400
     if (pr['repair_done_date'] if 'repair_done_date' in pr.keys() else ''):
         conn.close(); return jsonify({'error': '该维修已完工登记，不能再登记委托'}), 400
-    if pr['repair_entrust_type'] if 'repair_entrust_type' in pr.keys() else '':
-        conn.close(); return jsonify({'error': '该申请已登记过委托方式，勿重复登记'}), 400
-    conn.execute("UPDATE purchase_requests SET repair_vendor=?, repair_amount=?, repair_entrust_type='direct', updated_at=? WHERE id=?",
+    _cur_ent = pr['repair_entrust_type'] if 'repair_entrust_type' in pr.keys() else ''
+    if _cur_ent and _cur_ent != 'direct_rejected':
+        conn.close(); return jsonify({'error': '该申请已登记过委托方式（%s），勿重复登记' % _cur_ent}), 400
+    # V11.285: 小额直接委托 → 先提交审批(分管领导确认), 通过后才生效 (原实现直接生效、领导不知情)
+    conn.execute("UPDATE purchase_requests SET repair_vendor=?, repair_amount=?, repair_entrust_type='direct_pending', updated_at=? WHERE id=?",
                  (vendor, round(amount, 2), now(), rid))
     conn.commit(); conn.close()
-    log(session['user_name'], '维修直接委托', f'申请#{rid} 小额透明维修直接委托 {vendor} ¥{amount:.2f}' + (('：' + note) if note else ''))
-    _trace_biz('purchase_request', 'purchase_requests', rid, '直接委托登记', f'委托 {vendor} ¥{amount:.2f}（不进审批，线下执行留痕）', status='已通过')
-    return jsonify({'success': True, 'message': f'已登记直接委托 {vendor}（¥{amount:.2f}），线下执行，留痕可查'})
+    log(session['user_name'], '维修直接委托(送审)', f'申请#{rid} 直接委托 {vendor} ¥{amount:.2f}' + (('：' + note) if note else ''))
+    create_approvals('repair_direct', rid, round(amount, 2), submitter=session['user_name'])
+    try:
+        start_instances('repair_direct', rid)
+    except Exception as e:
+        print('repair_direct start err:', e)
+    _trace_biz('purchase_request', 'purchase_requests', rid, '直接委托登记(待审批)', f'委托 {vendor} ¥{amount:.2f} — 已提交分管领导确认', status='已通过')
+    return jsonify({'success': True, 'entrust_pending': True, 'message': f'已登记直接委托 {vendor}（¥{amount:.2f}），已提交【直接委托审批】给分管领导确认，通过后生效'})
 
 @app.route('/api/prequests/<int:rid>/convert-material', methods=['POST'])
 @login_required
@@ -5993,10 +6017,32 @@ def api_prequest_repair_append(rid):
                          (json.dumps(_at + _add_at, ensure_ascii=False), now(), rid))
     except Exception:
         pass
+    # V11.285: 维修金额变更审批 — 首次补录锁定原审批预估价; 定损合计超出原预估 ≥200 元 且该单从未走过询价 → 自动送【维修变更审批】给分管领导
+    _items_all = conn.execute("SELECT quantity,estimated_price FROM request_items WHERE req_id=?", (rid,)).fetchall()
+    _det_total = round(sum(float(x['quantity'] or 0) * float(x['estimated_price'] or 0) for x in _items_all), 2)
+    _orig = float(pr['repair_est_orig'] or 0) if 'repair_est_orig' in pr.keys() else 0
+    if _orig <= 0:
+        _orig = round(float(pr['total_estimated'] or 0), 2)
+        conn.execute("UPDATE purchase_requests SET repair_est_orig=? WHERE id=?", (_orig, rid))
+    _over = round(_det_total - _orig, 2)
+    # V11.285: "走询价"的单免变更审批(定标审批即领导把关最终价) — 只要有询价记录(含已作废)即视为走询价渠道
+    _has_inq = conn.execute("SELECT COUNT(*) FROM inquiries WHERE req_id=?", (rid,)).fetchone()[0]
+    _need_chg = (_over >= 200.0) and (_has_inq == 0)
+    if _need_chg:
+        conn.execute("UPDATE purchase_requests SET repair_change_amt=?, repair_change_status='待确认' WHERE id=?", (_over, rid))
     conn.commit(); conn.close()
-    log(session['user_name'], '补充定损清单', f'申请#{rid} 追加定损维修项目{len(items)}项 ¥{_add_amt:.2f}（累计估算¥{_new_amt:.2f}）')
-    _trace_biz('purchase_request', 'purchase_requests', rid, '补充定损清单', f'追加{len(items)}项 估算+¥{_add_amt:.2f}（状态保持已通过）')
-    return jsonify({'success': True, 'message': f'已补充定损项目{len(items)}项（估算+¥{_add_amt:.2f}），可发起维修询价'})
+    log(session['user_name'], '补充定损清单', f'申请#{rid} 追加定损维修项目{len(items)}项 ¥{_add_amt:.2f}（累计估算¥{_new_amt:.2f}）' + ('；超原预估%.2f已送变更审批' % _over if _need_chg else ''))
+    _trace_biz('purchase_request', 'purchase_requests', rid, '补充定损清单', f'追加{len(items)}项 估算+¥{_add_amt:.2f}（状态保持已通过）' + ('；定损合计¥%.2f 超原预估¥%.2f 已送变更审批' % (_det_total, _over) if _need_chg else ''))
+    _chg_msg = ''
+    if _need_chg:
+        create_approvals('repair_change', rid, _det_total, submitter=session['user_name'])
+        try:
+            start_instances('repair_change', rid)
+        except Exception as e:
+            print('repair_change start err:', e)
+        _chg_msg = f'；⚠️ 定损合计 ¥{_det_total:.2f} 超出原审批预估 ¥{_orig:.2f}（+¥{_over:.2f}），已自动提交【维修变更审批】给分管领导确认'
+    return jsonify({'success': True, 'change_pending': bool(_need_chg), 'over_amt': _over,
+                    'message': f'已补充定损项目{len(items)}项（估算+¥{_add_amt:.2f}），可发起维修询价' + _chg_msg})
 
 @app.route('/api/prequests/<int:rid>/repair-done', methods=['POST'])
 @login_required
@@ -6017,7 +6063,9 @@ def api_prequest_repair_done(rid):
         conn.close(); return jsonify({'error': '该维修已登记完工（%s），勿重复登记' % pr['repair_done_date']}), 400
     _ent = pr['repair_entrust_type'] if 'repair_entrust_type' in pr.keys() else ''
     _ocnt = conn.execute("SELECT COUNT(*) FROM purchase_orders WHERE req_id=?", (rid,)).fetchone()[0]
-    if not _ent and _ocnt == 0:
+    if _ent == 'direct_pending':
+        conn.close(); return jsonify({'error': '该单的【小额直接委托】还在领导审批中，通过后才能登记完工'}), 400
+    if _ent not in ('direct',) and _ocnt == 0:
         conn.close(); return jsonify({'error': '请先确定维修方式（🤝小额直接委托 或 维修询价定标成单），再登记完工'}), 400
     _dt = str(d.get('done_date') or '').strip()[:10]
     try:

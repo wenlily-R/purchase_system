@@ -1934,6 +1934,16 @@ async function showPRequest(pid){
   if(_showRep){
     h+=`<div style="background:#fff8f0;border:1px solid #f0d9b5;color:#8a4b0f;font-size:10px;padding:5px 8px;border-radius:4px;margin-bottom:6px">${r.repair_converted?'⚠️':'🔧'} <b>${r.repair_converted?'原设备维修申请（已转物资采购）':'设备维修申请'}</b>${r.repair_device?` ｜ 设备: <b>${esc(r.repair_device)}</b>`:''}${r.repair_fault?`<br>故障描述: ${esc(r.repair_fault)}`:''}${r.repair_converted?'<br><span style="color:#c0392b">已按定损结论变更为物资采购，走寻价比价采购新设备（维修痕迹保留）</span>':''}${_entrustTxt}</div>${_entrustBtns}`;
   }
+  // V11.285: 维修金额变更确认 / 小额直接委托审批 状态提示
+  if(_showRep){
+    const _cst=r.repair_change_status||'';
+    if(_cst==='待确认') h+=`<div style="background:#fff5f5;border:1px solid #f5c6c6;color:#c0392b;font-size:10px;padding:5px 8px;border-radius:4px;margin:4px 0"><b>⚠️ 定损金额超原审批预估 ¥${(r.repair_change_amt||0).toFixed(2)}</b>：维修变更审批中（分管领导确认后才能继续询价/委托）</div>`;
+    else if(_cst==='已确认') h+=`<div style="background:#e8f5e9;border:1px solid #b7dfc0;color:#1b7a3d;font-size:10px;padding:5px 8px;border-radius:4px;margin:4px 0">✅ 定损超预估 ¥${(r.repair_change_amt||0).toFixed(2)} 已经分管领导确认</div>`;
+    else if(_cst==='已驳回') h+=`<div style="background:#fdeaea;border:1px solid #f0b8b8;color:#c0392b;font-size:10px;padding:5px 8px;border-radius:4px;margin:4px 0">❌ 定损超预估 ¥${(r.repair_change_amt||0).toFixed(2)} 被驳回：请调整定损清单或撤回后重新提交</div>`;
+    const _et=r.repair_entrust_type||'';
+    if(_et==='direct_pending') h+=`<div style="background:#fff8f0;border:1px solid #f0d9b5;color:#8a4b0f;font-size:10px;padding:5px 8px;border-radius:4px;margin:4px 0">⏳ 小额直接委托 ${esc(r.repair_vendor||'')} ¥${(r.repair_amount||0).toFixed(2)} 待分管领导审批，通过后生效</div>`;
+    if(_et==='direct_rejected') h+=`<div style="background:#fdeaea;border:1px solid #f0b8b8;color:#c0392b;font-size:10px;padding:5px 8px;border-radius:4px;margin:4px 0">❌ 小额直接委托被驳回：可重新登记，或改走维修询价</div>`;
+  }
   h+=`<div class="c2"><div><dt>编号</dt><dd><b>${esc(r.req_no)}</b></dd><dt>部门</dt><dd>${esc(r.dept)}</dd><dt>申请人</dt><dd>${esc(r.requester)}</dd><dt>预算科目</dt><dd>${esc(r.budget_code||'-')}</dd></div>
     <div><dt>用途</dt><dd>${esc(r.purpose)}</dt><dt>目标日</dt><dd>${r.target_date||'-'}</dd><dt>状态</dt><dd>${tag(r.status)}${(r.reject_count||0)>0?` <span style="font-size:9px;color:#c0392b;background:#fdeaea;border-radius:3px;padding:1px 5px">已驳回${r.reject_count}次</span>`:''}</dd></div></div>
     <h4 style="font-size:10px;margin:6px 0 3px">📋 物资明细</h4>
@@ -2035,7 +2045,7 @@ async function repairDirect(rid){
     supOpts=arch&&arch.length?'<option value="">— 从供应商档案选择(可选) —</option>'+arch.map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join(''):'';
   }catch(e){}
   showDetail('🤝 小额直接委托（维修）',
-    `<div style="font-size:10px;color:#666;margin-bottom:6px">适用于压高压胶管、打黄油、补胎补气等<b>价格透明</b>的小额维修：直接选用长期合作厂家，不做多家询价。填写后留痕可查，线下执行。</div>
+    `<div style="font-size:10px;color:#666;margin-bottom:6px">适用于压高压胶管、打黄油、补胎补气等<b>价格透明</b>的小额维修：直接选用长期合作厂家，不做多家询价。<b style="color:#c0392b">提交后需分管领导审批确认，通过后生效</b>；线下执行、全程留痕。</div>
     <div class="fg"><label class="fl2">委托维修商 *</label><input class="fc" id="rdVendor" list="rdSups" placeholder="如: 鑫茂液压胶管门市"><datalist id="rdSups">${supOpts}</datalist></div>
     <div class="fg"><label class="fl2">委托金额(元) *</label><input class="fc" id="rdAmt" type="number" min="0" step="0.01" placeholder="如: 350"></div>
     <div class="fg"><label class="fl2">维修内容说明(选填)</label><input class="fc" id="rdNote" placeholder="如: 更换8分高压胶管3根"></div>`,
@@ -2987,7 +2997,7 @@ const APPR_REPAIR_TYPES=['repair_plan'];  // 维修中心旧类型(存量定损�
 // V11.286: 审批中心列表该列在库里存的是"商品数量"而非金额的单据类型(入库/出库) — 表头与单元格按此区分
 const APPR_QTY_TYPES=['receiving','requisition'];
 // V11.269: 维修类判定 — 旧定损单 + 维修类采购申请(req_type=设备维修) 均归维修中心
-const _isRepairRow=x=>APPR_REPAIR_TYPES.includes(x.biz_type)||(x.biz_type==='purchase_request'&&(x.req_type||'')==='设备维修');
+const _isRepairRow=x=>APPR_REPAIR_TYPES.includes(x.biz_type)||['repair_change','repair_direct'].includes(x.biz_type)||(x.biz_type==='purchase_request'&&(x.req_type||'')==='设备维修');  // V11.285: 维修变更/委托确认同归维修中心
 const _apprMatch=(x,t)=> t===''?true : (t==='repair_req' ? (x.biz_type==='purchase_request'&&(x.req_type||'')==='设备维修') : x.biz_type===t);
 function apprCenter(c){
   APPR_CENTER=c; APPR_FILTER='';
@@ -5752,7 +5762,7 @@ async function syncInsts(){const r=await api('/feishu/sync-instances',{method:'P
 
 // DingTalk 钉钉对接
 // V11.202: 模板码输入框覆盖全部审批类型(含退库return_request — 修复退库审批推不到钉钉的配置入口)
-const DT_BIZ_DEFS={'purchase_request':'采购申请','inquiry_approval':'比价单','purchase_order':'采购订单','contract':'合同','receiving':'入库','requisition':'出库','return_request':'退库','credit':'挂账','payment':'付款','repair_plan':'维修审批','collect_accept':'集体验收'};  // V11.216: 补维修审批/集体验收模板码入口
+const DT_BIZ_DEFS={'purchase_request':'采购申请','inquiry_approval':'比价单','purchase_order':'采购订单','contract':'合同','receiving':'入库','requisition':'出库','return_request':'退库','credit':'挂账','payment':'付款','repair_plan':'维修审批','collect_accept':'集体验收','repair_change':'维修变更确认','repair_direct':'直接委托确认'};  // V11.216: 补维修审批/集体验收模板码入口
 async function loadDingTalk(){await loadDtConfig();loadDtUsers();loadDtStatus();loadDtInstances()}
 async function loadDtConfig(){
   try{
@@ -8104,7 +8114,7 @@ async function tqSearch(){
 }
 async function tqGoto(biz,bid){
   // 关联跳转: 打开对应业务详情(复用各模块查看函数); 无详情函数类型弹行数据
-  const map={'purchase_request':'showPRequest','purchase_order':'showOrder','receiving':'showRcvDetail','requisition':'showRequisitionDetail','return_request':'showReturnDetail','repair_plan':'showRepairDetail','contract':'showContract','inquiry':'showInquiry'};
+  const map={'purchase_request':'showPRequest','purchase_order':'showOrder','receiving':'showRcvDetail','requisition':'showRequisitionDetail','return_request':'showReturnDetail','repair_plan':'showRepairDetail','repair_change':'showPRequest','repair_direct':'showPRequest','contract':'showContract','inquiry':'showInquiry'};
   const fn=map[biz];
   if(fn&&typeof window[fn]==='function'){try{await window[fn](bid);return}catch(e){}}
   // 降级: 展示原始行
