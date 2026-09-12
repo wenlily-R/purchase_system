@@ -2600,6 +2600,13 @@ async function showRepairOrderView(ordid, d, my){
   <div class="c2"><div><dt>单号</dt><dd><b>${esc(o.order_no)}</b></dd><dt>维修申请</dt><dd>${o.req_no?`<a class="lnk" onclick="showPRequest(${o.req_id})">${esc(o.req_no)} ↗</a>`:'#'+(o.req_id||'')}</dd><dt>供应商(维修商)</dt><dd>${esc(o.supplier)}</dd><dt>金额</dt><dd>¥${(o.total_amount||0).toFixed(0)}</dd></div>
   <div><dt>负责人</dt><dd>${esc(o.owner)}</dd><dt>状态</dt><dd>${tag(o.status)}</dd><dt>完工登记</dt><dd>${_done?`<span style="color:#2e7d32;font-weight:700">✅ ${esc(_done)}</span>`:'<span style="color:#b7791f">待完工</span>'}</dd><dt>交易模式</dt><dd>${esc(o.trade_mode||'货到付款')}</dd></div></div>`;
   if(_done)h+=`<div style="background:#e8f5e9;border:1px solid #a5d6a7;color:#2e7d32;border-radius:4px;padding:5px 8px;font-size:10px;margin-top:6px">✅ <b>维修已完成</b>：${esc(o.repair_result||'维修完成')}</div>`;
+  // V11.291: 维修合同门槛提示(≥2000元 且 外部维修商 → 建议签《设备维修服务合同》; 厂内自修不签)
+  const _rAmt=parseFloat(o.total_amount||0);
+  const _venTxt=((o.supplier||'')+' '+(o.repair_vendor||''));
+  const _inHouse=/车间|厂内|自修|内部|机电|机修|班组|本厂/.test(_venTxt);
+  if(o.req_type=='设备维修' && !o.has_contract && _rAmt>=2000 && !_inHouse){
+    h+=`<div style="background:#fff8e6;border:1px solid #f0d08a;color:#8a5a00;font-size:10px;padding:5px 8px;border-radius:4px;margin-top:6px">⚠️ 本笔维修金额 <b>¥${_rAmt.toFixed(2)}</b>（≥2000 元，外部维修商）：建议签订《设备维修服务合同》（含质保期、验收标准、<b>安全责任</b>、<b>超支需书面确认</b>）。点右下角「📄 生成维修合同」即可生成并送审批。</div>`;
+  }
   if(d.items&&d.items.length){
     h+=`<h4 style="font-size:10px;margin:6px 0 3px">📋 维修项目明细（${d.items.length}项）</h4>
       <div style="overflow-x:auto"><table class="tb" style="font-size:10px;min-width:520px"><thead><tr><th>维修项目/备件</th><th>规格</th><th>单价</th><th>数量</th><th>金额</th></tr></thead>
@@ -2611,6 +2618,9 @@ async function showRepairOrderView(ordid, d, my){
     ${o.req_id?`<button class="btn btn-o btn-sm" onclick="showPRequest(${o.req_id})">📝 看维修申请</button>`:''}`;
   if(!_done && _canOp && o.req_id){
     foot+=` <button class="btn btn-p" onclick="repairDoneUI(${o.req_id})">✅ 登记完工</button>`;
+  }
+  if(o.req_type=='设备维修' && !o.has_contract){
+    foot+=` <button class="btn btn-o btn-sm" style="color:#b45309;border-color:#e0b070" onclick="genContract(${ordid})">📄 生成维修合同</button>`;
   }
   if(_done){
     foot+=` <span style="font-size:10px;color:#2e7d32;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:4px;padding:4px 8px">✅ 已于 ${esc(_done)} 登记完工${(o.repair_actual_amt||0)>0?('，实际结算 ¥'+(o.repair_actual_amt||0).toFixed(2)):''}</span>`;
@@ -2880,18 +2890,20 @@ async function genContract(oid){
   // V11.150: 防连点
   if(__guardOpen('gc:'+oid))return;
   showDetail('📄 生成采购合同','<div class="loading">加载合同模板...</div>');
-  let tpls=[];
+  let tpls=[], _isRepair=false, _o0={};
   try{tpls=(await api('/contract-template-files',{noCache:true})).templates||[]}catch(e){}
+  try{const _d0=await api(`/orders/${oid}`); _o0=_d0.order||{}; _isRepair=((_o0.req_type||'')==='设备维修');}catch(e){}  // V11.291: 维修订单走维修合同
   if(!tpls.length){id('dmBody').innerHTML='<div style="padding:20px;text-align:center;color:#c0392b;font-size:11px">⚠️ 未找到合同模板文件(contract_templates/目录)，请联系管理员放置模板docx</div>';return}
   // V11.233: 三套模板选择(现结/按月结算/预付款+验收后尾款) — 第八条付款结算随模板不同
   const meta={'买卖合同-现结':['⚡','现结：一单一结，验收后付全款','var(--s)','#f0faf5'],
               '买卖合同-按月结算':['📅','按月结算：对账后按约定周期付款','#e67e22','#fef9f0'],
-              '买卖合同-预付款+验收后尾款':['💳','预付30%，验收合格后付尾款70%','#7c3aed','#f6f0fe']};
+              '买卖合同-预付款+验收后尾款':['💳','预付30%，验收合格后付尾款70%','#7c3aed','#f6f0fe'],
+              '设备维修服务合同-现结':['🔧','维修服务合同：含质保期/验收标准/安全责任/超支需书面确认条款','#b45309','#fdf6ec']};
   const cards=tpls.map(t=>{const m=meta[t]||['📄',t,'#33475c','#f4f6f8'];return `<div style="flex:1;min-width:170px;border:2px solid ${m[2]};border-radius:8px;padding:12px;text-align:center;cursor:pointer;background:${m[3]}" onclick="genContractInv(${oid},'${t}')">
       <div style="font-size:16px">${m[0]}</div><div style="font-size:12px;font-weight:bold;color:${m[2]};margin-top:2px">${t.replace('买卖合同-','')}</div>
       <div style="font-size:9px;color:#888;margin-top:4px">${m[1]}</div></div>`}).join('');
-  id('dmTitle').textContent='📄 生成采购合同';
-  id('dmBody').innerHTML=`<div style="font-size:11px;margin-bottom:8px">请选择本次合同的<b>结算模板</b>（第八条付款、结算条款随模板自动带入，其余条款一致）：</div>
+  id('dmTitle').textContent=_isRepair?'📄 生成维修合同':'📄 生成采购合同';
+  id('dmBody').innerHTML=`<div style="font-size:11px;margin-bottom:8px">请选择本次合同的<b>结算模板</b>（第八条付款、结算条款随模板自动带入，其余条款一致）${_isRepair?'；<b style="color:#b45309">维修类请选「设备维修服务合同」</b>（含质保/验收/安全责任/超支书面确认）':''}：</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">${cards}</div>
     <div style="font-size:9px;color:#999;margin-top:8px">甲方、乙方、合同编号、标的表格、金额及收款账号信息将自动填充；选择后下一步可填写发票回收节点条款（可留空）。</div>`;
   id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">取消</button>';
