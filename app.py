@@ -6266,6 +6266,7 @@ def api_order(oid):
         _od['req_type'] = _oreq['req_type'] or '物资采购'
         _od['repair_done_date'] = _oreq['repair_done_date'] or ''
         _od['repair_result'] = _oreq['repair_result'] or ''
+        _od['repair_actual_amt'] = (_oreq['repair_actual_amt'] or 0) if 'repair_actual_amt' in _oreq.keys() else 0
     return jsonify({'order': _od, 'items': [dict_row(i) for i in items],
                     'approvals': [dict_row(a) for a in approvals],
                     'comparisons': [dict_row(p) for p in pcs],

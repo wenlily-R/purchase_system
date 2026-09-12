@@ -362,7 +362,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
 <div class="page" id="porders"><h2>📋 采购订单 <span style="font-size:10px;color:#999;font-weight:normal">(📦物资订单 / 🔧维修订单 分类查看)</span></h2>
   <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap"><button class="btn btn-p btn-sm" style="margin-left:auto" id="ordNewBtn" onclick="showForm('order')">+ 新建订单</button><button class="btn btn-o btn-sm" onclick="showOrderExecList()">📋 订单执行明细表</button></div>
   <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap"><select id="ordTypeFilter" onchange="loadOrders()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="" selected>全部类型</option><option value="物资采购">📦 物资订单</option><option value="设备维修">🔧 维修订单</option></select><select id="ordStatusFilter" onchange="loadOrders()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="">全部状态</option><option>草稿</option><option>待审批</option><option>已通过</option><option>部分到货，待继续验收</option><option>已入库</option><option>已签合同</option><option>执行中</option><option>已驳回</option><option>已作废</option></select><span style="font-size:9px;color:#999">类型/状态筛选可叠加；🔧=维修 📦=物资</span></div>
-  <div id="ordTip" style="display:none;font-size:10px;color:#8a4b0f;background:#fff8f0;border:1px solid #f0d9b5;border-radius:4px;padding:4px 8px;margin-bottom:4px">🔧 <b>维修委托订单</b>：由「维修询价 → 定标」自动生成（无需手工新建）；维修件不走验收入库，维修完成后在关联维修申请上点「✅ 登记完工」闭环。</div>
+  <div id="ordTip" style="display:none;font-size:10px;color:#8a4b0f;background:#fff8f0;border:1px solid #f0d9b5;border-radius:4px;padding:4px 8px;margin-bottom:4px">🔧 <b>维修委托订单</b>：由「维修询价 → 定标」自动生成（无需手工新建）；维修件不走验收入库；维修完成后打开该订单详情，点右下角「✅ 登记完工」即可闭环。</div>
   <div class="card"><div class="cb" id="ordersTable"><div class="loading">加载中...</div></div></div></div>
 <div class="page" id="papprovals"><h2>✅ 审批中心 <span style="font-size:10px;color:#999;font-weight:normal">(维修类申请与存量定损单审批请切换🔧维修审批中心办理)</span></h2>
   <div class="tabs" id="apprCenterTabs" style="margin-bottom:4px">
@@ -2596,7 +2596,7 @@ async function showRepairOrderView(ordid, d, my){
   const o=d.order;
   const _canOp = ['系统管理员','采购员'].includes(ME.role) || ME.name==o.owner;
   const _done=o.repair_done_date||'';
-  let h=`<div style="background:#fff8f0;border:1px solid #f0d9b5;color:#8a4b0f;font-size:10px;padding:5px 8px;border-radius:4px;margin-bottom:6px">🔧 <b>维修委托订单</b> — 维修项目不是库存物资，<b>不走验收入库流程</b>；维修商完成维修后，在关联维修申请上点「✅ 登记完工」闭环留痕。</div>
+  let h=`<div style="background:#fff8f0;border:1px solid #f0d9b5;color:#8a4b0f;font-size:10px;padding:5px 8px;border-radius:4px;margin-bottom:6px">🔧 <b>维修委托订单</b> — 维修项目不是库存物资，<b>不走验收入库流程</b>。${_done?'本单已完成维修（见下方"完工登记"）。':'维修商完成维修后，点<b>本弹窗右下角「✅ 登记完工」</b>填写完工日期+实际结算金额即可闭环（也可点「📝 看维修申请」在原申请上操作）。'}</div>
   <div class="c2"><div><dt>单号</dt><dd><b>${esc(o.order_no)}</b></dd><dt>维修申请</dt><dd>${o.req_no?`<a class="lnk" onclick="showPRequest(${o.req_id})">${esc(o.req_no)} ↗</a>`:'#'+(o.req_id||'')}</dd><dt>供应商(维修商)</dt><dd>${esc(o.supplier)}</dd><dt>金额</dt><dd>¥${(o.total_amount||0).toFixed(0)}</dd></div>
   <div><dt>负责人</dt><dd>${esc(o.owner)}</dd><dt>状态</dt><dd>${tag(o.status)}</dd><dt>完工登记</dt><dd>${_done?`<span style="color:#2e7d32;font-weight:700">✅ ${esc(_done)}</span>`:'<span style="color:#b7791f">待完工</span>'}</dd><dt>交易模式</dt><dd>${esc(o.trade_mode||'货到付款')}</dd></div></div>`;
   if(_done)h+=`<div style="background:#e8f5e9;border:1px solid #a5d6a7;color:#2e7d32;border-radius:4px;padding:5px 8px;font-size:10px;margin-top:6px">✅ <b>维修已完成</b>：${esc(o.repair_result||'维修完成')}</div>`;
@@ -2611,6 +2611,9 @@ async function showRepairOrderView(ordid, d, my){
     ${o.req_id?`<button class="btn btn-o btn-sm" onclick="showPRequest(${o.req_id})">📝 看维修申请</button>`:''}`;
   if(!_done && _canOp && o.req_id){
     foot+=` <button class="btn btn-p" onclick="repairDoneUI(${o.req_id})">✅ 登记完工</button>`;
+  }
+  if(_done){
+    foot+=` <span style="font-size:10px;color:#2e7d32;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:4px;padding:4px 8px">✅ 已于 ${esc(_done)} 登记完工${(o.repair_actual_amt||0)>0?('，实际结算 ¥'+(o.repair_actual_amt||0).toFixed(2)):''}</span>`;
   }
   if(my!==__dmSeq)return;
   id('dmBody').innerHTML=h; id('dmFooter').innerHTML=foot;
