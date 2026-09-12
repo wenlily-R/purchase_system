@@ -17212,8 +17212,12 @@ def api_dashboard_overview():
         supplier_save.append({'supplier': r['supplier'], 'last_amt': round(last, 2), 'this_amt': round(r['amt'], 2),
                               'down': round((last - r['amt']) / last * 100, 1) if last and last > 0 else None, 'orders': r['n']})
     supplier_save.sort(key=lambda x: x['this_amt'], reverse=True)
+    # V11.290 经营总览补齐第三张图: 采购类别占比(与「本年采购总额」同口径同筛选 → 合计相等, 保证数据互通)
+    cat_pie = [{'name': (r[0] or '未分类'), 'value': round(r[1], 0)} for r in c.execute(
+        "SELECT COALESCE(category,'未分类') t, COALESCE(SUM(total_amount),0) a FROM purchase_orders WHERE 1=1" + wo + (sc['ord'] if own else '') +
+        " GROUP BY t ORDER BY a DESC LIMIT 12", tuple(po_o) + (tuple(own_ps) if own else ())).fetchall()] or [{'name': '暂无', 'value': 0}]
     c.close()
-    return jsonify({'cards': cards, 'years5': years5, 'months': months, 'labels_m': labels_m,
+    return jsonify({'cards': cards, 'years5': years5, 'months': months, 'labels_m': labels_m, 'cat_pie': cat_pie,
                     'filters': {'year': f['year'] or yyyy, 'range': f['range']},
                     'tables': {'material_drop': material_drop, 'supplier_rank': supplier_rank,
                                'supplier_save': supplier_save[:30], 'ap_detail': ap_detail}})

@@ -127,11 +127,12 @@ body.zen .body{padding-top:6px}
 <!-- ============ Tab1 经营总览 ============ -->
 <div class="sec on" id="sec-overview">
   <div class="cards" id="ov-cards"></div>
-  <div class="grid2">
+  <div class="grid3">
     <div class="panel"><h3>历年采购金额对比(近5年)</h3><div class="chart" id="ch-ov5"></div></div>
     <div class="panel"><h3>本年月度采购趋势</h3><div class="chart" id="ch-ovm"></div></div>
+    <div class="panel"><h3>采购类别占比</h3><div class="chart" id="ch-ov3"></div></div>
   </div>
-  <div class="panel"><h3>明细分析</h3>
+  <div class="panel"><h3>明细</h3>
     <div class="subtabs" id="ov-sub">
       <div class="st on" data-i="0" onclick="subTab(this,'ov')">物料降本分析</div>
       <div class="st" data-i="1" onclick="subTab(this,'ov')">供应商降本分析</div>
@@ -326,6 +327,9 @@ function renderOv(d){$('ov-cards').innerHTML=d.cards.map(cardHtml).join('');
       itemStyle:{color:'#ff9500'},lineStyle:{color:'#ff9500',width:2.5},
       areaStyle:{color:new E.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(255,149,0,.45)'},{offset:1,color:'rgba(255,149,0,.02)'}])}}]});
   mk.on('click',p=>drillMonths('ov','采购金额',p.name,d.months));
+  const ov3=echart('ch-ov3',{tooltip:{trigger:'item',formatter:'{b}: ¥{c} ({d}%)'},legend:{orient:'vertical',right:6,textStyle:{color:'#a0b0c0'}},
+    series:[{type:'pie',radius:['42%','66%'],center:['40%','52%'],data:(d.cat_pie||[]).map((x,i)=>({name:x.name,value:x.value,itemStyle:{color:C_COLORS[i%C_COLORS.length]}})),label:{color:'#cfd8e6'},labelLine:{lineStyle:{color:'rgba(255,255,255,.2)'}}}]});
+  ov3.on('click',p=>drillCat(p.name));
   renderTable($('ov-tab0'),(d.tables.material_drop||[]).slice(0,100),[['item_name','物料'],['spec','规格'],['dept','部门'],['req_no','申请单号'],['est','预估金额']],
     x=>'<tr><td>'+esc(x.item_name)+'</td><td>'+esc(x.spec||'-')+'</td><td>'+esc(x.dept||'-')+'</td><td>'+noLink(x.req_no)+'</td><td class="amt">'+fmtMoney(x.est)+'</td></tr>');
   renderTable($('ov-tab1'),(d.tables.supplier_save||[]),[['supplier','供应商'],['last_amt','上年采购额'],['this_amt','本年采购额'],['down','降幅'],['orders','订单数']],
