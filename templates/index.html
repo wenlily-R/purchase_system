@@ -353,7 +353,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
 </div>
 <div class="page" id="pprequests"><h2>📝 采购申请 <span style="font-size:10px;color:#999;font-weight:normal">(📦物资采购 / 🔧设备维修 统一入口)</span></h2>
   <div id="preqMat">
-    <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap"><button class="btn btn-p btn-sm" style="margin-left:auto" onclick="showForm('prequest')">+ 新建采购申请（物资/维修）</button><button class="btn btn-o btn-sm" onclick="showFlowChart('purchase')">📊 采购流程图示</button><button class="btn btn-w btn-sm" onclick="showAddCart()">🛒 加购下单(汇总已通过申请)</button><button class="btn btn-o btn-sm" style="color:#1f6feb;border-color:#9dc0f0" onclick="showRepairLedger()">🔧 维修记录</button></div>
+    <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap"><button class="btn btn-p btn-sm" style="margin-left:auto" onclick="showForm('prequest')">+ 新建采购申请（物资/维修）</button><button class="btn btn-o btn-sm" onclick="showFlowChart('purchase')">📊 采购流程图示</button><button class="btn btn-o btn-sm" style="color:#8a4b0f;border-color:#d9a05b" onclick="showFlowChart('repair')">🔧 维修流程图示</button><button class="btn btn-w btn-sm" onclick="showAddCart()">🛒 加购下单(汇总已通过申请)</button><button class="btn btn-o btn-sm" style="color:#1f6feb;border-color:#9dc0f0" onclick="showRepairLedger()">🔧 维修记录</button></div>
     <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap"><select id="reqTypeFilter" onchange="loadPRequests()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="" selected>全部类型</option><option value="物资采购">📦 物资采购</option><option value="设备维修">🔧 设备维修</option></select><select id="reqStatusFilter" onchange="loadPRequests()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="">全部状态</option><option>草稿</option><option>待审批</option><option>已通过</option><option>已下单</option><option>已驳回</option><option>已作废</option></select><select id="reqStageFilter" onchange="loadPRequests()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="">全部阶段</option><option>待厂家定损</option><option>已定损待询价</option><option>询价中</option><option>待定标</option><option>定标审批中</option><option>已委托</option><option>维修中</option><option>已完工</option><option>已作废</option></select><span style="font-size:9px;color:#999">类型/状态/阶段可叠加（阶段仅维修单有效）；🛠=维修 📦=物资</span></div>
     <div class="card"><div class="cb" id="prequestsTable"><div class="loading">加载中...</div></div></div>
   </div>
@@ -7269,29 +7269,30 @@ const FLOW_TREES={
   },
   repair:{
     head:[
-      {t:'① 使用部门提交报修单',d:'使用部门 / 提报人',r:'设备名称/编号/故障现象/发生时间/紧急度；草稿可改',j:"sw('repairs')"},
+      {t:'① 提交维修申请',d:'使用部门 / 提报人',r:'采购申请页 → 新建采购申请 选「设备维修」；设备名称+故障描述必填，维修项目/备件可先空、定损后再补录',j:"sw('prequests')"},
+      {t:'② 分管领导审批',d:'分管领导（1档全档）',r:'审批通过后送厂拆解定损',j:"apprCenter('repair');sw('approvals')"},
     ],
-    judge:{ic:'🔍',t:'② 技术定损判定',d:'机电 / 机修 / 生产负责人',r:'损坏原因定损（一级+二级标准分类）后三选一决定维修方式'},
+    judge:{ic:'🔍',t:'③ 送厂拆解定损 → 补录定损清单',d:'采购员 / 维修厂家',r:'详情点「📎 补充定损清单」录入维修项目/备件+估价（可传定损单照片）；系统自动比对原审批预估：定损合计超出 ≥200 元 且该单未走过询价 → 自动送【维修变更审批】给分管领导确认（走询价的单免，由定标审批把关最终价）'},
     cols:[
-      {lab:'A · 内部自修闭环',color:'#16a34a',nodes:[
-        {t:'定损审批（按金额分级）',d:'部门主管→机电厂长→生产厂长',r:'自修方案审批；驳回可重提',j:"apprCenter('repair');sw('approvals')"},
-        {t:'厂内维修执行',d:'机电车间',r:'按自修方案领料维修',j:"rpMenuStep('fix')"},
-        {t:'回厂性能验收',d:'使用部门 + 机电',r:'性能验收：通过→结算 / 不通过→返修',j:"rpMenuStep('accept')"},
-        {t:'费用结算归档',d:'财务 / 系统',r:'维修费用登记 → 单据归档',j:"rpMenuStep('invoice')"},
+      {lab:'A · 维修询价（走询价免变更审批）',color:'#1f6feb',nodes:[
+        {t:'发起维修询价（3-4家）',d:'采购员',r:'24 小时统一开标，商家看不到彼此报价',j:"sw('inquiries')"},
+        {t:'商家报价 / 到点开标比价',d:'商家',r:'含税单价+交期(天)+质保(月)；到点统一公开、比价选优',j:"sw('inquiries')"},
+        {t:'定标 + 定标审批',d:'采购员定标 → 分管领导审批',r:'领导确认最终价（此环节即金额把关）',j:"apprCenter('repair');sw('approvals')"},
+        {t:'生成维修委托订单',d:'系统',r:'维修订单不下发入库（维修件不进库存）',j:"sw('orders')"},
       ]},
-      {lab:'B · 委外维修',color:'#e67e22',nodes:[
-        {t:'定损审批（按金额分级）',d:'部门主管→机电厂长→生产厂长',r:'委外方案审批',j:"apprCenter('repair');sw('approvals')"},
-        {t:'服务商比价选商',d:'采购员 / 服务商',r:'多家报价（配件+工时+工期+质保）→选定→委托单WY',j:"rpMenuStep('quote')"},
-        {t:'发料委外 / 维修执行',d:'机电 / 服务商',r:'维修中变更需四方确认（费用才计入）· 永久留痕',j:"rpMenuStep('fix')"},
-        {t:'回厂联合性能验收',d:'使用部门 + 机电',r:'性能意见必填；不通过返修',j:"rpMenuStep('accept')"},
-        {t:'发票登记 / 费用结算',d:'财务 / 系统',r:'发票归档 → 单据关闭',j:"rpMenuStep('invoice')"},
+      {lab:'B · 小额直接委托（价格透明小修）',color:'#e67e22',nodes:[
+        {t:'登记委托（维修商 + 金额）',d:'采购员',r:'压高压胶管 / 打黄油 / 补胎补气等不走询价的透明维修',j:"sw('prequests')"},
+        {t:'直接委托审批',d:'分管领导',r:'提交后需领导审批确认，通过后才生效',j:"apprCenter('repair');sw('approvals')"},
       ]},
-      {lab:'C · 更换新设备',color:'#7c5cff',nodes:[
-        {t:'一键转物资采购申请',d:'机电 / 生产',r:'生成 SC 采购申请单，自动进入采购流程',j:"sw('prequests')"},
-        {t:'按物资采购流程继续',d:'采购员',r:'选型→订单→到货→发票→付款（见物资采购申请流程图）',j:"sw('prequests')"},
+      {lab:'C · 定损不可修 → 转物资采购',color:'#7c5cff',nodes:[
+        {t:'一键转物资采购申请',d:'采购员',r:'保留维修痕迹，转为物资采购走寻价比价',j:"sw('prequests')"},
+        {t:'按物资采购流程继续',d:'采购员',r:'选型→询价→订单→到货→入库→发票→付款（见物资采购流程图）',j:"sw('prequests')"},
       ]},
     ],
-    tail:[{t:'③ 单据关闭归档',d:'系统自动',r:'验收 + 发票完成后归档；历史可查（含变更记录）',j:"rpMenuStep('done')"}]
+    tail:[
+      {t:'④ 维修完工登记（必填实际结算金额）',d:'采购员',r:'详情点「✅ 登记完工」→ 完工日期 + 实际结算金额 + 维修结果；登记后本单闭环（维修件不进库存）',j:"sw('prequests')"},
+      {t:'⑤ 维修记录与金额对账',d:'系统 / 财务',r:'「🔧维修记录」台账（申请号/设备/阶段/预估/定损/实际/维修商）+ 报表中心「维修金额差异」（超支行标红、可导出）',j:"showRepairLedger()"},
+    ]
   }
 };
 // 树节点卡(圆点+卡+下引线); inModal=true 时点击先关弹窗再跳转
