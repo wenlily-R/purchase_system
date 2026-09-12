@@ -1186,6 +1186,41 @@ _BRAND_AI_CACHE = {}
 _BRAND_AI_CACHE_TTL = 86400  # 24小时
 _BRAND_AI_DOWN_UNTIL = 0
 
+def _repair_stage(conn, d):
+    """V11.284 维修阶段(列表标签/筛选/台账共用): 由已有字段推导, 不改状态机。
+    待厂家定损 → 已定损待询价 → 询价中 → 待定标 → 定标审批中 → 维修中 → 已完工"""
+    if (d.get('req_type') or '') != '设备维修':
+        return ''
+    _st = d.get('status') or ''
+    if _st in ('已作废', '已撤回'):
+        return '❌ ' + _st
+    if _st == '已驳回':
+        return '↩️ 已驳回'
+    if _st in ('草稿', '待审批'):
+        return '📝 ' + _st
+    if (d.get('repair_done_date') or ''):
+        return '✅ 已完工'
+    if (d.get('repair_entrust_type') or '') in ('direct', 'direct_pending'):
+        return '🤝 已委托维修商' if d.get('repair_entrust_type') == 'direct' else '⏳ 委托待审批'
+    _o = conn.execute("SELECT COUNT(*) FROM purchase_orders WHERE req_id=?", (d['id'],)).fetchone()[0]
+    if _o:
+        return '🔧 维修中'
+    _iq = conn.execute("SELECT status FROM inquiries WHERE req_id=? ORDER BY id DESC LIMIT 1", (d['id'],)).fetchone()
+    _is = (_iq['status'] if _iq else '') or ''
+    if _is == '定标审批中':
+        return '⏳ 定标审批中'
+    if _is == '待定标':
+        return '🔀 待定标'
+    if _is == '询价中':
+        return '📨 询价中'
+    if _is and _is not in ('已作废', '已撤回', '已驳回'):
+        return '📨 ' + _is
+    _n = conn.execute("SELECT COUNT(*) FROM request_items WHERE req_id=?", (d['id'],)).fetchone()[0]
+    if _n:
+        return '📋 已定损待询价'
+    return '🔍 待厂家定损'
+
+
 def _no_req_access():
     """V11.282b 采购申请类接口角色闸: 库管员不参与采购申请(前端菜单已隐藏, 接口同步拦截)"""
     return session.get('user_role') == '库管员'
@@ -5501,15 +5536,80 @@ def api_prequests():
                 d['progress'] = 'shipped'      # 黄: 已下单/在途
             else:
                 d['progress'] = 'contact'      # 红: 未联系厂家
-        # V11.265: 维修单"待定损引导"标记(列表状态列用): 已通过+未委托+无订单+无进行中询价+未完工+未转物资
+        # V11.265: 维修单"待定损引导"标记(列表状态列用) + V11.284: 维修阶段(标签/筛选)
         if (d.get('req_type') or '') == '设备维修':
             d['_inq_cnt'] = conn.execute("SELECT COUNT(*) FROM inquiries WHERE req_id=? AND status='询价中'", (d['id'],)).fetchone()[0]
             d['_ord_cnt'] = conn.execute("SELECT COUNT(*) FROM purchase_orders WHERE req_id=?", (d['id'],)).fetchone()[0]
+            d['repair_stage'] = _repair_stage(conn, d)
         else:
             d['_inq_cnt'] = 0; d['_ord_cnt'] = 0
+            d['repair_stage'] = ''
         out.append(d)
     conn.close()
     return jsonify(out)
+
+@app.route('/api/repair-ledger')
+@login_required
+def api_repair_ledger():
+    """V11.284 维修台账: 所有设备维修申请一览(阶段/预估/定损合计/实际/维修商/询价/订单/完工) — 供"维修记录"查询与导出"""
+    if _no_req_access():
+        return jsonify([])
+    role = session.get('user_role')
+    conn = db()
+    if role in ('员工', '部门负责人'):
+        rows = conn.execute("SELECT * FROM purchase_requests WHERE req_type='设备维修' AND requester_id=? ORDER BY id DESC LIMIT 500", (session.get('user_id', 0),)).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM purchase_requests WHERE req_type='设备维修' ORDER BY id DESC LIMIT 500").fetchall()
+    out = []
+    for r in rows:
+        d = dict_row(r)
+        _items = conn.execute("SELECT quantity,estimated_price FROM request_items WHERE req_id=? ORDER BY id", (r['id'],)).fetchall()
+        det = round(sum(float(x['quantity'] or 0) * float(x['estimated_price'] or 0) for x in _items), 2)
+        _iq = conn.execute("SELECT inq_no,status FROM inquiries WHERE req_id=? ORDER BY id DESC LIMIT 1", (r['id'],)).fetchone()
+        _od = conn.execute("SELECT order_no,status,total_amount,supplier FROM purchase_orders WHERE req_id=? ORDER BY id DESC LIMIT 1", (r['id'],)).fetchone()
+        out.append({'id': r['id'], 'req_no': d.get('req_no'), 'dept': d.get('dept'), 'requester': d.get('requester'),
+                    'device': d.get('repair_device') or '', 'fault': d.get('repair_fault') or '',
+                    'est_amt': round(float(d.get('total_estimated') or 0), 2), 'det_amt': det, 'item_cnt': len(_items),
+                    'real_amt': round(float(d.get('repair_amount') or 0), 2),
+                    'vendor': d.get('repair_vendor') or (_od['supplier'] if _od else ''),
+                    'inq_no': _iq['inq_no'] if _iq else '', 'inq_status': _iq['status'] if _iq else '',
+                    'order_no': _od['order_no'] if _od else '', 'order_amount': round(float(_od['total_amount'] or 0), 2) if _od else 0,
+                    'stage': _repair_stage(conn, d), 'done_date': d.get('repair_done_date') or '',
+                    'result': d.get('repair_result') or '', 'status': d.get('status') or '', 'created_at': (d.get('created_at') or '')[:19]})
+    conn.close()
+    return jsonify(out)
+
+
+@app.route('/api/repair-ledger/export')
+@login_required
+def api_repair_ledger_export():
+    """V11.284 维修台账导出 Excel"""
+    data = api_repair_ledger().get_json() or []
+    import io as _io, datetime as _dt
+    from flask import send_file
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+    wb = Workbook(); ws = wb.active; ws.title = '维修台账'
+    heads = ['申请号', '申请日期', '部门', '申请人', '设备', '故障/维修内容', '预估(元)', '定损合计(元)', '实际金额(元)', '维修商', '询价单', '维修阶段', '完工日期', '维修结果', '单据状态']
+    ws.append(heads)
+    for x in data:
+        ws.append([x.get('req_no'), (x.get('created_at') or '')[:10], x.get('dept'), x.get('requester'), x.get('device'), x.get('fault'),
+                   x.get('est_amt'), x.get('det_amt'), x.get('real_amt'), x.get('vendor'), x.get('inq_no'),
+                   x.get('stage'), x.get('done_date'), x.get('result'), x.get('status')])
+    _thin = Side(style='thin', color='CCCCCC'); _bd = Border(left=_thin, right=_thin, top=_thin, bottom=_thin)
+    for c in ws[1]:
+        c.font = Font(bold=True, size=10); c.fill = PatternFill('solid', fgColor='EEF4FF'); c.alignment = Alignment(horizontal='center'); c.border = _bd
+    for row in ws.iter_rows(min_row=2):
+        for c in row:
+            c.border = _bd; c.font = Font(size=10)
+            if c.column in (7, 8, 9):
+                c.number_format = '#,##0.00'
+    for i, w in enumerate([14, 11, 10, 10, 18, 26, 11, 12, 12, 20, 15, 16, 11, 26, 9], 1):
+        ws.column_dimensions[chr(64 + i) if i <= 26 else 'A'].width = w
+    buf = _io.BytesIO(); wb.save(buf); buf.seek(0)
+    return send_file(buf, as_attachment=True, download_name='维修台账_%s.xlsx' % _dt.datetime.now().strftime('%Y%m%d'),
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
 
 @app.route('/api/prequests/next_no')
 @login_required

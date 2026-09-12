@@ -353,8 +353,8 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
 </div>
 <div class="page" id="pprequests"><h2>📝 采购申请 <span style="font-size:10px;color:#999;font-weight:normal">(📦物资采购 / 🔧设备维修 统一入口)</span></h2>
   <div id="preqMat">
-    <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap"><button class="btn btn-p btn-sm" style="margin-left:auto" onclick="showForm('prequest')">+ 新建采购申请（物资/维修）</button><button class="btn btn-o btn-sm" onclick="showFlowChart('purchase')">📊 采购流程图示</button><button class="btn btn-w btn-sm" onclick="showAddCart()">🛒 加购下单(汇总已通过申请)</button></div>
-    <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap"><select id="reqTypeFilter" onchange="loadPRequests()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="" selected>全部类型</option><option value="物资采购">📦 物资采购</option><option value="设备维修">🔧 设备维修</option></select><select id="reqStatusFilter" onchange="loadPRequests()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="">全部状态</option><option>草稿</option><option>待审批</option><option>已通过</option><option>已下单</option><option>已驳回</option><option>已作废</option></select><span style="font-size:9px;color:#999">类型/状态筛选可叠加；🛠=维修 📦=物资</span></div>
+    <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap"><button class="btn btn-p btn-sm" style="margin-left:auto" onclick="showForm('prequest')">+ 新建采购申请（物资/维修）</button><button class="btn btn-o btn-sm" onclick="showFlowChart('purchase')">📊 采购流程图示</button><button class="btn btn-w btn-sm" onclick="showAddCart()">🛒 加购下单(汇总已通过申请)</button><button class="btn btn-o btn-sm" style="color:#1f6feb;border-color:#9dc0f0" onclick="showRepairLedger()">🔧 维修记录</button></div>
+    <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap"><select id="reqTypeFilter" onchange="loadPRequests()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="" selected>全部类型</option><option value="物资采购">📦 物资采购</option><option value="设备维修">🔧 设备维修</option></select><select id="reqStatusFilter" onchange="loadPRequests()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="">全部状态</option><option>草稿</option><option>待审批</option><option>已通过</option><option>已下单</option><option>已驳回</option><option>已作废</option></select><select id="reqStageFilter" onchange="loadPRequests()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="">全部阶段</option><option>待厂家定损</option><option>已定损待询价</option><option>询价中</option><option>待定标</option><option>定标审批中</option><option>已委托</option><option>维修中</option><option>已完工</option><option>已作废</option></select><span style="font-size:9px;color:#999">类型/状态/阶段可叠加（阶段仅维修单有效）；🛠=维修 📦=物资</span></div>
     <div class="card"><div class="cb" id="prequestsTable"><div class="loading">加载中...</div></div></div>
   </div>
 </div>
@@ -1536,8 +1536,10 @@ async function loadPRequests(){
   // V11.50: 类型筛选(物资采购/设备维修); V11.226c: 状态筛选(全部状态, 参考维修页)
   const fType=id('reqTypeFilter')?.value||'';
   const fStat=id('reqStatusFilter')?.value||'';
+  const fStage=id('reqStageFilter')?.value||'';  // V11.284: 维修阶段筛选
   let filtered=fType?r.filter(x=>(x.req_type||'物资采购')===fType):r;
   if(fStat)filtered=filtered.filter(x=>x.status===fStat);
+  if(fStage)filtered=filtered.filter(x=>((x.repair_stage||'').indexOf(fStage)>=0));
   // V11.48: 按申请日期分组展示(像"采购清单8月"按日期分sheet一样)
   // V11.154c: 日期标准化(2026-8-31 → 2026-08-31), 同一天不同格式不再分两个区块
   const groups={};
@@ -1566,7 +1568,8 @@ async function loadPRequests(){
         const _pendFix = (x.req_type=='设备维修'&&x.status=='已通过'&&!x.repair_done_date&&!x.repair_entrust_type&&!x.repair_converted&&!(x._ord_cnt>0)&&!(x._inq_cnt>0));
         return `<td><b>${esc(x.req_no)}</b>${x.urgent?' <span style="color:#e74c3c;font-weight:700">🚨加急</span>':''}</td><td>${esc(x.dept)}</td><td>${esc(x.purpose||'')}</td>
         <td>${tp}</td>
-        <td>${_pendFix?`<span class="tag" style="background:#fff3cd;color:#b7791f;cursor:pointer;border:1px solid #f0d9a0" onclick="showPRequest(${x.id})" title="领导已批准维修：送厂拆解定损后，在详情点【📎 补充定损清单】录入维修项目+估价 → 再发起维修询价">🔧 待厂家定损→详情补录</span>`:tag(x.status)}</td>
+        <td>${_pendFix?`<span class="tag" style="background:#fff3cd;color:#b7791f;cursor:pointer;border:1px solid #f0d9a0" onclick="showPRequest(${x.id})" title="领导已批准维修：送厂拆解定损后，在详情点【📎 补充定损清单】录入维修项目+估价 → 再发起维修询价">🔧 待厂家定损→详情补录</span>`
+          :((x.req_type=='设备维修'&&x.repair_stage)?`<span class="tag" style="background:#eef4ff;color:#1f6feb;border:1px solid #cfe0f5;cursor:pointer" onclick="showPRequest(${x.id})" title="维修阶段（点击查看详情：定损/询价/委托/完工）">${esc(x.repair_stage)}</span>`:tag(x.status))}</td>
         ${rejCell(x)}
         <td style="white-space:nowrap"><button class="lnk" onclick="showPRequest(${x.id})">详情</button>
         <button class="lnk" style="color:var(--s)" onclick="window.open('/api/prequests/${x.id}/download','_blank')">⬇️下载</button>
@@ -1577,6 +1580,26 @@ async function loadPRequests(){
       });
   });
   id('prequestsTable').innerHTML=html;
+}
+// V11.284: 维修记录台账 — 所有维修单一览(阶段/预估/定损/实际/维修商/完工), 可检索可导出
+async function showRepairLedger(){
+  const r=await api('/repair-ledger');
+  if(!r||!r.length){showDetail('🔧 维修记录','<div style="padding:10px;color:#999">暂无设备维修记录</div>','<button class="btn btn-o" onclick="closeMod()">关闭</button>');return}
+  let tot=0,done=0,est=0,real=0;
+  r.forEach(x=>{tot++;if(x.done_date)done++;est+=(x.est_amt||0);real+=(x.real_amt||0)});
+  const rows=r.map(x=>`<tr>
+    <td><b>${esc(x.req_no)}</b></td><td style="font-size:9px;color:#666">${esc((x.created_at||'').slice(0,10))}</td>
+    <td>${esc(x.device||'—')}</td><td style="font-size:9px;color:#666">${esc((x.fault||'').slice(0,20)||'—')}</td>
+    <td style="text-align:right">${(x.est_amt||0).toFixed(2)}</td>
+    <td style="text-align:right">${(x.det_amt||0).toFixed(2)}</td>
+    <td style="text-align:right;font-weight:700;color:${(x.real_amt||0)>0?'#c0392b':'#999'}">${(x.real_amt||0).toFixed(2)}</td>
+    <td>${esc(x.vendor||'—')}</td>
+    <td><span class="tag" style="background:#eef4ff;color:#1f6feb;border:1px solid #cfe0f5">${esc(x.stage||x.status||'')}</span></td>
+    <td style="font-size:9px;color:#666">${esc(x.done_date||'—')}</td>
+    <td><button class="lnk" onclick="closeMod();showPRequest(${x.id})">详情</button></td></tr>`).join('');
+  const hh=`<div style="font-size:10px;color:#555;margin-bottom:6px">共 <b>${tot}</b> 张维修单 ｜ 已完工 <b style="color:#16a34a">${done}</b> 张 ｜ 预估合计 ¥${est.toFixed(2)} ｜ 实际合计 <b style="color:#c0392b">¥${real.toFixed(2)}</b> <span style="color:#999">（按阶段筛选请用上方下拉；点单号/详情查看原单）</span></div>
+  <div style="overflow-x:auto;max-height:62vh;overflow-y:auto"><table class="tb" style="font-size:10px;min-width:1040px"><thead><tr><th>申请号</th><th>申请日期</th><th>设备</th><th>故障/内容</th><th>预估(元)</th><th>定损合计(元)</th><th>实际金额(元)</th><th>维修商</th><th>阶段</th><th>完工日期</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  showDetail('🔧 维修记录台账',hh,`<button class="btn btn-o" onclick="closeMod()">关闭</button><button class="btn btn-p btn-sm" onclick="window.open('/api/repair-ledger/export','_blank')">⬇️ 导出Excel</button>`);
 }
 // V11.154: 草稿提交审批 — 采购员检查后手动提交, 创建审批实例进入审批流
 async function submitPRequestDraft(id){
