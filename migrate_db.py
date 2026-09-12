@@ -68,10 +68,21 @@ def main():
             applied += 1
         except Exception as e:
             conn.rollback()
+            _msg = str(e).lower()
+            # V11.293d 修: 原实现在此 break → 一条历史非幂等迁移失败就让它后面的新迁移永远排不上队
+            # (2026-09-12 实测: 20260909_V11254 的 biz_no 已由 init_db 幂等补过 → "duplicate column name"
+            #  → 其后的 20260912 报价运费列等全部没应用 → 商家报价接口 500)。
+            # 现改为: "列/表已存在"=结构已生效 → 补记日志视为已应用; 其它错误也继续跑后续文件, 最后统一报错退出。
+            if 'duplicate column name' in _msg or 'already exists' in _msg:
+                print('[跳过]', name, '-> 结构已存在(视为已应用):', e)
+                conn.execute('INSERT OR IGNORE INTO migrations_log(name, applied_at) VALUES(?,?)', (name, ts))
+                conn.commit()
+                skipped += 1
+                continue
             print('[失败]', name, '->', e)
             print('      已回滚该文件, 备份在', os.path.basename(bak), '可手动恢复')
             failed += 1
-            break
+            continue
     conn.close()
 
     print('[3/3] 完成: 新执行 %d 个, 跳过 %d 个%s' % (applied, skipped, ', 失败 %d 个!' % failed if failed else ''))
