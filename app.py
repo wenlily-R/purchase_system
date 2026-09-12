@@ -30,6 +30,8 @@ def write_guard():
             if cfg_get('write_lock', '0') == '1':
                 return jsonify({'error': '系统已锁定：仅系统管理员可操作，如需操作请联系管理员'}), 403
     return None
+# 产品版本(展示用): 与构建号区分 —— /api/version 返回构建SHA, 本常量用于界面/文档/启动横幅
+APP_VERSION = 'V11.286'
 app.secret_key = 'zhengcheng-purchase-2026-secret-key'
 CORS(app, supports_credentials=True)
 
@@ -16832,9 +16834,10 @@ def api_health():
     except Exception:
         db_ok = False
     return jsonify({
+        'app_version': APP_VERSION,
         'status': 'ok' if db_ok else 'degraded',
         'system': '正成能源智慧采购系统',
-        'version': 'V5.1 专业加固版',
+        'version': APP_VERSION,
         'time': now(),
         'database': 'ok' if db_ok else 'error',
         'last_backup': last_backup_name(),
@@ -16854,7 +16857,7 @@ def api_settings():
     info = {k: cfg_get(k) for k in ('company_name', 'company_address', 'company_contact', 'company_phone')}
     info.update({
         'write_lock': cfg_get('write_lock', '1'),
-        'version': 'V5.1 专业加固版',
+        'version': APP_VERSION,
         'last_backup': last_backup_name(),
         'db_status': 'ok',
         'notice_publishers': cfg_get('notice_publishers', ''),  # V11.196 公告发布授权
@@ -17789,7 +17792,7 @@ if __name__ == '__main__':
     app.config['TEMPLATES_AUTO_RELOAD'] = True
     print(f"""
 ╔══════════════════════════════════════════════════╗
-║  正成能源采购系统 v9.0 (UI美化版)      ║
+║  正成能源采购系统 {APP_VERSION} (UI美化版)   ║
 ║  安全: PBKDF2密码加密 | 登录失败锁定 | CSRF防护  ║
 ║  启动: http://127.0.0.1:{port}                     ║
 ║  默认账号: admin / admin123                       ║
