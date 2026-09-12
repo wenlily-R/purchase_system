@@ -16984,7 +16984,7 @@ def api_dashboard_meta():
 _DASH_COLC = {}
 _DASH_STATUS_EX = {'purchase_requests': " AND status NOT IN ('草稿','已驳回','已作废','已撤销')",
                    'purchase_orders': " AND status NOT IN ('草稿','已驳回','已作废')",
-                   'inquiries': '', 'receivings': " AND status NOT IN ('草稿','已驳回','已作废','已撤回')",
+                   'inquiries': " AND status NOT IN ('草稿','已驳回','已作废','已撤销')", 'receivings': " AND status NOT IN ('草稿','已驳回','已作废','已撤回')",
                    'requisitions': " AND status NOT IN ('草稿','已驳回','已作废')",
                    'contracts': " AND status NOT IN ('已驳回','已作废')",
                    'payment_requests': " AND status NOT IN ('草稿','已驳回','已作废')",
