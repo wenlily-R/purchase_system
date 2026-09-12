@@ -11852,6 +11852,66 @@ def api_trace():
         _cid = row.get('contract_id') or row.get('credit_id')
         _oid = row.get('order_id')
         _rcv_no = row.get('receive_no') or ''
+        # V11.282 修复(ran): 上下游改为"按ID强关联"优先 —— 原实现只按 物料名/供应商 猜, 且 request 分支是 `pass` 空壳,
+        #   导致采购申请点溯源永远看不到自己的询价/订单/合同/入库(用户反馈"单号点进去显示不出来想要的东西")。
+        def _ddup(lst):
+            seen, _o = set(), []
+            for _x in lst:
+                _k = _x.get('id')
+                if _k in seen:
+                    continue
+                seen.add(_k); _o.append(_x)
+            return _o
+        try:
+            out['downstream'].setdefault('inquiries', [])
+            out['downstream'].setdefault('orders', [])
+            out['downstream'].setdefault('contracts', [])
+            _ph = lambda L: ','.join('?' * len(L))
+            if biz_type == 'request':
+                for t2 in c.execute("SELECT id,inq_no,purpose,status FROM inquiries WHERE req_id=? ORDER BY id LIMIT 20", (biz_id,)).fetchall():
+                    out['downstream']['inquiries'].append(dict(t2))
+                _ol = c.execute("SELECT id,order_no,item_name,supplier,total_amount,status FROM purchase_orders WHERE req_id=? ORDER BY id LIMIT 20", (biz_id,)).fetchall()
+                for t2 in _ol:
+                    out['downstream']['orders'].append(dict(t2))
+                _ids = [x['id'] for x in _ol]
+                if _ids:
+                    for t2 in c.execute("SELECT id,contract_no,contract_name,supplier,amount,status FROM contracts WHERE order_id IN (%s) ORDER BY id LIMIT 20" % _ph(_ids), _ids).fetchall():
+                        out['downstream']['contracts'].append(dict(t2))
+                    for t2 in c.execute("SELECT id,receive_no,item_name,quantity,status,received_at FROM receivings WHERE order_id IN (%s) ORDER BY id LIMIT 20" % _ph(_ids), _ids).fetchall():
+                        out['downstream']['receivings'].append(dict(t2))
+                    for t2 in c.execute("SELECT ri.id,rq.req_no,ri.item_name,ri.quantity,ri.trace_no FROM requisition_items ri JOIN requisitions rq ON rq.id=ri.requisition_id WHERE ri.trace_no IN (SELECT order_no FROM purchase_orders WHERE id IN (%s)) LIMIT 20" % _ph(_ids), _ids).fetchall():
+                        out['downstream']['requisitions'].append(dict(t2))
+            elif biz_type == 'order':
+                if row.get('req_id'):
+                    for t2 in c.execute("SELECT id,req_no,purpose,dept,requester,status FROM purchase_requests WHERE id=? LIMIT 1", (row['req_id'],)).fetchall():
+                        out['upstream']['requests'].append(dict(t2))
+                if row.get('inquiry_id'):
+                    for t2 in c.execute("SELECT id,inq_no,purpose,status FROM inquiries WHERE id=? LIMIT 1", (row['inquiry_id'],)).fetchall():
+                        out['upstream']['inquiries'].append(dict(t2))
+                for t2 in c.execute("SELECT id,contract_no,contract_name,supplier,amount,status FROM contracts WHERE order_id=? ORDER BY id LIMIT 20", (biz_id,)).fetchall():
+                    out['downstream']['contracts'].append(dict(t2))
+                for t2 in c.execute("SELECT id,receive_no,item_name,quantity,status,received_at FROM receivings WHERE order_id=? ORDER BY id LIMIT 20", (biz_id,)).fetchall():
+                    out['downstream']['receivings'].append(dict(t2))
+            elif biz_type == 'contract' and row.get('order_id'):
+                for t2 in c.execute("SELECT id,order_no,item_name,supplier,total_amount,status FROM purchase_orders WHERE id=? LIMIT 1", (row['order_id'],)).fetchall():
+                    out['upstream']['orders'].append(dict(t2))
+                _pr = c.execute("SELECT p.id,p.req_no,p.purpose,p.status FROM purchase_orders o JOIN purchase_requests p ON p.id=o.req_id WHERE o.id=? LIMIT 1", (row['order_id'],)).fetchone()
+                if _pr:
+                    out['upstream']['requests'].append(dict(_pr))
+                for t2 in c.execute("SELECT id,receive_no,item_name,quantity,status FROM receivings WHERE contract_id=? OR (contract_no<>'' AND contract_no=?) LIMIT 20", (biz_id, row.get('contract_no') or '')).fetchall():
+                    out['downstream']['receivings'].append(dict(t2))
+            elif biz_type == 'receiving' and row.get('order_id'):
+                for t2 in c.execute("SELECT id,order_no,supplier,total_amount,status FROM purchase_orders WHERE id=? LIMIT 1", (row['order_id'],)).fetchall():
+                    out['upstream']['orders'].append(dict(t2))
+            elif biz_type == 'requisition':
+                for t2 in c.execute("SELECT o.id,o.order_no,o.item_name,o.supplier,o.total_amount,o.status FROM requisition_items ri JOIN purchase_orders o ON o.order_no=ri.trace_no WHERE ri.requisition_id=? LIMIT 20", (biz_id,)).fetchall():
+                    out['upstream']['orders'].append(dict(t2))
+            for _k in ('requests', 'inquiries', 'orders', 'contracts'):
+                out['upstream'][_k] = _ddup(out['upstream'][_k])
+            for _k in ('inquiries', 'orders', 'contracts', 'receivings', 'requisitions'):
+                out['downstream'][_k] = _ddup(out['downstream'][_k])
+        except Exception:
+            pass
         # 申请(同一物料名/单号引用)
         if _item:
             for t2 in c.execute("SELECT id,req_no,purpose,status FROM purchase_requests WHERE id IN (SELECT req_id FROM request_items WHERE item_name=? OR spec=?) OR purpose LIKE ? LIMIT 5", (_item, _item, f'%{_item}%')).fetchall():
@@ -17193,6 +17253,11 @@ def api_dashboard_doc():
             _sn = _node('本单', (row or {}))
             if _sn and _sn['no'] and not any(x['no'] == _sn['no'] for x in chain):
                 chain.append(_sn)
+            for _st, _k in (('采购订单', 'orders'), ('采购合同', 'contracts'), ('三方询价', 'inquiries')):
+                for x in (_dn.get(_k) or []):
+                    _n = _node(_st, x)
+                    if _n and _n['no'] and not any(y['no'] == _n['no'] for y in chain):
+                        chain.append(_n)
             for _st, _k in (('入库单', 'receivings'), ('出库领用', 'requisitions'), ('退库单', 'returns'), ('发票', 'invoices'), ('付款单', 'payments'), ('维修工单', 'repairs')):
                 for x in (_dn.get(_k) or []):
                     _n = _node(_st, x)
