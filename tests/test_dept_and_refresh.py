@@ -11,7 +11,7 @@
 跑法: .venv/Scripts/python.exe tests/test_dept_and_refresh.py   (Mac: python3 tests/test_dept_and_refresh.py)
 全程 tempfile 副本库, 真实库零写入。
 """
-import os, re, sys, json, shutil, sqlite3, subprocess, tempfile
+import os, io, re, sys, json, hashlib, shutil, sqlite3, subprocess, tempfile, contextlib
 
 for _s in (sys.stdout, sys.stderr):
     try:
@@ -52,13 +52,18 @@ def main():
     ck('check_code 0错误0警告', r.returncode == 0 and '0 错误, 0 警告' in (r.stdout or ''))
 
     print('[2] 部门: 空库首跑 + 幂等补种')
+    tpl = os.path.join(BASE, 'uploads', 'tpl_default.docx')
+    tpl_h = hashlib.sha256(open(tpl, 'rb').read()).hexdigest() if os.path.exists(tpl) else ''
     empty = os.path.join(tmp, 'empty.db')
     A.DB = empty
     crashed = None
+    _buf = io.StringIO()
     try:
-        A.init_db()
+        with contextlib.redirect_stdout(_buf), contextlib.redirect_stderr(_buf):
+            A.init_db()
     except Exception as e:
         crashed = e
+    r_stdout = _buf.getvalue()
     ck('空库 init_db 不再崩溃(原 contract_invoices 补列早于建表)', crashed is None, crashed)
     c = sqlite3.connect(empty)
     names = [x[0] for x in c.execute("SELECT name FROM departments").fetchall()]
@@ -66,7 +71,11 @@ def main():
     ck('8个新增部门 + 工程部/信息部 均入库', all(d in names for d in NEW8 + ['工程部', '信息部']), names)
     cols = [x[1] for x in c.execute("PRAGMA table_info(contract_invoices)").fetchall()]
     ck('contract_invoices.node_id 已补列', 'node_id' in cols, cols)
+    ck('空库 init_db 不再有 "no such table" 告警(两块已挪到建表之后)',
+       'no such table' not in (r_stdout or ''), r_stdout[-160:] if r_stdout else '')
     c.close()
+    ck('init_db 未重写内置模板(仓库 uploads/ 不再被改脏)',
+       hashlib.sha256(open(tpl, 'rb').read()).hexdigest() == tpl_h, hashlib.sha256(open(tpl, 'rb').read()).hexdigest()[:16])
 
     copy = os.path.join(tmp, 'live.db')
     shutil.copy(LIVE, copy)

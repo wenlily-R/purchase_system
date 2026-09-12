@@ -569,7 +569,11 @@ def init_db():
             doc.add_paragraph('合计金额：{合计金额}')
             doc.add_paragraph('本协议一式两份，甲乙双方各执一份，签字盖章后生效。')
             os.makedirs(os.path.join(BASE, 'uploads'), exist_ok=True)
-            doc.save(os.path.join(BASE, 'uploads', 'tpl_default.docx'))
+            # V11.294c: 只在缺失时落盘 — 原实现每次 init_db(含测试/副本库、每次重启)都重写此文件,
+            # 会把仓库里的模板文件改脏(docx=zip, 时间戳不同 → 字节不同), 也可能覆盖管理员替换过的默认模板
+            _tpl_path = os.path.join(BASE, 'uploads', 'tpl_default.docx')
+            if not os.path.exists(_tpl_path):
+                doc.save(_tpl_path)
             conn.execute("INSERT INTO contract_templates(name,file_path,version,status,is_default,remark) VALUES('标准采购合同模板','tpl_default.docx','V1','启用',1,'系统内置默认模板, 可上传替换')")
         except Exception as e:
             print('内置模板生成失败:', e)
@@ -844,48 +848,6 @@ def init_db():
     _iqcols = [r[1] for r in conn.execute("PRAGMA table_info(inquiries)").fetchall()]
     if 'access_unlocked' not in _iqcols:
         conn.execute("ALTER TABLE inquiries ADD COLUMN access_unlocked INTEGER DEFAULT 0")
-    # V11.265 订单头数量=明细合计 一致性维护: 历史一次纠偏 + 触发器防再错
-    # (定标/自动下单路径曾把 header quantity 写死为1, 与 order_items 明细不一致 → 头部数量显示错误/卡点误判)
-    # V11.272 修复(ran): ①触发器先建(原顺序下 UPDATE 一遇并发锁即抛错 → 触发器从未创建, 线上实测 0 个) ②整块重试3次+busy_timeout
-    for _try265 in range(3):
-      try:
-        conn.execute("PRAGMA busy_timeout=30000")
-        for _tg in ('trg_po_qty_i', 'trg_po_qty_u', 'trg_po_qty_d'):
-            conn.execute(f"DROP TRIGGER IF EXISTS {_tg}")
-        conn.execute("CREATE TRIGGER trg_po_qty_i AFTER INSERT ON order_items BEGIN UPDATE purchase_orders SET quantity=COALESCE((SELECT SUM(quantity) FROM order_items WHERE order_id=NEW.order_id),0) WHERE id=NEW.order_id; END")
-        conn.execute("CREATE TRIGGER trg_po_qty_u AFTER UPDATE ON order_items BEGIN UPDATE purchase_orders SET quantity=COALESCE((SELECT SUM(quantity) FROM order_items WHERE order_id=NEW.order_id),0) WHERE id=NEW.order_id; END")
-        conn.execute("CREATE TRIGGER trg_po_qty_d AFTER DELETE ON order_items BEGIN UPDATE purchase_orders SET quantity=COALESCE((SELECT SUM(quantity) FROM order_items WHERE order_id=OLD.order_id),0) WHERE id=OLD.order_id; END")
-        conn.commit()
-        _fix = conn.execute("""UPDATE purchase_orders SET quantity=COALESCE((SELECT SUM(quantity) FROM order_items WHERE order_id=purchase_orders.id), quantity)
-            WHERE EXISTS (SELECT 1 FROM order_items WHERE order_id=purchase_orders.id)""").rowcount
-        conn.commit()
-        if _fix:
-            log('系统', '订单数量一致性修复', f'订单头部数量与明细不符, 已按明细合计修正 {_fix} 单')
-        break
-      except Exception as _e:
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-        if _try265 >= 2:
-            print('V11.265 订单数量一致性维护失败:', _e)
-        else:
-            time.sleep(1.5)
-    # ---- V11.272 公共列补齐: 通用审批/驳回/撤回/编辑链路依赖的公共列(付款等精简表缺列曾致审批 500)
-    for _t, _cs in (('payment_requests', (('updated_at', "TEXT DEFAULT ''"), ('reject_count', 'INTEGER DEFAULT 0'),
-                                          ('rejected_items', "TEXT DEFAULT ''"), ('last_edit_by', "TEXT DEFAULT ''"),
-                                          ('last_edit_at', "TEXT DEFAULT ''"))),
-                    ('credit_notes', (('reject_count', 'INTEGER DEFAULT 0'), ('rejected_items', "TEXT DEFAULT ''"),
-                                      ('last_edit_by', "TEXT DEFAULT ''"), ('last_edit_at', "TEXT DEFAULT ''"))),
-                    ('expenses', (('updated_at', "TEXT DEFAULT ''"),))):
-        try:
-            _have = {r[1] for r in conn.execute(f"PRAGMA table_info({_t})").fetchall()}
-            for _cn, _cd in _cs:
-                if _cn not in _have:
-                    conn.execute(f"ALTER TABLE {_t} ADD COLUMN {_cn} {_cd}")
-            conn.commit()
-        except Exception as _e272:
-            print('V11.272 公共列补齐失败', _t, _e272)
     # ---- V11.206 集体验收: 标记是否需集体验收 + 验收状态(空=常规, 1=需集体验收; collect_status: 空/待集体验收/已集体验收) ----
     if 'collect_accept' not in _rcvcols:
         conn.execute("ALTER TABLE receivings ADD COLUMN collect_accept INTEGER DEFAULT 0")
@@ -1186,6 +1148,50 @@ def init_db():
                      ('绿化部', 'LHB'), ('人事部', 'RSB'), ('厨房', 'CF'), ('生产车队', 'SCC'),
                      ('工程部', 'GC'), ('信息部', 'XX')):
         conn.execute("INSERT OR IGNORE INTO departments(name,code) VALUES(?,?)", (_dn, _dc))
+    # V11.294c 修: 这两块原本排在 init_db 中段, 但它们依赖的 order_items / expenses 表在后面才 CREATE
+    #  → 空库首跑会打印 "no such table" 告警(与 contract_invoices 同因, 已在 V11.293 修过一处); 统一挪到所有建表之后
+    # V11.265 订单头数量=明细合计 一致性维护: 历史一次纠偏 + 触发器防再错
+    # (定标/自动下单路径曾把 header quantity 写死为1, 与 order_items 明细不一致 → 头部数量显示错误/卡点误判)
+    # V11.272 修复(ran): ①触发器先建(原顺序下 UPDATE 一遇并发锁即抛错 → 触发器从未创建, 线上实测 0 个) ②整块重试3次+busy_timeout
+    for _try265 in range(3):
+      try:
+        conn.execute("PRAGMA busy_timeout=30000")
+        for _tg in ('trg_po_qty_i', 'trg_po_qty_u', 'trg_po_qty_d'):
+            conn.execute(f"DROP TRIGGER IF EXISTS {_tg}")
+        conn.execute("CREATE TRIGGER trg_po_qty_i AFTER INSERT ON order_items BEGIN UPDATE purchase_orders SET quantity=COALESCE((SELECT SUM(quantity) FROM order_items WHERE order_id=NEW.order_id),0) WHERE id=NEW.order_id; END")
+        conn.execute("CREATE TRIGGER trg_po_qty_u AFTER UPDATE ON order_items BEGIN UPDATE purchase_orders SET quantity=COALESCE((SELECT SUM(quantity) FROM order_items WHERE order_id=NEW.order_id),0) WHERE id=NEW.order_id; END")
+        conn.execute("CREATE TRIGGER trg_po_qty_d AFTER DELETE ON order_items BEGIN UPDATE purchase_orders SET quantity=COALESCE((SELECT SUM(quantity) FROM order_items WHERE order_id=OLD.order_id),0) WHERE id=OLD.order_id; END")
+        conn.commit()
+        _fix = conn.execute("""UPDATE purchase_orders SET quantity=COALESCE((SELECT SUM(quantity) FROM order_items WHERE order_id=purchase_orders.id), quantity)
+            WHERE EXISTS (SELECT 1 FROM order_items WHERE order_id=purchase_orders.id)""").rowcount
+        conn.commit()
+        if _fix:
+            log('系统', '订单数量一致性修复', f'订单头部数量与明细不符, 已按明细合计修正 {_fix} 单')
+        break
+      except Exception as _e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        if _try265 >= 2:
+            print('V11.265 订单数量一致性维护失败:', _e)
+        else:
+            time.sleep(1.5)
+    # ---- V11.272 公共列补齐: 通用审批/驳回/撤回/编辑链路依赖的公共列(付款等精简表缺列曾致审批 500)
+    for _t, _cs in (('payment_requests', (('updated_at', "TEXT DEFAULT ''"), ('reject_count', 'INTEGER DEFAULT 0'),
+                                          ('rejected_items', "TEXT DEFAULT ''"), ('last_edit_by', "TEXT DEFAULT ''"),
+                                          ('last_edit_at', "TEXT DEFAULT ''"))),
+                    ('credit_notes', (('reject_count', 'INTEGER DEFAULT 0'), ('rejected_items', "TEXT DEFAULT ''"),
+                                      ('last_edit_by', "TEXT DEFAULT ''"), ('last_edit_at', "TEXT DEFAULT ''"))),
+                    ('expenses', (('updated_at', "TEXT DEFAULT ''"),))):
+        try:
+            _have = {r[1] for r in conn.execute(f"PRAGMA table_info({_t})").fetchall()}
+            for _cn, _cd in _cs:
+                if _cn not in _have:
+                    conn.execute(f"ALTER TABLE {_t} ADD COLUMN {_cn} {_cd}")
+            conn.commit()
+        except Exception as _e272:
+            print('V11.272 公共列补齐失败', _t, _e272)
     conn.commit(); conn.close()
 
 # ============================================================
