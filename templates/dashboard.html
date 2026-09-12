@@ -85,6 +85,11 @@ body.zen .body{padding-top:6px}
 .fchip{border:1px solid rgba(0,212,255,.35);background:rgba(0,212,255,.08);color:#bfe9ff;border-radius:10px;padding:1px 9px}
 .fchip.off{border-color:var(--bd);background:transparent;color:#8fa3b8}
 .fchips .hint{color:#6d8296;margin-left:auto}
+/* V11.281 单据详情弹窗 */
+.dsec{font-weight:600;color:#bfe9ff;margin:12px 0 4px;border-left:3px solid var(--acc,#00d4ff);padding-left:7px;font-size:13px}
+.dt{color:#8fa3b8;font-size:11.5px;margin-bottom:6px}
+#dlgB table.tbl{margin-bottom:4px}
+#dlgB table.tbl th{position:static}
 </style>
 </head>
 <body>
@@ -236,7 +241,35 @@ function arrow(cmp){if(cmp===null||cmp===undefined)return '<b class="flat">—</
 function cardHtml(c,i){const cls=['','c2','c3','c4','c5','c6'][i%6];return '<div class="card '+cls+'"><div class="k">'+esc(c.k)+'</div><div class="v">'+fmtW(c.v)+'<i>'+esc(c.unit||'')+'</i></div><div class="cmp">'+esc(c.cmp_label||'')+' '+(c.cmp!==undefined?arrow(c.cmp):'<b class="flat">—</b>')+'</div></div>'}
 function esc(s){return String(s===undefined||s===null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 function noLink(v){return '<span class="no" onclick="openDoc(\''+esc(v).replace(/'/g,'')+'\')">'+esc(v)+'</span>'}
-function openDoc(no){toast('单据 '+no+' → 已在主系统打开，可搜索该单号查看详情');window.open('/','_blank')}
+async function openDoc(no){
+  openDlg('单据详情 · '+esc(no),'<div class="tt">加载中…</div>');
+  try{
+    const d=await api('/api/dashboard/doc?no='+encodeURIComponent(no));
+    if(d.error||d.matched===undefined){$('dlgB').innerHTML='<div class="tt">'+esc((d&&d.error)||'未找到该单号')+'</div>';return}
+    let h='<div class="dt">单据类型：'+esc(d.matched)+'　单号：'+esc(d.no)+'</div>';
+    h+='<div class="dsec">基本信息</div><table class="tbl"><tbody>'+
+       (d.header||[]).map(r=>'<tr><th style="width:120px">'+esc(r[0])+'</th><td>'+esc((r[1]===null||r[1]==='')?'-':r[1])+'</td></tr>').join('')+'</tbody></table>';
+    if((d.items||[]).length){
+      const cols=Object.keys(d.items[0]);
+      h+='<div class="dsec">明细（'+d.items.length+' 行）</div><table class="tbl"><thead><tr>'+cols.map(c=>'<th>'+esc(c)+'</th>').join('')+'</tr></thead><tbody>'+
+         d.items.map(r=>'<tr>'+cols.map(c=>'<td>'+esc(r[c]===null?'':r[c])+'</td>').join('')+'</tr>').join('')+'</tbody></table>';}
+    if((d.chain||[]).length){
+      h+='<div class="dsec">流转链路（'+d.chain.length+' 环）</div><table class="tbl"><thead><tr><th>环节</th><th>单号</th><th>状态</th><th>金额</th><th>时间</th></tr></thead><tbody>'+
+         d.chain.map(x=>'<tr><td>'+esc(x.stage)+'</td><td>'+(x.no?noLink(x.no):'-')+'</td><td>'+esc(x.status||'-')+'</td><td class="amt">'+(x.amt===null||x.amt===undefined||x.amt===''?'-':fmtMoney(x.amt))+'</td><td>'+esc((x.time||'').slice(0,16))+'</td></tr>').join('')+'</tbody></table>';}
+    else h+='<div class="dsec">流转链路</div><div class="tt">该单据暂无上下游关联记录</div>';
+    if((d.approvals||[]).length){
+      const ac=Object.keys(d.approvals[0]);
+      h+='<div class="dsec">审批记录（'+d.approvals.length+' 级）</div><table class="tbl"><thead><tr>'+ac.map(c=>'<th>'+esc(c)+'</th>').join('')+'</tr></thead><tbody>'+
+         d.approvals.map(r=>'<tr>'+ac.map(c=>'<td>'+esc(r[c]===null?'':r[c])+'</td>').join('')+'</tr>').join('')+'</tbody></table>';}
+    if((d.timeline||[]).length){
+      h+='<div class="dsec">流转时间线（'+d.timeline.length+' 条）</div><table class="tbl"><thead><tr><th style="width:150px">时间</th><th>事件</th></tr></thead><tbody>'+
+         d.timeline.map(x=>'<tr><td>'+esc((x.t||'').slice(0,16))+'</td><td>'+esc(x.event||'')+'</td></tr>').join('')+'</tbody></table>';}
+    if((d.logs||[]).length){
+      h+='<div class="dsec">操作日志（'+d.logs.length+' 条）</div><table class="tbl"><thead><tr><th>操作人</th><th>操作</th><th>变更前</th><th>变更后</th><th>说明</th><th>时间</th></tr></thead><tbody>'+
+         d.logs.map(r=>'<tr><td>'+esc(r['操作人'])+'</td><td>'+esc(r['操作'])+'</td><td>'+esc(r['变更前']||'')+'</td><td>'+esc(r['变更后']||'')+'</td><td>'+esc(r['说明'])+'</td><td>'+esc((r['时间']||'').slice(0,16))+'</td></tr>').join('')+'</tbody></table>';}
+    $('dlgB').innerHTML=h;
+  }catch(e){$('dlgB').innerHTML='<div class="tt">单据详情加载失败，请刷新后重试</div>'}
+}
 function renderTable(el,rows,cols,fn){if(!rows||!rows.length){el.innerHTML='<div class="tt">暂无数据</div>';return}
   el.innerHTML='<table class="tbl"><thead><tr>'+cols.map(c=>'<th>'+c[1]+'</th>').join('')+'</tr></thead><tbody>'+rows.map(fn).join('')+'</tbody></table>'}
 /* ---- 筛选 / 元数据 ---- */

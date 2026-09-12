@@ -17082,6 +17082,153 @@ def api_dashboard_drill():
     return jsonify({'title': title, 'rows': rows})
 
 
+_DOC_HDR = {
+    'purchase_requests': [('req_no', '申请单号'), ('biz_no', '主业务号'), ('dept', '部门'), ('requester', '申请人'), ('category', '类别'),
+                          ('purpose', '用途'), ('total_estimated', '预估金额'), ('urgent', '是否紧急'), ('status', '状态'), ('created_at', '创建时间')],
+    'purchase_orders': [('order_no', '订单号'), ('supplier', '供应商'), ('category', '类别'), ('item_name', '物资'), ('spec', '规格'), ('unit', '单位'),
+                        ('quantity', '数量'), ('price', '单价(不含税)'), ('amount', '金额(不含税)'), ('tax_rate', '税率(%)'), ('tax_amount', '税额'),
+                        ('total_amount', '价税合计'), ('trade_mode', '贸易方式'), ('target_date', '要求到货'), ('urgent', '是否紧急'),
+                        ('status', '状态'), ('created_at', '创建时间')],
+    'inquiries': [('inq_no', '询价单号'), ('title', '标题'), ('purpose', '用途'), ('status', '状态'), ('created_at', '创建时间')],
+    'contracts': [('contract_no', '合同号'), ('contract_name', '合同名称'), ('supplier', '供应商'), ('amount', '合同金额'), ('sign_date', '签订日期'),
+                  ('invoice_clause', '发票条款'), ('inv_collect_status', '收票状态'), ('status', '状态'), ('created_at', '创建时间')],
+    'receivings': [('receive_no', '入库单号'), ('batch_no', '批次'), ('item_name', '物资'), ('spec', '规格'), ('quantity', '数量'), ('unit', '单位'),
+                   ('warehouse', '仓库'), ('is_est', '是否暂估'), ('est_amount', '暂估金额'), ('invoice_no', '发票号'), ('invoice_amount', '发票金额'),
+                   ('tax_rate', '税率(%)'), ('status', '状态'), ('received_at', '收货时间')],
+    'requisitions': [('req_no', '出库单号'), ('receiver', '领用人'), ('dept', '部门'), ('receive_dept', '领用部门'), ('status', '状态'), ('created_at', '创建时间')],
+    'invoices': [('invoice_no', '发票号'), ('supplier', '供应商'), ('amount', '开票金额'), ('tax_rate', '税率(%)'), ('tax_amount', '税额'),
+                 ('invoice_date', '开票日期'), ('status', '状态')],
+    'payment_requests': [('payment_no', '付款单号'), ('supplier', '供应商'), ('amount', '付款金额'), ('payment_type', '付款方式'),
+                         ('payment_reason', '付款事由'), ('status', '状态'), ('paid_at', '付款时间'), ('created_at', '申请时间')],
+    'repair_plans': [('plan_no', '维修工单号'), ('device_name', '设备'), ('fault_desc', '故障描述'), ('dept', '部门'), ('requester', '报修人'),
+                     ('repair_type', '维修方式'), ('repair_company', '维修厂家'), ('est_cost', '预估费用'), ('quote_total', '报价合计'),
+                     ('invoice_amount', '发票金额'), ('status', '状态'), ('created_at', '报修时间'), ('actual_finish', '完工时间')],
+    'credit_notes': [('credit_no', '挂账单号'), ('supplier', '供应商'), ('amount', '挂账金额'), ('reason', '挂账原因'), ('status', '状态'), ('created_at', '创建时间')],
+    'expenses': [('expense_no', '费用单号'), ('category', '费用类别'), ('amount', '金额'), ('dept', '部门'), ('remark', '说明'), ('status', '状态'), ('created_at', '创建时间')],
+}
+_DOC_TABLES = [('purchase_requests', 'req_no'), ('purchase_orders', 'order_no'), ('inquiries', 'inq_no'), ('contracts', 'contract_no'),
+               ('receivings', 'receive_no'), ('requisitions', 'req_no'), ('invoices', 'invoice_no'), ('payment_requests', 'payment_no'),
+               ('repair_plans', 'plan_no'), ('credit_notes', 'credit_no'), ('expenses', 'expense_no')]
+_DOC_BIZ = {'purchase_requests': 'purchase_request', 'purchase_orders': 'purchase_order', 'receivings': 'receiving',
+            'contracts': 'contract', 'payment_requests': 'payment', 'credit_notes': 'credit', 'requisitions': 'requisition',
+            'return_requests': 'return_request'}
+_DOC_MONEY = ('amount', 'total_amount', 'total_estimated', 'est_cost', 'quote_total', 'invoice_amount', 'est_amount', 'add_price', 'total_price', 'price', 'estimated_price')
+
+
+@app.route('/api/dashboard/doc')
+@login_required
+def api_dashboard_doc():
+    """V11.281 单据详情(看板单号点击): 基本信息 + 明细 + 流转链路 + 审批记录 + 操作日志。
+    原实现 openDoc() 只弹一句 toast 再打开系统首页 —— 用户点单号"显示不出想要的东西"。"""
+    no = (request.args.get('no') or '').strip()
+    if not no:
+        return jsonify({'error': '缺少单号'}), 400
+    c = db()
+    tbl, col = None, None
+    for _t, _cc in _DOC_TABLES:
+        try:
+            if c.execute("SELECT 1 FROM %s WHERE %s=? LIMIT 1" % (_t, _cc), (no,)).fetchone():
+                tbl, col = _t, _cc
+                break
+        except Exception:
+            continue
+    if tbl is None:
+        c.close()
+        return jsonify({'error': '未找到单号 %s（可能已删除或编号有误）' % no}), 404
+    row = dict(c.execute("SELECT * FROM %s WHERE %s=? ORDER BY id DESC LIMIT 1" % (tbl, col), (no,)).fetchone())
+    cols = _dcol(tbl)
+    header = [[lbl, (('¥%.2f' % float(row[c_])) if (c_ in _DOC_MONEY and row.get(c_) not in (None, '')) else row.get(c_))]
+              for c_, lbl in _DOC_HDR.get(tbl, []) if c_ in cols]
+    # 明细
+    items = []
+    try:
+        if tbl == 'purchase_orders':
+            items = _dash_rows(c, "SELECT item_name 物资, spec 规格, unit 单位, quantity 数量, price 单价, tax_rate 税率, total_amount 价税合计 FROM order_items WHERE order_id=?", (row['id'],))
+        elif tbl == 'purchase_requests':
+            items = _dash_rows(c, "SELECT item_name 物资, spec 规格, unit 单位, quantity 数量, estimated_price 预估单价, total_price 预估小计, category 类别 FROM request_items WHERE req_id=?", (row['id'],))
+        elif tbl == 'receivings' and row.get('items_json'):
+            import json as _j
+            for x in (_j.loads(row['items_json']) or []):
+                items.append({k: x.get(k) for k in ('item_name', 'spec', 'unit', 'quantity', 'batch_no') if k in x})
+    except Exception:
+        items = items or []
+    # 流转链路/时间线/操作日志(复用系统既有溯源引擎 /api/trace, 保证与主系统一个口径)
+    chain, timeline, tr_logs = [], [], []
+    _NO_KEYS = ('order_no', 'req_no', 'inq_no', 'contract_no', 'receive_no', 'return_no', 'invoice_no', 'payment_no', 'plan_no', 'credit_no', 'settlement_no', 'doc_no')
+    _AMT_KEYS = ('total_amount', 'amount', 'total_estimated', 'est_amount', 'quote_total', 'invoice_amount', 'est_cost', 'add_price')
+    _TIME_KEYS = ('created_at', 'sign_date', 'received_at', 'invoice_date', 'paid_at', 'processed_at')
+
+    def _node(stage, row):
+        if not row:
+            return None
+        no, amt, tm = '', None, ''
+        for k in _NO_KEYS:
+            if row.get(k):
+                no = row[k]; break
+        for k in _AMT_KEYS:
+            if row.get(k) not in (None, ''):
+                amt = row[k]; break
+        for k in _TIME_KEYS:
+            if row.get(k):
+                tm = row[k]; break
+        return {'stage': stage, 'no': no, 'status': row.get('status') or '', 'amt': amt, 'time': tm}
+
+    try:
+        _biz = {'purchase_requests': 'request', 'purchase_orders': 'order', 'contracts': 'contract', 'receivings': 'receiving',
+                'requisitions': 'requisition', 'return_requests': 'return_request', 'payment_requests': 'payment',
+                'credit_notes': 'credit', 'invoices': 'invoice', 'repair_plans': 'repair'}.get(tbl)
+        if _biz:
+            with app.test_request_context('/api/trace?t=%s&id=%s' % (_biz, row['id'])):
+                session['user_id'] = session.get('user_id') or 1
+                session['user_name'] = session.get('user_name') or '看板'
+                session['user_role'] = session.get('user_role') or '系统管理员'
+                _tj = json.loads(api_trace().get_data(as_text=True))
+            _up = _tj.get('upstream') or {}
+            _dn = _tj.get('downstream') or {}
+            for _st, _k in (('采购申请', 'requests'), ('三方询价', 'inquiries'), ('采购订单', 'orders'), ('采购合同', 'contracts')):
+                for x in (_up.get(_k) or []):
+                    _n = _node(_st, x)
+                    if _n and _n['no']:
+                        chain.append(_n)
+            _sn = _node('本单', (row or {}))
+            if _sn and _sn['no'] and not any(x['no'] == _sn['no'] for x in chain):
+                chain.append(_sn)
+            for _st, _k in (('入库单', 'receivings'), ('出库领用', 'requisitions'), ('退库单', 'returns'), ('发票', 'invoices'), ('付款单', 'payments'), ('维修工单', 'repairs')):
+                for x in (_dn.get(_k) or []):
+                    _n = _node(_st, x)
+                    if _n and _n['no']:
+                        chain.append(_n)
+            for x in (_tj.get('flows') or []):
+                _n = _node('库存流水', x)
+                if _n:
+                    chain.append(_n)
+            timeline = _tj.get('timeline') or []
+            tr_logs = _tj.get('logs') or []
+    except Exception:
+        chain = chain or []
+    # 审批记录
+    approvals = []
+    biz = _DOC_BIZ.get(tbl)
+    if biz:
+        try:
+            approvals = _dash_rows(c, "SELECT level_no 级次, role 审批角色, COALESCE(approver,'') 审批人, status 状态, COALESCE(comment,'') 意见, COALESCE(processed_at,'') 处理时间 FROM approval_instances WHERE biz_type=? AND biz_id=? ORDER BY level_no",
+                                   (biz, row['id']))
+        except Exception:
+            approvals = []
+    # 操作日志
+    logs = []
+    try:
+        logs = _dash_rows(c, "SELECT operator 操作人, action 操作, status_before 变更前, status_after 变更后, COALESCE(detail,'') 说明, created_at 时间 FROM doc_edit_logs WHERE doc_no=? ORDER BY id DESC LIMIT 30", (no,))
+    except Exception:
+        logs = []
+    c.close()
+    _CN = {'purchase_requests': '采购申请', 'purchase_orders': '采购订单', 'inquiries': '询价单', 'contracts': '采购合同',
+           'receivings': '入库单', 'requisitions': '出库领用单', 'invoices': '发票', 'payment_requests': '付款单',
+           'repair_plans': '维修工单', 'credit_notes': '挂账单', 'expenses': '费用单'}
+    return jsonify({'no': no, 'matched': _CN.get(tbl, tbl), 'table': tbl, 'header': header, 'items': items, 'chain': chain,
+                    'timeline': timeline, 'approvals': approvals, 'logs': logs})
+
+
 @app.route('/dashboard')
 @login_required
 def page_dashboard():
