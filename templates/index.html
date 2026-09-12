@@ -2957,6 +2957,8 @@ const APPR_CENTER_TABS={
   repair:[['','全部'],['repair_req','🛠维修申请'],['repair_plan','🔧存量定损'],['rejected','❌未通过']]
 };
 const APPR_REPAIR_TYPES=['repair_plan'];  // 维修中心旧类型(存量定损单)
+// V11.286: 审批中心列表该列在库里存的是"商品数量"而非金额的单据类型(入库/出库) — 表头与单元格按此区分
+const APPR_QTY_TYPES=['receiving','requisition'];
 // V11.269: 维修类判定 — 旧定损单 + 维修类采购申请(req_type=设备维修) 均归维修中心
 const _isRepairRow=x=>APPR_REPAIR_TYPES.includes(x.biz_type)||(x.biz_type==='purchase_request'&&(x.req_type||'')==='设备维修');
 const _apprMatch=(x,t)=> t===''?true : (t==='repair_req' ? (x.biz_type==='purchase_request'&&(x.req_type||'')==='设备维修') : x.biz_type===t);
@@ -3009,10 +3011,12 @@ async function loadApprovals(){
   }).join('');
   const list=APPR_FILTER?a.filter(x=>_apprMatch(x,APPR_FILTER)):a;
   if(!list.length){id('approvalsTable').innerHTML='<div style="padding:24px;text-align:center;color:#999;font-size:10px">✅ 暂无待审批单据</div>';return}
-  id('approvalsTable').innerHTML=rnder(list,['biz_type','biz_no','biz_name','biz_amount','role','approver','approver_id','created_at','id'],['类型','单据号','内容','金额','待审角色','审批人','发起时间','操作'],
+  // V11.286: 入库/出库标签页该列=数量(与单元格实际内容一致); 全部页两类混排 → 金额/数量
+  const _amtHead=APPR_QTY_TYPES.includes(APPR_FILTER)?'数量':(APPR_FILTER?'金额':'金额/数量');
+  id('approvalsTable').innerHTML=rnder(list,['biz_type','biz_no','biz_name','biz_amount','role','approver','approver_id','created_at','id'],['类型','单据号','内容',_amtHead,'待审角色','审批人','发起时间','操作'],
     r=>{const tm=APPR_TM[r.biz_type]||[r.biz_type,'#888'];
     return `<td><span class="tag" style="background:${tm[1]}">${tm[0]}</span></td><td><b>${esc(r.biz_no||'')}</b></td><td style="max-width:200px">${esc(r.biz_name||'')}</td>
-      <td>${r.biz_type=='purchase_request'?'<span style="color:#999">-</span>':'¥'+(r.biz_amount||0).toFixed(0)}</td><td>${esc(r.role)}</td>
+      <td>${r.biz_type=='purchase_request'?'<span style="color:#999">-</span>':(APPR_QTY_TYPES.includes(r.biz_type)?(r.biz_amount||0):'¥'+(r.biz_amount||0).toFixed(0))}</td><td>${esc(r.role)}</td>
       <td>${r.approver?`<b style="color:var(--s)">${esc(r.approver)}</b>`:'<span style="color:#999">按角色</span>'}</td><td style="font-size:8px;color:#999">${esc((r.created_at||'').slice(5,16))}</td>
       <td style="white-space:nowrap"><button class="btn btn-s btn-sm" onclick="doApprove('${r.biz_type}',${r.biz_id},'${r.role||''}')" ${canApprove(r)?'':'disabled style="opacity:.4" title="当前用户:'+ME.name+'('+ME.username+') ID:'+ME.id+', 审批人:'+r.approver+' ID:'+r.approver_id+'"'}>✓同意</button>
       <button class="btn btn-d btn-sm" onclick="doReject('${r.biz_type}',${r.biz_id})" ${canApprove(r)?'':'disabled style="opacity:.4"'}>✕驳回</button>
