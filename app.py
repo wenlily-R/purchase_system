@@ -1184,9 +1184,13 @@ def init_db():
 # V11.161: 品牌AI分析缓存(同品牌24小时只调一次AI, 避免询价详情/列表反复卡10秒)
 _BRAND_AI_CACHE = {}
 _BRAND_AI_CACHE_TTL = 86400  # 24小时
+_BRAND_AI_DOWN_UNTIL = 0  # V11.281: AI服务不可用时熔断时间戳(避免逐品牌等3秒超时+刷日志)
 
 def ai_analyze_brand(brand_name):
     """V11.115: 调用AI分析品牌优缺点 — V11.161: 加24h内存缓存+超时降至3s(修复详情加载卡死)"""
+    global _BRAND_AI_DOWN_UNTIL
+    if time.time() < _BRAND_AI_DOWN_UNTIL:  # V11.281: 服务熔断期内不再尝试(Agnes 已不可用)
+        return None
     _key = (brand_name or '').strip()
     if not _key:
         return None
@@ -1200,7 +1204,9 @@ def ai_analyze_brand(brand_name):
     try:
         # 使用Agnes AI API
         api_url = "https://apihub.agnes-ai.com/v1/chat/completions"
-        api_key = "«redacted:sk-…»"  # 从环境变量或配置读取
+        api_key = os.environ.get('AGNES_API_KEY', '')
+        if not api_key:  # V11.281: 无可用Key(原硬编码假Key含省略号→latin-1编码报错), 直接跳过AI分析走本地品牌库
+            return None  # 从环境变量或配置读取
         
         # 构建提示词
         prompt = f"请简要分析'{brand_name}'品牌的优缺点，各用一句话描述。格式：优点：xxx\n缺点：xxx"
@@ -1235,6 +1241,7 @@ def ai_analyze_brand(brand_name):
         return _out
     except Exception as e:
         print(f'[品牌分析AI调用失败] {e}')
+        _BRAND_AI_DOWN_UNTIL = time.time() + 3600  # V11.281: 失败后熔断1小时
         _BRAND_AI_CACHE[_key] = (_now, {'优点': '', '缺点': ''})  # 失败也缓存, 避免反复调
         return None
 
@@ -5558,7 +5565,17 @@ def api_create_prequest():
         conn.close(); return jsonify({'error': '单号生成冲突，请重试'}), 500
     prid = conn.execute("SELECT id FROM purchase_requests WHERE req_no=?", (no,)).fetchone()[0]
     for it in items:
-        tp = float(it.get('quantity',1)) * float(it.get('estimated_price',0))
+        # V11.281: 明细数值校验(原实现允许数量0/负数与负单价 → 金额失真)
+        try:
+            _q = float(it.get('quantity', 1) or 0)
+            _p = float(it.get('estimated_price', 0) or 0)
+        except Exception:
+            conn.close(); return jsonify({'error': '行「%s」的数量/预估金额格式不正确' % (it.get('item_name','') or '?')}), 400
+        if _q <= 0:
+            conn.close(); return jsonify({'error': '第「%s」行数量必须大于0' % (it.get('item_name','') or '?')}), 400
+        if _p < 0:
+            conn.close(); return jsonify({'error': '第「%s」行预估金额不能为负数' % (it.get('item_name','') or '?')}), 400
+        tp = _q * _p
         conn.execute("INSERT INTO request_items(req_id,item_name,spec,unit,quantity,estimated_price,total_price,remark,category,brand_param,warranty_param,arrival_date,attach,usage) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                      (prid, it.get('item_name',''), it.get('spec',''), it.get('unit','个'), float(it.get('quantity',1)),
                       float(it.get('estimated_price',0)), tp, it.get('remark',''),
@@ -5942,6 +5959,8 @@ def api_orders():
 def api_order(oid):
     conn = db()
     o = conn.execute("SELECT * FROM purchase_orders WHERE id=?", (oid,)).fetchone()
+    if not o:  # V11.281: 订单不存在时返回404(原实现对 None 仍赋值 → 500)
+        conn.close(); return jsonify({'error': '订单不存在'}), 404
     # V11.258: 订单来源申请类型(维修委托订单: 前端按此区分 完工登记/禁入库)
     _oreq = None
     if o and (o['req_id'] if 'req_id' in o.keys() else None):
@@ -6708,8 +6727,8 @@ def api_items():
 @app.route('/api/suppliers')
 @login_required
 def api_suppliers():
-    # V11.159: 供应商档案(含联系方式) — 员工不显示(采购/库管/财务/领导/管理员可见)
-    if session.get('user_role') == '员工':
+    # V11.281: 供应商档案(含银行账号/税号) 收窄为 采购员/领导/管理员(与前端菜单权限一致; 原实现库管员/财务也能取到)
+    if session.get('user_role') not in ('采购员', '分管领导', '总经理', '系统管理员'):
         return jsonify([])
     conn = db(); rows = conn.execute("SELECT * FROM suppliers").fetchall(); conn.close()
     return jsonify([dict_row(r) for r in rows])
@@ -7827,11 +7846,11 @@ def api_inquiry_select(iid):
     # 定标审批: 领导选定后, 订单草稿 + 提交定标审批(必须领导审批通过才能下单)
     settle_type = d.get('settle_type') or '现结'
     conn.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,
-        supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status,inquiry_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (no, i['req_id'], first[0], first[1], sum(r[3] for r in rows), first[2], first[4], grand_amt, 0, 0, total,
          s['supplier_name'], pr['requester'] or '', '后勤类', session['user_name'], session['user_id'],
          pr['target_date'] or '', tm, remark, 0,
-         json.dumps([], ensure_ascii=False), '草稿'))
+         json.dumps([], ensure_ascii=False), '草稿', iid))  # V11.281: 回填来源询价id(原缺失 → 订单↔询价关联断) 
     oid = conn.execute("SELECT id FROM purchase_orders WHERE order_no=?", (no,)).fetchone()[0]
     for r in rows:
         conn.execute("INSERT INTO order_items(order_id,item_name,spec,unit,quantity,price,amount,tax_rate,tax_amount,total_amount,remark) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
@@ -8514,6 +8533,9 @@ def api_contracts():
     # V11.159: 合同列表 — 员工仅看自己相关的(通过订单的发起人关联)
     # V11.228: 附带合同附件列表 + 收款账户快照(仅面板展示用)
     # V11.251: 支持 ?trace= 按溯源编号过滤检索
+    # V11.281: 合同(含金额/条款) 仅 采购员/领导/管理员/财务 可见(与前端菜单权限一致; 原实现库管员也能取到)
+    if session.get('user_role') not in ('采购员', '分管领导', '总经理', '系统管理员', '财务'):
+        return jsonify([])
     _ws, _args = '', ()
     f_trace = (request.args.get('trace') or '').strip()
     if session.get('user_role') == '员工':
