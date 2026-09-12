@@ -7670,7 +7670,7 @@ def inquiry_vendor_page(token):
         pass
     _already = bool(s['quote_price'] and s['quote_price'] > 0)
     # ---------- 明细行表单(不含税单价/税率/含税单价/行总价/交付/质保/品牌/备注, 已报价则回显) ----------
-    # V11.285 用户要求: 商家录入基准由"含税单价"改为"不含税单价" + 税率 → 含税单价自动带出
+    # V11.288 用户要求: 商家录入基准 = 含税单价 + 税率 → 自动倒算不含税单价(恢复含税口径, 之前被改成不含税)
     _rows_html = []
     _has_fixed = False
     for idx, it in enumerate(items):
@@ -7685,16 +7685,16 @@ def inquiry_vendor_page(token):
             _v_tx = ('%g' % float(_pv.get('tax_rate'))) if _pv.get('tax_rate') not in (None, '') else '13'
         except Exception:
             _v_tx = '13'
-        # V11.285: 回显取"不含税单价" — 旧式报价(仅存含税单价)按税率反算, 保证商家看到的一直是不含税口径
-        _v_exc = _v_ex
-        if not _v_exc:
+        # V11.288: 回显取"含税单价"(unit_price); 旧式仅存不含税的按税率正算含税
+        _v_ip = _v_price
+        if not _v_ip:
             try:
-                _up0x = float(_pv.get('unit_price') or 0)
+                _ex0x = float(_pv.get('excl_price') or 0)
                 _tr0x = float(_v_tx or 13)
-                if _up0x > 0:
-                    _v_exc = '%g' % round(_up0x / (1 + _tr0x / 100.0), 2) if _tr0x > 0 else '%g' % round(_up0x, 2)
+                if _ex0x > 0:
+                    _v_ip = '%g' % round(_ex0x * (1 + _tr0x / 100.0), 2) if _tr0x > 0 else '%g' % round(_ex0x, 2)
             except Exception:
-                _v_exc = ''
+                _v_ip = ''
         _qty = it['quantity'] or 0
         # V11.246: 指定品牌(采购员在申请/询价中指定, 商家只能按此品牌报)
         _sb = str(it['brand_param'] or '').strip() if 'brand_param' in it.keys() and it['brand_param'] else ''
@@ -7714,11 +7714,11 @@ def inquiry_vendor_page(token):
             '<td style="padding:6px 8px;text-align:left;border-bottom:1px solid #eef">%s</td>'
             '<td style="padding:6px 8px;text-align:left;border-bottom:1px solid #eef;color:#888;font-size:12px">%s</td>'
             '<td style="padding:6px 8px;text-align:left;border-bottom:1px solid #eef;white-space:nowrap">%s%s</td>'
-            '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input type="number" min="0" step="0.01" placeholder="不含税单价" '
-            'oninput="calc()" data-q="%s" id="exi%d" value="%s" style="width:76px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;text-align:right"></td>'
+            '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input type="number" min="0" step="0.01" placeholder="含税单价" '
+            'oninput="calc()" data-q="%s" id="ipi%d" value="%s" style="width:76px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;text-align:right"></td>'
             '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input type="number" min="0" step="0.01" placeholder="13" '
             'oninput="calc()" id="tx%d" value="%s" style="width:52px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;text-align:right"></td>'
-            '<td style="padding:6px 8px;border-bottom:1px solid #eef;text-align:right;color:#2e7d32;font-weight:600;white-space:nowrap">¥<span id="inc%d">0.00</span></td>'
+            '<td style="padding:6px 8px;border-bottom:1px solid #eef;text-align:right;color:#8a6d3b;font-weight:600;white-space:nowrap">¥<span id="exc%d">0.00</span></td>'
             '<td style="padding:6px 8px;border-bottom:1px solid #eef;text-align:right;font-weight:600;color:#2e7d32;white-space:nowrap">¥<span id="ut%d">0.00</span></td>'
             '<td style="padding:6px 8px;border-bottom:1px solid #eef"><input placeholder="如7天" id="dl%d" value="%s" style="width:52px;padding:5px 6px;border:1px solid #d0d7e2;border-radius:6px;font-size:12px"></td>'
             + _wr_cell + _brand_cell +
@@ -7726,7 +7726,7 @@ def inquiry_vendor_page(token):
             '</tr>') % (
                 esc_html(it['item_name']), esc_html(it['spec'] or ''),
                 str(_qty) + esc_html(it['unit'] or '个'), _ref,
-                str(_qty), idx, _v_exc,
+                str(_qty), idx, _v_ip,
                 idx, _v_tx,
                 idx, idx,
                 idx, esc_html(_pv.get('delivery') or ''),
@@ -7760,14 +7760,14 @@ def inquiry_vendor_page(token):
     body = ('<div style="max-width:860px;margin:40px auto;background:#fff;border-radius:12px;padding:28px;'
             'box-shadow:0 4px 24px rgba(0,0,0,.08);font-family:-apple-system,Segoe UI,Microsoft YaHei,sans-serif">'
             '<h2 style="margin:0 0 4px;color:#1f6feb">📋 采购询价单</h2>'
-            '<p style="color:#888;font-size:13px;margin:0 0 10px">尊敬的 %s，请逐项填写<b>不含税单价</b>与<b>税率</b>（默认13%%，可修改，如0%%），<b>含税单价与总价自动计算</b>；交付日期按<b>天数</b>、质保时间按<b>月数</b>填写</p>%s%s%s'
+            '<p style="color:#888;font-size:13px;margin:0 0 10px">尊敬的 %s，请逐项填写<b>含税单价</b>与<b>税率</b>（默认13%%，可修改，如0%%），<b>不含税单价与总价自动计算</b>；交付日期按<b>天数</b>、质保时间按<b>月数</b>填写</p>%s%s%s'
             '<div style="background:#f5f8ff;border-radius:8px;padding:12px 16px;font-size:13px;margin-bottom:14px">'
             '<b>%s</b><br><span style="color:#888">询价编号：%s</span></div>'
             '<div style="overflow-x:auto"><table style="width:100%%;border-collapse:collapse;font-size:13px;margin-bottom:10px;min-width:700px">'
             '<tr style="background:#f5f8ff"><th style="padding:6px 8px;text-align:left">物资名称</th>'
             '<th style="padding:6px 8px;text-align:left">规格</th><th style="padding:6px 8px;text-align:left">数量</th>'
-            '<th style="padding:6px 8px;text-align:left">不含税单价(元)<span style="color:#e74c3c">*</span></th><th style="padding:6px 8px;text-align:left">税率(%%)<span style="color:#e74c3c">*</span></th>'
-            '<th style="padding:6px 8px;text-align:left">含税单价(元)<span style="color:#888;font-size:11px;font-weight:normal">自动</span></th><th style="padding:6px 8px;text-align:left">总价（含税含运）</th>'
+            '<th style="padding:6px 8px;text-align:left">含税单价(元)<span style="color:#e74c3c">*</span></th><th style="padding:6px 8px;text-align:left">税率(%%)<span style="color:#e74c3c">*</span></th>'
+            '<th style="padding:6px 8px;text-align:left">不含税单价(元)<span style="color:#888;font-size:11px;font-weight:normal">自动</span></th><th style="padding:6px 8px;text-align:left">总价（含税含运）</th>'
             '<th style="padding:6px 8px;text-align:left">交付日期(天)</th><th style="padding:6px 8px;text-align:left">质保时间(月)</th>'
             '<th style="padding:6px 8px;text-align:left">品牌</th><th style="padding:6px 8px;text-align:left">厂家备注</th></tr>%s</table></div>'
             '<div style="background:#f0faf0;border-radius:8px;padding:10px 14px;font-size:14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">'
@@ -7785,22 +7785,22 @@ def inquiry_vendor_page(token):
             '<button onclick="sub()" style="width:100%%;padding:12px;background:#1f6feb;color:#fff;border:none;border-radius:8px;font-size:15px;cursor:pointer">提交报价</button>'
             '<div id="msg" style="margin-top:10px;font-size:13px;color:#27ae60;text-align:center"></div>'
             '<script>'
-            'window.calc=function(){let t=0;document.querySelectorAll("[id^=exi]").forEach((e,i)=>{const q=parseFloat(e.getAttribute("data-q"))||1;const ex=parseFloat(e.value)||0;'
+            'window.calc=function(){let t=0;document.querySelectorAll("[id^=ipi]").forEach((e,i)=>{const q=parseFloat(e.getAttribute("data-q"))||1;const ip=parseFloat(e.value)||0;'
             'const tr0=(document.getElementById("tx"+i)||{}).value;const tr=(tr0===""||tr0===undefined||isNaN(parseFloat(tr0)))?13:parseFloat(tr0);'
-            'const inc=(tr>0)?ex*(1+tr/100):ex;t+=inc*q;'
-            'const h=document.getElementById("inc"+i);if(h)h.textContent=inc.toFixed(2);'
-            'const u=document.getElementById("ut"+i);if(u)u.textContent=(inc*q).toFixed(2)});'
+            'const exc=(tr>0)?ip/(1+tr/100):ip;t+=ip*q;'
+            'const h=document.getElementById("exc"+i);if(h)h.textContent=exc.toFixed(2);'
+            'const u=document.getElementById("ut"+i);if(u)u.textContent=(ip*q).toFixed(2)});'
             'const _t=document.getElementById("total");if(_t)_t.textContent=t.toFixed(2)};'
-            'window.quickFill=function(){const v=prompt("请输入报价总金额(元,含税):");if(!v||isNaN(v))return;const es=document.querySelectorAll("[id^=exi]");let sq=0;es.forEach(e=>{sq+=parseFloat(e.getAttribute("data-q"))||1});if(sq<=0)return;const per=parseFloat(v)/sq;es.forEach((e,i)=>{const tr0=(document.getElementById("tx"+i)||{}).value;const tr=(tr0===""||isNaN(parseFloat(tr0)))?13:parseFloat(tr0);e.value=(tr>0?per/(1+tr/100):per).toFixed(2)});calc();'
-            'alert("已按数量分摊到每行(不含税单价)，可再逐行微调")};'
-            'window.sub=async function(){const rows=document.querySelectorAll("[id^=exi]");const details=[];let emptyIdx=[];'
-            'rows.forEach((e,i)=>{const ex=parseFloat(e.value)||0;if(ex<=0)emptyIdx.push(i+1);'
+            'window.quickFill=function(){const v=prompt("请输入报价总金额(元,含税):");if(!v||isNaN(v))return;const es=document.querySelectorAll("[id^=ipi]");let sq=0;es.forEach(e=>{sq+=parseFloat(e.getAttribute("data-q"))||1});if(sq<=0)return;const per=parseFloat(v)/sq;es.forEach((e)=>{e.value=per.toFixed(2)});calc();'
+            'alert("已按数量分摊到每行(含税单价)，可再逐行微调")};'
+            'window.sub=async function(){const rows=document.querySelectorAll("[id^=ipi]");const details=[];let emptyIdx=[];'
+            'rows.forEach((e,i)=>{const ip=parseFloat(e.value)||0;if(ip<=0)emptyIdx.push(i+1);'
             'const tr0=(document.getElementById("tx"+i)||{}).value;const tr=(tr0===""||isNaN(parseFloat(tr0)))?13:parseFloat(tr0);'
-            'const inc=Math.round((tr>0?ex*(1+tr/100):ex)*100)/100;'
-            'details.push({unit_price:inc,excl_price:Math.round(ex*100)/100,tax_rate:tr,qty:parseFloat(e.getAttribute("data-q"))||1,'
+            'const exc=Math.round((tr>0?ip/(1+tr/100):ip)*100)/100;'
+            'details.push({unit_price:Math.round(ip*100)/100,excl_price:exc,tax_rate:tr,qty:parseFloat(e.getAttribute("data-q"))||1,'
             'delivery:(document.getElementById("dl"+i)||{}).value||"",warranty:(document.getElementById("wr"+i)||{}).value||"",'
             'brand:(document.getElementById("br"+i)||{}).value||"",remark:(document.getElementById("rm"+i)||{}).value||""})});'
-            'if(emptyIdx.length){alert("请填写所有物料的不含税单价（第"+emptyIdx.join("、")+"行未填）");return}'
+            'if(emptyIdx.length){alert("请填写所有物料的含税单价（第"+emptyIdx.join("、")+"行未填）");return}'
             'const shipTotal=parseFloat((document.getElementById("shipTotal")||{}).value)||0;'
             'if(shipTotal<=0){alert("请填写总价（含税含运）——整单含运费的总金额");return}'
             'const supRemark=(document.getElementById("supRemark")||{}).value||"";'
@@ -7915,22 +7915,22 @@ def inquiry_vendor_quote(token):
                         _x['warranty'] = _sw  # 缺省/达标 → 按申请标准落库
         except Exception:
             pass
-    # V11.285 用户要求(改回不含税单价录入): 明细以不含税单价为基准 → 服务端正算含税单价(防前端篡改); 兼容仅传含税单价的旧式提交
+    # V11.288 用户要求(改回含税单价录入): 明细以含税单价为基准 → 服务端倒算不含税(防前端篡改); 兼容仅传不含税的旧式提交
     if details:
         for _x in details:
             try:
-                _ex0 = float(_x.get('excl_price') or 0)
                 _up0 = float(_x.get('unit_price') or 0)
+                _ex0 = float(_x.get('excl_price') or 0)
                 _rt1 = _x.get('tax_rate')
                 _rtv = max(0.0, float(_rt1)) if _rt1 not in (None, '') else None
-                if _ex0 > 0 and _rtv is not None:
-                    _x['excl_price'] = round(_ex0, 2)
-                    _x['tax_rate'] = _rtv
-                    _x['unit_price'] = round(_ex0 * (1 + _rtv / 100.0), 2) if _rtv > 0 else round(_ex0, 2)
-                elif _up0 > 0 and _rtv is not None:
+                if _up0 > 0 and _rtv is not None:
                     _x['unit_price'] = round(_up0, 2)
                     _x['tax_rate'] = _rtv
                     _x['excl_price'] = round(_up0 / (1 + _rtv / 100.0), 2) if _rtv > 0 else round(_up0, 2)
+                elif _ex0 > 0 and _rtv is not None:
+                    _x['excl_price'] = round(_ex0, 2)
+                    _x['tax_rate'] = _rtv
+                    _x['unit_price'] = round(_ex0 * (1 + _rtv / 100.0), 2) if _rtv > 0 else round(_ex0, 2)
             except Exception:
                 pass
     # V11.41: 行明细报价(每行单价+备注), 合计=Σ单价×数量; 兼容旧版总价提交
