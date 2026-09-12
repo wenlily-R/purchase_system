@@ -5587,7 +5587,12 @@ def api_repair_ledger():
         out.append({'id': r['id'], 'req_no': d.get('req_no'), 'dept': d.get('dept'), 'requester': d.get('requester'),
                     'device': d.get('repair_device') or '', 'fault': d.get('repair_fault') or '',
                     'est_amt': round(float(d.get('total_estimated') or 0), 2), 'det_amt': det, 'item_cnt': len(_items),
-                    'real_amt': round(float(d.get('repair_amount') or 0), 2),
+                    'real_amt': round(float((d.get('repair_actual_amt') if 'repair_actual_amt' in d else 0) or d.get('repair_amount') or 0), 2),
+                    'actual_amt': round(float((d.get('repair_actual_amt') if 'repair_actual_amt' in d else 0) or 0), 2),
+                    'entrust_amt': round(float(d.get('repair_amount') or 0), 2),
+                    'est_orig': round(float((d.get('repair_est_orig') if 'repair_est_orig' in d else 0) or d.get('total_estimated') or 0), 2),
+                    'change_amt': round(float((d.get('repair_change_amt') if 'repair_change_amt' in d else 0) or 0), 2),
+                    'change_status': (d.get('repair_change_status') if 'repair_change_status' in d else '') or '',
                     'vendor': d.get('repair_vendor') or (_od['supplier'] if _od else ''),
                     'inq_no': _iq['inq_no'] if _iq else '', 'inq_status': _iq['status'] if _iq else '',
                     'order_no': _od['order_no'] if _od else '', 'order_amount': round(float(_od['total_amount'] or 0), 2) if _od else 0,
@@ -5595,6 +5600,73 @@ def api_repair_ledger():
                     'result': d.get('repair_result') or '', 'status': d.get('status') or '', 'created_at': (d.get('created_at') or '')[:19]})
     conn.close()
     return jsonify(out)
+
+
+@app.route('/api/reports/repair-diff')
+@login_required
+def api_reports_repair_diff():
+    """V11.286 维修金额差异表: 预估(原审批) / 定损合计 / 实际结算 / 差异额 / 差异率 (超支标红)"""
+    if _no_req_access():
+        return jsonify({'rows': [], 'summary': {}})
+    rows = api_repair_ledger().get_json() or []
+    out = []
+    s = {'total': len(rows), 'done': 0, 'est': 0.0, 'det': 0.0, 'actual': 0.0, 'over_cnt': 0, 'over_amt': 0.0, 'unfilled': 0}
+    for x in rows:
+        est = float(x.get('est_orig') or x.get('est_amt') or 0)
+        det = float(x.get('det_amt') or 0)
+        act = float(x.get('actual_amt') or 0)
+        diff = round(act - est, 2) if act else 0.0
+        rate = round(diff / est * 100, 1) if (est > 0 and act) else None
+        if x.get('done_date'):
+            s['done'] += 1
+        if not act and x.get('done_date'):
+            s['unfilled'] += 1
+        s['est'] += est; s['det'] += det; s['actual'] += act
+        if diff > 0:
+            s['over_cnt'] += 1; s['over_amt'] += diff
+        out.append({'req_no': x.get('req_no'), 'device': x.get('device'), 'dept': x.get('dept'),
+                    'est': round(est, 2), 'det': round(det, 2), 'actual': round(act, 2),
+                    'diff': diff, 'rate': rate, 'stage': x.get('stage'), 'done_date': x.get('done_date') or '',
+                    'vendor': x.get('vendor') or '', 'change_status': x.get('change_status') or ''})
+    for k in ('est', 'det', 'actual', 'over_amt'):
+        s[k] = round(s[k], 2)
+    return jsonify({'rows': out, 'summary': s})
+
+
+@app.route('/api/reports/repair-diff/export')
+@login_required
+def api_reports_repair_diff_export():
+    """V11.286 维修金额差异表导出"""
+    j = api_reports_repair_diff().get_json() or {}
+    rows = j.get('rows') or []; s = j.get('summary') or {}
+    import io as _io, datetime as _dt
+    from flask import send_file
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+    wb = Workbook(); ws = wb.active; ws.title = '维修金额差异'
+    ws.append(['维修金额差异表（预估 vs 定损 vs 实际）'])
+    ws['A1'].font = Font(bold=True, size=13)
+    ws.append(['共%d张｜已完工%d张｜预估合计%.2f｜定损合计%.2f｜实际合计%.2f｜超支%d张 合计%.2f'
+               % (s.get('total', 0), s.get('done', 0), s.get('est', 0), s.get('det', 0), s.get('actual', 0), s.get('over_cnt', 0), s.get('over_amt', 0))])
+    ws.append(['申请号', '部门', '设备', '预估(元)', '定损合计(元)', '实际结算(元)', '差异额(元)', '差异率(%)', '维修阶段', '完工日期', '维修商', '变更审批'])
+    for x in rows:
+        ws.append([x.get('req_no'), x.get('dept'), x.get('device'), x.get('est'), x.get('det'), x.get('actual'),
+                   x.get('diff'), x.get('rate'), x.get('stage'), x.get('done_date'), x.get('vendor'), x.get('change_status')])
+    _thin = Side(style='thin', color='CCCCCC'); _bd = Border(left=_thin, right=_thin, top=_thin, bottom=_thin)
+    for c in ws[3]:
+        c.font = Font(bold=True, size=10); c.fill = PatternFill('solid', fgColor='EEF4FF'); c.alignment = Alignment(horizontal='center'); c.border = _bd
+    for row in ws.iter_rows(min_row=4):
+        for c in row:
+            c.border = _bd; c.font = Font(size=10)
+            if c.column in (4, 5, 6, 7):
+                c.number_format = '#,##0.00'
+            if c.column == 7 and isinstance(c.value, (int, float)) and c.value > 0:
+                c.font = Font(size=10, bold=True, color='C0392B')
+    for i, w in enumerate([15, 10, 18, 11, 13, 13, 12, 11, 15, 11, 20, 13], 1):
+        ws.column_dimensions[chr(64 + i)].width = w
+    buf = _io.BytesIO(); wb.save(buf); buf.seek(0)
+    return send_file(buf, as_attachment=True, download_name='维修金额差异_%s.xlsx' % _dt.datetime.now().strftime('%Y%m%d'),
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
 @app.route('/api/repair-ledger/export')
@@ -6067,6 +6139,13 @@ def api_prequest_repair_done(rid):
         conn.close(); return jsonify({'error': '该单的【小额直接委托】还在领导审批中，通过后才能登记完工'}), 400
     if _ent not in ('direct',) and _ocnt == 0:
         conn.close(); return jsonify({'error': '请先确定维修方式（🤝小额直接委托 或 维修询价定标成单），再登记完工'}), 400
+    # V11.286: 完工登记必填"实际结算金额"(事后可比对 预估/定损/实际, 支撑维修差异报表)
+    try:
+        _amt = float(d.get('actual_amount') if d.get('actual_amount') is not None else (d.get('actual_amt') or 0))
+    except Exception:
+        _amt = 0.0
+    if _amt <= 0:
+        conn.close(); return jsonify({'error': '请填写实际结算金额（元，大于0）— 便于后续与预估/定损金额对账'}), 400
     _dt = str(d.get('done_date') or '').strip()[:10]
     try:
         import datetime as _dtm2
@@ -6077,12 +6156,12 @@ def api_prequest_repair_done(rid):
     except Exception:
         _dt = today()
     _res = str(d.get('result') or '').strip() or '维修完成'
-    conn.execute("UPDATE purchase_requests SET repair_done_date=?, repair_result=?, updated_at=? WHERE id=?",
-                 (_dt, _res[:500], now(), rid))
+    conn.execute("UPDATE purchase_requests SET repair_done_date=?, repair_result=?, repair_actual_amt=?, updated_at=? WHERE id=?",
+                 (_dt, _res[:500], round(_amt, 2), now(), rid))
     conn.commit(); conn.close()
-    log(session['user_name'], '维修完工登记', f'申请#{rid} 完工日期{_dt} 结果:{_res[:60]}')
-    _trace_biz('purchase_request', 'purchase_requests', rid, '完工登记', f'完工日期{_dt} 结果:{_res[:60]}')
-    return jsonify({'success': True, 'message': '✅ 已登记完工（%s）：%s' % (_dt, _res[:40])})
+    log(session['user_name'], '维修完工登记', f'申请#{rid} 完工日期{_dt} 实际结算¥{_amt:.2f} 结果:{_res[:60]}')
+    _trace_biz('purchase_request', 'purchase_requests', rid, '完工登记', f'完工日期{_dt} 实际结算¥{_amt:.2f} 结果:{_res[:60]}')
+    return jsonify({'success': True, 'message': '✅ 已登记完工（%s）：%s ｜ 实际结算 ¥%.2f' % (_dt, _res[:40], _amt)})
 
 # ============================================================
 # ── ORDERS ──

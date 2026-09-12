@@ -543,6 +543,8 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
         <div id="traceBox" style="margin-top:6px"></div>
       </div></div>
     <div class="card" style="margin-bottom:6px"><div class="ch"><h3>🚦 业务卡点排查（①已审批未采购 ②已采购未到货 ③已入库未回票）</h3><button class="btn btn-p btn-sm" onclick="loadCheckpoints()" style="margin-left:auto">🔄 刷新</button></div>
+    <div class="card" style="margin-bottom:6px"><div class="ch"><h3>🔧 维修金额差异（预估 vs 定损 vs 实际）</h3><button class="btn btn-o btn-sm" onclick="window.open('/api/reports/repair-diff/export','_blank')">⬇️ 导出Excel</button><button class="btn btn-p btn-sm" onclick="loadRepairDiff()" style="margin-left:auto">🔄 刷新</button></div>
+      <div id="repairDiffWrap" style="padding:4px;font-size:10px;color:#999">点「刷新」查看维修金额差异（超支行标红）</div></div>
       <div class="cb">
         <div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap">
           <span class="tag" id="ckA" style="background:#fff3e0;color:#e65100;font-size:11px">① 加载中...</span>
@@ -2127,11 +2129,14 @@ async function doAppendRepairItems(rid){
 }
 // V11.258: 维修完工登记(直接委托/维修订单通用, 不进库存) — 实际完工日期+维修结果
 async function repairDoneUI(rid){
+  let _sug='';
+  try{ const _d=await api(`/prequests/${rid}`); const _r=(_d&&_d.request)||_d||{}; const _a=parseFloat(_r.repair_amount||0); if(_a>0)_sug=_a.toFixed(2); }catch(e){}
   const today=new Date(); const p=n=>String(n).padStart(2,'0');
   const tdy=`${today.getFullYear()}-${p(today.getMonth()+1)}-${p(today.getDate())}`;
   showDetail('✅ 登记维修完工',
-    `<div style="font-size:10px;color:#2e7d32;background:#e8f5e9;border:1px solid #a5d6a7;padding:6px 8px;border-radius:4px;margin-bottom:6px">维修已完成，请登记<b>实际完工日期与维修结果</b>（维修项目不是库存物资，系统不走入库流程，登记后本单闭环留痕）。</div>
+    `<div style="font-size:10px;color:#2e7d32;background:#e8f5e9;border:1px solid #a5d6a7;padding:6px 8px;border-radius:4px;margin-bottom:6px">维修已完成，请登记<b>实际完工日期、实际结算金额与维修结果</b>（维修不走入库，登记后本单闭环；实际金额用于与预估/定损对账）。</div>
     <div class="fg"><label class="fl2">实际完工日期 *</label><input class="fc" id="rdDoneDate" type="date" value="${tdy}"></div>
+    <div class="fg"><label class="fl2">实际结算金额(元) *</label><input class="fc" id="rdAmt" type="number" min="0" step="0.01" value="${_sug}" placeholder="按实际结算金额填写（已按委托金额预填，可修改）"></div>
     <div class="fg"><label class="fl2">维修结果 *</label><textarea class="fc" id="rdResult" rows="2" placeholder="如: 更换缸杆总成+密封组件，试机正常，已验收合格"></textarea></div>`,
     `<button class="btn btn-o" onclick="closeMod()">取消</button>
      <button class="btn btn-p" onclick="doRepairDone(${rid})">✅ 确认完工</button>`);
@@ -2139,9 +2144,11 @@ async function repairDoneUI(rid){
 async function doRepairDone(rid){
   const done_date=(id('rdDoneDate')?.value||'').trim();
   const result=(id('rdResult')?.value||'').trim();
+  const amt=parseFloat(id('rdAmt')?.value)||0;
   if(!done_date){alert('请选择实际完工日期');return}
+  if(!(amt>0)){alert('请填写实际结算金额（大于0）');return}
   if(!result){alert('请填写维修结果');return}
-  const r=await api(`/prequests/${rid}/repair-done`,{method:'POST',body:JSON.stringify({done_date,result})});
+  const r=await api(`/prequests/${rid}/repair-done`,{method:'POST',body:JSON.stringify({done_date,result,actual_amount:amt})});
   if(r.success){alert(r.message||'✅ 已登记完工');closeMod();showPRequest(rid);loadPRequests&&loadPRequests();}
   else alert(r.error||'登记失败');
 }
@@ -4353,7 +4360,7 @@ async function doSupSave(oid){
   const r=await api(oid?'/suppliers/'+oid:'/suppliers',{method:'POST',body:JSON.stringify(d)});
   if(r.success){alert(oid?'✅ 已保存':'✅ 已新增');closeMod();loadSuppliers()}else alert(r.error||'失败');
 }
-async function loadReports(){loadCheckpoints();loadReports2();loadEstView();loadInvReport&&loadInvReport();
+async function loadReports(){loadCheckpoints();loadRepairDiff&&loadRepairDiff();loadReports2();loadEstView();loadInvReport&&loadInvReport();
   try{
     const r=await api('/reports');
     const t=r.todo||{};
@@ -7908,6 +7915,17 @@ function _ckTab(list, cols){ // 通用渲染: list=行数组, cols=[{k,label}]
 function _ckFail(msg){ // V11.268: 加载失败可见(原静默卡在"查询中")
   ['ckA','ckB','ckC'].forEach(i=>{const el=id(i);if(el){el.textContent='⚠️ 加载失败';el.style.color='#c62828';el.style.cursor='pointer';el.onclick=loadCheckpoints}});
   const w=id('ckWrap'); if(w) w.innerHTML=`<div style="color:#c62828;font-size:11px">⚠️ 数据加载失败：${esc(msg||'网络较慢或服务异常')} <button class="btn btn-p btn-sm" onclick="loadCheckpoints()">重试</button></div>`;
+}
+// V11.286: 维修金额差异表(预估/定损/实际/差异率) — 报表中心面板
+async function loadRepairDiff(){
+  const w=id('repairDiffWrap'); if(!w)return;
+  w.innerHTML='<span style="color:#999">加载中…</span>';
+  let j={};
+  try{ j=await api('/reports/repair-diff'); }catch(e){ w.innerHTML='<span style="color:#c62828">加载失败：'+(e.message||'')+' <button class="btn btn-p btn-sm" onclick="loadRepairDiff()">重试</button></span>'; return; }
+  const s=j.summary||{}, rows=j.rows||[];
+  if(!rows.length){ w.innerHTML='<span style="color:#999">暂无维修记录</span>'; return; }
+  w.innerHTML=`<div style="font-size:10px;color:#555;margin-bottom:4px">共 <b>${s.total}</b> 张 ｜ 已完工 <b>${s.done}</b> ｜ 预估合计 ¥${(s.est||0).toFixed(2)} ｜ 定损合计 ¥${(s.det||0).toFixed(2)} ｜ 实际合计 ¥<b style="color:#c0392b">${(s.actual||0).toFixed(2)}</b> ｜ 超预估 <b style="color:#c0392b">${s.over_cnt||0}</b> 张 合计 ¥${(s.over_amt||0).toFixed(2)}${s.unfilled?` ｜ <span style="color:#b7791f">${s.unfilled} 张完工单未填实际金额</span>`:''}</div>
+  <div style="overflow-x:auto"><table class="tb" style="font-size:10px;min-width:920px"><thead><tr><th>申请号</th><th>设备</th><th>预估(元)</th><th>定损合计(元)</th><th>实际结算(元)</th><th>差异额(元)</th><th>差异率</th><th>阶段</th><th>完工日期</th></tr></thead><tbody>${rows.map(x=>`<tr style="${x.diff>0?'background:#fdeaea':''}"><td><b>${esc(x.req_no)}</b></td><td>${esc(x.device||'—')}</td><td style="text-align:right">${(x.est||0).toFixed(2)}</td><td style="text-align:right">${(x.det||0).toFixed(2)}</td><td style="text-align:right">${(x.actual||0).toFixed(2)}</td><td style="text-align:right;${x.diff>0?'color:#c0392b;font-weight:700':''}">${x.diff>0?'+':''}${(x.diff||0).toFixed(2)}</td><td style="text-align:right">${(x.rate===null||x.rate===undefined)?'—':x.rate+'%'}</td><td>${esc(x.stage||'')}</td><td>${esc(x.done_date||'—')}</td></tr>`).join('')}</tbody></table></div>`;
 }
 async function loadCheckpoints(){
   const tb=id('tbCard');
