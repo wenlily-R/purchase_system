@@ -7792,13 +7792,15 @@ def inquiry_vendor_page(token):
             '<th style="padding:6px 8px;text-align:left">交付日期(天)</th><th style="padding:6px 8px;text-align:left">质保时间(月)</th>'
             '<th style="padding:6px 8px;text-align:left">品牌</th><th style="padding:6px 8px;text-align:left">厂家备注</th></tr>%s</table></div>'
             '<div style="background:#f0faf0;border-radius:8px;padding:10px 14px;font-size:14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">'
-            '<span style="color:#2e7d32"><b>总价（含税含运）合计：¥<span id="total">0.00</span></b></span>'
-            '<span style="font-size:12px;color:#888">物品较多时，可<a href="javascript:void(0)" onclick="quickFill()" style="color:#1f6feb">💰 填一个总价自动分摊</a></span></div>'
+            '<span style="color:#2e7d32"><b>① 货款合计（含税）：¥<span id="total">0.00</span></b></span>'
+            '<span style="font-size:12px;color:#888">物品较多时，可<a href="javascript:void(0)" onclick="quickFill()" style="color:#1f6feb">💰 填一个货款总额自动分摊到各行</a></span></div>'
             '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">'
             '<div style="flex:1;min-width:220px;background:#fff8f0;border:1px solid #f5d9b8;border-radius:8px;padding:10px 14px">'
-            '<label style="font-size:12px;color:#a05a12;display:block;margin-bottom:4px"><b>🚚 总价（含税含运）——整单含运费，必填</b></label>'
-            '<input id="shipTotal" type="number" min="0" step="0.01" placeholder="含运费的总金额，如 6950" value="%s" '
-            'style="width:100%%;padding:7px 8px;border:1px solid #d0d7e2;border-radius:6px;font-size:14px;box-sizing:border-box"></div>'
+            '<label style="font-size:12px;color:#a05a12;display:block;margin-bottom:4px"><b>🚚 ② 运费（元，含税；无运费填 0）</b></label>'
+            '<input id="freightBox" type="number" min="0" step="0.01" placeholder="如 200" value="%s" oninput="calc()" '
+            'style="width:100%%;padding:7px 8px;border:1px solid #d0d7e2;border-radius:6px;font-size:14px;box-sizing:border-box">'
+            '<div style="margin-top:6px;font-size:13px;color:#a05a12"><b>③ 合计（含税含运）= ①+②：¥<span id="grandTotal">0.00</span></b></div>'
+            '<div style="font-size:11px;color:#999;margin-top:2px">货款按各行含税单价×数量自动合计，无需手工加总</div></div>'
             '<div style="flex:1;min-width:220px;background:#f8f9fb;border:1px solid #e2e7ee;border-radius:8px;padding:10px 14px">'
             '<label style="font-size:12px;color:#555;display:block;margin-bottom:4px"><b>📝 厂家备注（整单说明，选填）</b></label>'
             '<input id="supRemark" placeholder="如：含税含运、交货条件等" value="%s" '
@@ -7811,8 +7813,9 @@ def inquiry_vendor_page(token):
             'const exc=(tr>0)?ip/(1+tr/100):ip;t+=ip*q;'
             'const h=document.getElementById("exc"+i);if(h)h.textContent=exc.toFixed(2);'
             'const u=document.getElementById("ut"+i);if(u)u.textContent=(ip*q).toFixed(2)});'
-            'const _t=document.getElementById("total");if(_t)_t.textContent=t.toFixed(2)};'
-            'window.quickFill=function(){const v=prompt("请输入报价总金额(元,含税):");if(!v||isNaN(v))return;const es=document.querySelectorAll("[id^=ipi]");let sq=0;es.forEach(e=>{sq+=parseFloat(e.getAttribute("data-q"))||1});if(sq<=0)return;const per=parseFloat(v)/sq;es.forEach((e)=>{e.value=per.toFixed(2)});calc();'
+            'const _t=document.getElementById("total");if(_t)_t.textContent=t.toFixed(2);'
+            'const _fr=parseFloat((document.getElementById("freightBox")||{}).value)||0;const _g=document.getElementById("grandTotal");if(_g)_g.textContent=(t+_fr).toFixed(2)};'
+            'window.quickFill=function(){const v=prompt("请输入货款总额(元,含税,不含运费):");if(!v||isNaN(v))return;const es=document.querySelectorAll("[id^=ipi]");let sq=0;es.forEach(e=>{sq+=parseFloat(e.getAttribute("data-q"))||1});if(sq<=0)return;const per=parseFloat(v)/sq;es.forEach((e)=>{e.value=per.toFixed(2)});calc();'
             'alert("已按数量分摊到每行(含税单价)，可再逐行微调")};'
             'window.sub=async function(){const rows=document.querySelectorAll("[id^=ipi]");const details=[];let emptyIdx=[];'
             'rows.forEach((e,i)=>{const ip=parseFloat(e.value)||0;if(ip<=0)emptyIdx.push(i+1);'
@@ -7822,12 +7825,14 @@ def inquiry_vendor_page(token):
             'delivery:(document.getElementById("dl"+i)||{}).value||"",warranty:(document.getElementById("wr"+i)||{}).value||"",'
             'brand:(document.getElementById("br"+i)||{}).value||"",remark:(document.getElementById("rm"+i)||{}).value||""})});'
             'if(emptyIdx.length){alert("请填写所有物料的含税单价（第"+emptyIdx.join("、")+"行未填）");return}'
-            'const shipTotal=parseFloat((document.getElementById("shipTotal")||{}).value)||0;'
-            'if(shipTotal<=0){alert("请填写总价（含税含运）——整单含运费的总金额");return}'
+            'const freight=parseFloat((document.getElementById("freightBox")||{}).value)||0;'
+            'let goodsSum=0;rows.forEach(e=>{const ip=parseFloat(e.value)||0;goodsSum+=ip*(parseFloat(e.getAttribute("data-q"))||1)});'
+            'const shipTotal=Math.round((goodsSum+freight)*100)/100;'
+            'if(shipTotal<=0){alert("请填写各行含税单价（货款）");return}'
             'const supRemark=(document.getElementById("supRemark")||{}).value||"";'
             'const btn=document.querySelector("button[onclick*=sub]");if(btn){btn.disabled=true;btn.style.opacity=.6;btn.textContent="提交中..."}'
             'try{const r=await fetch("%s",{method:"POST",headers:{"Content-Type":"application/json"},'
-            'body:JSON.stringify({quote_price:shipTotal,details,quote_delivery:"",quote_warranty:"",quote_remark:supRemark})});'
+            'body:JSON.stringify({quote_price:shipTotal,details,freight:freight,quote_delivery:"",quote_warranty:"",quote_remark:supRemark})});'
             'const j=await r.json();if(j.success){document.getElementById("msg").textContent="✅ 报价提交成功";setTimeout(()=>location.reload(),800)}'
             'else{alert(j.error||"提交失败");if(btn){btn.disabled=false;btn.style.opacity=1;btn.textContent="提交报价"}}}'
             'catch(err){alert("网络异常，请重试");if(btn){btn.disabled=false;btn.style.opacity=1;btn.textContent="提交报价"}}};'
@@ -7955,13 +7960,20 @@ def inquiry_vendor_quote(token):
             except Exception:
                 pass
     # V11.41: 行明细报价(每行单价+备注), 合计=Σ单价×数量; 兼容旧版总价提交
-    # V11.162: 含运总价=商家填的 quote_price(整单含运费), 明细合计只作参考不再覆盖
+    # V11.297: 运费单列 — 商家填各行含税单价(货款) + 运费; 含运总价 = 货款合计 + 运费, 由服务端计算(防篡改)
+    try:
+        _frt = max(0.0, float(d.get('freight') or 0))
+    except Exception:
+        _frt = 0.0
+    _goods = 0.0
+    if details:
+        _goods = round(sum(float(x.get('unit_price') or 0) * float(x.get('qty') or 1) for x in details), 2)
     _final_price = price
     if details:
-        _sum = sum(float(x.get('unit_price') or 0) * float(x.get('qty') or 1) for x in details)
-        # 旧版前端(无shipTotal)明细合计>0且总价为0时, 用明细合计兜底
-        if _final_price <= 0 and _sum > 0:
-            _final_price = _sum
+        if _goods > 0:
+            _final_price = round(_goods + _frt, 2)   # 服务端口径: 货款 + 运费
+        elif _final_price <= 0 and _goods > 0:
+            _final_price = _goods
     # V11.126: 行明细里的 交付日期/质保时间/品牌 汇总去重后存汇总字段
     # (详情页/比价表/订单备注直接显示; 旧版无details时保留原提交值)
     def _uniq_vals(vals):
@@ -7979,10 +7991,10 @@ def inquiry_vendor_quote(token):
         _delivery = d.get('quote_delivery') or ''
         _warranty = d.get('quote_warranty') or ''
         _brand = d.get('quote_brand') or ''
-    conn.execute("UPDATE inquiry_suppliers SET quote_price=?, quote_remark=?, quote_details=?, quote_delivery=?, quote_warranty=?, quote_brand=?, quote_time=? WHERE id=?",
+    conn.execute("UPDATE inquiry_suppliers SET quote_price=?, quote_remark=?, quote_details=?, quote_delivery=?, quote_warranty=?, quote_brand=?, quote_time=?, freight=? WHERE id=?",
                  (_final_price, (d.get('quote_remark') or '')[:200],
                   json.dumps(details, ensure_ascii=False) if details else '',
-                  _delivery[:60], _warranty[:60], _brand[:100], now(), s['id']))
+                  _delivery[:60], _warranty[:60], _brand[:100], now(), _frt, s['id']))
     # V11.133: 取消"三家报价自动提交审批" — 改为采购员在系统里手动点"提交审批"
     # (用户要求: 商家全部报价后不自动发起审批, 由人工确认后再提交定标)
     conn.commit(); conn.close()
@@ -8151,6 +8163,14 @@ def api_inquiry_select(iid):
         detail_parts.append('交付日期: %s' % quote_delivery)
     if quote_warranty:
         detail_parts.append('质保时间: %s' % quote_warranty)
+    _frt_s = 0.0
+    try:
+        _frt_s = float(s['freight'] or 0) if 'freight' in s.keys() else 0.0
+    except Exception:
+        _frt_s = 0.0
+    if _frt_s > 0:
+        # V11.297: 运费单列 → 订单备注写清"货款+运费=合计"
+        detail_parts.append('货款 ¥%.2f + 运费 ¥%.2f = 合计 ¥%.2f' % (round(float(total or 0) - _frt_s, 2), _frt_s, float(total or 0)))
     if _skipped:
         detail_parts.append('未报价行(本次未纳入订单): %s' % '、'.join(_skipped[:6]))  # V11.296
     if quote_remark:
@@ -8170,11 +8190,11 @@ def api_inquiry_select(iid):
     # 定标审批: 领导选定后, 订单草稿 + 提交定标审批(必须领导审批通过才能下单)
     settle_type = d.get('settle_type') or '现结'
     conn.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,
-        supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status,inquiry_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status,inquiry_id,freight) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (no, i['req_id'], first[0], first[1], sum(r[3] for r in rows), first[2], first[4], grand_amt, 0, 0, total,
          s['supplier_name'], pr['requester'] or '', '后勤类', session['user_name'], session['user_id'],
          pr['target_date'] or '', tm, remark, 0,
-         json.dumps([], ensure_ascii=False), '草稿', iid))  # V11.281: 回填来源询价id(原缺失 → 订单↔询价关联断) 
+         json.dumps([], ensure_ascii=False), '草稿', iid, _frt_s))  # V11.281: 回填来源询价id(原缺失 → 订单↔询价关联断) 
     oid = conn.execute("SELECT id FROM purchase_orders WHERE order_no=?", (no,)).fetchone()[0]
     for r in rows:
         conn.execute("INSERT INTO order_items(order_id,item_name,spec,unit,quantity,price,amount,tax_rate,tax_amount,total_amount,remark) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
@@ -8878,7 +8898,7 @@ def api_contracts():
         _ws = (_ws + ' AND ' if _ws else ' WHERE ') + "(c.trace_no=? OR po.order_no=?)"
         _args = _args + (f_trace, f_trace)
     conn = db()
-    rows = conn.execute("SELECT c.*,po.order_no,COALESCE(pr.req_type,'物资采购') AS req_type FROM contracts c LEFT JOIN purchase_orders po ON c.order_id=po.id LEFT JOIN purchase_requests pr ON pr.id=po.req_id" + _ws + " ORDER BY c.id DESC LIMIT 50", _args).fetchall()
+    rows = conn.execute("SELECT c.*,po.order_no,COALESCE(po.freight,0) AS freight,COALESCE(pr.req_type,'物资采购') AS req_type FROM contracts c LEFT JOIN purchase_orders po ON c.order_id=po.id LEFT JOIN purchase_requests pr ON pr.id=po.req_id" + _ws + " ORDER BY c.id DESC LIMIT 50", _args).fetchall()
     _atts = {}
     for _a in conn.execute("SELECT contract_id AS cid,id,file_name,file_path,file_kind,uploaded_by,created_at FROM contract_attachments ORDER BY id DESC").fetchall():
         _atts.setdefault(_a['cid'], []).append(dict_row(_a))
@@ -12701,7 +12721,14 @@ def api_contract_generate():
             except Exception:
                 _rq_tax = None
             if _oi:
-                total = round(sum(float(r['amount'] or 0) for r in _oi), 2)
+                # V11.297: 合同金额=明细合计+运费(含税含运总价口径; 运费由商家单独报出, 不摊进行单价)
+                _items_sum = round(sum(float(r['amount'] or 0) for r in _oi), 2)
+                _fr_o0 = 0.0
+                try:
+                    _fr_o0 = float(o['freight'] or 0) if 'freight' in o.keys() else 0.0
+                except Exception:
+                    _fr_o0 = 0.0
+                total = round(_items_sum + _fr_o0, 2)
                 rate = float(_oi[0]['tax_rate'] or 0)
                 if rate <= 0 and (o['tax_rate'] or 0):  # V11.254: 明细未录税率时回退订单税率
                     rate = float(o['tax_rate'] or 0)
@@ -12733,7 +12760,16 @@ def api_contract_generate():
                 conn.commit()
             except Exception:
                 pass
-            mapping['{合计金额}'] = f"¥{total:,.2f}（人民币大写：{rmb_upper(total)}）"  # 方案A: 总价=录入含税总价
+            _fr_ct = 0.0
+            try:
+                _fr_ct = float(o['freight'] or 0) if 'freight' in o.keys() else 0.0
+            except Exception:
+                _fr_ct = 0.0
+            if _fr_ct > 0:
+                # V11.297: 运费单列 → 合同金额写明"其中货款 X, 运费 Y"
+                mapping['{合计金额}'] = f"¥{total:,.2f}（人民币大写：{rmb_upper(total)}）（其中货款 ¥{round(total - _fr_ct, 2):,.2f}，运费 ¥{_fr_ct:,.2f}）"
+            else:
+                mapping['{合计金额}'] = f"¥{total:,.2f}（人民币大写：{rmb_upper(total)}）"  # 方案A
             # 交付天数
             days = ''
             if o['target_date']:
