@@ -11986,6 +11986,15 @@ def api_trace():
         if _item:
             for t2 in c.execute("SELECT item_name,spec,flow_type,doc_type,doc_no,qty,balance_after,operator,created_at FROM inventory_flows WHERE item_name=? ORDER BY id DESC LIMIT 20", (_item,)).fetchall():
                 out['flows'].append(dict(t2))
+        # V11.282 最终去重(强关联+启发式合并后, 按 id 去重, 避免同一单重复展示)
+        try:
+            for _k in ('requests', 'inquiries', 'orders', 'contracts'):
+                out['upstream'][_k] = _ddup(out['upstream'][_k])
+            for _k in ('inquiries', 'orders', 'contracts', 'receivings', 'requisitions', 'returns', 'payments', 'invoices', 'repairs'):
+                if _k in out['downstream']:
+                    out['downstream'][_k] = _ddup(out['downstream'][_k])
+        except Exception:
+            pass
         # 附件: 附件字段若有(/uploads/路径) → attachments
         _atts = row.get('attachments') or ''
         if _atts:
@@ -17250,7 +17259,9 @@ def api_dashboard_doc():
                     _n = _node(_st, x)
                     if _n and _n['no']:
                         chain.append(_n)
-            _sn = _node('本单', (row or {}))
+            _sn = _node({'purchase_requests': '采购申请', 'purchase_orders': '采购订单', 'inquiries': '三方询价', 'contracts': '采购合同',
+                         'receivings': '入库单', 'requisitions': '出库领用', 'invoices': '发票', 'payment_requests': '付款单',
+                         'repair_plans': '维修工单', 'credit_notes': '挂账单', 'expenses': '费用单'}.get(tbl, '本单'), (row or {}))
             if _sn and _sn['no'] and not any(x['no'] == _sn['no'] for x in chain):
                 chain.append(_sn)
             for _st, _k in (('采购订单', 'orders'), ('采购合同', 'contracts'), ('三方询价', 'inquiries')):
@@ -17269,6 +17280,16 @@ def api_dashboard_doc():
                     chain.append(_n)
             timeline = _tj.get('timeline') or []
             tr_logs = _tj.get('logs') or []
+        # 按业务顺序排列并去重(同一单只出现一次)
+        _W = {'采购申请': 1, '三方询价': 2, '采购订单': 3, '采购合同': 4, '入库单': 5, '库存流水': 6, '出库领用': 7,
+              '退库单': 8, '发票': 9, '付款单': 10, '挂账单': 11, '费用单': 12, '维修工单': 13}
+        _seen2, _sorted = set(), []
+        for _c in sorted(chain, key=lambda z: _W.get(z.get('stage'), 20)):
+            _k2 = (z2 := _c).get('stage'), z2.get('no')
+            if _k2 in _seen2:
+                continue
+            _seen2.add(_k2); _sorted.append(_c)
+        chain = _sorted
     except Exception:
         chain = chain or []
     # 审批记录
