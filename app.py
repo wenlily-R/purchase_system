@@ -17289,7 +17289,7 @@ def _dash_annot(cards, c, f, specs, own=None, own_ps=()):
 
 def _dash_tab_roles(tab):
     """看板页签可访问角色(默认内置, 可在看板配置中追加授权角色)"""
-    base = ['系统管理员', '分管领导', '总经理', '财务'] if tab == 'finance' else ['系统管理员', '分管领导', '总经理']
+    base = list(_DASH_FULL_ROLES) if tab == 'finance' else ['系统管理员', '分管领导', '总经理']
     try:
         c = db()
         extra = _dash_cfg_get(c, 'dash_tab_roles', {}) or {}

@@ -342,7 +342,7 @@ function renderChips(){
 async function refreshAll(){renderChips();Object.keys(charts).forEach(k=>{charts[k].dispose()});charts={};loadTab(CUR)}
 async function loadTab(t){
   const _fr=(window.DCFG&&DCFG.tab_roles&&DCFG.tab_roles.finance)||[];
-  if(t==='finance'&&META&&META.role&&!['系统管理员','分管领导','总经理','财务'].concat(_fr).includes(META.role)){
+  if(t==='finance'&&META&&META.role&&!['系统管理员','分管领导','总经理','财务','采购员'].concat(_fr).includes(META.role)){
     $('sec-finance').innerHTML='<div class="tt" style="padding:60px">🔒 财务分析仅对 财务/管理 角色开放</div>';return}
   const y=qs();let d;
   try{d=await api('/api/dashboard/'+t+(y?'?'+y:''))}catch(e){return}
