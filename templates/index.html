@@ -4254,6 +4254,7 @@ async function showRcvBatchForm(oid){
   id('dmTitle').textContent=`📦 新增验收批次 · ${esc(d.order.order_no)}`;
   id('dmBody').innerHTML=`
     <div style="font-size:9px;color:#666;margin-bottom:6px">订单订 <b>${st.order_total}</b> 件，已验收入库 <b>${st.accepted}</b> 件，本批可验 <b>${st.pending}</b> 件。逐行填写本批到货验收数量（本批统一按暂估提交）。每批独立走审批，审批通过后才增加库存；未验完的数量继续挂在待验收待定。</div>
+    <div style="margin-bottom:8px;background:#e8f4ff;border:1px solid #b8d8f5;color:#1a4b8f;border-radius:6px;padding:6px 10px;font-size:10px">💡 <b>注意：本批数量已默认填成"剩余待验收的全部数量"</b>。如果这次只到了一部分，请<b>手工改成实际到货数量</b>（提交前系统会再让你确认一次）。</div>
     <div style="margin-bottom:8px;background:#fff3e0;border:1px solid #f5cba7;color:#a05a12;border-radius:6px;padding:6px 10px;font-size:10px">🟠 入库统一按<b>暂估</b>提交：货到发票未到先入账；发票回来后由采购员在入库列表点【🧾发票核对】红冲，自动生成正式入库单。</div>
     <table class="tb" style="font-size:9px"><thead><tr><th>物资名称</th><th>规格</th><th>订单数量</th><th>已验收</th><th>待验收待定</th><th>本批验收数量</th></tr></thead>
     <tbody>${pl.map((x,i)=>`<tr><td>${esc(x.item_name)}</td><td>${esc(x.spec||'')}</td><td>${x.order_qty}</td><td>${x.accepted}</td><td><b style="color:${x.remaining>0?'#e65100':'#2e7d32'}">${x.remaining}</b></td><td><input type="number" style="width:76px;padding:2px 4px;border:1px solid var(--b);border-radius:3px" id="bq${i}" value="${x.remaining>0?x.remaining:''}" min="0" step="any" ${x.remaining<=0?'disabled':''}></td></tr>`).join('')}</tbody></table>`;
@@ -4267,6 +4268,19 @@ async function submitRcvBatch(oid,n){
     items.push({quantity:q});
   }
   if(!items.some(x=>x.quantity>0)){alert('请至少填写一行本批验收数量');return}
+  // V11.298: 提交前二次确认(避免把"剩余全量"误当本批数量提交)
+  try{
+    const _d2=await api(`/orders/${oid}`);
+    const _pl=(_d2.rcv_stats&&_d2.rcv_stats.per_line)||[];
+    let _txt='', _sum=0;
+    items.forEach((x,i)=>{
+      _sum+=x.quantity;
+      const _nm=(_pl[i]&&_pl[i].item_name)||('第'+(i+1)+'行');
+      const _rm=(_pl[i]&&_pl[i].remaining)||0;
+      _txt+='  · '+_nm+'：本批 '+x.quantity+(x.quantity===_rm?'（=剩余全部）':'（剩余 '+_rm+'）')+'\n';
+    });
+    if(!confirm('请确认本批验收数量：\n'+_txt+'\n合计 '+_sum+' 件，提交后本批独立走审批。\n\n如只到货一部分，请点"取消"回去修改。')) return;
+  }catch(e){ if(!confirm('确认提交本批验收？')) return; }
   // V11.249: 入库统一暂估
   const r=await api(`/orders/${oid}/receiving-batch`,{method:'POST',body:JSON.stringify({items,is_est:1})});
   if(r.success){alert('✅ '+r.message+'（🟠暂估）');closeMod();loadOrders();loadReceivings();loadDashboard()}
