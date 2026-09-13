@@ -103,13 +103,18 @@ def font_ok(stat):
 
 
 def eff_ea(doc, run, para):
-    """run 的**有效**中文字体: run rFonts → 段落样式链(Normal 等) → docDefaults
-    (渲染时新建的 run 常无 rFonts, 靠模板 Normal 样式兜底, 只查属性会误报)"""
+    """run 的**有效**中文字体: run rFonts → 段标记字体(pPr/rPr) → 段落样式链(Normal 等) → docDefaults
+    (渲染时新建的 run 常无 rFonts, 靠段标记/样式兜底, 只查 run 属性会误报)"""
     from docx.oxml.ns import qn
     rpr = run._element.find(qn('w:rPr'))
     rf = rpr.find(qn('w:rFonts')) if rpr is not None else None
     if rf is not None and rf.get(qn('w:eastAsia')):
         return rf.get(qn('w:eastAsia'))
+    ppr = para._p.find(qn('w:pPr'))
+    prpr = ppr.find(qn('w:rPr')) if ppr is not None else None
+    prf = prpr.find(qn('w:rFonts')) if prpr is not None else None
+    if prf is not None and prf.get(qn('w:eastAsia')):
+        return prf.get(qn('w:eastAsia'))
     st, seen = para.style, set()
     while st is not None and id(st) not in seen:
         seen.add(id(st))
@@ -145,6 +150,14 @@ def non_fangsong_runs(doc):
     return bad
 
 
+def raw_xml(path):
+    """模板/生成件原始 XML(document.xml+styles.xml) —— 查'宋体'残留(run/段标记/cs/样式全覆盖)"""
+    import zipfile
+    with zipfile.ZipFile(path) as z:
+        return ''.join(z.read(n).decode('utf-8', 'replace')
+                       for n in ('word/document.xml', 'word/styles.xml') if n in z.namelist())
+
+
 def main():
     import docx                      # noqa: 仅测试用
     tmp = tempfile.mkdtemp(prefix='test_repair_contract-')
@@ -170,9 +183,11 @@ def main():
     print('[1] 结构: 供应商档案 银行行号 列')
     cols = [r['name'] for r in c.execute("PRAGMA table_info(suppliers)").fetchall()]
     ck('suppliers.bank_no 已存在(迁移/init_db 双写)', 'bank_no' in cols, cols)
-    _tf = font_stat(docx.Document(os.path.join(BASE, 'contract_templates', '修理修缮合同.docx')))
+    _TPL = os.path.join(BASE, 'contract_templates', '修理修缮合同.docx')
+    _tf = font_stat(docx.Document(_TPL))
     ck('模板: 中文全仿宋、无宋体残留(数字/字母 Times New Roman)',
        font_ok(_tf) and not any(ea == '宋体' for _, ea in _tf), dict(_tf))
+    ck('模板: 原始XML内零"宋体"(run/段标记/cs/样式全覆盖)', '宋体' not in raw_xml(_TPL))
     c.execute("""INSERT INTO suppliers(name,contact,phone,category,level,bank,account,bank_no,tax_id,invoice_type,rating,status)
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
               (SUP, '赵工', '13800000000', '维修类', '核心供应商', '中国工商银行河曲支行', '6222020200001111',
@@ -204,8 +219,9 @@ def main():
     d = docx.Document(fpath)
     txt = '\n'.join(p.text for p in d.paragraphs)
     _gf = font_stat(d)
-    ck('生成件: 全篇中文渲染为仿宋(逐run有效字体: rFonts→样式→docDefaults, 无宋体兜底)',
+    ck('生成件: 全篇中文渲染为仿宋(逐run有效字体: rFonts→段标记→样式→docDefaults, 无宋体兜底)',
        not non_fangsong_runs(d) and not any(ea == '宋体' for _, ea in _gf), dict(_gf))
+    ck('生成件: 原始XML内零"宋体"(模板口径透传)', '宋体' not in raw_xml(fpath))
     allt = txt + '\n' + '\n'.join(cc.text for tb in d.tables for rw in tb.rows for cc in rw.cells)  # 含表格单元格
     t0, t1 = rows_of(d.tables[0]), rows_of(d.tables[1])
     total = 2000.0

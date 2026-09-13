@@ -103,22 +103,48 @@ def _norm_run(run):
     has_latin = bool(re.search(r'[0-9A-Za-z]', run.text))
     want = (LATIN if has_latin else FANGSONG, FANGSONG)
     cur = (rf.get(qn('w:ascii')), rf.get(qn('w:eastAsia')))
-    if cur == want:
+    if cur == want and rf.get(qn('w:cs')) == want[1]:
         return 0
     rf.set(qn('w:ascii'), want[0])
     rf.set(qn('w:hAnsi'), want[0])
     rf.set(qn('w:eastAsia'), want[1])
+    rf.set(qn('w:cs'), want[1])          # cs(复杂文种)原稿残留"宋体", 一并归掉免留"宋体"字样
+    return 1
+
+
+def _norm_para_mark(p):
+    """段标记字体(w:pPr/w:rPr 的 rFonts): 段内"无 rFonts 的 run"与 ¶ 的兜底, 原稿此处是宋体 → 归到仿宋"""
+    ppr = p._p.find(qn('w:pPr'))
+    if ppr is None:
+        return 0
+    rpr = ppr.find(qn('w:rPr'))
+    if rpr is None:
+        return 0
+    rf = rpr.find(qn('w:rFonts'))
+    if rf is None:
+        rf = OxmlElement('w:rFonts')
+        rpr.insert(0, rf)
+    if rf.get(qn('w:eastAsia')) == FANGSONG and rf.get(qn('w:cs')) == FANGSONG:
+        return 0
+    rf.set(qn('w:eastAsia'), FANGSONG)
+    rf.set(qn('w:cs'), FANGSONG)
+    if rf.get(qn('w:ascii')) == '宋体' or rf.get(qn('w:ascii')) is None:
+        rf.set(qn('w:ascii'), FANGSONG)
+        rf.set(qn('w:hAnsi'), FANGSONG)
     return 1
 
 
 _n_font = 0
+_n_mark = 0
 for p in d.paragraphs:
+    _n_mark += _norm_para_mark(p)
     for r in p.runs:
         _n_font += _norm_run(r)
 for tb in d.tables:
     for row in tb.rows:
         for c in row.cells:
             for pp in c.paragraphs:
+                _n_mark += _norm_para_mark(pp)
                 for r in pp.runs:
                     _n_font += _norm_run(r)
 # 样式兜底: Normal 样式/文档默认字体也归到同一口径(防将来新增 run 继承宋体)
@@ -146,7 +172,7 @@ try:
         log.append('docDefaults eastAsia → %s' % FANGSONG)
 except Exception as _e:
     log.append('docDefaults 字体归一失败: %s' % _e)
-log.append('字体归一: 改动 %d 个 run (中文→%s / 含数字字母→%s)' % (_n_font, FANGSONG, LATIN))
+log.append('字体归一: 改动 %d 个 run + %d 个段标记 (中文→%s / 含数字字母→%s)' % (_n_font, _n_mark, FANGSONG, LATIN))
 
 d.save(OUT)
 print('模板已生成:', OUT)
