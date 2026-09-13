@@ -1994,7 +1994,7 @@ async function showPRequest(pid){
   }
   const btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button>
     <button class="lnk" style="color:#7c5cff" onclick="showDocOps('purchase_request',${r.id},'申请单 ${esc(r.req_no)}')">🕘 操作记录</button>
-    <button class="btn btn-p btn-sm" onclick="window.open('/api/prequests/${r.id}/download','_blank')">⬇️ 下载申请单</button>
+    <button class="btn btn-p btn-sm" onclick="window.open('/api/prequests/${r.id}/${r.req_type=='设备维修'?'repair-download':'download'}','_blank')">${r.req_type=='设备维修'?'🖨️ 打印维修（加工）申请单':'⬇️ 下载申请单'}</button>
     <button class="btn btn-o btn-sm" style="color:#7c5cff" onclick="showChain('purchase_request',${r.id})">🔗 链路</button>
     ${(ME.role=='系统管理员'||ME.name==r.requester)?`<button class="btn btn-o btn-sm" style="color:#e67e22;border-color:#e67e22" onclick="urgentRemind('purchase_request',${r.id})">⏰ 钉钉加急提醒</button>`:''}
     ${((r.status=='已驳回'||(r.status=='草稿'&&(r.reject_count||0)>0))&&(ME.role=='系统管理员'||ME.name==r.requester))?`<button class="btn btn-p btn-sm" style="background:#16a34a;border-color:#16a34a" onclick="resubmitDoc('purchase_request',${r.id},'申请单','${esc(r.req_no)}')">🔄 再次提交审批</button>`:''}`;

@@ -13773,6 +13773,136 @@ def append_reject_rows(ws, start_row, biz_type, biz_id, ncols=11, CN=None):
         return start_row
 
 
+@app.route('/api/prequests/<int:rid>/repair-download')
+@login_required
+def api_prequest_repair_download(rid):
+    """V11.299 维修(加工)申请单 — 按用户提供纸质模板生成 xlsx(A4横向):
+    标题《维修(加工)申请单》+ 申请部门/申请日期/编号 + 6列表格(序号/设备名称/使用地点/型号规格/故障原因/维修内容)
+    + 空白行(供手写补充) + 底部签字栏(经办人/部门负责人/分管副总/计划采购部经理/总经理 + 计划采购部盖章)"""
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, Border, Side
+    conn = db()
+    pr = conn.execute("SELECT * FROM purchase_requests WHERE id=?", (rid,)).fetchone()
+    if not pr:
+        conn.close(); return jsonify({'error': '申请单不存在'}), 404
+    if _no_req_access():
+        conn.close(); return jsonify({'error': '无权限查看采购申请（库管员职责为库存/入库管理）'}), 403
+    if _data_scope_denied(requester_id=pr['requester_id'], requester=pr['requester']):
+        conn.close(); return jsonify({'error': '无权下载该单据'}), 403
+    items = conn.execute("SELECT * FROM request_items WHERE req_id=? ORDER BY id", (rid,)).fetchall()
+    conn.close()
+    def gv(row, key, default=''):
+        try:
+            v = row[key]
+            return default if v is None else v
+        except Exception:
+            return default
+    wb = Workbook(); ws = wb.active; ws.title = '维修加工申请单'
+    CN = lambda bold=False, size=11: Font(name='宋体', bold=bold, size=size)
+    thin = Side(style='thin'); border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    cen = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    lef = Alignment(horizontal='left', vertical='center', wrap_text=True)
+    d = pr['apply_date'] or pr['created_at'] or ''
+    ds = str(d)[:10]
+    try:
+        if '年' in ds:
+            y, m, dd = re.split(r'[年月日]', ds)[:3]
+            date_cn = '%d年%d月%d日' % (int(y), int(m), int(dd))
+        else:
+            y, m, dd = ds.split('-')
+            date_cn = '%s年%d月%d日' % (y, int(m), int(dd))
+    except Exception:
+        date_cn = ds
+    # 标题
+    ws.merge_cells('A1:F1')
+    ws['A1'] = '维修（加工）申请单'
+    ws['A1'].font = CN(bold=True, size=20); ws['A1'].alignment = cen
+    ws.row_dimensions[1].height = 40
+    # 部门/日期/编号
+    ws.merge_cells('A2:B2'); ws.merge_cells('C2:D2'); ws.merge_cells('E2:F2')
+    ws['A2'] = '申请部门：%s' % (pr['dept'] or '')
+    ws['C2'] = '申请日期：%s' % date_cn
+    ws['E2'] = '编号：%s' % (pr['req_no'] or '')
+    for cc in ('A2', 'C2', 'E2'):
+        ws[cc].font = CN(size=11); ws[cc].alignment = lef
+    ws.row_dimensions[2].height = 22
+    # 表头
+    headers = ['序号', '设备名称', '使用地点', '型号/规格', '故障原因', '维修内容']
+    for j, h in enumerate(headers, 1):
+        cell = ws.cell(row=3, column=j, value=h)
+        cell.font = CN(bold=True); cell.alignment = cen; cell.border = border
+    ws.row_dimensions[3].height = 26
+    # 明细: 设备名称/型号规格/故障原因 只在首行体现(与本单"一台设备多个维修项"的结构一致), 维修内容逐行展开
+    dev = (gv(pr, 'repair_device') or '').strip()
+    fault = (gv(pr, 'repair_fault') or '').strip()
+    content_rows = []
+    for it in items:
+        nm = (gv(it, 'item_name') or '').strip()
+        sp = (gv(it, 'spec') or '').strip()
+        qty = gv(it, 'quantity') or ''
+        unit = (gv(it, 'unit') or '').strip()
+        txt = nm
+        if qty and float(qty or 0) > 0:
+            txt += '%s%s' % (('%g' % float(qty)), unit)
+        content_rows.append((txt, sp))
+    if not content_rows:
+        content_rows = [(gv(pr, 'purpose') or '需维修', '')]
+    r = 4
+    for i, (txt, sp) in enumerate(content_rows, 1):
+        ws.cell(row=r, column=1, value=i).font = CN(); ws.cell(row=r, column=1).alignment = cen
+        ws.cell(row=r, column=2, value=(dev if i == 1 else '')).font = CN(); ws.cell(row=r, column=2).alignment = lef
+        ws.cell(row=r, column=3, value='').font = CN()          # 使用地点: 系统未采集, 留空手写
+        ws.cell(row=r, column=4, value=(sp if not sp or i == 1 else '')).font = CN(); ws.cell(row=r, column=4).alignment = lef
+        ws.cell(row=r, column=5, value=(fault if i == 1 else '')).font = CN(); ws.cell(row=r, column=5).alignment = lef
+        ws.cell(row=r, column=6, value=txt).font = CN(); ws.cell(row=r, column=6).alignment = lef
+        for j in range(1, 7):
+            ws.cell(row=r, column=j).border = border
+        ws.row_dimensions[r].height = 30
+        r += 1
+    # 空白行(供手写补充, 与纸质单一致共留到 10 行)
+    blank_until = max(10, r - 1)
+    while r <= blank_until + 3:
+        for j in range(1, 7):
+            cell = ws.cell(row=r, column=j, value=(r - 3 if j == 1 else None))
+            cell.font = CN(); cell.border = border; cell.alignment = cen
+        ws.row_dimensions[r].height = 30
+        r += 1
+    # 签字栏
+    r += 1
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=3)
+    ws.merge_cells(start_row=r, start_column=4, end_row=r, end_column=6)
+    ws.cell(row=r, column=1, value='经办人：%s' % (pr['requester'] or '')).font = CN(size=11)
+    ws.cell(row=r, column=1).alignment = lef
+    ws.cell(row=r, column=4, value='部门负责人：').font = CN(size=11); ws.cell(row=r, column=4).alignment = lef
+    ws.row_dimensions[r].height = 30
+    r += 1
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=3)
+    ws.merge_cells(start_row=r, start_column=4, end_row=r, end_column=6)
+    ws.cell(row=r, column=1, value='分管副总：').font = CN(size=11); ws.cell(row=r, column=1).alignment = lef
+    ws.cell(row=r, column=4, value='计划采购部经理：').font = CN(size=11); ws.cell(row=r, column=4).alignment = lef
+    ws.row_dimensions[r].height = 30
+    r += 1
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=3)
+    ws.merge_cells(start_row=r, start_column=4, end_row=r, end_column=6)
+    ws.cell(row=r, column=1, value='总经理：').font = CN(size=11); ws.cell(row=r, column=1).alignment = lef
+    ws.cell(row=r, column=4, value='计划采购部：        （盖章）').font = CN(size=11); ws.cell(row=r, column=4).alignment = lef
+    ws.row_dimensions[r].height = 30
+    # 打印设置: A4 横向, 缩放到一页宽
+    ws.page_setup.orientation = 'landscape'
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    for col, w in zip('ABCDEF', [6, 22, 14, 14, 26, 30]):
+        ws.column_dimensions[col].width = w
+    bio = io.BytesIO(); wb.save(bio); bio.seek(0)
+    fn = '维修加工申请单-%s.xlsx' % (pr['req_no'] or rid)
+    app.logger.info('维修申请单下载: %s by %s', pr['req_no'], session.get('user_name'))
+    from flask import send_file
+    return send_file(bio, as_attachment=True, download_name=fn,
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
 @app.route('/api/prequests/<int:rid>/download')
 @login_required
 def api_prequest_download(rid):
