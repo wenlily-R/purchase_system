@@ -74,6 +74,77 @@ def rows_of(tb):
     return [[c.text.strip() for c in r.cells] for r in tb.rows]
 
 
+def font_stat(doc):
+    """非空 run 的 (ascii, eastAsia) 字体分布(段落+表格) —— 字体口径回归用"""
+    from collections import Counter
+    from docx.oxml.ns import qn
+    cnt = Counter()
+
+    def grab(paras):
+        for pp in paras:
+            for r in pp.runs:
+                if not r.text.strip():
+                    continue
+                rpr = r._element.find(qn('w:rPr'))
+                rf = rpr.find(qn('w:rFonts')) if rpr is not None else None
+                cnt[(rf.get(qn('w:ascii')) if rf is not None else None,
+                     rf.get(qn('w:eastAsia')) if rf is not None else None)] += 1
+    grab(doc.paragraphs)
+    for tb in doc.tables:
+        for rw in tb.rows:
+            for cc in rw.cells:
+                grab(cc.paragraphs)
+    return cnt
+
+
+def font_ok(stat):
+    """中文一律仿宋 + 西文/数字仅 Times New Roman/仿宋(用户 2026-09-13 字体归一要求)"""
+    return all(ea == '仿宋' for _, ea in stat) and all(a in ('仿宋', 'Times New Roman') for a, _ in stat)
+
+
+def eff_ea(doc, run, para):
+    """run 的**有效**中文字体: run rFonts → 段落样式链(Normal 等) → docDefaults
+    (渲染时新建的 run 常无 rFonts, 靠模板 Normal 样式兜底, 只查属性会误报)"""
+    from docx.oxml.ns import qn
+    rpr = run._element.find(qn('w:rPr'))
+    rf = rpr.find(qn('w:rFonts')) if rpr is not None else None
+    if rf is not None and rf.get(qn('w:eastAsia')):
+        return rf.get(qn('w:eastAsia'))
+    st, seen = para.style, set()
+    while st is not None and id(st) not in seen:
+        seen.add(id(st))
+        srpr = st.element.find(qn('w:rPr'))
+        srf = srpr.find(qn('w:rFonts')) if srpr is not None else None
+        if srf is not None and srf.get(qn('w:eastAsia')):
+            return srf.get(qn('w:eastAsia'))
+        st = st.base_style
+    dd = doc.styles.element.find(qn('w:docDefaults'))
+    if dd is not None:
+        rp = dd.find(qn('w:rPrDefault'))
+        rp = rp.find(qn('w:rPr')) if rp is not None else None
+        rf2 = rp.find(qn('w:rFonts')) if rp is not None else None
+        if rf2 is not None:
+            return rf2.get(qn('w:eastAsia'))
+    return None
+
+
+def non_fangsong_runs(doc):
+    """全篇(段落+表格)非空 run 里, 有效中文字体不是仿宋的清单 —— 空清单=整篇中文渲染为仿宋"""
+    bad = []
+
+    def grab(paras):
+        for pp in paras:
+            for r in pp.runs:
+                if r.text.strip() and eff_ea(doc, r, pp) != '仿宋':
+                    bad.append((r.text[:24], eff_ea(doc, r, pp)))
+    grab(doc.paragraphs)
+    for tb in doc.tables:
+        for rw in tb.rows:
+            for cc in rw.cells:
+                grab(cc.paragraphs)
+    return bad
+
+
 def main():
     import docx                      # noqa: 仅测试用
     tmp = tempfile.mkdtemp(prefix='test_repair_contract-')
@@ -99,6 +170,9 @@ def main():
     print('[1] 结构: 供应商档案 银行行号 列')
     cols = [r['name'] for r in c.execute("PRAGMA table_info(suppliers)").fetchall()]
     ck('suppliers.bank_no 已存在(迁移/init_db 双写)', 'bank_no' in cols, cols)
+    _tf = font_stat(docx.Document(os.path.join(BASE, 'contract_templates', '修理修缮合同.docx')))
+    ck('模板: 中文全仿宋、无宋体残留(数字/字母 Times New Roman)',
+       font_ok(_tf) and not any(ea == '宋体' for _, ea in _tf), dict(_tf))
     c.execute("""INSERT INTO suppliers(name,contact,phone,category,level,bank,account,bank_no,tax_id,invoice_type,rating,status)
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
               (SUP, '赵工', '13800000000', '维修类', '核心供应商', '中国工商银行河曲支行', '6222020200001111',
@@ -129,6 +203,9 @@ def main():
     ck('合同文件已落盘', os.path.exists(fpath), fpath)
     d = docx.Document(fpath)
     txt = '\n'.join(p.text for p in d.paragraphs)
+    _gf = font_stat(d)
+    ck('生成件: 全篇中文渲染为仿宋(逐run有效字体: rFonts→样式→docDefaults, 无宋体兜底)',
+       not non_fangsong_runs(d) and not any(ea == '宋体' for _, ea in _gf), dict(_gf))
     allt = txt + '\n' + '\n'.join(cc.text for tb in d.tables for rw in tb.rows for cc in rw.cells)  # 含表格单元格
     t0, t1 = rows_of(d.tables[0]), rows_of(d.tables[1])
     total = 2000.0

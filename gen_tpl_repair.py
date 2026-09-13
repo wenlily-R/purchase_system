@@ -12,9 +12,12 @@
 用法: python gen_tpl_repair.py [源docx路径]   (默认 桌面/修理修缮合同.docx)
 """
 import os
+import re
 import sys
 
 import docx
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 SRC = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.expanduser('~'), 'Desktop', '修理修缮合同.docx')
@@ -81,6 +84,69 @@ for ti, tb in enumerate(d.tables):
                     for rr in pp.runs:
                         rr.text = ''
                 log.append('T%d 清除示例数字 %r' % (ti, _t))
+
+# 5) 字体统一(用户 2026-09-13 要求): 全篇中文(含标题、表格标题行)一律 仿宋;
+#    含西文数字/字母的 run 用 Times New Roman(与《买卖合同》模板/公文口径一致)。
+#    只改 w:rFonts, 不动字号/加粗/下划线/对齐 —— 原稿里 P0 标题与"维修明细单"标题是宋体(或继承 docDefaults 宋体), 此处一并归到仿宋。
+FANGSONG, LATIN = '仿宋', 'Times New Roman'
+
+
+def _norm_run(run):
+    """run 级字体归一: 中文仿宋 + 西文数字 Times New Roman(返回 0/1 表示是否改动)"""
+    if not run.text.strip():
+        return 0
+    rpr = run._element.get_or_add_rPr()
+    rf = rpr.find(qn('w:rFonts')) if rpr is not None else None
+    if rf is None:
+        rf = OxmlElement('w:rFonts')
+        rpr.insert(0, rf)
+    has_latin = bool(re.search(r'[0-9A-Za-z]', run.text))
+    want = (LATIN if has_latin else FANGSONG, FANGSONG)
+    cur = (rf.get(qn('w:ascii')), rf.get(qn('w:eastAsia')))
+    if cur == want:
+        return 0
+    rf.set(qn('w:ascii'), want[0])
+    rf.set(qn('w:hAnsi'), want[0])
+    rf.set(qn('w:eastAsia'), want[1])
+    return 1
+
+
+_n_font = 0
+for p in d.paragraphs:
+    for r in p.runs:
+        _n_font += _norm_run(r)
+for tb in d.tables:
+    for row in tb.rows:
+        for c in row.cells:
+            for pp in c.paragraphs:
+                for r in pp.runs:
+                    _n_font += _norm_run(r)
+# 样式兜底: Normal 样式/文档默认字体也归到同一口径(防将来新增 run 继承宋体)
+_st = d.styles['Normal']
+try:
+    _st.font.name = LATIN
+    _sp = _st.element.get_or_add_rPr()
+    _srf = _sp.find(qn('w:rFonts'))
+    if _srf is None:
+        _srf = OxmlElement('w:rFonts')
+        _sp.insert(0, _srf)
+    _srf.set(qn('w:ascii'), LATIN)
+    _srf.set(qn('w:hAnsi'), LATIN)
+    _srf.set(qn('w:eastAsia'), FANGSONG)
+except Exception as _e:
+    log.append('Normal 样式字体归一失败: %s' % _e)
+# 最后兜底: docDefaults 的 eastAsia 原为宋体(无 rFonts 的 run 最终落到这里) → 一并归到仿宋
+try:
+    _dd = d.styles.element.find(qn('w:docDefaults'))
+    _rp = _dd.find(qn('w:rPrDefault')) if _dd is not None else None
+    _rp = _rp.find(qn('w:rPr')) if _rp is not None else None
+    _drf = _rp.find(qn('w:rFonts')) if _rp is not None else None
+    if _drf is not None:
+        _drf.set(qn('w:eastAsia'), FANGSONG)
+        log.append('docDefaults eastAsia → %s' % FANGSONG)
+except Exception as _e:
+    log.append('docDefaults 字体归一失败: %s' % _e)
+log.append('字体归一: 改动 %d 个 run (中文→%s / 含数字字母→%s)' % (_n_font, FANGSONG, LATIN))
 
 d.save(OUT)
 print('模板已生成:', OUT)
