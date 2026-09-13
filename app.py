@@ -5800,7 +5800,7 @@ def api_create_prequest():
     conn = db()
     items = d.get('items', [])
     # V11.281b: 文本限长(前端已限, 后端兜底防绕过接口)
-    for _k, _lim in (('purpose', 200), ('remark', 300), ('repair_device', 100), ('repair_fault', 300)):
+    for _k, _lim in (('purpose', 200), ('remark', 300), ('repair_device', 100), ('repair_fault', 300), ('repair_location', 100)):
         if isinstance(d.get(_k), str) and len(d[_k]) > _lim:
             d[_k] = d[_k][:_lim]
     for _it in (items or []):
@@ -5843,13 +5843,13 @@ def api_create_prequest():
         try:
             # V11.154: draft=true → 存草稿不提交审批(采购员检查后再手动提交)
             _status = '草稿' if d.get('draft') else '待审批'
-            conn.execute("""INSERT INTO purchase_requests(req_no,dept,requester,requester_id,budget_code,purpose,target_date,total_estimated,remark,attachments,urgent,apply_date,req_type,status,repair_device,repair_fault)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            conn.execute("""INSERT INTO purchase_requests(req_no,dept,requester,requester_id,budget_code,purpose,target_date,total_estimated,remark,attachments,urgent,apply_date,req_type,status,repair_device,repair_fault,repair_location)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (no, d.get('dept',''), session['user_name'], session['user_id'], d.get('budget_code',''),
                  d.get('purpose',''), d.get('target_date'), total, d.get('remark',''),
                  json.dumps(d.get('attachments') or [], ensure_ascii=False), 1 if d.get('urgent') else 0, apply_date,
                  d.get('req_type') or '物资采购', _status,
-                 str(d.get('repair_device') or ''), str(d.get('repair_fault') or '')))
+                 str(d.get('repair_device') or ''), str(d.get('repair_fault') or ''), str(d.get('repair_location') or '')))
             _bzn = gen_biz_no(conn)
             conn.execute("UPDATE purchase_requests SET biz_no=? WHERE req_no=?", (_bzn, no))
             break
@@ -5966,7 +5966,7 @@ def api_resubmit_prequest(rid):
         conn.close(); return jsonify({'error': '请填写到货/完工时间（须如实填写，审批环节会核验时间合理性）'}), 400
     # V11.187: 存草稿(draft=true) — 保存内容但状态保持草稿(不进审批/不清驳回标记); 提交则清标记+回待审批
     if d.get('draft'):
-        conn.execute("UPDATE purchase_requests SET purpose=?, dept=?, budget_code=?, target_date=?, remark=?, req_type=?, urgent=?, attachments=?, total_estimated=?, repair_device=?, repair_fault=?, status='草稿', updated_at=? WHERE id=?",
+        conn.execute("UPDATE purchase_requests SET purpose=?, dept=?, budget_code=?, target_date=?, remark=?, req_type=?, urgent=?, attachments=?, total_estimated=?, repair_device=?, repair_fault=?, repair_location=?, status='草稿', updated_at=? WHERE id=?",
                      (d.get('purpose', pr['purpose']), d.get('dept', pr['dept']), d.get('budget_code', pr['budget_code']),
                       d.get('target_date', pr['target_date']), d.get('remark', pr['remark']),
                       d.get('req_type', pr['req_type'] if 'req_type' in pr.keys() else '物资采购'),
@@ -5975,9 +5975,10 @@ def api_resubmit_prequest(rid):
                       total,
                       str(d.get('repair_device', pr['repair_device'] if 'repair_device' in pr.keys() else '')),
                       str(d.get('repair_fault', pr['repair_fault'] if 'repair_fault' in pr.keys() else '')),
+                      str(d.get('repair_location', pr['repair_location'] if 'repair_location' in pr.keys() else '')),
                       now(), rid))
     else:
-        conn.execute("UPDATE purchase_requests SET purpose=?, dept=?, budget_code=?, target_date=?, remark=?, req_type=?, urgent=?, attachments=?, total_estimated=?, repair_device=?, repair_fault=?, status='待审批', rejected_reason='', rejected_items='', resubmit_count=resubmit_count+1, updated_at=? WHERE id=?",
+        conn.execute("UPDATE purchase_requests SET purpose=?, dept=?, budget_code=?, target_date=?, remark=?, req_type=?, urgent=?, attachments=?, total_estimated=?, repair_device=?, repair_fault=?, repair_location=?, status='待审批', rejected_reason='', rejected_items='', resubmit_count=resubmit_count+1, updated_at=? WHERE id=?",
                      (d.get('purpose', pr['purpose']), d.get('dept', pr['dept']), d.get('budget_code', pr['budget_code']),
                       d.get('target_date', pr['target_date']), d.get('remark', pr['remark']),
                       d.get('req_type', pr['req_type'] if 'req_type' in pr.keys() else '物资采购'),
@@ -5986,6 +5987,7 @@ def api_resubmit_prequest(rid):
                       total,
                       str(d.get('repair_device', pr['repair_device'] if 'repair_device' in pr.keys() else '')),
                       str(d.get('repair_fault', pr['repair_fault'] if 'repair_fault' in pr.keys() else '')),
+                      str(d.get('repair_location', pr['repair_location'] if 'repair_location' in pr.keys() else '')),
                       now(), rid))
     if items:
         # V11.154: 传了明细才重建(编辑时); 不传则保留现有明细(草稿提交审批场景)
@@ -13939,7 +13941,7 @@ def api_prequest_repair_download(rid):
         ws[cc].font = CN(size=11); ws[cc].alignment = lef
     ws.row_dimensions[2].height = 22
     # 表头
-    headers = ['序号', '设备名称', '使用地点', '型号/规格', '故障原因', '维修内容']
+    headers = ['序号', '设备名称/项目', '使用地点', '型号/规格', '故障原因', '维修内容']
     for j, h in enumerate(headers, 1):
         cell = ws.cell(row=3, column=j, value=h)
         cell.font = CN(bold=True); cell.alignment = cen; cell.border = border
@@ -13947,6 +13949,7 @@ def api_prequest_repair_download(rid):
     # 明细: 设备名称/型号规格/故障原因 只在首行体现(与本单"一台设备多个维修项"的结构一致), 维修内容逐行展开
     dev = (gv(pr, 'repair_device') or '').strip()
     fault = (gv(pr, 'repair_fault') or '').strip()
+    loc = (gv(pr, 'repair_location') or '').strip()
     content_rows = []
     for it in items:
         nm = (gv(it, 'item_name') or '').strip()
@@ -13963,7 +13966,7 @@ def api_prequest_repair_download(rid):
     for i, (txt, sp) in enumerate(content_rows, 1):
         ws.cell(row=r, column=1, value=i).font = CN(); ws.cell(row=r, column=1).alignment = cen
         ws.cell(row=r, column=2, value=(dev if i == 1 else '')).font = CN(); ws.cell(row=r, column=2).alignment = lef
-        ws.cell(row=r, column=3, value='').font = CN()          # 使用地点: 系统未采集, 留空手写
+        ws.cell(row=r, column=3, value=(loc if i == 1 else '')).font = CN(); ws.cell(row=r, column=3).alignment = lef
         ws.cell(row=r, column=4, value=(sp if not sp or i == 1 else '')).font = CN(); ws.cell(row=r, column=4).alignment = lef
         ws.cell(row=r, column=5, value=(fault if i == 1 else '')).font = CN(); ws.cell(row=r, column=5).alignment = lef
         ws.cell(row=r, column=6, value=txt).font = CN(); ws.cell(row=r, column=6).alignment = lef

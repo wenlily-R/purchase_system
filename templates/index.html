@@ -1831,6 +1831,7 @@ async function editPRequest(oid){
     <div id="repairFields" style="display:none;border:1px solid #f0d9b5;background:#fffaf2;border-radius:6px;padding:6px;margin-bottom:6px">
       <div style="font-size:9px;color:#8a6d3b;margin-bottom:4px">🔧 维修信息（维修业务并入采购申请办理；压高压胶管/打黄油/补胎补气等小额透明维修也在此发起）</div>
       <div class="fr"><div class="fg"><label class="fl2">故障设备名称 *</label><input class="fc" id="fReqDev" maxlength="100" placeholder="如: 3号装载机变速箱"></div>
+      <div class="fg"><label class="fl2">使用地点</label><input class="fc" id="fReqLoc" maxlength="100" placeholder="如: 生产车间 / 1号线"></div>
       <div class="fg"><label class="fl2">故障描述 / 维修内容 *</label><input class="fc" id="fReqFault" maxlength="300" placeholder="如: 异响漏油, 需厂家拆解定损"></div></div>
       <div style="font-size:8px;color:#999;margin-top:3px">设备送厂家拆解定损后，维修项目清单可补录到下方明细表（物品=维修项目/备件）或整单附图上传定损单。</div>
     </div>
@@ -1859,6 +1860,7 @@ async function editPRequest(oid){
   id('fReqType').value=((r.req_type||'物资采购')=='设备维修')?'设备维修':'物资采购';
   if(id('fReqDev'))id('fReqDev').value=r.repair_device||'';
   if(id('fReqFault'))id('fReqFault').value=r.repair_fault||'';
+  if(id('fReqLoc'))id('fReqLoc').value=r.repair_location||'';
   reqTypeChanged();
   // 整单附件列表回显
   reqAtts.forEach(a=>{const _wrap=document.createElement('div');_wrap.style.display='flex';_wrap.style.alignItems='center';_wrap.style.gap='6px';_wrap.innerHTML=`<a href="/uploads/${esc(a)}" target="_blank" style="color:#3370ff">📄 ${esc(a.split('/').pop())}</a><span onclick="this.parentElement.remove()" style="cursor:pointer;color:var(--d)">✕</span>`;id('reqAttList').appendChild(_wrap)});
@@ -1902,7 +1904,7 @@ async function doSavePReq(asDraft,oid){
     }
   }
   const body={purpose:id('fReqPurp').value,dept:id('fReqDept')?.value||'',budget_code:id('fReqBud')?.value||'',
-    target_date:id('fReqDate').value,remark:id('fReqRem')?.value||'',req_type:_rtEd,repair_device:id('fReqDev')?.value||'',repair_fault:id('fReqFault')?.value||'',
+    target_date:id('fReqDate').value,remark:id('fReqRem')?.value||'',req_type:_rtEd,repair_device:id('fReqDev')?.value||'',repair_fault:id('fReqFault')?.value||'',repair_location:id('fReqLoc')?.value||'',
     urgent:id('fReqUrgent')?.checked?1:0,attachments:reqAtts||[],apply_date:(id('fReqApplyDate')?.value||'').replace(/年/g,'-').replace(/月/g,'-').replace(/日/g,''),items};
   if(asDraft)body.draft=true;
   const r=await api(`/prequests/${oid}/resubmit`,{method:'POST',body:JSON.stringify(body)});
@@ -1948,7 +1950,7 @@ async function showPRequest(pid){
   }
   let h='';
   if(_showRep){
-    h+=`<div style="background:#fff8f0;border:1px solid #f0d9b5;color:#8a4b0f;font-size:10px;padding:5px 8px;border-radius:4px;margin-bottom:6px">${r.repair_converted?'⚠️':'🔧'} <b>${r.repair_converted?'原设备维修申请（已转物资采购）':'设备维修申请'}</b>${r.repair_device?` ｜ 设备: <b>${esc(r.repair_device)}</b>`:''}${r.repair_fault?`<br>故障描述: ${esc(r.repair_fault)}`:''}${r.repair_converted?'<br><span style="color:#c0392b">已按定损结论变更为物资采购，走寻价比价采购新设备（维修痕迹保留）</span>':''}${_entrustTxt}</div>${_entrustBtns}`;
+    h+=`<div style="background:#fff8f0;border:1px solid #f0d9b5;color:#8a4b0f;font-size:10px;padding:5px 8px;border-radius:4px;margin-bottom:6px">${r.repair_converted?'⚠️':'🔧'} <b>${r.repair_converted?'原设备维修申请（已转物资采购）':'设备维修申请'}</b>${r.repair_device?` ｜ 设备: <b>${esc(r.repair_device)}</b>`:''}${r.repair_location?` ｜ 使用地点: <b>${esc(r.repair_location)}</b>`:''}${r.repair_fault?`<br>故障描述: ${esc(r.repair_fault)}`:''}${r.repair_converted?'<br><span style="color:#c0392b">已按定损结论变更为物资采购，走寻价比价采购新设备（维修痕迹保留）</span>':''}${_entrustTxt}</div>${_entrustBtns}`;
   }
   // V11.285: 维修金额变更确认 / 小额直接委托审批 状态提示
   if(_showRep){
@@ -6001,6 +6003,7 @@ async function showForm(type){
       <div id="repairFields" style="display:none;border:1px solid #f0d9b5;background:#fffaf2;border-radius:6px;padding:6px;margin-bottom:6px">
         <div style="font-size:9px;color:#8a6d3b;margin-bottom:4px">🔧 维修信息（维修业务并入采购申请办理；压高压胶管/打黄油/补胎补气等小额透明维修也在此发起）</div>
         <div class="fr"><div class="fg"><label class="fl2">故障设备名称 *</label><input class="fc" id="fReqDev" maxlength="100" placeholder="如: 3号装载机变速箱"></div>
+        <div class="fg"><label class="fl2">使用地点</label><input class="fc" id="fReqLoc" maxlength="100" placeholder="如: 生产车间 / 1号线"></div>
         <div class="fg"><label class="fl2">故障描述 / 维修内容 *</label><input class="fc" id="fReqFault" maxlength="300" placeholder="如: 异响漏油, 需厂家拆解定损"></div></div>
         <div style="font-size:8px;color:#999;margin-top:3px">设备送厂家拆解定损后，维修项目清单可补录到下方明细表（物品=维修项目/备件）或整单附图上传定损单。</div>
       </div>
@@ -6299,7 +6302,7 @@ function prCollect(){
     });
     d.items=items;d.reqAtts=(typeof reqAtts!=='undefined'&&reqAtts)?reqAtts.slice():[];
     d.req_type=id('fReqType')?.value||'物资采购';
-    d.repair_device=id('fReqDev')?.value||'';d.repair_fault=id('fReqFault')?.value||'';
+    d.repair_device=id('fReqDev')?.value||'';d.repair_fault=id('fReqFault')?.value||'';d.repair_location=id('fReqLoc')?.value||'';
     return d;
   }catch(e){return null}
 }
@@ -6332,6 +6335,7 @@ function prTryRestore(){
   if(d.req_type&&id('fReqType'))id('fReqType').value=d.req_type;
   if(d.repair_device&&id('fReqDev'))id('fReqDev').value=d.repair_device;
   if(d.repair_fault&&id('fReqFault'))id('fReqFault').value=d.repair_fault;
+  if(d.repair_location&&id('fReqLoc'))id('fReqLoc').value=d.repair_location;
   reqTypeChanged();
   toast('📝 已恢复上次未提交的草稿(提交或存草稿成功后自动清除)');
 }
@@ -6455,7 +6459,7 @@ async function createPRequest(asDraft){
         if(_dc.startsWith('ask:')&&!confirm(_dc.slice(4))){if(btn){btn.disabled=false;btn.textContent='提交申请'}return}
       }
     }
-    const d={dept:id('fReqDept').value,budget_code:id('fReqBud').value,purpose:id('fReqPurp').value,target_date:id('fReqDate').value,remark:id('fReqRem').value,items,urgent:id('fReqUrgent')?.checked?1:0,attachments:reqAtts,apply_date:(id('fReqApplyDate')?.value||'').replace(/年/g,'-').replace(/月/g,'-').replace(/日/g,''),req_type:_rtNew,repair_device:id('fReqDev')?.value||'',repair_fault:id('fReqFault')?.value||'',draft:asDraft||false};
+    const d={dept:id('fReqDept').value,budget_code:id('fReqBud').value,purpose:id('fReqPurp').value,target_date:id('fReqDate').value,remark:id('fReqRem').value,items,urgent:id('fReqUrgent')?.checked?1:0,attachments:reqAtts,apply_date:(id('fReqApplyDate')?.value||'').replace(/年/g,'-').replace(/月/g,'-').replace(/日/g,''),req_type:_rtNew,repair_device:id('fReqDev')?.value||'',repair_fault:id('fReqFault')?.value||'',repair_location:id('fReqLoc')?.value||'',draft:asDraft||false};
     const r=await api('/prequests',{method:'POST',body:JSON.stringify(d)});
     if(r.success){window.__prDraftOn=false;try{localStorage.removeItem('prDraft')}catch(e){}toast(asDraft?'✅ 已存草稿(可稍后在列表继续编辑提交)':('✅ 已提交'+(r.req_no?(' '+r.req_no):'')));closeMod();reqAtts=[];loadPRequests();loadDashboard()}
     else if(r.error){alert('保存失败: '+r.error)}
