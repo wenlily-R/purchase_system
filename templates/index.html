@@ -2622,12 +2622,12 @@ async function showRepairOrderView(ordid, d, my){
   <div class="c2"><div><dt>单号</dt><dd><b>${esc(o.order_no)}</b></dd><dt>维修申请</dt><dd>${o.req_no?`<a class="lnk" onclick="showPRequest(${o.req_id})">${esc(o.req_no)} ↗</a>`:'#'+(o.req_id||'')}</dd><dt>供应商(维修商)</dt><dd>${esc(o.supplier)}</dd><dt>金额</dt><dd>¥${(o.total_amount||0).toFixed(0)}</dd></div>
   <div><dt>负责人</dt><dd>${esc(o.owner)}</dd><dt>状态</dt><dd>${tag(o.status)}</dd><dt>完工登记</dt><dd>${_done?`<span style="color:#2e7d32;font-weight:700">✅ ${esc(_done)}</span>`:'<span style="color:#b7791f">待完工</span>'}</dd><dt>交易模式</dt><dd>${esc(o.trade_mode||'货到付款')}</dd></div></div>`;
   if(_done)h+=`<div style="background:#e8f5e9;border:1px solid #a5d6a7;color:#2e7d32;border-radius:4px;padding:5px 8px;font-size:10px;margin-top:6px">✅ <b>维修已完成</b>：${esc(o.repair_result||'维修完成')}</div>`;
-  // V11.291: 维修合同门槛提示(≥2000元 且 外部维修商 → 建议签《设备维修服务合同》; 厂内自修不签)
+  // V11.291/V11.300: 维修合同门槛提示(≥2000元 且 外部维修商 → 建议签《修理修缮合同》; 厂内自修不签)
   const _rAmt=parseFloat(o.total_amount||0);
   const _venTxt=((o.supplier||'')+' '+(o.repair_vendor||''));
   const _inHouse=/车间|厂内|自修|内部|机电|机修|班组|本厂/.test(_venTxt);
   if(o.req_type=='设备维修' && !o.has_contract && _rAmt>=2000 && !_inHouse){
-    h+=`<div style="background:#fff8e6;border:1px solid #f0d08a;color:#8a5a00;font-size:10px;padding:5px 8px;border-radius:4px;margin-top:6px">⚠️ 本笔维修金额 <b>¥${_rAmt.toFixed(2)}</b>（≥2000 元，外部维修商）：建议签订《设备维修服务合同》（含质保期、验收标准、<b>安全责任</b>、<b>超支需书面确认</b>）。点右下角「📄 生成维修合同」即可生成并送审批。</div>`;
+    h+=`<div style="background:#fff8e6;border:1px solid #f0d08a;color:#8a5a00;font-size:10px;padding:5px 8px;border-radius:4px;margin-top:6px">⚠️ 本笔维修金额 <b>¥${_rAmt.toFixed(2)}</b>（≥2000 元，外部维修商）：建议签订《修理修缮合同》（含项目清单及价款、安全责任、超支需书面确认，并附《维修明细单》）。点右下角「📄 生成维修合同」即可生成并送审批。</div>`;
   }
   if(d.items&&d.items.length){
     h+=`<h4 style="font-size:10px;margin:6px 0 3px">📋 维修项目明细（${d.items.length}项）</h4>
@@ -2920,12 +2920,15 @@ async function genContract(oid){
   const meta={'买卖合同-现结':['⚡','现结：一单一结，验收后付全款','var(--s)','#f0faf5'],
               '买卖合同-按月结算':['📅','按月结算：对账后按约定周期付款','#e67e22','#fef9f0'],
               '买卖合同-预付款+验收后尾款':['💳','预付30%，验收合格后付尾款70%','#7c3aed','#f6f0fe'],
-              '设备维修服务合同-现结':['🔧','维修服务合同：含质保期/验收标准/安全责任/超支需书面确认条款','#b45309','#fdf6ec']};
+              '设备维修服务合同-现结':['🔧','维修服务合同：含质保期/验收标准/安全责任/超支需书面确认条款','#b45309','#fdf6ec'],
+              '修理修缮合同':['🛠','修理修缮合同：项目清单及价款/维修时间/收款账户/附《维修明细单》全自动填充','#0f766e','#effcf9']};
+  // V11.300: 维修订单(设备维修) 默认优先展示《修理修缮合同》(公司正式纸质模板)
+  if(_isRepair){const _rt=tpls.filter(t=>t.indexOf('修理修缮')>=0);if(_rt.length)tpls=_rt.concat(tpls.filter(t=>t.indexOf('修理修缮')<0))}
   const cards=tpls.map(t=>{const m=meta[t]||['📄',t,'#33475c','#f4f6f8'];return `<div style="flex:1;min-width:170px;border:2px solid ${m[2]};border-radius:8px;padding:12px;text-align:center;cursor:pointer;background:${m[3]}" onclick="genContractInv(${oid},'${t}')">
       <div style="font-size:16px">${m[0]}</div><div style="font-size:12px;font-weight:bold;color:${m[2]};margin-top:2px">${t.replace('买卖合同-','')}</div>
       <div style="font-size:9px;color:#888;margin-top:4px">${m[1]}</div></div>`}).join('');
   id('dmTitle').textContent=_isRepair?'📄 生成维修合同':'📄 生成采购合同';
-  id('dmBody').innerHTML=`<div style="font-size:11px;margin-bottom:8px">请选择本次合同的<b>结算模板</b>（第八条付款、结算条款随模板自动带入，其余条款一致）${_isRepair?'；<b style="color:#b45309">维修类请选「设备维修服务合同」</b>（含质保/验收/安全责任/超支书面确认）':''}：</div>
+  id('dmBody').innerHTML=`<div style="font-size:11px;margin-bottom:8px">请选择本次合同的<b>结算模板</b>（第八条付款、结算条款随模板自动带入，其余条款一致）${_isRepair?'；<b style="color:#b45309">维修类请选「修理修缮合同」</b>（乙方/委托修理标的物/项目清单及价款/修理修缮时间/收款账户/附《维修明细单》全部自动填充）':''}：</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">${cards}</div>
     <div style="font-size:9px;color:#999;margin-top:8px">甲方、乙方、合同编号、标的表格、金额及收款账号信息将自动填充；选择后下一步可填写发票回收节点条款（可留空）。</div>`;
   id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">取消</button>';
@@ -2947,6 +2950,9 @@ async function genContractInv(oid,tpl){
     `<button class="btn btn-o" onclick="genContract(${oid})">← 返回</button><button class="btn btn-p" onclick="doGenContract(${oid},'${tpl}')">📄 生成合同并提交审批</button>`);
   addInvNodeRow('gcInvNodes');
   addInvNodeRow('gcInvNodes');
+  // V11.300: 模板→合同类目默认(修理修缮合同→XLXS 修理修缮 / 设备维修服务合同→WXHT 维修合同)
+  try{const _catSel=id('gcCategory');
+    if(_catSel){if(tpl.indexOf('修理修缮')>=0)_catSel.value='XLXS';else if(tpl.indexOf('设备维修服务')>=0)_catSel.value='WXHT';}}catch(e){}
   (async()=>{try{const m=await api('/contract-meta',{noCache:true});
     const csel=id('gcCompany');
     if(csel&&m&&m.companies&&m.companies.length){csel.innerHTML=m.companies.map(c=>`<option value="${esc(c.code)}">${esc(c.name)}(${esc(c.code)})</option>`).join('')}
@@ -2955,6 +2961,7 @@ async function genContractInv(oid,tpl){
   (async()=>{try{const od=await api('/orders/'+oid);const _it=(od.items||[])[0]||{};
     const _tax=(_it.tax_rate!==null&&_it.tax_rate!==undefined)?_it.tax_rate:((od.order&&od.order.tax_rate)||0);
     const ti=id('gcTaxRate');if(ti&&_tax)ti.value=_tax;
+    else if(ti&&tpl.indexOf('修理修缮')>=0)ti.value=13;  // V11.300: 修理修配劳务增值税率13%(明细/订单未录税率时兜底)
   }catch(e){}})();
 }
 async function doGenContract(oid,tpl){
@@ -4392,8 +4399,9 @@ async function showSupDetail(sid){
     <div class="fg"><label class="fl2">类别</label><input class="fc" id="sfCategory" value="${esc(s.category||'')}"></div></div>
     <div class="fr"><div class="fg"><label class="fl2">开户行</label><input class="fc" id="sfBank" value="${esc(s.bank||'')}"></div>
     <div class="fg"><label class="fl2">银行账号</label><input class="fc" id="sfAccount" value="${esc(s.account||'')}"></div></div>
-    <div class="fr"><div class="fg"><label class="fl2">税号</label><input class="fc" id="sfTax" value="${esc(s.tax_id||'')}"></div>
-    <div class="fg"><label class="fl2">评级</label><input class="fc" id="sfRating" type="number" step="0.1" value="${s.rating||4}"></div></div>`;
+    <div class="fr"><div class="fg"><label class="fl2">银行行号</label><input class="fc" id="sfBankNo" value="${esc(s.bank_no||'')}" placeholder="联行号/大额行号（合同收款账户用）"></div>
+    <div class="fg"><label class="fl2">税号</label><input class="fc" id="sfTax" value="${esc(s.tax_id||'')}"></div></div>
+    <div class="fr"><div class="fg"><label class="fl2">评级</label><input class="fc" id="sfRating" type="number" step="0.1" value="${s.rating||4}"></div></div>`;
   id('detailModal').classList.add('show');
   id('dmFooter').innerHTML=ME.can_config?
     `<button class="btn btn-o" onclick="closeMod()">关闭</button><button class="btn btn-p" onclick="doSupSave(${sid})">保存</button>`
@@ -4408,14 +4416,15 @@ function showSupForm(){
     <div class="fg"><label class="fl2">类别</label><input class="fc" id="sfCategory" placeholder="如: 设备配件"></div></div>
     <div class="fr"><div class="fg"><label class="fl2">开户行</label><input class="fc" id="sfBank"></div>
     <div class="fg"><label class="fl2">银行账号</label><input class="fc" id="sfAccount"></div></div>
-    <div class="fr"><div class="fg"><label class="fl2">税号</label><input class="fc" id="sfTax"></div>
-    <div class="fg"><label class="fl2">评级</label><input class="fc" id="sfRating" type="number" step="0.1" value="4"></div></div>`;
+    <div class="fr"><div class="fg"><label class="fl2">银行行号</label><input class="fc" id="sfBankNo" placeholder="联行号/大额行号（合同收款账户用）"></div>
+    <div class="fg"><label class="fl2">税号</label><input class="fc" id="sfTax"></div></div>
+    <div class="fr"><div class="fg"><label class="fl2">评级</label><input class="fc" id="sfRating" type="number" step="0.1" value="4"></div></div>`;
   id('detailModal').classList.add('show');
   id('dmFooter').innerHTML=`<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="doSupSave(0)">保存</button>`;
 }
 async function doSupSave(oid){
   const d={name:id('sfName').value,contact:id('sfContact').value,phone:id('sfPhone').value,category:id('sfCategory').value,
-    bank:id('sfBank').value,account:id('sfAccount').value,tax_id:id('sfTax').value,rating:parseFloat(id('sfRating').value)||4};
+    bank:id('sfBank').value,account:id('sfAccount').value,bank_no:(id('sfBankNo')?id('sfBankNo').value:''),tax_id:id('sfTax').value,rating:parseFloat(id('sfRating').value)||4};
   if(!d.name){alert('请填写供应商名称');return}
   const r=await api(oid?'/suppliers/'+oid:'/suppliers',{method:'POST',body:JSON.stringify(d)});
   if(r.success){alert(oid?'✅ 已保存':'✅ 已新增');closeMod();loadSuppliers()}else alert(r.error||'失败');
@@ -7403,7 +7412,7 @@ const FLOW_TREES={
         {t:'商家报价 / 到点开标比价',d:'商家',r:'含税单价+交期(天)+质保(月)；到点统一公开、比价选优',j:"sw('inquiries')"},
         {t:'定标 + 定标审批',d:'采购员定标 → 分管领导审批',r:'领导确认最终价（此环节即金额把关）',j:"apprCenter('repair');sw('approvals')"},
         {t:'生成维修委托订单',d:'系统',r:'维修订单不下发入库（维修件不进库存）',j:"sw('orders')"},
-        {t:'金额 ≥2000 元（外部维修商）→ 生成《设备维修服务合同》',d:'采购员',r:'维修订单详情点「📄 生成维修合同」；合同含质保期/验收标准/安全责任/超支需书面确认条款（厂内自修不签）',j:"sw('orders')"},
+        {t:'金额 ≥2000 元（外部维修商）→ 生成《修理修缮合同》',d:'采购员',r:'维修订单详情点「📄 生成维修合同」→ 选「修理修缮合同」；乙方/委托修理标的物/项目清单及价款/修理修缮时间/收款账户/附《维修明细单》由维修订单数据自动填充（厂内自修不签）',j:"sw('orders')"},
         {t:'合同审批 → 打印盖章',d:'分管领导：穆娇',r:'维修合同按维修口径由分管领导审批；通过后打印盖章交维修商执行',j:"apprCenter('repair');sw('approvals')"},
       ]},
       {lab:'B · 小额直接委托（价格透明小修；≤2000 无需签合同）',color:'#e67e22',nodes:[

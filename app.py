@@ -359,6 +359,8 @@ def init_db():
         CREATE TABLE IF NOT EXISTS categories (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE NOT NULL, name TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY AUTOINCREMENT, cat_code TEXT NOT NULL, name TEXT NOT NULL, spec TEXT, unit TEXT DEFAULT '个', price REAL DEFAULT 0, safe_stock REAL DEFAULT 0, warehouse TEXT DEFAULT '主库房', supplier TEXT DEFAULT '');
         CREATE TABLE IF NOT EXISTS suppliers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, contact TEXT, phone TEXT, category TEXT, level TEXT DEFAULT '一般供应商', bank TEXT, account TEXT, tax_id TEXT, invoice_type TEXT DEFAULT '增值税专用发票', rating REAL DEFAULT 4.0, status TEXT DEFAULT '正常');
+        -- ⚠ V11.300: 表结构演进只加在下方"幂等补列清单"(bank_no) 与 migrations/, 不在此处加列 ——
+        -- 本表下方 seed 用的是无列名 INSERT VALUES(12值), 在此加列会让空库首跑崩 "table suppliers has N columns but 12 values were supplied"
         CREATE TABLE IF NOT EXISTS purchase_requests (
             id INTEGER PRIMARY KEY AUTOINCREMENT, req_no TEXT UNIQUE NOT NULL, dept TEXT, requester TEXT, requester_id INTEGER,
             budget_code TEXT, purpose TEXT, target_date TEXT, status TEXT DEFAULT '待审批',
@@ -632,6 +634,7 @@ def init_db():
         ('receivings', 'urgent', "ALTER TABLE receivings ADD COLUMN urgent INTEGER DEFAULT 0"),
         ('purchase_orders', 'trade_mode', "ALTER TABLE purchase_orders ADD COLUMN trade_mode TEXT DEFAULT '货到付款'"),
         ('suppliers', 'created_at', "ALTER TABLE suppliers ADD COLUMN created_at TEXT DEFAULT ''"),
+        ('suppliers', 'bank_no', "ALTER TABLE suppliers ADD COLUMN bank_no TEXT DEFAULT ''"),  # V11.300: 银行行号(修理修缮合同收款账户信息自动填充)
         ('deliveries', 'contract_no', "ALTER TABLE deliveries ADD COLUMN contract_no TEXT DEFAULT ''"),
         ('receivings', 'contract_id', "ALTER TABLE receivings ADD COLUMN contract_id INTEGER"),
         ('receivings', 'contract_no', "ALTER TABLE receivings ADD COLUMN contract_no TEXT DEFAULT ''"),
@@ -7079,10 +7082,10 @@ def api_create_supplier():
     c = db()
     if c.execute("SELECT 1 FROM suppliers WHERE name=?", (d.get('name', ''),)).fetchone():
         c.close(); return jsonify({'error': '供应商已存在'}), 400
-    c.execute("""INSERT INTO suppliers(name,contact,phone,category,level,bank,account,tax_id,invoice_type,rating,status)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+    c.execute("""INSERT INTO suppliers(name,contact,phone,category,level,bank,account,bank_no,tax_id,invoice_type,rating,status)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
         (d.get('name', ''), d.get('contact', ''), d.get('phone', ''), d.get('category', ''), d.get('level', '一般供应商'),
-         d.get('bank', ''), d.get('account', ''), d.get('tax_id', ''), d.get('invoice_type', '增值税专用发票'),
+         d.get('bank', ''), d.get('account', ''), d.get('bank_no', ''), d.get('tax_id', ''), d.get('invoice_type', '增值税专用发票'),
          d.get('rating', 4.0), d.get('status', '正常')))
     c.commit(); c.close()
     log(session['user_name'], '新增供应商', d.get('name', ''))
@@ -7093,9 +7096,9 @@ def api_create_supplier():
 def api_update_supplier(sid):
     d = request.json
     c = db()
-    c.execute("""UPDATE suppliers SET name=?,contact=?,phone=?,category=?,level=?,bank=?,account=?,tax_id=?,invoice_type=?,rating=?,status=? WHERE id=?""",
+    c.execute("""UPDATE suppliers SET name=?,contact=?,phone=?,category=?,level=?,bank=?,account=?,bank_no=?,tax_id=?,invoice_type=?,rating=?,status=? WHERE id=?""",
         (d.get('name', ''), d.get('contact', ''), d.get('phone', ''), d.get('category', ''), d.get('level', '一般供应商'),
-         d.get('bank', ''), d.get('account', ''), d.get('tax_id', ''), d.get('invoice_type', '增值税专用发票'),
+         d.get('bank', ''), d.get('account', ''), d.get('bank_no', ''), d.get('tax_id', ''), d.get('invoice_type', '增值税专用发票'),
          d.get('rating', 4.0), d.get('status', '正常'), sid))
     c.commit(); c.close()
     log(session['user_name'], '编辑供应商', f'#{sid}')
@@ -12663,7 +12666,33 @@ def api_contract_generate():
             conn.close()
             return jsonify({'error': '该订单已生成合同 %s（状态:%s），如需重新生成请先撤回或作废原合同' % (_exist['contract_no'], _exist['status'])}), 400
         sup = conn.execute("SELECT * FROM suppliers WHERE name=?", (o['supplier'],)).fetchone() if o['supplier'] else None
-        # V11.233: 合同模板来源 — 优先读 contract_templates/ 目录下的模板docx(需求: 文件放固定路径, 替换即更新, 不后台导入);
+        # V11.300: 维修订单(设备维修申请→订单)数据准备 —— 《修理修缮合同》头部标的物 / 修理修缮起止时间 / 收款行号自动填充
+        _rq = None
+        if o['req_id']:
+            _rq = conn.execute("SELECT req_no,req_type,repair_device,repair_fault,repair_done_date,repair_vendor,apply_date FROM purchase_requests WHERE id=?", (o['req_id'],)).fetchone()
+        _is_repair = bool(_rq and (_rq['req_type'] or '') == '设备维修')
+        _dev_name = ''
+        if _is_repair:
+            _dev_name = (_rq['repair_device'] or '').strip() or (o['item_name'] or '')
+
+        def _pdate(_s):
+            try:
+                return datetime.datetime.strptime(str(_s or '')[:10], '%Y-%m-%d').date()
+            except Exception:
+                return None
+        _rep_start = _pdate(o['created_at']) or datetime.date.today()
+        if _is_repair:
+            _rep_end = None
+            for _cd in (o['target_date'], (_rq['repair_done_date'] if _rq else '')):
+                _rep_end = _pdate(_cd)
+                if _rep_end:
+                    break
+            if not _rep_end:  # 无约定完工日 → 默认7天工期(合同不留空白, 生成后可在线编辑调整)
+                _rep_end = _rep_start + datetime.timedelta(days=7)
+        else:
+            _rep_end = _rep_start
+        _rep_pd = '%s至%s' % (_rep_start.strftime('%Y.%m.%d'), _rep_end.strftime('%Y.%m.%d'))  # 维修明细单"维修时间"列
+        # V11.233: 合同模板来源
         # 下拉选项=该目录docx文件名(如 买卖合同-现结), 未指定时回退旧模板表默认模板
         tpl_name = (d.get('template_name') or '').strip()
         tpl_path = ''
@@ -12733,6 +12762,11 @@ def api_contract_generate():
             '{收款账号名称}': (sup['name'] if sup else (o['supplier'] or '')),
             '{收款账号}': (sup['account'] if sup and sup['account'] else ''),
             '{收款银行}': (sup['bank'] if sup and sup['bank'] else ''),
+            # V11.300: 修理修缮合同专用占位符 — 收款行号(供应商档案新增列) / 委托修理标的物 / 修理修缮起止时间
+            '{收款行号}': (((sup['bank_no'] if 'bank_no' in sup.keys() else '') or '') if sup else ''),
+            '{维修标的物}': _dev_name,
+            '{维修开始年}': '%04d' % _rep_start.year, '{维修开始月}': '%02d' % _rep_start.month, '{维修开始日}': '%02d' % _rep_start.day,
+            '{维修结束年}': '%04d' % _rep_end.year, '{维修结束月}': '%02d' % _rep_end.month, '{维修结束日}': '%02d' % _rep_end.day,
             '{签订日期}': '',  # 实际值在下方 today_s 计算后回填
             '{下单日期}': (o['created_at'] or '')[:10], '{预计交货日期}': o['target_date'] or '',
             '{结算方式}': settle, '{明细清单}': items_txt,
@@ -12782,6 +12816,11 @@ def api_contract_generate():
                     tax = round(total - amt, 2)
                 else:
                     amt, tax = total, 0.0
+            # V11.300: 维修类订单(修理修配劳务, 增值税率13%) —— 明细与订单均未录税率时按13%兜底(生成弹窗手改税率仍优先)
+            if _is_repair and _rq_tax is None and rate <= 0:
+                rate = 13.0
+                amt = round(total / (1 + rate / 100.0), 2)
+                tax = round(total - amt, 2)
             # 方案A: 回写订单 金额/价税合计=录入含税总价(修正历史'不含税+13%'自动加税虚增), 税额=价内倒拆
             try:
                 conn.execute("UPDATE purchase_orders SET amount=?, tax_amount=?, total_amount=?, tax_rate=?, updated_at=? WHERE id=?",
@@ -12814,7 +12853,18 @@ def api_contract_generate():
             today_s = datetime.date.today().strftime('%Y年 %m月 %d日')
             mapping['{签订日期}'] = today_s
             # V8.4: 合同文本通用处理(段落+表格共用) — 合计金额中文大写/税率/税金/不含税/收款账户/日期
+            _tpl_inplace = ('修理修缮' in (tpl_display or ''))  # V11.300: 仅《修理修缮合同》就地填空白, 买卖合同仍走原三段式(输出零变化)
             def _apply_ct(t):
+                # V11.300: 纸质模板样式(单句「合计金额…人民币大写金额…税金(税率13%)…不含税价款」) —— 就地填空白,
+                # 保留模板原文措辞/字体/下划线, 不整句重写
+                if _tpl_inplace and '合计金额：¥' in t and '人民币大写金额' in t:
+                    t = re.sub(r'合计金额：¥[\d,\.\s]*元', '合计金额：¥%s元' % ('{:,.2f}'.format(total)), t, count=1)
+                    t = re.sub(r'税金（税率\s*[\d.]*\s*%）', '税金（税率 %d %%）' % int(round(rate)), t, count=1)
+                    _vq = iter(['{:,.2f}'.format(tax), '{:,.2f}'.format(amt)])
+                    t = re.sub(r'为：¥[\d,\.\s]*元', lambda m: '为：¥%s元' % next(_vq, ''), t)
+                    _vu = iter(['人民币' + rmb_upper(total), '人民币' + rmb_upper(tax), '人民币' + rmb_upper(amt)])
+                    t = re.sub(r'（人民币大写金额：\s*）', lambda m: '（人民币大写金额：%s）' % next(_vu, ''), t)
+                    return t
                 if '合计金额：¥' in t:
                     # 合同金额段格式固定三段式(与用户正式合同样式一致, 文本结构永不变):
                     # 合计金额=录入含税含运总价(方案A不放大); 税率>0税金/不含税=价内倒拆; 未配税率显示0%
@@ -12858,9 +12908,46 @@ def api_contract_generate():
                 if '银行行号' in _tx:
                     _acc_zone = False
             # 1) 段落: 占位符 + 框架合同字段填充
+            def _blank_groups(_pa):
+                """段落内"纯空白run"分组(用于下划线空格填值, 保留下划线样式)"""
+                _gs, _cur = [], []
+                for _ri2, _r2 in enumerate(_pa.runs):
+                    if _r2.text.strip() == '':
+                        _cur.append(_ri2)
+                    elif _cur:
+                        _gs.append(_cur)
+                        _cur = []
+                if _cur:
+                    _gs.append(_cur)
+                return _gs
             for para in doc.paragraphs:
                 t = para.text
                 orig_t = t
+                # V11.300: 多行/下划线布局段落 —— 逐run替换占位符(段落级整写会吞掉模板换行与下划线)
+                if '{收款' in t:
+                    for _r3 in para.runs:
+                        for _k3, _v3 in mapping.items():
+                            if _k3 in _r3.text:
+                                _r3.text = _r3.text.replace(_k3, _v3)
+                    continue
+                # V11.300: 《修理修缮合同》「二、修理修缮时间」 —— 下划线空白6组按 年/月/日×2 填起止日期
+                if _is_repair and '日至' in t and re.search(r'年.*月.*日至.*年.*月.*日', t) and len(t) < 60:
+                    # 模板带占位符时按run替换(保留下划线/字号); 无占位符的纯下划线模板则回退"空白组填值"
+                    if any('{维修' in _r3.text for _r3 in para.runs):
+                        for _r3 in para.runs:
+                            for _k3, _v3 in mapping.items():
+                                if _k3 in _r3.text:
+                                    _r3.text = _r3.text.replace(_k3, _v3)
+                        continue
+                    _gs3 = _blank_groups(para)
+                    _v3s = ['%04d' % _rep_start.year, '%02d' % _rep_start.month, '%02d' % _rep_start.day,
+                            '%04d' % _rep_end.year, '%02d' % _rep_end.month, '%02d' % _rep_end.day]
+                    if len(_gs3) == len(_v3s):
+                        for _gi3, _gr3 in enumerate(_gs3):
+                            para.runs[_gr3[0]].text = _v3s[_gi3]
+                            for _rx3 in _gr3[1:]:
+                                para.runs[_rx3].text = ''
+                        continue
                 for k, v in mapping.items():
                     if k in t:
                         t = t.replace(k, v)
@@ -12906,8 +12993,16 @@ def api_contract_generate():
                             _rr.text = ''
                     else:
                         para.text = t
+            _acc_vals = [v for v in ((sup['name'] if sup else (o['supplier'] or '')),
+                                     (sup['account'] if sup and sup['account'] else ''),
+                                     (sup['bank'] if sup and sup['bank'] else ''),
+                                     (((sup['bank_no'] if 'bank_no' in sup.keys() else '') or '') if sup else '')) if v]
             for _p in _acc_drop:  # 物理移除收款账户区段/空账户标签段
                 try:
+                    # V11.300: 二次校验 —— 已渲染出账户信息的段落不删(与逐段"仅空壳删除"判据同源;
+                    # 修理修缮合同第七条收款账户信息要求自动填充并保留, 不再整体清除)
+                    if any(_v in (_p.text or '') for _v in _acc_vals):
+                        continue
                     _el = _p._element
                     if _el.getparent() is not None:
                         _el.getparent().remove(_el)
@@ -12944,7 +13039,8 @@ def api_contract_generate():
                 header = [c.text.strip() for c in rows[0].cells]
                 # V11.254修复: 文件模板表头首格='序号'(旧tpl_default为'标的/品名'), 增加'序号+名称'判定, 否则明细表空白
                 _hdr_ok = ('标的物' in header or '标的' in header[0] or '品名' in header[0]
-                           or ('序号' in header[0] and any('名称' in h for h in header[1:4])))
+                           or ('序号' in header[0] and any('名称' in h for h in header[1:4]))
+                           or any('品名' in h for h in header[:3]))  # V11.300: 《修理修缮合同》/《维修明细单》(表头=修理修缮项目品名)
                 if _hdr_ok:
                     # 明细行: 多商品订单取 order_items 逐行填充, 旧单取订单单商品
                     det_rows = _oi if _oi else [None]
@@ -12957,7 +13053,8 @@ def api_contract_generate():
                             break
                     # 再找第一个可写行(合计行之前): 序号列表头时序号列预填1-4, 其余列空即可覆盖(非空行判定只查明细列)
                     _hdr_seq = bool(header) and ('序号' in header[0])
-                    _col_off = 1 if _hdr_seq else 0  # 序号列表头 → 数据从第2列写起(序号列保留/重写), 旧无序号表头 → 从第1列
+                    _lead_time = bool(header) and ('时间' in header[0])  # V11.300: 《维修明细单》首列=维修时间(整单同一维修期间)
+                    _col_off = 1 if _hdr_seq else (1 if _lead_time else 0)  # 序号列表头 → 数据从第2列写起(序号列保留/重写), 旧无序号表头 → 从第1列
                     idx = 1
                     boundary = total_row_i if total_row_i is not None else len(rows)
                     for i in range(1, boundary):
@@ -13022,6 +13119,9 @@ def api_contract_generate():
                             # 序号列(若表头有序号): 数据行序号=1..N 统一重写(兼容模板预填1-4)
                             if _hdr_seq and len(tr.cells) > _col_off:
                                 _scell(tr.cells[0], k + 1)
+                            # V11.300: 维修时间列(《维修明细单》) —— 每行填同一维修期间
+                            if _lead_time and len(tr.cells):
+                                _scell(tr.cells[0], _rep_pd)
                             for j, val in enumerate(line):
                                 _ci = j + _col_off
                                 if _ci < len(tr.cells):
@@ -13053,8 +13153,16 @@ def api_contract_generate():
                                             _scell(cell, _nt2)
                                             break
                                 else:
-                                    # 合计行金额列写纯数字
-                                    _scell(rows[i].cells[-2], f"{total:,.2f}")
+                                    # 合计行金额列写纯数字 — V11.300: "合计"标签落在倒数第2格时金额写末格(《修理修缮合同》/《维修明细单》),
+                                    # 否则保持原"倒数第2列"口径(《买卖合同》8列: 合计标签在第2列, 金额列=倒数第2列)
+                                    _li = None
+                                    for _ci3, _cc3 in enumerate(cells):
+                                        if '合计' in _cc3:
+                                            _li = _ci3
+                                            break
+                                    _n_cells = len(rows[i].cells)
+                                    _tci = (_n_cells - 1) if _li == _n_cells - 2 else (_n_cells - 2)
+                                    _scell(rows[i].cells[_tci], f"{total:,.2f}")
 
                                 # 继续检查下一行是否也是"合计金额"行
                     except Exception:
@@ -13130,16 +13238,19 @@ def api_contract_generate():
                     full_text += '\n' + ' | '.join(c.text for c in row.cells)
         except Exception as e:
             conn.close(); return jsonify({'error': f'合同生成失败: {e}'}), 500
+        # V11.300: 合同名称 — 维修类用设备名(如"1号皮带机维修合同"), 物资类沿用原口径
+        _ct_name = ((_dev_name or o['item_name'] or '设备') + '维修合同') if _is_repair else f"{o['item_name']}采购合同"
         # V11.228 Bug2③: 收款账户信息仅系统面板留存 — 存 contracts.bank_info 快照(不进合同正文docx)
         try:
             _bank_json = json.dumps({'name': (sup['name'] if sup else (o['supplier'] or '')),
                                      'account': (sup['account'] if sup and sup['account'] else ''),
-                                     'bank': (sup['bank'] if sup and sup['bank'] else '')}, ensure_ascii=False)
+                                     'bank': (sup['bank'] if sup and sup['bank'] else ''),
+                                     'bank_no': (((sup['bank_no'] if 'bank_no' in sup.keys() else '') or '') if sup else '')}, ensure_ascii=False)
         except Exception:
             _bank_json = ''
         conn.execute("""INSERT INTO contracts(contract_no,order_id,contract_name,supplier,amount,sign_date,start_date,end_date,content,file_path,status,remark,created_at,updated_at,invoice_clause,invoice_est_first,invoice_est_done,bank_info,template_name,trace_no)
             VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (cno, oid, f"{o['item_name']}采购合同", o['supplier'] or '', round(total, 2), (o['created_at'] or '')[:10],
+            (cno, oid, _ct_name, o['supplier'] or '', round(total, 2), (o['created_at'] or '')[:10],
              (o['created_at'] or '')[:10], o['target_date'], full_text, fname, '待审批', f"由订单{o['order_no']}自动生成", datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
              inv_clause, inv_first, inv_done, _bank_json, tpl_display, o['order_no']))
         cid = conn.execute("SELECT id FROM contracts WHERE contract_no=?", (cno,)).fetchone()[0]
