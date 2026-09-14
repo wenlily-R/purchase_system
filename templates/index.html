@@ -610,7 +610,14 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
       <div class="card"><div class="ch"><h3>💹 采购历史价格跟踪</h3></div><div class="cb" id="rPrice"><div class="loading">加载中...</div></div></div>
     </div>
   </div>
-  <div id="reportStock" style="display:none">
+  <div id="reportStock" style="display:none"><div class="card" style="margin-bottom:6px"><div class="ch"><h3>📦 库存统计报表（出入库 / 领用 / 废旧物资）</h3>
+      <span style="font-size:9px;color:#999;margin-left:8px">数据同源库存流水与出库/入库单据，可直接导出 Excel</span></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;font-size:10px;align-items:center">
+      <button class="btn btn-p btn-sm" onclick="showStockReport('inout')">📊 出入库统计</button>
+      <button class="btn btn-p btn-sm" onclick="showStockReport('issue')">👤 领用统计</button>
+      <button class="btn btn-p btn-sm" onclick="showStockReport('scrap')">🧰 废旧物资报表</button>
+      <span style="color:#666">按 月度/季度/年度 · 库房/品类/领用人 统计，与系统数据同源</span>
+    </div></div>
     <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center">
       <select class="fc" id="repInvCat" style="width:140px" onchange="loadReports2()"><option value="">全部分类</option></select>
       <button class="btn btn-p btn-sm" onclick="window.open('/api/export?type=inventory'+(window.id('repInvCat').value?'&cat='+encodeURIComponent(window.id('repInvCat').value):''),'_blank')">⬇️ 导出库存报表</button>
@@ -4316,18 +4323,62 @@ async function doLinkOrder(rid){
   const r=await api(`/receivings/${rid}/link-order`,{method:'POST',body:JSON.stringify({order_id:parseInt(oid,10)})});
   if(r.success){alert('✅ '+r.message);closeMod();loadReceivings()} else alert(r.error||'补关联失败');
 }
-async function showManualRecon(){
-  const r=await api('/receivings/manual-recon');
+// ============ V11.306 库存统计报表(需求模块六.1) ============
+async function showStockReport(kind){
+  window._srKind=kind;
+  const isInout=kind=='inout', isScrap=kind=='scrap';
+  const q='period='+((id('srPeriod')||{}).value||'month')+'&group='+((id('srGroup')||{}).value||'dept')+'&from='+((id('srFrom')||{}).value||'')+'&to='+((id('srTo')||{}).value||'');
+  const path = isInout?'/reports/inout-stat?'+q : (isScrap?'/reports/scrap-stat':'/reports/issue-stat?'+q);
+  const r=await api(path);
   if(!r||r.error){alert((r&&r.error)||'加载失败');return}
-  const rowsA=(r.in_no_order||[]).map(x=>`<tr><td><b>${esc(x.receive_no)}</b></td><td>${esc(x.manual_supplier||'')}</td><td>${esc(x.item_name||'')} ${x.quantity||0}${esc(x.unit||'')}</td><td>${esc(x.dept||'')}</td><td>${esc(x.manual_reason||'')}</td><td>${esc(x.manual_ok_by||'—')}</td><td>${(x.received_at||x.created_at||'').slice(0,16)}</td><td>${x.status=='已入库'?`<button class="lnk" style="color:var(--p);font-weight:600" onclick="closeMod();showLinkOrder(${x.id},'${esc(x.manual_supplier||'')}')">🔗 补关联</button>`:'<span style="color:#999">待入库</span>'}</td></tr>`).join('');
-  const rowsB=(r.order_no_recv||[]).map(x=>`<tr><td><b>${esc(x.order_no)}</b></td><td>${esc(x.supplier||'')}</td><td>${esc(x.item_name||'')} ${x.quantity||0}</td><td>${esc(x.status||'')}</td><td>${(x.created_at||'').slice(0,10)}</td></tr>`).join('');
-  id('dmTitle').textContent='📋 手工入库对账（采购—库房）';
+  const rows=r.rows||[];
+  let head='', body='';
+  if(isInout){ head='<th>期间</th><th>入库数量</th><th>入库金额</th><th>出库数量</th><th>出库金额</th><th>净变动</th>';
+    body=rows.map(x=>`<tr><td><b>${esc(x.period)}</b></td><td>${x.in_qty}</td><td>¥${(x.in_amt||0).toFixed(2)}</td><td>${x.out_qty}</td><td>¥${(x.out_amt||0).toFixed(2)}</td><td>${x.net_qty}</td></tr>`).join(''); }
+  else if(isScrap){ head='<th>物资</th><th>规格</th><th>库房</th><th>累计入库</th><th>累计出库</th><th>当前结存</th>';
+    body=rows.map(x=>`<tr><td>${esc(x.item_name)}</td><td>${esc(x.spec||'')}</td><td>${esc(x.warehouse||'')}</td><td>${x.in_qty}${esc(x.unit||'')}</td><td>${x.out_qty}${esc(x.unit||'')}</td><td><b>${x.stock}</b>${esc(x.unit||'')}</td></tr>`).join(''); }
+  else { const g=((id('srGroup')||{}).value||'dept');
+    head='<th>'+(g=='receiver'?'领用人':'部门')+'</th><th>物资</th><th>规格</th><th>数量</th><th>笔数</th><th>最近领用</th>';
+    body=rows.map(x=>`<tr><td><b>${esc(x.recv||x.dept||'')}</b></td><td>${esc(x.item_name)}</td><td>${esc(x.spec||'')}</td><td>${x.qty}${esc(x.unit||'')}</td><td>${x.cnt}</td><td style="font-size:9px">${esc((x.last_at||'').slice(0,16))}</td></tr>`).join(''); }
+  const titleMap={inout:'📊 出入库统计报表',issue:'👤 领用统计报表',scrap:'🧰 废旧物资报表'};
+  id('dmTitle').textContent=titleMap[kind];
+  const exUrl='/api/reports/stat-export?kind='+kind+'&'+q;
   id('dmBody').innerHTML=`
-    <div style="font-size:10px;color:#666;margin-bottom:6px">采购与库房定期核对两类差异：①库房已入库但无采购订单/合同（临时手工入库待补关联）②有采购订单但库房无入库。</div>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:10px;margin-bottom:6px">
+      ${isInout?`<span>统计周期:</span><select id="srPeriod" onchange="showStockReport('${kind}')" style="font-size:10px;padding:2px 4px"><option value="month"${((id('srPeriod')||{}).value||'month')=='month'?' selected':''}>按月度</option><option value="quarter">按季度</option><option value="year">按年度</option></select>`:''}
+      ${!isInout&&!isScrap?`<span>分组:</span><select id="srGroup" onchange="showStockReport('${kind}')" style="font-size:10px;padding:2px 4px"><option value="dept">按部门</option><option value="receiver"${((id('srGroup')||{}).value||'')=='receiver'?' selected':''}>按领用人</option></select>`:''}
+      ${isScrap?'' : `<span>起:</span><input type="date" id="srFrom" onchange="showStockReport('${kind}')" style="font-size:10px;padding:2px" value="${(id('srFrom')||{}).value||''}"><span>止:</span><input type="date" id="srTo" onchange="showStockReport('${kind}')" style="font-size:10px;padding:2px" value="${(id('srTo')||{}).value||''}`}
+      <button class="btn btn-o btn-sm" onclick="showStockReport('${kind}')">🔄 刷新</button>
+      <button class="btn btn-p btn-sm" onclick="window.open('${exUrl}','_blank')">⬇️ 导出 Excel</button>
+      <span style="color:#999">${esc(r.note||'')}</span>
+    </div>
+    <div style="max-height:340px;overflow:auto"><table style="width:100%;font-size:10px;border-collapse:collapse" border="1">
+      <tr style="background:#f5f5f5">${head}</tr>${body||'<tr><td colspan="6" style="color:#999">暂无数据</td></tr>'}</table></div>`;
+  id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">关闭</button>';
+  id('detailModal').classList.add('show');
+}
+async function showManualRecon(){
+  // V11.306 对账增强: 超期天数 + 供应商/部门筛选
+  const _qd=(id('rcDays')?.value||'7'), _qs=(id('rcSup')?.value||''), _qdp=(id('rcDept')?.value||'');
+  const r=await api('/receivings/manual-recon?days='+encodeURIComponent(_qd)+'&supplier='+encodeURIComponent(_qs)+'&dept='+encodeURIComponent(_qdp));
+  if(!r||r.error){alert((r&&r.error)||'加载失败');return}
+  const rowsA=(r.in_no_order||[]).map(x=>`<tr><td><b>${esc(x.receive_no)}</b></td><td>${esc(x.manual_supplier||'')}</td><td>${esc(x.item_name||'')} ${x.quantity||0}${esc(x.unit||'')}</td><td>${esc(x.dept||'')}</td><td>${esc(x.manual_reason||'')}</td><td>${esc(x.manual_ok_by||'—')}</td><td>${(x.received_at||x.created_at||'').slice(0,16)}</td><td>${x.overdue?'<b style="color:#c62828">'+x.over_days+'天</b>':(x.over_days||0)+'天'}</td><td>${x.status=='已入库'?`<button class="lnk" style="color:var(--p);font-weight:600" onclick="closeMod();showLinkOrder(${x.id},'${esc(x.manual_supplier||'')}')">🔗 补关联</button>`:'<span style="color:#999">待入库</span>'}</td></tr>`).join('');
+  const rowsB=(r.order_no_recv||[]).map(x=>`<tr><td><b>${esc(x.order_no)}</b></td><td>${esc(x.supplier||'')}</td><td>${esc(x.item_name||'')} ${x.quantity||0}</td><td>${esc(x.status||'')}</td><td>${(x.created_at||'').slice(0,10)}</td><td>${x.overdue?'<b style="color:#c62828">'+x.over_days+'天</b>':(x.over_days||0)+'天'}</td><td><button class="lnk" onclick="closeMod();showOrder(${x.id})">查看订单</button></td></tr>`).join('');
+  const _d=((id('rcDays')||{}).value||'7'), _sup=((id('rcSup')||{}).value||''), _dept=((id('rcDept')||{}).value||'');
+  id('dmTitle').textContent='📋 采购—库存对账（手工入库 / 待入库订单）';
+  id('dmBody').innerHTML=`
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:10px;margin-bottom:6px">
+      <span>超期阈值(天):</span><input class="fc" id="rcDays" style="width:50px" value="${esc(_qd)}">
+      <span>供应商:</span><input class="fc" id="rcSup" style="width:110px" value="${esc(_qs)}" placeholder="可留空">
+      <span>部门:</span><input class="fc" id="rcDept" style="width:80px" value="${esc(_qdp)}" placeholder="可留空">
+      <button class="btn btn-o btn-sm" onclick="showManualRecon()">🔄 查询</button>
+      <span style="color:#c62828">超期 <b>${r.overdue_count||0}</b> 单</span>
+    </div>
+    <div style="font-size:10px;color:#666;margin-bottom:6px">采购与库房定期核对两类差异：①库房已入库但无采购订单/合同（临时手工入库待补关联）②有采购订单但库房无入库。单号/订单可点开查看。</div>
     <div style="font-weight:700;font-size:11px;color:#c62828;margin:6px 0 4px">① 库房已入库·无采购订单/合同：${(r.in_no_order||[]).length} 单</div>
-    <div style="max-height:220px;overflow:auto"><table style="width:100%;font-size:10px;border-collapse:collapse" border="1"><tr style="background:#f5f5f5"><th>入库单</th><th>供应商</th><th>物资/数量</th><th>部门</th><th>事由</th><th>超限确认</th><th>时间</th><th>操作</th></tr>${rowsA||'<tr><td colspan="8" style="color:#999">无（全部已补关联）</td></tr>'}</table></div>
+    <div style="max-height:220px;overflow:auto"><table style="width:100%;font-size:10px;border-collapse:collapse" border="1"><tr style="background:#f5f5f5"><th>入库单</th><th>供应商</th><th>物资/数量</th><th>部门</th><th>事由</th><th>超限确认</th><th>时间</th><th>超期</th><th>操作</th></tr>${rowsA||'<tr><td colspan="8" style="color:#999">无（全部已补关联）</td></tr>'}</table></div>
     <div style="font-weight:700;font-size:11px;color:#b08900;margin:10px 0 4px">② 有采购订单·库房无入库：${(r.order_no_recv||[]).length} 单</div>
-    <div style="max-height:200px;overflow:auto"><table style="width:100%;font-size:10px;border-collapse:collapse" border="1"><tr style="background:#f5f5f5"><th>订单号</th><th>供应商</th><th>物资/数量</th><th>订单状态</th><th>下单日期</th></tr>${rowsB||'<tr><td colspan="5" style="color:#999">无</td></tr>'}</table></div>`;
+    <div style="max-height:200px;overflow:auto"><table style="width:100%;font-size:10px;border-collapse:collapse" border="1"><tr style="background:#f5f5f5"><th>订单号</th><th>供应商</th><th>物资/数量</th><th>订单状态</th><th>下单日期</th><th>超期</th><th>操作</th></tr>${rowsB||'<tr><td colspan="5" style="color:#999">无</td></tr>'}</table></div>`;
   id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">关闭</button>';
   id('detailModal').classList.add('show');
 }

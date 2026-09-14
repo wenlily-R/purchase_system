@@ -767,6 +767,9 @@ def init_db():
         ('requisition_items', 'receiver', "ALTER TABLE requisition_items ADD COLUMN receiver TEXT DEFAULT ''"),
         ('inventory_flows', 'receiver', "ALTER TABLE inventory_flows ADD COLUMN receiver TEXT DEFAULT ''"),
         ('inventory_flows', 'purpose', "ALTER TABLE inventory_flows ADD COLUMN purpose TEXT DEFAULT ''"),
+        # ---- V11.306 报表/对账基础: 流水带 库房 + 单价(出入库统计金额、废旧物资报表按库房口径) ----
+        ('inventory_flows', 'warehouse', "ALTER TABLE inventory_flows ADD COLUMN warehouse TEXT DEFAULT ''"),
+        ('inventory_flows', 'price', "ALTER TABLE inventory_flows ADD COLUMN price REAL DEFAULT 0"),
     ]:
         _cols = [r[1] for r in conn.execute(f"PRAGMA table_info({_tbl})").fetchall()]
         if _col not in _cols:
@@ -9409,10 +9412,11 @@ def do_requisition_stock(c, rid, warehouse='主库房', operator='系统'):
             _bt = (_row.get('batch_no') or '')
             _rmk = ('出库单%s审批通过' % rq['req_no']) + (' %s' % _bt if _bt else '') + \
                    ('（批次单价¥%s）' % (_row.get('price') or 0) if (_row.get('price') or 0) else '')
-            c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at,trace_no,receiver,purpose) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at,trace_no,receiver,purpose,warehouse,price) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                       (it['item_name'], it['spec'] or '', it['unit'] or '个', '出库', 'requisition', rid, rq['req_no'],
                        -_take, _row.get('quantity'), operator or '系统', _rmk, now(), (_row.get('trace_no') or ''),
-                       (it['receiver'] if 'receiver' in it.keys() else '') or '', (it['purpose'] if 'purpose' in it.keys() else '') or ''))
+                       (it['receiver'] if 'receiver' in it.keys() else '') or '', (it['purpose'] if 'purpose' in it.keys() else '') or '',
+                       warehouse, float(_row.get('price') or 0)))
     return total_q
 
 
@@ -9687,9 +9691,9 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
                           (it['item_name'], it.get('spec','') or '', it.get('unit','个') or '个', q, warehouse, _price, _tr, now(), now(), _tno,
                            _bmeta['batch_no'], _bmeta['order_no'], _bmeta['receive_no']))
                 new_bal = q
-            c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at,trace_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at,trace_no,warehouse,price) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                       (it['item_name'], it.get('spec','') or '', it.get('unit','个') or '个', _ft, 'receiving', rid, rn['receive_no'], q, new_bal,
-                       _op_name(), f'入库单{rn["receive_no"]}审批通过{_ft_suffix}', now(), _tno))
+                       _op_name(), f'入库单{rn["receive_no"]}审批通过{_ft_suffix}', now(), _tno, warehouse, _price))
     elif oi:
         _po = c.execute("SELECT category, trade_mode, supplier FROM purchase_orders WHERE id=?", (rn['order_id'],)).fetchone()
         _po_sup = (_po['supplier'] or '') if _po else ''
@@ -9728,9 +9732,9 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
                           (it['item_name'], it['spec'] or '', it['unit'] or '个', q, warehouse, _price, _tr, _cat, now(), now(), _po_sup, _tno,
                            _bmeta['batch_no'], _bmeta['order_no'], _bmeta['receive_no']))
                 new_bal = q
-            c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at,trace_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at,trace_no,warehouse,price) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                       (it['item_name'], it['spec'] or '', it['unit'] or '个', _ft, 'receiving', rid, rn['receive_no'], q, new_bal,
-                       _op_name(), f'入库单{rn["receive_no"]}审批通过{_ft_suffix}', now(), _tno))
+                       _op_name(), f'入库单{rn["receive_no"]}审批通过{_ft_suffix}', now(), _tno, warehouse, _price))
     else:
         q = float(rn['quantity'] or 0)
         total_q = q
@@ -9761,9 +9765,9 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
                       (rn['item_name'], rn['spec'] or '', rn['unit'] or '个', q, warehouse, _price, _tr, _cat, now(), now(), _sup, _tno,
                        _bmeta['batch_no'], _bmeta['order_no'], _bmeta['receive_no']))
             new_bal = q
-        c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at,trace_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at,trace_no,warehouse,price) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                   (rn['item_name'], rn['spec'] or '', rn['unit'] or '个', _ft, 'receiving', rid, rn['receive_no'], q, new_bal,
-                   _op_name(), f'入库单{rn["receive_no"]}审批通过{_ft_suffix}', now(), _tno))
+                   _op_name(), f'入库单{rn["receive_no"]}审批通过{_ft_suffix}', now(), _tno, warehouse, _price))
     c.execute("UPDATE receivings SET status='已入库',completed_at=?,warehouse=?,inspector=? WHERE id=?",
               (now(), warehouse, inspector or rn['inspector'] or '系统', rid))
     if rn['order_id']:
@@ -10381,14 +10385,32 @@ def api_rcv_manual_recon():
     if session.get('user_role') not in ('库管员', '采购员', '财务', '分管领导', '总经理', '系统管理员', '部门负责人'):
         return jsonify({'error': '无权限'}), 403
     conn = db()
+    # V11.306 对账增强: 超期天数(days, 默认7) + 供应商/部门筛选(单据可点击跳转, 前端按 id 打开)
+    try:
+        _days = int(request.args.get('days') or 7)
+    except Exception:
+        _days = 7
+    if _days < 0:
+        _days = 7
+    _sup_f = (request.args.get('supplier') or '').strip()
+    _dept_f = (request.args.get('dept') or '').strip()
     a = []
     for r in conn.execute("""SELECT id,receive_no,item_name,quantity,unit,status,dept,warehouse,manual_supplier,manual_reason,
                                     manual_ok_by,manual_ok_at,attachments,received_at,created_at
                              FROM receivings
                              WHERE COALESCE(is_manual,0)=1 AND COALESCE(link_status,'')<>'已补关联'
                                AND COALESCE(status,'')<>'已作废'
-                             ORDER BY id DESC""").fetchall():
-        a.append(dict_row(r))
+                               AND (?='' OR COALESCE(manual_supplier,'') LIKE '%'||?||'%')
+                               AND (?='' OR COALESCE(dept,'')=?)
+                             ORDER BY id DESC""", (_sup_f, _sup_f, _dept_f, _dept_f)).fetchall():
+        _d = dict_row(r)
+        try:
+            _t0 = datetime.datetime.strptime(str(_d.get('received_at') or _d.get('created_at') or '')[:10], '%Y-%m-%d')
+            _d['over_days'] = (datetime.date.today() - _t0.date()).days
+        except Exception:
+            _d['over_days'] = 0
+        _d['overdue'] = _d['over_days'] >= _days
+        a.append(_d)
     b = []
     # ② 有采购订单但库房无入库: 只看已生效订单(排除草稿/作废/取消/驳回); 维修委托订单不进库存, 不计入
     for r in conn.execute("""SELECT po.id,po.order_no,po.supplier,po.item_name,po.quantity,po.total_amount,po.status,po.created_at
@@ -10396,11 +10418,205 @@ def api_rcv_manual_recon():
                              WHERE COALESCE(po.status,'') NOT IN ('草稿','已作废','已取消','已驳回','待审批')
                                AND (SELECT COUNT(*) FROM receivings rv WHERE rv.order_id=po.id AND COALESCE(rv.status,'')<>'已作废')=0
                                AND NOT EXISTS (SELECT 1 FROM purchase_requests pr WHERE pr.id=po.req_id AND COALESCE(pr.req_type,'') LIKE '%维修%')
-                             ORDER BY po.id DESC LIMIT 200""").fetchall():
-        b.append(dict_row(r))
+                               AND (?='' OR COALESCE(po.supplier,'') LIKE '%'||?||'%')
+                             ORDER BY po.id DESC LIMIT 200""", (_sup_f, _sup_f)).fetchall():
+        _do = dict_row(r)
+        try:
+            _t1 = datetime.datetime.strptime(str(_do.get('created_at') or '')[:10], '%Y-%m-%d')
+            _do['over_days'] = (datetime.date.today() - _t1.date()).days
+        except Exception:
+            _do['over_days'] = 0
+        _do['overdue'] = _do['over_days'] >= _days
+        b.append(_do)
     conn.close()
     return jsonify({'in_no_order': a, 'order_no_recv': b,
-                    'in_no_order_count': len(a), 'order_no_recv_count': len(b)})
+                    'in_no_order_count': len(a), 'order_no_recv_count': len(b),
+                    'days': _days,
+                    'overdue_count': len([x for x in a if x.get('overdue')]) + len([x for x in b if x.get('overdue')])})
+
+
+def _period_key(dt_str, period):
+    """V11.306 报表归集键: 月(YYYY-MM) / 季(YYYY年QN) / 年(YYYY年)"""
+    _s = str(dt_str or '')[:10]
+    if len(_s) < 7:
+        return ''
+    _y, _m = _s[:4], int(_s[5:7] or 0)
+    if period == 'year':
+        return _y + '年'
+    if period == 'quarter':
+        return '%s年Q%d' % (_y, (_m - 1) // 3 + 1)
+    return '%s-%02d' % (_y, _m)
+
+
+def _inout_rows(period='month', wh='', cat='', from_d='', to_d=''):
+    """V11.306 出入库统计(同源库存流水): 按期间归集 入库数量/金额、出库数量/金额、净变动。
+    金额=流水数量×流水单价(单价在 V11.306 起随流水记录; 历史流水单价为0则金额不计, 口径在返回里说明)"""
+    c = db()
+    sql = """SELECT f.flow_type, f.qty, COALESCE(f.price,0) price, COALESCE(f.warehouse,'') wh,
+                    f.item_name, f.spec, COALESCE(f.created_at,'') created_at
+             FROM inventory_flows f WHERE 1=1"""
+    args = []
+    if wh:
+        sql += " AND COALESCE(f.warehouse,'')=?"; args.append(wh)
+    if from_d:
+        sql += " AND f.created_at>=?"; args.append(from_d)
+    if to_d:
+        sql += " AND f.created_at<=?"; args.append(to_d + ' 23:59:59')
+    if cat:
+        sql += " AND f.item_name IN (SELECT item_name FROM categories c2 WHERE c2.name=? UNION SELECT item_name FROM inventory iv WHERE iv.cat_code=(SELECT code FROM categories WHERE name=?))"
+        args += [cat, cat]
+    rows = c.execute(sql, args).fetchall()
+    c.close()
+    agg = {}
+    for r in rows:
+        ft = str(r['flow_type'] or '')
+        q = float(r['qty'] or 0); amt = round(q * float(r['price'] or 0), 2)
+        k = _period_key(r['created_at'], period)
+        if k not in agg:
+            agg[k] = {'period': k, 'in_qty': 0.0, 'in_amt': 0.0, 'out_qty': 0.0, 'out_amt': 0.0}
+        if ft in ('出库',):
+            agg[k]['out_qty'] += abs(q)
+            agg[k]['out_amt'] += abs(amt)
+        elif ft.startswith('入库') or ft.startswith('分批入库') or ft == '退库':
+            agg[k]['in_qty'] += abs(q)
+            agg[k]['in_amt'] += abs(amt)
+    out = []
+    for k in sorted(agg):
+        d = agg[k]
+        d['net_qty'] = round(d['in_qty'] - d['out_qty'], 3)
+        d['in_qty'] = round(d['in_qty'], 3); d['out_qty'] = round(d['out_qty'], 3)
+        d['in_amt'] = round(d['in_amt'], 2); d['out_amt'] = round(d['out_amt'], 2)
+        out.append(d)
+    return out
+
+
+def _issue_rows(group='dept', from_d='', to_d=''):
+    """V11.306 领用统计: 按部门/领用人统计领用明细(次数/数量)"""
+    c = db()
+    sql = """SELECT COALESCE(NULLIF(i.receiver,''), r.receiver, r.dept) recv, r.dept, i.item_name, i.spec, i.unit,
+                    SUM(i.quantity) qty, COUNT(*) cnt, MAX(r.created_at) last_at
+             FROM requisition_items i JOIN requisitions r ON r.id=i.requisition_id
+             WHERE COALESCE(r.status,'')<>'已作废'"""
+    args = []
+    if from_d:
+        sql += " AND r.created_at>=?"; args.append(from_d)
+    if to_d:
+        sql += " AND r.created_at<=?"; args.append(to_d + ' 23:59:59')
+    sql += " GROUP BY " + ("recv, i.item_name, i.spec" if group == 'receiver' else "r.dept, i.item_name, i.spec")
+    sql += " ORDER BY qty DESC LIMIT 500"
+    rows = c.execute(sql, args).fetchall()
+    c.close()
+    return [dict_row(r) for r in rows]
+
+
+def _scrap_rows():
+    """V11.306 废旧物资报表: 废旧/暂存库的入库/出库/结存(按物资)"""
+    c = db()
+    flows = c.execute("""SELECT f.item_name, f.spec, f.unit, f.flow_type, f.qty, COALESCE(f.warehouse,'') wh
+                         FROM inventory_flows f
+                         WHERE COALESCE(f.warehouse,'') LIKE '%废旧%' OR COALESCE(f.warehouse,'') LIKE '%暂存%'""").fetchall()
+    inv = c.execute("""SELECT item_name, spec, unit, quantity, COALESCE(warehouse,'') wh FROM inventory
+                       WHERE COALESCE(warehouse,'') LIKE '%废旧%' OR COALESCE(warehouse,'') LIKE '%暂存%'""").fetchall()
+    c.close()
+    agg = {}
+    for r in flows:
+        k = (r['item_name'], r['spec'] or '')
+        d = agg.setdefault(k, {'item_name': r['item_name'], 'spec': r['spec'] or '', 'unit': r['unit'] or '个',
+                               'warehouse': r['wh'], 'in_qty': 0.0, 'out_qty': 0.0, 'stock': 0.0})
+        ft = str(r['flow_type'] or ''); q = float(r['qty'] or 0)
+        if ft == '出库':
+            d['out_qty'] += abs(q)
+        else:
+            d['in_qty'] += abs(q)
+    for r in inv:
+        k = (r['item_name'], r['spec'] or '')
+        d = agg.setdefault(k, {'item_name': r['item_name'], 'spec': r['spec'] or '', 'unit': r['unit'] or '个',
+                               'warehouse': r['wh'], 'in_qty': 0.0, 'out_qty': 0.0, 'stock': 0.0})
+        d['stock'] = float(r['quantity'] or 0)
+        if not d['warehouse']:
+            d['warehouse'] = r['wh']
+    return [v for _, v in sorted(agg.items())]
+
+
+@app.route('/api/reports/inout-stat')
+@login_required
+def api_report_inout():
+    """需求模块六.1: 出入库统计报表(按月/季/年 × 库房/品类)"""
+    if session.get('user_role') not in ('库管员', '采购员', '财务', '分管领导', '总经理', '系统管理员', '部门负责人'):
+        return jsonify({'error': '无权限'}), 403
+    period = (request.args.get('period') or 'month').strip()
+    if period not in ('month', 'quarter', 'year'):
+        period = 'month'
+    rows = _inout_rows(period, (request.args.get('wh') or '').strip(), (request.args.get('cat') or '').strip(),
+                       (request.args.get('from') or '').strip(), (request.args.get('to') or '').strip())
+    return jsonify({'rows': rows, 'period': period,
+                    'note': '数据同源库存流水; 金额=流水数量×流水单价(2026-09-14 起流水带单价, 之前历史流水金额按0计)'})
+
+
+@app.route('/api/reports/issue-stat')
+@login_required
+def api_report_issue():
+    """需求模块六.1: 领用统计报表(按部门/领用人)"""
+    if session.get('user_role') not in ('库管员', '采购员', '财务', '分管领导', '总经理', '系统管理员', '部门负责人'):
+        return jsonify({'error': '无权限'}), 403
+    group = (request.args.get('group') or 'dept').strip()
+    rows = _issue_rows('receiver' if group == 'receiver' else 'dept',
+                       (request.args.get('from') or '').strip(), (request.args.get('to') or '').strip())
+    return jsonify({'rows': rows, 'group': group, 'note': '领用人按出库明细行统计(一行一个领用人)'})
+
+
+@app.route('/api/reports/scrap-stat')
+@login_required
+def api_report_scrap():
+    """需求模块六.1: 废旧物资报表(废旧/暂存库 入出存)"""
+    if session.get('user_role') not in ('库管员', '采购员', '财务', '分管领导', '总经理', '系统管理员', '部门负责人'):
+        return jsonify({'error': '无权限'}), 403
+    return jsonify({'rows': _scrap_rows(), 'note': '仅统计废旧物资库/暂存库, 与正常库存隔离且不计成本'})
+
+
+@app.route('/api/reports/stat-export')
+@login_required
+def api_report_stat_export():
+    """V11.306 上述三类报表统一导出 Excel"""
+    if session.get('user_role') not in ('库管员', '采购员', '财务', '分管领导', '总经理', '系统管理员', '部门负责人'):
+        return jsonify({'error': '无权限'}), 403
+    kind = (request.args.get('kind') or 'inout').strip()
+    period = (request.args.get('period') or 'month').strip()
+    from_d = (request.args.get('from') or '').strip(); to_d = (request.args.get('to') or '').strip()
+    import openpyxl
+    wb = openpyxl.Workbook(); ws = wb.active
+    if kind == 'issue':
+        grp = 'receiver' if (request.args.get('group') or 'dept') == 'receiver' else 'dept'
+        rows = _issue_rows(grp, from_d, to_d)
+        ws.title = '领用统计'
+        head = ['领用人' if grp == 'receiver' else '部门', '物资', '规格', '单位', '数量', '笔数', '最近领用时间']
+        ws.append(head)
+        for r in rows:
+            ws.append([r.get('recv') or r.get('dept'), r.get('item_name'), r.get('spec'), r.get('unit'),
+                       float(r.get('qty') or 0), r.get('cnt'), r.get('last_at')])
+        fname = '领用统计'
+    elif kind == 'scrap':
+        rows = _scrap_rows(); ws.title = '废旧物资报表'
+        ws.append(['物资', '规格', '单位', '库房', '累计入库', '累计出库', '当前结存'])
+        for r in rows:
+            ws.append([r['item_name'], r['spec'], r['unit'], r['warehouse'], r['in_qty'], r['out_qty'], r['stock']])
+        fname = '废旧物资报表'
+    else:
+        rows = _inout_rows(period, (request.args.get('wh') or '').strip(), (request.args.get('cat') or '').strip(), from_d, to_d)
+        ws.title = '出入库统计'
+        ws.append(['期间', '入库数量', '入库金额', '出库数量', '出库金额', '净变动'])
+        for r in rows:
+            ws.append([r['period'], r['in_qty'], r['in_amt'], r['out_qty'], r['out_amt'], r['net_qty']])
+        fname = '出入库统计'
+    for _c in ws['A1':'G1']:
+        for _x in _c:
+            _x.font = openpyxl.styles.Font(bold=True)
+    bio = io.BytesIO(); wb.save(bio); bio.seek(0)
+    from flask import send_file
+    resp = send_file(bio, as_attachment=True, download_name=f'{fname}_{datetime.date.today()}.xlsx',
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
 
 
 @app.route('/api/inventory')
