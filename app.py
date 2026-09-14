@@ -765,6 +765,8 @@ def init_db():
         ('purchase_orders', 'rcv_state', "ALTER TABLE purchase_orders ADD COLUMN rcv_state TEXT DEFAULT ''"),
         # ---- V11.305 出库颗粒度(需求模块二.1): 明细行「领用人」+ 流水同步「领用人/用途」 ----
         ('requisition_items', 'receiver', "ALTER TABLE requisition_items ADD COLUMN receiver TEXT DEFAULT ''"),
+        # ---- V11.308 需求模块二.3/四.2: 出库明细可指定批次(默认先进先出, 指定则优先扣该批次) ----
+        ('requisition_items', 'batch_no', "ALTER TABLE requisition_items ADD COLUMN batch_no TEXT DEFAULT ''"),
         ('inventory_flows', 'receiver', "ALTER TABLE inventory_flows ADD COLUMN receiver TEXT DEFAULT ''"),
         ('inventory_flows', 'purpose', "ALTER TABLE inventory_flows ADD COLUMN purpose TEXT DEFAULT ''"),
         # ---- V11.306 报表/对账基础: 流水带 库房 + 单价(出入库统计金额、废旧物资报表按库房口径) ----
@@ -10004,6 +10006,105 @@ def api_receiving_download(rid):
     resp.headers['Pragma'] = 'no-cache'
     return resp
 
+def _e(x):
+    """V11.308 批量打印用的最小 HTML 转义"""
+    return (str(x if x is not None else '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;'))
+
+
+def _rcv_print_doc(r, its):
+    """V11.308 出库单打印块(整单套打: 物料/数量/领用人/用途/批次)"""
+    if its:
+        rows = ''.join('<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>' % (
+            _e(x['item_name']), _e(x['spec'] or ''), _e(x['unit'] or ''), x['quantity'],
+            _e((x['receiver'] if 'receiver' in x.keys() else '') or ''), _e(x['purpose'] or ''),
+            _e((x['batch_no'] if 'batch_no' in x.keys() else '') or '自动(先进先出)')) for x in its)
+    else:
+        rows = '<tr><td colspan="7">%s</td></tr>' % _e(r['item_name'])
+    head = ('<table><thead><tr><th>物资</th><th>规格</th><th>单位</th><th>数量</th>'
+            '<th>领用人</th><th>用途</th><th>批次</th></tr></thead><tbody>%s</tbody></table>' % rows)
+    meta = ('<div class="meta">领取部门：%s ｜ 领用人：%s ｜ 状态：%s ｜ 制单：%s ｜ 日期：%s</div>' % (
+        _e(r['receive_dept'] or r['dept'] or ''), _e(r['receiver'] or ''), _e(r['status'] or ''),
+        _e(r['requester'] or ''), _e((r['created_at'] or '')[:16])))
+    return ('<div class="doc"><h2>出库单 %s</h2>%s%s'
+            '<div class="sign">库管员签字：____________ 领用人签字：____________</div></div>') % (_e(r['req_no']), meta, head)
+
+
+@app.route('/api/requisitions/batch-print')
+@login_required
+def api_requisition_batch_print():
+    """V11.308 需求模块二.2 批量打印: 勾选多张出库单合并成一页, 浏览器直接打印/存 PDF"""
+    if session.get('user_role') not in ('库管员', '部门负责人', '分管领导', '总经理', '系统管理员'):
+        return '<h3>无权限</h3>', 403
+    ids = [x for x in (request.args.get('ids') or '').split(',') if x.strip().isdigit()]
+    if not ids:
+        return '<h3>请先勾选出库单</h3>', 400
+    c = db()
+    blocks = []
+    for rid in ids[:50]:
+        r = c.execute("SELECT * FROM requisitions WHERE id=?", (rid,)).fetchone()
+        if not r:
+            continue
+        its = c.execute("SELECT * FROM requisition_items WHERE requisition_id=? ORDER BY id", (rid,)).fetchall()
+        blocks.append(_rcv_print_doc(r, its))
+    c.close()
+    css = ('body{font-family:"Microsoft YaHei",sans-serif;font-size:12px;margin:14px}'
+           '.doc{page-break-after:always;border-bottom:1px dashed #999;padding-bottom:10px;margin-bottom:12px}'
+           'h2{margin:0 0 4px;font-size:15px}.meta{color:#555;font-size:11px;margin-bottom:6px}'
+           'table{width:100%;border-collapse:collapse;font-size:11px}th,td{border:1px solid #666;padding:3px 5px;text-align:left}'
+           'th{background:#f0f0f0}.sign{margin-top:8px;color:#333}'
+           '@media print{.noprint{display:none}}')
+    html = ('<html><head><meta charset="utf-8"><title>出库单批量打印</title><style>' + css + '</style></head><body>'
+            '<div class="noprint" style="margin-bottom:8px"><button onclick="window.print()">🖨️ 打印 / 存为PDF</button>'
+            '<span style="color:#888;margin-left:8px">共 %d 张出库单</span></div>' % len(blocks) + ''.join(blocks)
+            + '</body></html>')
+    return html
+
+
+@app.route('/api/requisitions/batch-submit', methods=['POST'])
+@login_required
+def api_requisition_batch_submit():
+    """V11.308 需求模块二.2 批量审批: 草稿/已驳回出库单一次批量提交审批(逐单走既有审批流)"""
+    if session.get('user_role') not in ('库管员', '部门负责人', '分管领导', '总经理', '系统管理员'):
+        return jsonify({'error': '无权限'}), 403
+    ids = [int(x) for x in ((request.json or {}).get('ids') or []) if str(x).isdigit()]
+    if not ids:
+        return jsonify({'error': '请先勾选出库单'}), 400
+    ok, fail = [], []
+    # V11.308b: 逐单独占短事务(先提交状态再建审批, 避免长时间持锁导致 database is locked)
+    for rid in ids[:50]:
+        _c = db()
+        try:
+            r = _c.execute("SELECT * FROM requisitions WHERE id=?", (rid,)).fetchone()
+        except Exception as _e0:
+            _c.close(); fail.append('%s:%s' % (rid, str(_e0)[:20])); continue
+        if not r:
+            _c.close(); fail.append('%s:不存在' % rid); continue
+        if str(r['status'] or '') not in ('草稿', '待提交', '已驳回'):
+            _c.close(); fail.append('%s:%s' % (r['req_no'], r['status'])); continue
+        _no = r['req_no']
+        try:
+            _c.execute("UPDATE requisitions SET status='待审批' WHERE id=?", (rid,))
+            _c.commit()
+        except Exception as _ex:
+            _c.close(); fail.append('%s:%s' % (_no, str(_ex)[:20])); continue
+        _c.close()
+        try:
+            create_approvals('requisition', rid, 0, submitter=session['user_name'])
+            ok.append(_no)
+            def _bg(_rid):
+                try:
+                    start_instances('requisition', _rid)
+                except Exception:
+                    pass
+            threading.Thread(target=_bg, args=(rid,), daemon=True).start()
+        except Exception as _ex:
+            fail.append('%s:%s' % (_no, str(_ex)[:20]))
+    time.sleep(0.1)
+    log(session['user_name'], '批量提交出库审批', '成功%d张 失败%d张' % (len(ok), len(fail)))
+    return jsonify({'success': True, 'ok_count': len(ok), 'ok': ok, 'fail': fail,
+                    'message': '批量提交完成：成功 %d 张%s' % (len(ok), ('，跳过 %d 张(%s)' % (len(fail), '；'.join(fail[:3]))) if fail else '')})
+
+
 @app.route('/api/requisitions/<int:rid>/download')
 @login_required
 def api_requisition_download(rid):
@@ -10171,6 +10272,7 @@ def api_create_requisition():
     for _i0, _it0 in enumerate(items, 1):
         _it0['receiver'] = (str(_it0.get('receiver') or '').strip() or _hdr_receiver)
         _it0['purpose'] = (str(_it0.get('purpose') or '').strip() or _hdr_purpose)
+        _it0['batch_no'] = str(_it0.get('batch_no') or '').strip()   # V11.308 指定批次(空=先进先出)
         if not _it0['receiver']:
             conn.close(); return jsonify({'error': '出库明细第 %d 行请填写「领用人」(必填)' % _i0}), 400
         if not _it0['purpose']:
@@ -10203,9 +10305,9 @@ def api_create_requisition():
                   total_q, first.get('unit', '个'), d.get('purpose', first.get('purpose', '')), '待审批', receiver, receive_dept, now()))
     rid = conn.execute("SELECT id FROM requisitions WHERE req_no=?", (no,)).fetchone()[0]
     for it in items:
-        conn.execute("INSERT INTO requisition_items(requisition_id,item_name,spec,unit,quantity,purpose,trace_no,created_at,receiver) VALUES(?,?,?,?,?,?,?,?,?)",
+        conn.execute("INSERT INTO requisition_items(requisition_id,item_name,spec,unit,quantity,purpose,trace_no,created_at,receiver,batch_no) VALUES(?,?,?,?,?,?,?,?,?,?)",
                      (rid, it['item_name'], it.get('spec', ''), it.get('unit', '个'),
-                      float(it['quantity']), it.get('purpose', ''), it.get('_trace', ''), now(), it.get('receiver', '')))
+                      float(it['quantity']), it.get('purpose', ''), it.get('_trace', ''), now(), it.get('receiver', ''), it.get('batch_no', '')))
     conn.commit()
     create_approvals('requisition', rid, 0, submitter=session['user_name'])
     conn.close()

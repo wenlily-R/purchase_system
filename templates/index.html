@@ -416,6 +416,8 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <div style="margin-bottom:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:10px">
       <span>领用人:</span><select id="reqRecvF" onchange="loadRequisitions()" style="font-size:10px;padding:2px 4px"><option value="">全部</option></select>
       <span style="color:#999">按领用人筛选（同一张单可含多个领用人，命中即显示）</span>
+      <button class="btn btn-o btn-sm" style="margin-left:auto" onclick="batchPrintReq()">🖨️ 批量打印(已选 <span id="reqChkCnt">0</span>)</button>
+      <button class="btn btn-w btn-sm" onclick="batchSubmitReq()">📤 批量提交审批</button>
     </div><div class="card"><div class="cb" id="reqListBox"><div class="loading">加载中...</div></div></div>
   </div>
 </div>
@@ -4822,16 +4824,34 @@ async function doSubmitReq(){
   else alert('❌ '+(r.error||'提交失败'));
 }
 
+// ============ V11.308 出库批量打印/批量提交(需求模块二.2) ============
+function reqChkIds(){ return [...document.querySelectorAll('#reqListBox .reqChk')].filter(x=>x.checked).map(x=>x.value); }
+function reqChkAll(el){ document.querySelectorAll('#reqListBox .reqChk').forEach(x=>x.checked=el.checked); reqChkCnt(); }
+function reqChkCnt(){ const n=reqChkIds().length; const e=id('reqChkCnt'); if(e)e.textContent=n; return n; }
+document.addEventListener('change',e=>{ if(e.target&&e.target.classList&&e.target.classList.contains('reqChk'))reqChkCnt(); });
+function batchPrintReq(){
+  const ids=reqChkIds();
+  if(!ids.length){alert('请先勾选要打印的出库单');return}
+  window.open('/api/requisitions/batch-print?ids='+ids.join(','),'_blank');
+}
+async function batchSubmitReq(){
+  const ids=reqChkIds();
+  if(!ids.length){alert('请先勾选要提交的出库单');return}
+  if(!confirm('将选中的 '+ids.length+' 张出库单批量提交审批？已提交/已出库的单会自动跳过。'))return;
+  const r=await api('/requisitions/batch-submit',{method:'POST',body:JSON.stringify({ids})});
+  if(r&&r.success){ alert('✅ '+r.message); loadRequisitions(); }
+  else alert('❌ '+((r&&r.error)||'批量提交失败'));
+}
 async function loadRequisitions(){
   const _fr=(id('reqRecvF')||{}).value||'';
   const r=await api('/requisitions'+(_fr?'?receiver='+encodeURIComponent(_fr):''));
   // V11.305 领用人按行展示(同单多人), 用途列展示; 顶部可按领用人筛选
   try{ const rf=id('reqRecvF'); if(rf){ const cur=rf.value; const names=[...new Set(((r||[]).flatMap(x=>(x.receivers&&x.receivers.length)?x.receivers:[x.receiver])).filter(Boolean))]; rf.innerHTML='<option value="">全部</option>'+names.map(n=>`<option>${esc(n)}</option>`).join(''); rf.value=cur; } }catch(e){}
-  id('reqListBox').innerHTML=groupRnder(r, x=>x.created_at,['单号','领用人','用途','领取部门','商品数','数量','状态','驳回','操作'],
+  id('reqListBox').innerHTML=groupRnder(r, x=>x.created_at,['<input type="checkbox" title="全选" onchange="reqChkAll(this)">','单号','领用人','用途','领取部门','商品数','数量','状态','驳回','操作'],
     x=>{ const _items=(x.items||[]);
       const _recvTxt=x.recv_txt||x.receiver||x.requester||'';
       const _purpTxt=[...new Set(_items.map(i=>i.purpose).filter(Boolean))].join('、');
-      return `<td><b>${esc(x.req_no)}</b></td><td>${esc(_recvTxt)}</td><td style="font-size:9px;color:#555">${esc(_purpTxt||'—')}</td><td>${esc(x.receive_dept||x.dept||'')}</td><td>${x.item_count||1}项</td><td>${x.total_qty||x.quantity}</td><td>${tag(x.status)}</td>
+      return `<td><input type="checkbox" class="reqChk" value="${x.id}"></td><td><b>${esc(x.req_no)}</b></td><td>${esc(_recvTxt)}</td><td style="font-size:9px;color:#555">${esc(_purpTxt||'—')}</td><td>${esc(x.receive_dept||x.dept||'')}</td><td>${x.item_count||1}项</td><td>${x.total_qty||x.quantity}</td><td>${tag(x.status)}</td>
     ${rejCell(x)}
     <td><button class="lnk" style="color:#b08900" onclick="editDoc('requisition',${x.id},'出库单')">✏️修改</button> <button class="lnk" onclick="window.open('/api/requisitions/${x.id}/download','_blank')">⬇️下载</button> ${x.status=='已出库'||x.status=='待审批'?`<button class="lnk" style="color:var(--d)" onclick="voidReq(${x.id})">作废</button>`:''} ${(x.status=='待审批'||x.status=='已通过'||x.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('requisition',${x.id},'出库单')">↩️撤回</button>`:''}${(x.status=='待审批'||x.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('requisition',${x.id},'出库单')">🗑️删除</button>`:''}</td>`;});
 }
