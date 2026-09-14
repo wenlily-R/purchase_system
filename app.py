@@ -9653,9 +9653,14 @@ def _ensure_pending_receiving(c, oid):
             return ''   # V11.296 维修件不入库
         if c.execute("SELECT 1 FROM receivings WHERE order_id=? AND COALESCE(status,'')<>'已作废' LIMIT 1", (oid,)).fetchone():
             return ''
-        _oi = c.execute("SELECT * FROM purchase_order_items WHERE order_id=? ORDER BY id", (oid,)).fetchall()
-        if not _oi:
-            _oi = c.execute("SELECT * FROM order_items WHERE order_id=? ORDER BY id", (oid,)).fetchall()
+        _oi = []
+        for _tbl in ('order_items', 'purchase_order_items'):   # 兼容历史表名(purchase_order_items 在部分库不存在 → 曾致静默失败)
+            try:
+                _oi = c.execute("SELECT * FROM %s WHERE order_id=? ORDER BY id" % _tbl, (oid,)).fetchall()
+            except Exception:
+                _oi = []
+            if _oi:
+                break
         _qty = sum(float(x['quantity'] or 0) for x in _oi) if _oi else float(po['quantity'] or 0)
         _ij = json.dumps([{'item_name': x['item_name'], 'spec': x['spec'] or '', 'quantity': x['quantity'],
                            'unit': x['unit'] or '个', 'price': x['price'] or 0} for x in _oi], ensure_ascii=False) if _oi else ''
@@ -9667,6 +9672,7 @@ def _ensure_pending_receiving(c, oid):
                    '订单通过后自动进入入库板块(整批%d项)' % (len(_oi) if _oi else 1), po['dept'] if 'dept' in po.keys() else '', _ij))
         return _rno
     except Exception as _e:
+        print('V11.307 待入库单补建失败 order#%s: %s' % (oid, _e))
         return ''
 
 
