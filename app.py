@@ -10167,10 +10167,12 @@ def api_rcv_manual_recon():
                              ORDER BY id DESC""").fetchall():
         a.append(dict_row(r))
     b = []
+    # ② 有采购订单但库房无入库: 只看已生效订单(排除草稿/作废/取消/驳回); 维修委托订单不进库存, 不计入
     for r in conn.execute("""SELECT po.id,po.order_no,po.supplier,po.item_name,po.quantity,po.total_amount,po.status,po.created_at
                              FROM purchase_orders po
-                             WHERE COALESCE(po.status,'') NOT IN ('已作废','已取消','已驳回')
+                             WHERE COALESCE(po.status,'') NOT IN ('草稿','已作废','已取消','已驳回','待审批')
                                AND (SELECT COUNT(*) FROM receivings rv WHERE rv.order_id=po.id AND COALESCE(rv.status,'')<>'已作废')=0
+                               AND NOT EXISTS (SELECT 1 FROM purchase_requests pr WHERE pr.id=po.req_id AND COALESCE(pr.req_type,'') LIKE '%维修%')
                              ORDER BY po.id DESC LIMIT 200""").fetchall():
         b.append(dict_row(r))
     conn.close()
