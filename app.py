@@ -811,6 +811,15 @@ def init_db():
             print('V11.303 到货状态回填完成(%d 张订单)' % len(_bf))
     except Exception as _be:
         print('V11.303 到货状态回填跳过:', _be)
+    # ---- V11.304 多库房档案(0价入库/废旧物资库隔离): 库房清单可维护, 幂等补齐三机一致 ----
+    try:
+        if not conn.execute("SELECT 1 FROM sys_config WHERE key='warehouse_list'").fetchone():
+            conn.execute("INSERT INTO sys_config(key, value) VALUES('warehouse_list', ?)",
+                         ('主库房,生产库,生活库,工程材料库,气体库,废旧物资库',))
+            conn.commit()
+            print('V11.304 库房清单已初始化(含废旧物资库)')
+    except Exception as _we:
+        print('V11.304 库房清单初始化跳过:', _we)
     # ---- V11.301 手工应急入库金额上限(超限必须领导确认): 默认2000元, 幂等补齐三机一致 ----
     try:
         if not conn.execute("SELECT 1 FROM sys_config WHERE key='manual_recv_limit'").fetchone():
@@ -9501,6 +9510,32 @@ def _inv_pick(c, name, spec, warehouse, price):
     return row
 
 
+_SCRAP_WH = ('废旧物资库', '暂存库', '旧件库')
+
+
+def _warehouses(c=None):
+    """V11.304 库房清单(系统设置 sys_config.warehouse_list 可维护; 至少含 主库房/废旧物资库)"""
+    conn = c if c is not None else db()
+    try:
+        _r = conn.execute("SELECT value FROM sys_config WHERE key='warehouse_list'").fetchone()
+        _v = ((_r['value'] if _r else '') or '')
+    except Exception:
+        _v = ''
+    if c is None:
+        conn.close()
+    lst = [x.strip() for x in _v.split(',') if x.strip()]
+    for _w in ('主库房', '废旧物资库'):
+        if _w not in lst:
+            lst.append(_w)
+    return lst
+
+
+def _is_scrap_wh(name):
+    """V11.304 是否废旧/暂存库: 0 价入库、独立核算、与正常库存隔离(按名称含 废旧/暂存/旧件 判定)"""
+    n = str(name or '')
+    return ('废旧' in n) or ('暂存' in n) or ('旧件' in n) or (n in _SCRAP_WH)
+
+
 def _inv_rows_fifo(c, name, spec, warehouse):
     """V11.303 分批次库存: 取同品名+规格的多个批次条目(优先同库房), 按先进先出(入库时间/ID升序)排列"""
     spec = spec or ''
@@ -10119,6 +10154,9 @@ def api_create_receiving():
     _manual_ok_by = ''
     _manual_ok_at = ''
     _manual_limit = 0.0
+    _manual_wh = ''
+    _zero_price = bool(d.get('zero_price'))
+    _qty_est = bool(d.get('qty_est'))
     if _manual:
         if session.get('user_role') not in ('库管员', '系统管理员'):
             conn.close(); return jsonify({'error': '无权限：库房手工应急入库仅对库管员/系统管理员开放'}), 403
@@ -10130,6 +10168,13 @@ def api_create_receiving():
             conn.close(); return jsonify({'error': '请填写手工入库事由（如：加急件先到 / 月结耗材 / 中间商送货单滞后 / 现场直装后补单）'}), 400
         if len(_atts_pre) < 2:
             conn.close(); return jsonify({'error': '手工应急入库必须上传附件：送货单 + 货物照片（至少2个附件，责任留证、审计可查）'}), 400
+        # V11.304 0 价入库(废旧物资/旧件): 单价强制0、不计成本、必须入废旧/暂存库与正常库存隔离; 支持估算数量
+        _manual_wh = str(d.get('warehouse') or '').strip()[:30]
+        if _zero_price:
+            if not _manual_wh:
+                _manual_wh = '废旧物资库'
+            if not _is_scrap_wh(_manual_wh):
+                conn.close(); return jsonify({'error': '0 价入库必须入「废旧物资库 / 暂存库」：废旧物资不计入库存成本，需与正常库存隔离（当前库房：%s）' % _manual_wh}), 400
         try:
             _lr = conn.execute("SELECT value FROM sys_config WHERE key='manual_recv_limit'").fetchone()
             _manual_limit = float(str(_lr['value']).strip()) if (_lr and str(_lr['value'] or '').strip()) else 0.0
@@ -10142,7 +10187,9 @@ def api_create_receiving():
                                  for it in (d.get('items') or []) if isinstance(it, dict)), 2)
         except Exception:
             _amt_pre = 0.0
-        if _amt_pre > _manual_limit:
+        if _zero_price:
+            _amt_pre = 0.0   # V11.304 0价入库(废旧物资)不计成本 → 不受金额上限约束
+        if (not _zero_price) and _amt_pre > _manual_limit:
             _ok_name = str(d.get('leader_confirm_name') or '').strip()[:30]
             if not _ok_name:
                 conn.close(); return jsonify({'error': '手工应急入库金额 ¥%s 超过上限 ¥%s，需领导确认：请填写确认领导姓名后重试（该确认全程留痕，可在【手工入库对账】查看）' % (_amt_pre, _manual_limit)}), 400
@@ -10164,6 +10211,10 @@ def api_create_receiving():
     items = [it for it in items if it.get('item_name') and float(it.get('quantity', 0) or 0) > 0]
     if not items:
         conn.close(); return jsonify({'error': '请至少填写一个商品及数量'}), 400
+    if _manual and _zero_price:   # V11.304 0价入库: 单价/税率强制为0(仅记数量, 不计成本)
+        for _zi in items:
+            _zi['price'] = 0
+            _zi['tax_rate'] = 0
     # V11.259: 超量收货拦截 — 分批验收照旧, 仅防超收: 本次入库量不得超过订单未收货量
     if _oid:
         _ois = {}
@@ -10209,11 +10260,15 @@ def api_create_receiving():
     # 钉钉发起时兜底成审批人自己(发起人=审批人) → 820003审批实例参数错误
     _inspector = (d.get('inspector') or '').strip() or session.get('user_name', '') or '系统'
     _remark_save = ('🧰 临时手工入库(无采购订单·待补关联) 供应商: %s 事由: %s' % (_manual_sup, _manual_reason)) if _manual else ('手动入库单: %d项商品' % len(items))
+    if _manual and _zero_price:
+        _remark_save += '｜0价入库(废旧物资·仅记数量不计成本)' + ('｜估算数量' if _qty_est else '')
+    elif _manual and _qty_est:
+        _remark_save += '｜估算数量'
     conn.execute("INSERT INTO receivings(receive_no,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,items_json,attachments,dept,is_est,est_amount,inspector,trace_no,warehouse,is_manual,manual_supplier,manual_reason,link_status,manual_ok_by,manual_ok_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                  (no, d.get('order_id'), first['item_name'], first.get('spec', ''), total_q,
                   first.get('unit', '个'), 0, '待入库', now(), _remark_save,
                   json.dumps(items, ensure_ascii=False), _atts_json, _dept, _is_est, _est_amt, _inspector, _trace,
-                  (str(d.get('warehouse') or '').strip()[:30] or '主库房'),
+                  (_manual_wh or str(d.get('warehouse') or '').strip()[:30] or '主库房'),
                   1 if _manual else 0, _manual_sup, _manual_reason, ('待补关联' if _manual else ''), _manual_ok_by, _manual_ok_at))
     rid = conn.execute("SELECT id FROM receivings WHERE receive_no=?", (no,)).fetchone()[0]
     # 手动入库单没有 order_items, 明细暂存 remark; 审批通过时按 quantity 入库
@@ -10255,7 +10310,8 @@ def api_rcv_manual_meta():
     if '主库房' not in whs:
         whs.insert(0, '主库房')
     conn.close()
-    return jsonify({'limit': lim, 'warehouses': whs,
+    return jsonify({'limit': lim, 'warehouses': _warehouses(),
+                    'scrap_warehouses': [w for w in _warehouses() if _is_scrap_wh(w)],
                     'can': session.get('user_role') in ('库管员', '系统管理员'),
                     'role': session.get('user_role')})
 
@@ -15124,6 +15180,8 @@ def api_return_confirm_warehouse(rid):
     状态机: 审批通过(待仓库清点) → 退库已完成。幂等: 已完成/已有流水跳过。"""
     if session.get('user_role') not in ('库管员', '部门负责人', '分管领导', '总经理', '系统管理员'):
         return jsonify({'error': '无权限：仓库确认入库仅限库管员/领导'}), 403
+    _rd = request.json or {}
+    _to_scrap = bool(_rd.get('to_scrap'))   # V11.304 废旧损坏品: 入废旧物资库, 0 价登记(不计成本)
     c = db()
     r = c.execute("SELECT * FROM return_requests WHERE id=?", (rid,)).fetchone()
     if not r:
@@ -15144,22 +15202,28 @@ def api_return_confirm_warehouse(rid):
         q = float(it['return_qty'] or 0)
         if q <= 0:
             continue
-        inv = c.execute("SELECT * FROM inventory WHERE item_name=? AND spec=? AND (warehouse=? OR warehouse IS NULL OR warehouse='') ORDER BY quantity DESC LIMIT 1",
-                        (it['item_name'], it.get('spec', '') or '', r['warehouse'] or '主库房')).fetchone()
+        # V11.304 退库去向: 完好可复用→原库房按原价回补; 废旧损坏→废旧物资库 0 价登记(不计成本)
+        _wh = ('废旧物资库' if _to_scrap else (r['warehouse'] or '主库房'))
+        _pr = (0.0 if _to_scrap else float(it.get('price', 0) or 0))
+        inv = _inv_pick(c, it['item_name'], it.get('spec', '') or '', _wh, _pr)
         if inv:
             new_q = float(inv['quantity'] or 0) + q
-            c.execute("UPDATE inventory SET quantity=?, updated_at=?, last_move_date=? WHERE id=?", (new_q, now(), now()[:10], inv['id']))
+            _up2, _ag2 = "quantity=?, updated_at=?, last_move_date=?", [new_q, now(), now()[:10]]
+            if _pr and not float(inv['price'] or 0):
+                _up2 += ", price=?"; _ag2.append(_pr)
+            _ag2.append(inv['id'])
+            c.execute("UPDATE inventory SET " + _up2 + " WHERE id=?", _ag2)
             inv_id = inv['id']
         else:
             cur = c.execute("INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,price,updated_at) VALUES(?,?,?,?,?,?,?)",
-                            (it['item_name'], it.get('spec', '') or '', it.get('unit', '个') or '个', q,
-                             r['warehouse'] or '主库房', float(it.get('price', 0) or 0), now()))
+                            (it['item_name'], it.get('spec', '') or '', it.get('unit', '个') or '个', q, _wh, _pr, now()))
             inv_id = cur.lastrowid
         c.execute("""INSERT INTO inventory_flows(flow_type,doc_type,doc_id,doc_no,item_name,spec,qty,balance_after,operator,remark,created_at)
                      VALUES('退库','return_request',?,?,?,?,?,?,?,?,?)""",
                   (rid, r['return_no'], it['item_name'], it.get('spec', '') or '', q,
                    float(c.execute("SELECT quantity FROM inventory WHERE id=?", (inv_id,)).fetchone()['quantity'] or 0),
-                   session.get('user_name', ''), f'退库入库: {r["return_no"]}', now()))
+                   session.get('user_name', ''), f'退库入库: {r["return_no"]}'
+                   + ('｜0价入废旧物资库(废旧物资·不计成本)' if _to_scrap else ''), now()))
         # 回写源出库单明细累计已退: 源单表头 returned_qty += q (按明细对应的源单)
         if it['source_item_id']:
             c.execute("""UPDATE requisitions SET returned_qty=COALESCE(returned_qty,0)+?

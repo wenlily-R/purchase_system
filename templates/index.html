@@ -4236,6 +4236,10 @@ async function showManualRcvForm(){
       <div style="flex:1;min-width:130px"><div style="font-size:10px;color:#555;margin-bottom:2px">🏷️ 归属部门 *</div><select id="mrsDept" style="width:100%;padding:5px;border:1px solid var(--b);border-radius:4px;font-size:11px"><option value="">— 请选择 —</option>${_deptOpts}</select></div>
       <div style="flex:0.8;min-width:110px"><div style="font-size:10px;color:#555;margin-bottom:2px">🏬 库房</div><select id="mrsWh" style="width:100%;padding:5px;border:1px solid var(--b);border-radius:4px;font-size:11px">${_whOpts}</select></div>
     </div>
+    <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:6px;font-size:10px;color:#555;background:#f7f7f7;border:1px dashed var(--b);border-radius:6px;padding:5px 8px">
+      <label style="display:flex;gap:4px;align-items:center;cursor:pointer"><input type="checkbox" id="mrsZero" onchange="mrsZeroToggle()"> 🧰 <b>0 价入库</b>（废旧物资/旧件：单价强制0、不计成本，自动入废旧物资库）</label>
+      <label style="display:flex;gap:4px;align-items:center;cursor:pointer"><input type="checkbox" id="mrsQtyEst"> 🔢 估算数量（无法精确清点，如旧电缆、螺丝估堆）</label>
+    </div>
     <div style="margin-bottom:6px"><div style="font-size:10px;color:#555;margin-bottom:2px">📝 手工入库事由 *（为什么没有采购订单）</div>
       <input class="fc" id="mrsReason" style="width:100%" placeholder="例：加急件上午报、下午到，采购订单未下；五金耗材月结、合同后置"></div>
     <div id="rcvItemList"></div>
@@ -4251,11 +4255,26 @@ async function showManualRcvForm(){
   id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="createManualRcv()">提交（临时手工入库）</button>';
   addRcvItem(); calcManualAmt();
 }
+function mrsZeroToggle(){
+  // V11.304 0 价入库: 库房锁定废旧物资库、单价强制0并置灰
+  const z=!!(id('mrsZero')&&id('mrsZero').checked), wh=id('mrsWh');
+  if(wh){
+    if(z){
+      if(![...wh.options].some(o=>o.value=='废旧物资库'))wh.add(new Option('废旧物资库','废旧物资库'));
+      wh.value='废旧物资库'; wh.disabled=true;
+    }else wh.disabled=false;
+  }
+  (window._rcvIdx||[]).forEach(i=>{const p=id('rcP'+i); if(p){ if(z)p.value=0; p.readOnly=!!z; p.style.background=z?'#f0f0f0':''; }});
+  calcManualAmt();
+}
 function calcManualAmt(){
   let t=0;
   (window._rcvIdx||[]).forEach(i=>{ const q=parseFloat(id('rcQ'+i)?.value)||0, pr=parseFloat(id('rcP'+i)?.value)||0; t+=q*pr; });
-  const lim=Number(window._mrsLimit||2000), over=t>lim;
-  if(id('mrsAmt')) id('mrsAmt').innerHTML=`货款合计 <b>¥${t.toFixed(2)}</b>（金额上限 ¥${lim.toFixed(2)}${over?'，<span style="color:#c62828">已超限，需领导确认</span>':''}）`;
+  const _z=!!(id('mrsZero')&&id('mrsZero').checked);
+  const lim=Number(window._mrsLimit||2000), over=(! _z)&&t>lim;
+  if(id('mrsAmt')) id('mrsAmt').innerHTML=_z
+    ? '<b>0 价入库</b>：仅登记数量，不计入库存成本（不受金额上限约束，自动入废旧物资库）'
+    : `货款合计 <b>¥${t.toFixed(2)}</b>（金额上限 ¥${lim.toFixed(2)}${over?'，<span style="color:#c62828">已超限，需领导确认</span>':''}）`;
   if(id('mrsOver')) id('mrsOver').innerHTML=over?`<div style="font-size:10px;color:#c62828;background:#ffebee;border:1px solid #ffcdd2;border-radius:6px;padding:6px 10px">⚠️ 超过金额上限 ¥${lim.toFixed(2)}，需填写确认领导姓名（全程留痕）：<input class="fc" id="mrsOkBy" style="width:55%;margin-left:6px" placeholder="例：邢果"></div>`:'';
 }
 async function createManualRcv(){
@@ -4269,7 +4288,9 @@ async function createManualRcv(){
     return {item_name:n.value.trim(),spec:id('rcS'+i)?.value||'',unit:'个',quantity:parseFloat(id('rcQ'+i)?.value)||0,price:parseFloat(id('rcP'+i)?.value)||0,tax_rate:13};}).filter(Boolean);
   if(!items.length){alert('请至少填写一个商品');return}
   if((window._rcvAtts||[]).length<2){alert('手工应急入库必须上传送货单 + 货物照片（至少 2 个附件）');return}
-  const body={manual:true,manual_supplier:sup,manual_reason:reason,items,attachments:window._rcvAtts||[],dept,warehouse:id('mrsWh')?.value||'主库房',is_est:1};
+  const zero=!!(id('mrsZero')&&id('mrsZero').checked), qest=!!(id('mrsQtyEst')&&id('mrsQtyEst').checked);
+  if(zero){ items.forEach(x=>{x.price=0;x.tax_rate=0}); }
+  const body={manual:true,manual_supplier:sup,manual_reason:reason,items,attachments:window._rcvAtts||[],dept,warehouse:id('mrsWh')?.value||'主库房',is_est:1,zero_price:zero,qty_est:qest};
   const ok=id('mrsOkBy'); if(ok&&ok.value.trim())body.leader_confirm_name=ok.value.trim();
   const r=await api('/receivings',{method:'POST',body:JSON.stringify(body)});
   if(r.success){alert('✅ '+r.message);closeMod();loadReceivings();loadDashboard()}
@@ -5715,8 +5736,21 @@ async function submitReturn(rid){
   else alert('❌ '+(r.error||'提交失败'));
 }
 async function confirmReturnWarehouse(rid){
-  if(!confirm('确认仓库已收到退回实物并清点入库？\n执行后库存将增加，源出库单累计已退数量同步更新，且单据不可再修改。'))return;
-  const r=await api(`/returns/${rid}/confirm-warehouse`,{method:'POST',body:'{}'});
+  // V11.304 退库去向: 完好可复用→原库房原价; 废旧损坏→废旧物资库 0 价(不计成本)
+  id('dmTitle').textContent='📦 仓库清点确认入库';
+  id('dmBody').innerHTML=`
+    <div style="font-size:11px;color:#555;margin-bottom:8px">确认仓库已收到退回实物并清点入库？执行后库存增加、源出库单累计已退数量同步更新，单据不可再修改。</div>
+    <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;background:#f7f7f7;border:1px dashed var(--b);border-radius:6px;padding:8px">
+      <input type="checkbox" id="retScrap" style="margin-top:2px">
+      <div><b>🧰 废旧/损坏物资 → 入「废旧物资库」按 0 价登记</b>
+      <div style="font-size:9px;color:#999">适用旧轮胎、旧电缆等无价值物资：只记数量、不计入库存成本，与正常库存隔离。不勾选则按原单价退回原库房。</div></div>
+    </label>`;
+  id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="doConfirmReturn('+rid+')">确认入库</button>';
+  id('detailModal').classList.add('show');
+}
+async function doConfirmReturn(rid){
+  const scrap=!!(id('retScrap')&&id('retScrap').checked);
+  const r=await api(`/returns/${rid}/confirm-warehouse`,{method:'POST',body:JSON.stringify({to_scrap:scrap})});
   if(r.success){alert('✅ '+r.message);closeMod();loadReturns();loadInventory&&loadInventory()}
   else alert('❌ '+(r.error||'操作失败'));
 }
