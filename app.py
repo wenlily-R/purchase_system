@@ -750,10 +750,23 @@ def init_db():
         ('purchase_requests', 'biz_no', "ALTER TABLE purchase_requests ADD COLUMN biz_no TEXT DEFAULT ''"),
         # V11.245: 申请明细用途列(迁移文件在部分库漏应用 — 幂等补丁保三机一致)
         ('request_items', 'usage', "ALTER TABLE request_items ADD COLUMN usage TEXT DEFAULT ''"),
+        # ---- V11.301 库房手工应急入库(采购—库房对接方案高优先级): 手工标记/供应商/事由/补关联状态/超限领导确认 ----
+        ('receivings', 'is_manual', "ALTER TABLE receivings ADD COLUMN is_manual INTEGER DEFAULT 0"),
+        ('receivings', 'manual_supplier', "ALTER TABLE receivings ADD COLUMN manual_supplier TEXT DEFAULT ''"),
+        ('receivings', 'manual_reason', "ALTER TABLE receivings ADD COLUMN manual_reason TEXT DEFAULT ''"),
+        ('receivings', 'link_status', "ALTER TABLE receivings ADD COLUMN link_status TEXT DEFAULT ''"),
+        ('receivings', 'manual_ok_by', "ALTER TABLE receivings ADD COLUMN manual_ok_by TEXT DEFAULT ''"),
+        ('receivings', 'manual_ok_at', "ALTER TABLE receivings ADD COLUMN manual_ok_at TEXT DEFAULT ''"),
     ]:
         _cols = [r[1] for r in conn.execute(f"PRAGMA table_info({_tbl})").fetchall()]
         if _col not in _cols:
             conn.execute(_ddl)
+    # ---- V11.301 手工应急入库金额上限(超限必须领导确认): 默认2000元, 幂等补齐三机一致 ----
+    try:
+        if not conn.execute("SELECT 1 FROM sys_config WHERE key='manual_recv_limit'").fetchone():
+            conn.execute("INSERT INTO sys_config(key, value) VALUES('manual_recv_limit','2000')")
+    except Exception:
+        pass
     # ---- V11.203 模块一1.2: 合同发票登记台账 + 发票节点提醒去重表(新表, 不影响老库) ----
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS contract_invoices (
