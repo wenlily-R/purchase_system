@@ -772,6 +772,9 @@ def init_db():
         # ---- V11.306 报表/对账基础: 流水带 库房 + 单价(出入库统计金额、废旧物资报表按库房口径) ----
         ('inventory_flows', 'warehouse', "ALTER TABLE inventory_flows ADD COLUMN warehouse TEXT DEFAULT ''"),
         ('inventory_flows', 'price', "ALTER TABLE inventory_flows ADD COLUMN price REAL DEFAULT 0"),
+        # ---- V11.310 需求模块四.1 货位管理: 库房→货架→层/位 货位(自由文本, 建议 主库房/A架-2层-3位) ----
+        ('inventory', 'location', "ALTER TABLE inventory ADD COLUMN location TEXT DEFAULT ''"),
+        ('receivings', 'location', "ALTER TABLE receivings ADD COLUMN location TEXT DEFAULT ''"),
     ]:
         _cols = [r[1] for r in conn.execute(f"PRAGMA table_info({_tbl})").fetchall()]
         if _col not in _cols:
@@ -9678,7 +9681,7 @@ def _ensure_pending_receiving(c, oid):
         return ''
 
 
-def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty_override=None):
+def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty_override=None, location=''):
     """V5.0: 入库审批通过后执行 — 增加库存 + 写流水(幂等: 已有该单据入库流水则跳过)"""
     rn = c.execute("SELECT * FROM receivings WHERE id=?", (rid,)).fetchone()
     if not rn:
@@ -9699,6 +9702,11 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
             _tno = _po_t['order_no'] if _po_t else ''
         except Exception:
             _tno = ''
+    # V11.310 货位: 优先入参 → 入库单 location 列 → 备注里的「｜货位: X」(手工入库走备注)
+    _loc = (location or (rn['location'] if 'location' in rn.keys() else '') or '')
+    if not _loc:
+        _m = re.search(r'｜货位[:：]\s*([^｜]+)', str(rn['remark'] or ''))
+        _loc = (_m.group(1).strip() if _m else '')
     # V11.303 批次溯源信息(写入库存条目: 批次号/采购订单号/入库单号)
     _ord_no = ''
     if rn['order_id']:
@@ -9741,7 +9749,9 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
                     _up += ", trace_no=?"; _args.append(_tno)
                 _args.append(inv['id'])
                 c.execute("UPDATE inventory SET " + _up + " WHERE id=?", _args)
-                _fill_batch(c, inv, _bmeta)   # V11.303 批次/订单/入库单回填
+                _fill_batch(c, inv, _bmeta)
+                if _loc and not (inv['location'] if 'location' in inv.keys() else ''):
+                    c.execute("UPDATE inventory SET location=? WHERE id=?", (_loc, inv['id']))   # V11.303 批次/订单/入库单回填
                 new_bal = (inv['quantity'] or 0) + q
             else:
                 c.execute("INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,price,tax_rate,last_move_date,updated_at,trace_no,batch_no,order_no,receive_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -9782,7 +9792,9 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
                     _up += ", trace_no=?"; _args.append(_tno)
                 _args.append(inv['id'])
                 c.execute("UPDATE inventory SET " + _up + " WHERE id=?", _args)
-                _fill_batch(c, inv, _bmeta)   # V11.303 批次/订单/入库单回填
+                _fill_batch(c, inv, _bmeta)
+                if _loc and not (inv['location'] if 'location' in inv.keys() else ''):
+                    c.execute("UPDATE inventory SET location=? WHERE id=?", (_loc, inv['id']))   # V11.303 批次/订单/入库单回填
                 new_bal = (inv['quantity'] or 0) + q
             else:
                 c.execute("INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,price,tax_rate,cat_code,last_move_date,updated_at,supplier,trace_no,batch_no,order_no,receive_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -9848,6 +9860,18 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
             else:
                 c.execute("UPDATE purchase_orders SET status='已入库',updated_at=? WHERE id=?", (now(), rn['order_id']))
         _po_rcv_state(c, rn['order_id'])   # V11.303 订单到货状态: 全部到货 / 部分到货
+    if _loc:   # V11.310 货位回填: 本单物资若无货位则补上(仅填空, 不覆盖已有货位)
+        try:
+            _nms = [(rn['item_name'], rn['spec'] or '')]
+            _ij = (rn['items_json'] if 'items_json' in rn.keys() else '') or ''
+            if _ij:
+                _nms = [(x.get('item_name'), x.get('spec') or '') for x in json.loads(_ij)]
+            for _n, _sp in _nms:
+                if _n:
+                    c.execute("UPDATE inventory SET location=? WHERE COALESCE(location,'')='' AND item_name=? AND (?='' OR spec=?)",
+                              (_loc, _n, _sp, _sp))
+        except Exception as _le:
+            print('V11.310 货位回填跳过:', _le)
     return total_q
 
 # ---- V6: 入库单下载(生成标准入库单 xlsx) ----
@@ -10343,6 +10367,7 @@ def api_create_receiving():
     _manual_ok_at = ''
     _manual_limit = 0.0
     _manual_wh = ''
+    _manual_loc = ''
     _zero_price = bool(d.get('zero_price'))
     _qty_est = bool(d.get('qty_est'))
     if _manual:
@@ -10358,6 +10383,7 @@ def api_create_receiving():
             conn.close(); return jsonify({'error': '手工应急入库必须上传附件：送货单 + 货物照片（至少2个附件，责任留证、审计可查）'}), 400
         # V11.304 0 价入库(废旧物资/旧件): 单价强制0、不计成本、必须入废旧/暂存库与正常库存隔离; 支持估算数量
         _manual_wh = str(d.get('warehouse') or '').strip()[:30]
+        _manual_loc = str(d.get('location') or '').strip()[:40]   # V11.310 货位(库房/货架-层-位)
         if _zero_price:
             if not _manual_wh:
                 _manual_wh = '废旧物资库'
@@ -10448,6 +10474,8 @@ def api_create_receiving():
     # 钉钉发起时兜底成审批人自己(发起人=审批人) → 820003审批实例参数错误
     _inspector = (d.get('inspector') or '').strip() or session.get('user_name', '') or '系统'
     _remark_save = ('🧰 临时手工入库(无采购订单·待补关联) 供应商: %s 事由: %s' % (_manual_sup, _manual_reason)) if _manual else ('手动入库单: %d项商品' % len(items))
+    if _manual and _manual_loc:
+        _remark_save += '｜货位: %s' % _manual_loc
     if _manual and _zero_price:
         _remark_save += '｜0价入库(废旧物资·仅记数量不计成本)' + ('｜估算数量' if _qty_est else '')
     elif _manual and _qty_est:
@@ -10693,6 +10721,18 @@ def _scrap_rows():
         if not d['warehouse']:
             d['warehouse'] = r['wh']
     return [v for _, v in sorted(agg.items())]
+
+
+@app.route('/api/inventory/locations')
+@login_required
+def api_inventory_locations():
+    """V11.310 货位清单(已使用货位 + 库房清单) — 需求模块四.1"""
+    c = db()
+    rows = c.execute("""SELECT COALESCE(warehouse,'') wh, COALESCE(location,'') loc, COUNT(*) n, COALESCE(SUM(quantity),0) qty
+                        FROM inventory WHERE COALESCE(location,'')<>'' GROUP BY wh, loc ORDER BY wh, loc""").fetchall()
+    c.close()
+    return jsonify({'rows': [dict_row(r) for r in rows], 'warehouses': _warehouses(),
+                    'format': '建议格式: 库房 / 货架-层-位 (如 主库房 / A架-2层-3位)'})
 
 
 @app.route('/api/reports/inout-stat')
@@ -15618,6 +15658,8 @@ def api_return_confirm_warehouse(rid):
             cur = c.execute("INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,price,updated_at) VALUES(?,?,?,?,?,?,?)",
                             (it['item_name'], it.get('spec', '') or '', it.get('unit', '个') or '个', q, _wh, _pr, now()))
             inv_id = cur.lastrowid
+            if _loc:   # V11.310 新入库条目回填货位
+                c.execute("UPDATE inventory SET location=? WHERE id=?", (_loc, inv_id))
         c.execute("""INSERT INTO inventory_flows(flow_type,doc_type,doc_id,doc_no,item_name,spec,qty,balance_after,operator,remark,created_at)
                      VALUES('退库','return_request',?,?,?,?,?,?,?,?,?)""",
                   (rid, r['return_no'], it['item_name'], it.get('spec', '') or '', q,

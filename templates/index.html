@@ -4251,6 +4251,7 @@ async function showManualRcvForm(){
     <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:6px;font-size:10px;color:#555;background:#f7f7f7;border:1px dashed var(--b);border-radius:6px;padding:5px 8px">
       <label style="display:flex;gap:4px;align-items:center;cursor:pointer"><input type="checkbox" id="mrsZero" onchange="mrsZeroToggle()"> 🧰 <b>0 价入库</b>（废旧物资/旧件：单价强制0、不计成本，自动入废旧物资库）</label>
       <label style="display:flex;gap:4px;align-items:center;cursor:pointer"><input type="checkbox" id="mrsQtyEst"> 🔢 估算数量（无法精确清点，如旧电缆、螺丝估堆）</label>
+      <span style="margin-left:6px">货位:</span><input class="fc" id="mrsLoc" style="width:170px" placeholder="如 主库房/A架-2层-3位" title="货位: 库房→货架→层/位, 便于按货位查找与盘点">
     </div>
     <div style="margin-bottom:6px"><div style="font-size:10px;color:#555;margin-bottom:2px">📝 手工入库事由 *（为什么没有采购订单）</div>
       <input class="fc" id="mrsReason" style="width:100%" placeholder="例：加急件上午报、下午到，采购订单未下；五金耗材月结、合同后置"></div>
@@ -4302,7 +4303,7 @@ async function createManualRcv(){
   if((window._rcvAtts||[]).length<2){alert('手工应急入库必须上传送货单 + 货物照片（至少 2 个附件）');return}
   const zero=!!(id('mrsZero')&&id('mrsZero').checked), qest=!!(id('mrsQtyEst')&&id('mrsQtyEst').checked);
   if(zero){ items.forEach(x=>{x.price=0;x.tax_rate=0}); }
-  const body={manual:true,manual_supplier:sup,manual_reason:reason,items,attachments:window._rcvAtts||[],dept,warehouse:id('mrsWh')?.value||'主库房',is_est:1,zero_price:zero,qty_est:qest};
+  const body={manual:true,manual_supplier:sup,manual_reason:reason,items,attachments:window._rcvAtts||[],dept,warehouse:id('mrsWh')?.value||'主库房',is_est:1,zero_price:zero,qty_est:qest,location:(id('mrsLoc')?.value||'').trim()};
   const ok=id('mrsOkBy'); if(ok&&ok.value.trim())body.leader_confirm_name=ok.value.trim();
   const r=await api('/receivings',{method:'POST',body:JSON.stringify(body)});
   if(r.success){alert('✅ '+r.message);closeMod();loadReceivings();loadDashboard()}
