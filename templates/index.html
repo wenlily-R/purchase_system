@@ -2652,9 +2652,12 @@ async function loadOrders(){
                 : r.progress=='shipped'?'<span class="tag" style="background:#fff8e1;color:#b7791f">🟨 已下单在途</span>'
                 : r.progress=='arrived'?'<span class="tag" style="background:#e8f5e9;color:#2e7d32">🟩 已到货</span>'
                 : '<span style="color:#bbb">—</span>';
+      // V11.303 到货状态(分批入库强化): 全部到货 / 部分到货
+      const rcvTag = (r.req_type!='设备维修'&&r.rcv_state)
+        ? ` <span class="tag" style="background:${r.rcv_state=='全部到货'?'#e8f5e9':'#fff8e1'};color:${r.rcv_state=='全部到货'?'#2e7d32':'#8a6d3b'};border:1px solid #e0d3ad" title="按已验收入库量对比订单总量自动标记">${r.rcv_state=='全部到货'?'✅ 全部到货':'🟡 部分到货'}</span>` : '';
       return `<td><b>${esc(r.order_no)}</b></td><td>${r.req_type=='设备维修'?'🔧 ':''}${esc(r.item_name)}</td><td>${esc(r.supplier)}</td>
       <td><span class="tag ${r.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(r.trade_mode||'货到付款')}</span></td>
-      <td>¥${(r.total_amount||0).toFixed(0)}</td><td>${tag(r.status)}</td><td>${pg}</td>
+      <td>¥${(r.total_amount||0).toFixed(0)}</td><td>${tag(r.status)}</td><td>${pg}${rcvTag}</td>
       ${rejCell(r)}
       <td><button class="lnk" onclick="showOrder(${r.id})">详情</button> ${r.req_type=='设备维修'?'':`<button class="lnk" style="color:#0d9488" onclick="showOrderExec(${r.id})">📋执行明细</button> `}<button class="lnk" style="color:#b08900" onclick="editDoc('purchase_order',${r.id},'采购订单')">✏️修改</button>
       
@@ -3983,8 +3986,11 @@ async function loadReceivings(){
       const urgTag = x.urgent?' <span style="color:#e74c3c;font-weight:700">加急</span>':'';
       const qtyTxt = `${x.total_qty||x.quantity}${esc(x.unit||'')}`;
       // V11.269: 该订单剩余待入库量(可继续分批入库; 订单原始订购量仅后台留存, 不在前端展示)
-      const _pendN=Number(x.order_pending_qty||0);
-      const pendTag = (x.order_id&&_pendN>0.0001&&x.status!=='已作废')?` <span class="tag" style="background:#fff8e1;color:#8a6d3b;border:1px solid #f0d9a0" title="该订单还有待入库数量，可继续分批入库（订单详情→验收入库→➕新增验收批次）">剩余待入库 ${_pendN}</span>`:'';
+      // V11.303 分批入库强化: 订单总量 / 已入库 / 剩余待入库 三数实时展示
+      const _totN=Number(x.order_total_qty||0), _accN=Number(x.order_accepted_qty||0), _pendN=Number(x.order_pending_qty||0);
+      const pendTag = (x.order_id&&x.status!=='已作废')
+        ? ` <span class="tag" style="background:${_pendN>0.0001?'#fff8e1':'#e8f5e9'};color:${_pendN>0.0001?'#8a6d3b':'#2e7d32'};border:1px solid #f0d9a0" title="订单总量 ${_totN} · 已验收入库 ${_accN} · 剩余待入库 ${_pendN}（可继续分批：订单详情→验收入库→➕新增验收批次）">订单 ${_totN} · 已入 ${_accN} · 剩余 ${_pendN}</span>`
+        : '';
       // V11.201 岗位分界: 库房操作(确认到货/提交审批/作废/修改/删除/撤回)仅 库管员/部门负责人/领导/管理员;
       // 采购员/财务在入库页仅 查看详情/发票核对(暂估红冲)/下载
       const isWarehouse=['系统管理员','库管员','部门负责人','分管领导','总经理'].includes(ME.role);

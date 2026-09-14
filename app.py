@@ -414,7 +414,8 @@ def init_db():
         CREATE TABLE IF NOT EXISTS invoices (id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_no TEXT, invoice_code TEXT, order_id INTEGER, supplier TEXT, amount REAL DEFAULT 0, tax_amount REAL DEFAULT 0, total_amount REAL DEFAULT 0, invoice_date TEXT, invoice_type TEXT DEFAULT '增值税专用发票', file_path TEXT, status TEXT DEFAULT '待验证', remark TEXT, created_at TEXT DEFAULT (datetime('now','localtime')));
         CREATE TABLE IF NOT EXISTS credit_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, credit_no TEXT UNIQUE NOT NULL, order_id INTEGER, category TEXT, supplier TEXT, item_name TEXT, amount REAL DEFAULT 0, invoice_no TEXT, attachments TEXT, status TEXT DEFAULT '待审批', remark TEXT, created_at TEXT DEFAULT (datetime('now','localtime')), updated_at TEXT DEFAULT (datetime('now','localtime')));
         CREATE TABLE IF NOT EXISTS payment_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, payment_no TEXT UNIQUE NOT NULL, credit_id INTEGER, payment_type TEXT DEFAULT '正常付款', supplier TEXT, amount REAL DEFAULT 0, contract_id INTEGER, status TEXT DEFAULT '待审批', paid_at TEXT, remark TEXT, created_at TEXT DEFAULT (datetime('now','localtime')));
-        CREATE TABLE IF NOT EXISTS inventory (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER, item_name TEXT, spec TEXT, cat_code TEXT, unit TEXT DEFAULT '个', quantity REAL DEFAULT 0, safe_stock REAL DEFAULT 0, warehouse TEXT DEFAULT '主库房', price REAL DEFAULT 0, updated_at TEXT DEFAULT (datetime('now','localtime')), UNIQUE(item_name,spec,warehouse));
+        CREATE TABLE IF NOT EXISTS inventory (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER, item_name TEXT, spec TEXT, cat_code TEXT, unit TEXT DEFAULT '个', quantity REAL DEFAULT 0, safe_stock REAL DEFAULT 0, warehouse TEXT DEFAULT '主库房', price REAL DEFAULT 0, updated_at TEXT DEFAULT (datetime('now','localtime')));
+        CREATE INDEX IF NOT EXISTS idx_inv_lookup ON inventory(item_name,spec,warehouse);
         CREATE TABLE IF NOT EXISTS requisitions (id INTEGER PRIMARY KEY AUTOINCREMENT, req_no TEXT UNIQUE NOT NULL, dept TEXT, requester TEXT, item_name TEXT, spec TEXT, quantity REAL DEFAULT 0, unit TEXT DEFAULT '个', purpose TEXT, status TEXT DEFAULT '待审批', issued_at TEXT, receiver TEXT DEFAULT '', receive_dept TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now','localtime')), updated_at TEXT DEFAULT (datetime('now','localtime')));
         CREATE TABLE IF NOT EXISTS approval_flow_config (id INTEGER PRIMARY KEY AUTOINCREMENT, biz_type TEXT NOT NULL, level_no INTEGER NOT NULL, role TEXT NOT NULL, min_amount REAL DEFAULT 0, max_amount REAL DEFAULT 9999999, label TEXT DEFAULT '');
         CREATE TABLE IF NOT EXISTS approval_instances (id INTEGER PRIMARY KEY AUTOINCREMENT, biz_type TEXT NOT NULL, biz_id INTEGER NOT NULL, level_no INTEGER NOT NULL, role TEXT, approver TEXT DEFAULT '', approver_id INTEGER, status TEXT DEFAULT 'pending', comment TEXT DEFAULT '', processed_at TEXT, created_at TEXT DEFAULT (datetime('now','localtime')));
@@ -757,10 +758,48 @@ def init_db():
         ('receivings', 'link_status', "ALTER TABLE receivings ADD COLUMN link_status TEXT DEFAULT ''"),
         ('receivings', 'manual_ok_by', "ALTER TABLE receivings ADD COLUMN manual_ok_by TEXT DEFAULT ''"),
         ('receivings', 'manual_ok_at', "ALTER TABLE receivings ADD COLUMN manual_ok_at TEXT DEFAULT ''"),
+        # ---- V11.303 批次成本与到货状态: 库存条目按批次(同品不同价分开) + 绑订单/入库单 + 订单到货状态 ----
+        ('inventory', 'batch_no', "ALTER TABLE inventory ADD COLUMN batch_no TEXT DEFAULT ''"),
+        ('inventory', 'order_no', "ALTER TABLE inventory ADD COLUMN order_no TEXT DEFAULT ''"),
+        ('inventory', 'receive_no', "ALTER TABLE inventory ADD COLUMN receive_no TEXT DEFAULT ''"),
+        ('purchase_orders', 'rcv_state', "ALTER TABLE purchase_orders ADD COLUMN rcv_state TEXT DEFAULT ''"),
     ]:
         _cols = [r[1] for r in conn.execute(f"PRAGMA table_info({_tbl})").fetchall()]
         if _col not in _cols:
             conn.execute(_ddl)
+    # ---- V11.303 批次成本: 解除 inventory(item_name,spec,warehouse) 唯一约束(同品不同批次价格需分条独立核算) ----
+    #   SQLite 无法 DROP 表内 UNIQUE 约束 → 用"新表搬运+旧表改名保留"方式重建(先校验行数一致才改名, 失败即回滚, 不丢数据)
+    #   幂等: 约束已解除则跳过; 上一次残留的 inventory_old_v11303 行数一致时自动清理; 三机 app 重启即自愈
+    try:
+        _old_cnt = conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='inventory_old_v11303'").fetchone()[0]
+        _inv_sql = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='inventory'").fetchone()
+        _need_rebuild = bool(_inv_sql) and 'UNIQUE(item_name,spec,warehouse)' in (_inv_sql[0] or '').replace(' ', '')
+        if _old_cnt and not _need_rebuild:
+            _n1 = conn.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
+            _n2 = conn.execute("SELECT COUNT(*) FROM inventory_old_v11303").fetchone()[0]
+            if _n1 == _n2:
+                conn.execute("DROP TABLE inventory_old_v11303")
+                print('V11.303 已清理旧库存表备份(inventory_old_v11303, 行数一致)')
+        if _need_rebuild:
+            _icols = [r[1] for r in conn.execute("PRAGMA table_info(inventory)").fetchall()]
+            _nsql = re.sub(r'CREATE\s+TABLE\s+"?inventory"?', 'CREATE TABLE inventory_new', _inv_sql[0] or '', count=1, flags=re.I)
+            _nsql = re.sub(r',\s*UNIQUE\s*\(\s*item_name\s*,\s*spec\s*,\s*warehouse\s*\)', '', _nsql)
+            conn.execute("DROP TABLE IF EXISTS inventory_new")
+            conn.execute(_nsql)
+            conn.execute("INSERT INTO inventory_new(%s) SELECT %s FROM inventory" % (','.join(_icols), ','.join(_icols)))
+            _c1 = conn.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
+            _c2 = conn.execute("SELECT COUNT(*) FROM inventory_new").fetchone()[0]
+            if _c1 != _c2:
+                conn.execute("DROP TABLE inventory_new"); conn.commit()
+                print('V11.303 库存表重建已放弃(行数不一致 %s/%s), 原表未动' % (_c1, _c2))
+            else:
+                conn.execute("ALTER TABLE inventory RENAME TO inventory_old_v11303")
+                conn.execute("ALTER TABLE inventory_new RENAME TO inventory")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_inv_lookup ON inventory(item_name,spec,warehouse)")
+                conn.commit()
+                print('V11.303 inventory 唯一约束已解除(%d 行数据已搬移, 支持同品多批次分条)' % _c2)
+    except Exception as _ie:
+        print('V11.303 inventory 去唯一约束跳过:', _ie)
     # ---- V11.301 手工应急入库金额上限(超限必须领导确认): 默认2000元, 幂等补齐三机一致 ----
     try:
         if not conn.execute("SELECT 1 FROM sys_config WHERE key='manual_recv_limit'").fetchone():
@@ -9337,21 +9376,18 @@ def do_requisition_stock(c, rid, warehouse='主库房', operator='系统'):
         if q <= 0:
             continue
         total_q += q
-        inv = c.execute("SELECT * FROM inventory WHERE item_name=? AND spec=? AND (warehouse=? OR warehouse IS NULL OR warehouse='') ORDER BY quantity DESC LIMIT 1",
-                        (it['item_name'], it['spec'] or '', warehouse)).fetchone()
-        if inv is None:
-            inv = c.execute("SELECT * FROM inventory WHERE item_name=? AND spec=? ORDER BY quantity DESC LIMIT 1",
-                            (it['item_name'], it['spec'] or '')).fetchone()
-        if inv:
-            new_q = (inv['quantity'] or 0) - q
-            c.execute("UPDATE inventory SET quantity=?, last_move_date=?, updated_at=? WHERE id=?", (new_q, now(), now(), inv['id']))
-        else:
-            new_q = -q
-            c.execute("INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,last_move_date,updated_at) VALUES(?,?,?,?,?,?,?)",
-                      (it['item_name'], it['spec'] or '', it['unit'] or '个', new_q, warehouse, now(), now()))
-        c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                  (it['item_name'], it['spec'] or '', it['unit'] or '个', '出库', 'requisition', rid, rq['req_no'],
-                   -q, new_q, operator or '系统', f'出库单{rq["req_no"]}审批通过', now()))
+        # V11.303 分批次出库: 默认先进先出(FIFO)跨批次扣减, 流水按批次记录(批次成本/溯源可查)
+        _parts = _inv_deduct(c, it['item_name'], it['spec'] or '', warehouse, q,
+                             prefer_batch=(it['batch_no'] if 'batch_no' in it.keys() else '') or '',
+                             unit=it['unit'] or '个')
+        # V11.303: 按批次逐条写流水(批次号/单价/结存留在备注, 出库成本可按批次核算与溯源)
+        for _row, _take in _parts:
+            _bt = (_row.get('batch_no') or '')
+            _rmk = ('出库单%s审批通过' % rq['req_no']) + (' %s' % _bt if _bt else '') + \
+                   ('（批次单价¥%s）' % (_row.get('price') or 0) if (_row.get('price') or 0) else '')
+            c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at,trace_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                      (it['item_name'], it['spec'] or '', it['unit'] or '个', '出库', 'requisition', rid, rq['req_no'],
+                       -_take, _row.get('quantity'), operator or '系统', _rmk, now(), (_row.get('trace_no') or '')))
     return total_q
 
 
@@ -9439,6 +9475,97 @@ def _order_rcv_stats(c, oid):
             'per_line': per_line, 'batches': batches, 'has_active_full_doc': has_active_full_doc}
 
 
+def _inv_pick(c, name, spec, warehouse, price):
+    """V11.303 批次成本: 定位库存条目 — 同品名+规格+库房+【单价相同】才是同一批次(合并数量);
+    单据要求「同订单不同批次价格不同的分开记录库存批次, 不合并成本」→ 单价不同则不复用旧条目, 由调用方新建条目。
+    兼容老数据: 单价>0 且库中存在空价且数量为0的老条目时复用它填价(不产生重复条目)。"""
+    spec = spec or ''
+    row = c.execute("SELECT * FROM inventory WHERE item_name=? AND spec=? AND warehouse=? AND ABS(COALESCE(price,0)-?)<0.005 ORDER BY id LIMIT 1",
+                    (name, spec, warehouse, float(price or 0))).fetchone()
+    if row:
+        return row
+    if price:
+        row = c.execute("SELECT * FROM inventory WHERE item_name=? AND spec=? AND warehouse=? AND COALESCE(price,0)=0 AND COALESCE(quantity,0)=0 ORDER BY id LIMIT 1",
+                        (name, spec, warehouse)).fetchone()
+    return row
+
+
+def _inv_rows_fifo(c, name, spec, warehouse):
+    """V11.303 分批次库存: 取同品名+规格的多个批次条目(优先同库房), 按先进先出(入库时间/ID升序)排列"""
+    spec = spec or ''
+    rows = c.execute("""SELECT * FROM inventory WHERE item_name=? AND spec=?
+                        AND (warehouse=? OR warehouse IS NULL OR warehouse='')
+                        ORDER BY COALESCE(last_move_date,'') ASC, id ASC""", (name, spec, warehouse)).fetchall()
+    if not rows:
+        rows = c.execute("SELECT * FROM inventory WHERE item_name=? AND spec=? ORDER BY COALESCE(last_move_date,'') ASC, id ASC",
+                         (name, spec)).fetchall()
+    return [dict_row(r) for r in rows]
+
+
+def _inv_deduct(c, name, spec, warehouse, qty, prefer_batch='', unit='个'):
+    """V11.303 分批次出库扣减: 默认先进先出跨批次扣减, 指定批次(prefer_batch)则优先扣该批次;
+    返回 [(批次行, 本批扣减量)] 供写流水/批次成本核算; 库存不足时最后一行扣成负数(与V5.0"允许负库存"一致)"""
+    need = float(qty or 0)
+    out = []
+    if need <= 0:
+        return out
+    rows = _inv_rows_fifo(c, name, spec, warehouse)
+    if prefer_batch:
+        rows.sort(key=lambda r: 0 if (r.get('batch_no') or '') == prefer_batch else 1)
+    for r in rows:
+        if need <= 1e-9:
+            break
+        avail = float(r['quantity'] or 0)
+        if avail <= 0:
+            continue
+        take = min(avail, need)
+        c.execute("UPDATE inventory SET quantity=?, last_move_date=?, updated_at=? WHERE id=?",
+                  (avail - take, now(), now(), r['id']))
+        r['quantity'] = avail - take
+        out.append((r, take)); need -= take
+    if need > 1e-9:
+        if rows:
+            _rid0 = rows[0]['id']
+            cur = float((c.execute("SELECT quantity FROM inventory WHERE id=?", (_rid0,)).fetchone() or [0])[0] or 0)
+            c.execute("UPDATE inventory SET quantity=?, last_move_date=?, updated_at=? WHERE id=?", (cur - need, now(), now(), _rid0))
+            _r0 = dict_row(c.execute("SELECT * FROM inventory WHERE id=?", (_rid0,)).fetchone())
+            out.append((_r0, need))
+        else:
+            c.execute("INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,last_move_date,updated_at) VALUES(?,?,?,?,?,?,?)",
+                      (name, spec or '', unit or '个', -need, warehouse, now(), now()))
+            _r0 = dict_row(c.execute("SELECT * FROM inventory WHERE item_name=? AND spec=? ORDER BY id DESC LIMIT 1", (name, spec or '')).fetchone())
+            out.append((_r0, need))
+        need = 0
+    return out
+
+
+def _fill_batch(c, inv, meta):
+    """V11.303 库存条目绑定溯源: 空值时补 批次号/采购订单号/入库单号(模块四.2 每条库存可独立溯源)"""
+    sets, args = [], []
+    for k in ('batch_no', 'order_no', 'receive_no'):
+        v = (meta or {}).get(k) or ''
+        if v and (k not in inv.keys() or not inv[k]):
+            sets.append(k + '=?'); args.append(v)
+    if sets:
+        args.append(inv['id'])
+        c.execute("UPDATE inventory SET " + ','.join(sets) + " WHERE id=?", args)
+
+
+def _po_rcv_state(c, oid):
+    """V11.303 到货状态自动标记(需求: 分批入库强化) — 按已验收入库量对比订单总量:
+    全部到货 / 部分到货; 未到货或非订单单为空。与 status 流转互补(前端标签展示更直观)。"""
+    if not oid:
+        return ''
+    try:
+        st = _order_rcv_stats(c, oid)
+        total = float(st.get('order_total') or 0); acc = float(st.get('accepted') or 0)
+        state = '全部到货' if (total > 0 and acc >= total - 0.0001) else ('部分到货' if acc > 0 else '')
+        c.execute("UPDATE purchase_orders SET rcv_state=?, updated_at=? WHERE id=?", (state, now(), oid))
+        return state
+    except Exception:
+        return ''
+
+
 def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty_override=None):
     """V5.0: 入库审批通过后执行 — 增加库存 + 写流水(幂等: 已有该单据入库流水则跳过)"""
     rn = c.execute("SELECT * FROM receivings WHERE id=?", (rid,)).fetchone()
@@ -9460,6 +9587,16 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
             _tno = _po_t['order_no'] if _po_t else ''
         except Exception:
             _tno = ''
+    # V11.303 批次溯源信息(写入库存条目: 批次号/采购订单号/入库单号)
+    _ord_no = ''
+    if rn['order_id']:
+        try:
+            _po_r = c.execute("SELECT order_no FROM purchase_orders WHERE id=?", (rn['order_id'],)).fetchone()
+            _ord_no = (_po_r['order_no'] if _po_r else '') or ''
+        except Exception:
+            _ord_no = ''
+    _bmeta = {'batch_no': (rn['batch_no'] if 'batch_no' in rn.keys() else '') or '',
+              'order_no': _ord_no, 'receive_no': rn['receive_no'] or ''}
     qty_override = qty_override or {}
     oi = []
     if rn['order_id']:
@@ -9479,17 +9616,12 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
             if q <= 0: continue
             total_q += q
             _price = float(it.get('price', 0) or 0); _tr = float(it.get('tax_rate', 13) or 13)
-            inv = c.execute("SELECT * FROM inventory WHERE item_name=? AND spec=? AND warehouse=?",
-                            (it['item_name'], it.get('spec', '') or '', warehouse)).fetchone()
+            inv = _inv_pick(c, it['item_name'], it.get('spec', '') or '', warehouse, _price)   # V11.303 批次感知
             if inv:
                 _up = "quantity=quantity+?, last_move_date=?, updated_at=?"
-                _args = [q, now(), now()]
-                if _price and float(inv['price'] or 0) > 0 and float(inv['quantity'] or 0) >= 0:
-                    # V11.259: 加权平均价 — 不同批次进价不同时库存单价联动(保留旧功能: 空价填充)
-                    _oq = float(inv['quantity'] or 0); _op = float(inv['price'] or 0)
-                    _np = round((_oq * _op + q * _price) / (_oq + q), 4) if (_oq + q) > 0 else _price
-                    _up += ", price=?"; _args.append(_np)
-                elif (not inv['price'] or inv['price'] == 0) and _price:
+                _args = [q, now(), now()]
+                # V11.303 批次分条: 同价已合并, 此处仅把空价老条目补上单价(不再加权平均, 成本按批次核算)
+                if (not inv['price'] or inv['price'] == 0) and _price:
                     _up += ", price=?"; _args.append(_price)
                 if _tr and (not inv['tax_rate'] or inv['tax_rate'] == 0):
                     _up += ", tax_rate=?"; _args.append(_tr)
@@ -9497,10 +9629,12 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
                     _up += ", trace_no=?"; _args.append(_tno)
                 _args.append(inv['id'])
                 c.execute("UPDATE inventory SET " + _up + " WHERE id=?", _args)
+                _fill_batch(c, inv, _bmeta)   # V11.303 批次/订单/入库单回填
                 new_bal = (inv['quantity'] or 0) + q
             else:
-                c.execute("INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,price,tax_rate,last_move_date,updated_at,trace_no) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                          (it['item_name'], it.get('spec','') or '', it.get('unit','个') or '个', q, warehouse, _price, _tr, now(), now(), _tno))
+                c.execute("INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,price,tax_rate,last_move_date,updated_at,trace_no,batch_no,order_no,receive_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                          (it['item_name'], it.get('spec','') or '', it.get('unit','个') or '个', q, warehouse, _price, _tr, now(), now(), _tno,
+                           _bmeta['batch_no'], _bmeta['order_no'], _bmeta['receive_no']))
                 new_bal = q
             c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at,trace_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                       (it['item_name'], it.get('spec','') or '', it.get('unit','个') or '个', _ft, 'receiving', rid, rn['receive_no'], q, new_bal,
@@ -9521,17 +9655,12 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
             total_q += q
             _price = float(it['price'] or 0); _tr = float(it['tax_rate'] or 13)
             _cat = _po['category'] or '' if _po else ''
-            inv = c.execute("SELECT * FROM inventory WHERE item_name=? AND spec=? AND warehouse=?",
-                            (it['item_name'], it['spec'] or '', warehouse)).fetchone()
+            inv = _inv_pick(c, it['item_name'], it['spec'] or '', warehouse, _price)   # V11.303 批次感知
             if inv:
                 _up = "quantity=quantity+?, last_move_date=?, updated_at=?"
-                _args = [q, now(), now()]
-                if _price and float(inv['price'] or 0) > 0 and float(inv['quantity'] or 0) >= 0:
-                    # V11.259: 加权平均价 — 不同批次进价不同时库存单价联动(保留旧功能: 空价填充)
-                    _oq = float(inv['quantity'] or 0); _op = float(inv['price'] or 0)
-                    _np = round((_oq * _op + q * _price) / (_oq + q), 4) if (_oq + q) > 0 else _price
-                    _up += ", price=?"; _args.append(_np)
-                elif (not inv['price'] or inv['price'] == 0) and _price:
+                _args = [q, now(), now()]
+                # V11.303 批次分条: 同价已合并, 此处仅把空价老条目补上单价(不再加权平均, 成本按批次核算)
+                if (not inv['price'] or inv['price'] == 0) and _price:
                     _up += ", price=?"; _args.append(_price)
                 if _cat and not inv['cat_code']:
                     _up += ", cat_code=?"; _args.append(_cat)
@@ -9541,10 +9670,12 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
                     _up += ", trace_no=?"; _args.append(_tno)
                 _args.append(inv['id'])
                 c.execute("UPDATE inventory SET " + _up + " WHERE id=?", _args)
+                _fill_batch(c, inv, _bmeta)   # V11.303 批次/订单/入库单回填
                 new_bal = (inv['quantity'] or 0) + q
             else:
-                c.execute("INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,price,tax_rate,cat_code,last_move_date,updated_at,supplier,trace_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                          (it['item_name'], it['spec'] or '', it['unit'] or '个', q, warehouse, _price, _tr, _cat, now(), now(), _po_sup, _tno))
+                c.execute("INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,price,tax_rate,cat_code,last_move_date,updated_at,supplier,trace_no,batch_no,order_no,receive_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                          (it['item_name'], it['spec'] or '', it['unit'] or '个', q, warehouse, _price, _tr, _cat, now(), now(), _po_sup, _tno,
+                           _bmeta['batch_no'], _bmeta['order_no'], _bmeta['receive_no']))
                 new_bal = q
             c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at,trace_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                       (it['item_name'], it['spec'] or '', it['unit'] or '个', _ft, 'receiving', rid, rn['receive_no'], q, new_bal,
@@ -9557,17 +9688,12 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
             _po2 = c.execute("SELECT price, tax_rate, category, supplier FROM purchase_orders WHERE id=?", (rn['order_id'],)).fetchone()
             if _po2:
                 _price = _po2['price'] or 0; _tr = _po2['tax_rate'] or 13; _cat = _po2['category'] or ''; _sup = _po2['supplier'] or ''
-        inv = c.execute("SELECT * FROM inventory WHERE item_name=? AND spec=? AND warehouse=?",
-                        (rn['item_name'], rn['spec'] or '', warehouse)).fetchone()
+        inv = _inv_pick(c, rn['item_name'], rn['spec'] or '', warehouse, _price)   # V11.303 批次感知
         if inv:
             _up = "quantity=quantity+?, last_move_date=?, updated_at=?"
-            _args = [q, now(), now()]
-            if _price and float(inv['price'] or 0) > 0 and float(inv['quantity'] or 0) >= 0:
-                # V11.259: 加权平均价 — 不同批次进价不同时库存单价联动(保留旧功能: 空价填充)
-                _oq = float(inv['quantity'] or 0); _op = float(inv['price'] or 0)
-                _np = round((_oq * _op + q * _price) / (_oq + q), 4) if (_oq + q) > 0 else _price
-                _up += ", price=?"; _args.append(_np)
-            elif (not inv['price'] or inv['price'] == 0) and _price:
+            _args = [q, now(), now()]
+            # V11.303 批次分条: 同价已合并, 此处仅把空价老条目补上单价(不再加权平均, 成本按批次核算)
+            if (not inv['price'] or inv['price'] == 0) and _price:
                 _up += ", price=?"; _args.append(_price)
             if _cat and not inv['cat_code']:
                 _up += ", cat_code=?"; _args.append(_cat)
@@ -9577,10 +9703,12 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
                     _up += ", trace_no=?"; _args.append(_tno)
                 _args.append(inv['id'])
             c.execute("UPDATE inventory SET " + _up + " WHERE id=?", _args)
+            _fill_batch(c, inv, _bmeta)   # V11.303 批次/订单/入库单回填
             new_bal = (inv['quantity'] or 0) + q
         else:
-            c.execute("INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,price,tax_rate,cat_code,last_move_date,updated_at,supplier,trace_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                      (rn['item_name'], rn['spec'] or '', rn['unit'] or '个', q, warehouse, _price, _tr, _cat, now(), now(), _sup))
+            c.execute("INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,price,tax_rate,cat_code,last_move_date,updated_at,supplier,trace_no,batch_no,order_no,receive_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                      (rn['item_name'], rn['spec'] or '', rn['unit'] or '个', q, warehouse, _price, _tr, _cat, now(), now(), _sup, _tno,
+                       _bmeta['batch_no'], _bmeta['order_no'], _bmeta['receive_no']))
             new_bal = q
         c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at,trace_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                   (rn['item_name'], rn['spec'] or '', rn['unit'] or '个', _ft, 'receiving', rid, rn['receive_no'], q, new_bal,
@@ -9607,6 +9735,7 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
                 c.execute("UPDATE purchase_orders SET status='部分到货，待继续验收',updated_at=? WHERE id=?", (now(), rn['order_id']))
             else:
                 c.execute("UPDATE purchase_orders SET status='已入库',updated_at=? WHERE id=?", (now(), rn['order_id']))
+        _po_rcv_state(c, rn['order_id'])   # V11.303 订单到货状态: 全部到货 / 部分到货
     return total_q
 
 # ---- V6: 入库单下载(生成标准入库单 xlsx) ----
@@ -14774,14 +14903,22 @@ def api_receiving_void(rid):
         # 回滚库存: 删除该单入库流水 + 扣回库存 (V11.202 兼容分批入库流水类型)
         flows = c.execute("SELECT * FROM inventory_flows WHERE doc_type='receiving' AND doc_id=? AND (flow_type='入库' OR flow_type LIKE '分批入库%')", (rid,)).fetchall()
         for f in flows:
-            inv = c.execute("SELECT * FROM inventory WHERE item_name=? AND spec=? ORDER BY quantity DESC",
-                            (f['item_name'], f['spec'] or '')).fetchone()
+            # V11.303 批次感知回滚: 优先扣回同批次(trace_no一致)条目, 无则回退到数量最大条目
+            inv = None
+            _ftno = (f['trace_no'] if 'trace_no' in f.keys() else '') or ''
+            if _ftno:
+                inv = c.execute("SELECT * FROM inventory WHERE item_name=? AND spec=? AND trace_no=? ORDER BY quantity DESC",
+                                (f['item_name'], f['spec'] or '', _ftno)).fetchone()
+            if not inv:
+                inv = c.execute("SELECT * FROM inventory WHERE item_name=? AND spec=? ORDER BY quantity DESC",
+                                (f['item_name'], f['spec'] or '')).fetchone()
             if inv:
                 new_q = inv['quantity'] - f['qty']
                 c.execute("UPDATE inventory SET quantity=?, updated_at=? WHERE id=?", (new_q, now(), inv['id']))
         c.execute("DELETE FROM inventory_flows WHERE doc_type='receiving' AND doc_id=?", (rid,))
         c.execute("UPDATE receivings SET status='已作废', updated_at=? WHERE id=?", (now(), rid))
         c.execute("UPDATE approval_instances SET status='rejected', comment='单据作废' WHERE biz_type='receiving' AND biz_id=? AND status='pending'", (rid,))
+        _po_rcv_state(c, rn['order_id'])   # V11.303 作废后重算到货状态
         c.commit(); c.close()
         log(session['user_name'], '作废入库单', f'{rn["receive_no"]} (已入库, 库存已回滚)')
         return jsonify({'success': True, 'message': '入库单已作废，库存已回滚'})
@@ -16056,17 +16193,21 @@ def api_requisition_void(rid):
         # 回滚库存: 删除该单出库流水 + 加回库存
         flows = c.execute("SELECT * FROM inventory_flows WHERE doc_type='requisition' AND doc_id=? AND flow_type='出库'", (rid,)).fetchall()
         for f in flows:
-            inv = c.execute("SELECT * FROM inventory WHERE item_name=? AND spec=? ORDER BY quantity DESC",
-                            (f['item_name'], f['spec'] or '')).fetchone()
+            # V11.303 分批次回滚: 优先回补到同批次(trace_no一致)条目, 无则回退数量最大条目; 都没有则新建
+            inv = None
+            _ftno = (f['trace_no'] if 'trace_no' in f.keys() else '') or ''
+            if _ftno:
+                inv = c.execute("SELECT * FROM inventory WHERE item_name=? AND spec=? AND trace_no=? ORDER BY id LIMIT 1",
+                                (f['item_name'], f['spec'] or '', _ftno)).fetchone()
+            if not inv:
+                inv = c.execute("SELECT * FROM inventory WHERE item_name=? AND spec=? ORDER BY quantity DESC",
+                                (f['item_name'], f['spec'] or '')).fetchone()
             if inv:
                 new_q = inv['quantity'] - f['qty']  # f['qty'] 为负值, 减负=加回
                 c.execute("UPDATE inventory SET quantity=?, updated_at=? WHERE id=?", (new_q, now(), inv['id']))
             else:
                 c.execute("INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,updated_at) VALUES(?,?,?,?,?,?)",
-                          (f['item_name'], f['spec'] or '', f['unit'] or '个', 0, '主库房', now()))
-                # V11.272 修复(ran): 容忍 inventory 唯一索引(名称+规格+仓库) — 已存在同名行时按名称+规格回写
-                c.execute("UPDATE inventory SET quantity=quantity+?, updated_at=? WHERE item_name=? AND spec=?",
-                          (-f['qty'], now(), f['item_name'], f['spec'] or ''))
+                          (f['item_name'], f['spec'] or '', f['unit'] or '个', -f['qty'], '主库房', now()))
         c.execute("DELETE FROM inventory_flows WHERE doc_type='requisition' AND doc_id=?", (rid,))
         c.execute("UPDATE requisitions SET status='已作废', updated_at=? WHERE id=?", (now(), rid))
         c.execute("UPDATE approval_instances SET status='rejected', comment='单据作废' WHERE biz_type='requisition' AND biz_id=? AND status='pending'", (rid,))
