@@ -279,6 +279,30 @@ def company_default():
     return list(_m.values())[0] if _m else 'HQZC'
 
 
+def _manual_recv_block_reason(supplier):
+    """V11.301 付款前校验: 该供应商若存在「临时手工入库且未补关联采购订单/合同」的单据, 返回拦截原因(否则返回空串)
+    依据: 采购—库房对接方案(财务付款需全套单据, 资料不全不予付款; 库房不接触发票结算)"""
+    sup = str(supplier or '').strip()
+    if not sup:
+        return ''
+    try:
+        c0 = db()
+        rows = c0.execute("""SELECT receive_no, manual_supplier, received_at FROM receivings
+                             WHERE COALESCE(is_manual,0)=1 AND COALESCE(link_status,'')<>'已补关联'
+                               AND COALESCE(status,'')<>'已作废'
+                               AND (manual_supplier LIKE ? OR ? LIKE '%'||manual_supplier||'%')
+                             ORDER BY id DESC LIMIT 5""",
+                          ('%' + sup + '%', sup)).fetchall()
+        c0.close()
+    except Exception:
+        return ''
+    if not rows:
+        return ''
+    nos = '、'.join([str(x['receive_no']) for x in rows])
+    return ('禁止付款：供应商「%s」存在未补全采购关联的临时手工入库单（%s）。按财务要求资料不全不予付款，'
+            '请先到【📦 入库验收】页对该手工单点【🔗 补关联订单】补全采购订单/合同后再提交付款。' % (sup, nos))
+
+
 def log(op, action, detail, c=None):
     if c: c.execute("INSERT INTO logs(operator,action,detail,created_at) VALUES(?,?,?,?)", (op,action,detail,now()))
     else: cc=db();cc.execute("INSERT INTO logs(operator,action,detail,created_at) VALUES(?,?,?,?)",(op,action,detail,now()));cc.commit();cc.close()
@@ -9932,15 +9956,54 @@ def api_create_receiving():
         _rrq = conn.execute("SELECT pr.req_type FROM purchase_orders po LEFT JOIN purchase_requests pr ON po.req_id=pr.id WHERE po.id=?", (d.get('order_id'),)).fetchone()
         if _rrq and (_rrq['req_type'] or '') == '设备维修':
             conn.close(); return jsonify({'error': '维修委托订单不走入库流程（维修项目不是库存物资，入库会把维修件混进库存）。请到该维修申请详情点【✅ 登记完工】完成收尾（不进库存）'}), 400
-    # V11.251 溯源强校验: 入库单必须关联采购订单(溯源根), 溯源编号为空禁止保存提交
+    # V11.301 库房手工应急入库(货先到单后到: 加急件/月结耗材/中间商送货单滞后/现场直装后补单)
+    #   管控四件套: ①仅库管员/系统管理员 ②必填供应商+事由+强制上传送货单与货物照片(≥2附件)
+    #             ③金额上限(超限必须填领导确认人, 全程留痕) ④标记「临时手工入库」+待补关联, 未补关联禁止付款
+    _manual = bool(d.get('manual'))
+    _manual_sup = str(d.get('manual_supplier') or '').strip()[:60]
+    _manual_reason = str(d.get('manual_reason') or '').strip()[:200]
+    _atts_pre = [str(a) for a in (d.get('attachments') or []) if a]
+    _manual_ok_by = ''
+    _manual_ok_at = ''
+    _manual_limit = 0.0
+    if _manual:
+        if session.get('user_role') not in ('库管员', '系统管理员'):
+            conn.close(); return jsonify({'error': '无权限：库房手工应急入库仅对库管员/系统管理员开放'}), 403
+        if d.get('order_id'):
+            conn.close(); return jsonify({'error': '手工应急入库不能同时关联采购订单：请改用常规入库（选订单），或去掉订单关联'}), 400
+        if not _manual_sup:
+            conn.close(); return jsonify({'error': '请填写供应商名称（手工应急入库必须记录送货方，便于事后补关联与对账）'}), 400
+        if not _manual_reason:
+            conn.close(); return jsonify({'error': '请填写手工入库事由（如：加急件先到 / 月结耗材 / 中间商送货单滞后 / 现场直装后补单）'}), 400
+        if len(_atts_pre) < 2:
+            conn.close(); return jsonify({'error': '手工应急入库必须上传附件：送货单 + 货物照片（至少2个附件，责任留证、审计可查）'}), 400
+        try:
+            _lr = conn.execute("SELECT value FROM sys_config WHERE key='manual_recv_limit'").fetchone()
+            _manual_limit = float(str(_lr['value']).strip()) if (_lr and str(_lr['value'] or '').strip()) else 0.0
+        except Exception:
+            _manual_limit = 0.0
+        if _manual_limit <= 0:
+            _manual_limit = 2000.0
+        try:
+            _amt_pre = round(sum(float(it.get('quantity') or 0) * float(it.get('price') or 0)
+                                 for it in (d.get('items') or []) if isinstance(it, dict)), 2)
+        except Exception:
+            _amt_pre = 0.0
+        if _amt_pre > _manual_limit:
+            _ok_name = str(d.get('leader_confirm_name') or '').strip()[:30]
+            if not _ok_name:
+                conn.close(); return jsonify({'error': '手工应急入库金额 ¥%s 超过上限 ¥%s，需领导确认：请填写确认领导姓名后重试（该确认全程留痕，可在【手工入库对账】查看）' % (_amt_pre, _manual_limit)}), 400
+            _manual_ok_by = _ok_name
+            _manual_ok_at = now()
+    # V11.251 溯源强校验: 有订单时溯源编号必须取自订单; 手工应急单用「手工应急:单号」并标记待补关联
     _oid = d.get('order_id')
     _trace = ''
     if _oid:
         _po = conn.execute("SELECT order_no FROM purchase_orders WHERE id=?", (_oid,)).fetchone()
         if _po:
             _trace = _po['order_no']
-    if not _trace:
-        conn.close(); return jsonify({'error': '溯源编号为空：新建入库单必须先选择对应的采购订单（商品全链路溯源要求，禁止无订单来源入库）'}), 400
+    if not _trace and not _manual:
+        conn.close(); return jsonify({'error': '溯源编号为空：新建入库单必须先选择对应的采购订单（商品全链路溯源要求，禁止无订单来源入库）。确属「货先到、单后到」的紧急情况，请用【🧰 手工应急入库】入口（需上传送货单+货物照片，事后必须补关联订单）'}), 400
     items = d.get('items') or []
     if not items and d.get('item_name'):
         items = [{'item_name': d.get('item_name'), 'spec': d.get('spec'), 'unit': d.get('unit', '个'),
@@ -9975,6 +10038,8 @@ def api_create_receiving():
                     if float(it.get('quantity', 0) or 0) > _left + 0.0001:
                         conn.close(); return jsonify({'error': '入库数量超过订单未收货量：%s 订单共%s%s，已收%s%s，本次%s%s（超量请先与供应商/采购确认追加，勿直接超收）' % (_nm, _ois[_nm], it.get('unit','个'), _got.get(_nm,0), it.get('unit','个'), it.get('quantity'), it.get('unit','个'))}), 400
     no = gen_no('RK', 'receivings', 'receive_no', conn)
+    if _manual and not _trace:
+        _trace = '手工应急:' + no
     total_q = sum(float(it['quantity']) for it in items)
     first = items[0]
     try: conn.execute("ALTER TABLE receivings ADD COLUMN items_json TEXT DEFAULT ''")
@@ -9990,18 +10055,115 @@ def api_create_receiving():
     # V11.172: 经办人(inspector)必须写当前登录用户 — 否则fs_biz_info取发起人返回'系统',
     # 钉钉发起时兜底成审批人自己(发起人=审批人) → 820003审批实例参数错误
     _inspector = (d.get('inspector') or '').strip() or session.get('user_name', '') or '系统'
-    conn.execute("INSERT INTO receivings(receive_no,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,items_json,attachments,dept,is_est,est_amount,inspector,trace_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    _remark_save = ('🧰 临时手工入库(无采购订单·待补关联) 供应商: %s 事由: %s' % (_manual_sup, _manual_reason)) if _manual else ('手动入库单: %d项商品' % len(items))
+    conn.execute("INSERT INTO receivings(receive_no,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,items_json,attachments,dept,is_est,est_amount,inspector,trace_no,warehouse,is_manual,manual_supplier,manual_reason,link_status,manual_ok_by,manual_ok_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                  (no, d.get('order_id'), first['item_name'], first.get('spec', ''), total_q,
-                  first.get('unit', '个'), 0, '待入库', now(), '手动入库单: %d项商品' % len(items),
-                  json.dumps(items, ensure_ascii=False), _atts_json, _dept, _is_est, _est_amt, _inspector, _trace))
+                  first.get('unit', '个'), 0, '待入库', now(), _remark_save,
+                  json.dumps(items, ensure_ascii=False), _atts_json, _dept, _is_est, _est_amt, _inspector, _trace,
+                  (str(d.get('warehouse') or '').strip()[:30] or '主库房'),
+                  1 if _manual else 0, _manual_sup, _manual_reason, ('待补关联' if _manual else ''), _manual_ok_by, _manual_ok_at))
     rid = conn.execute("SELECT id FROM receivings WHERE receive_no=?", (no,)).fetchone()[0]
     # 手动入库单没有 order_items, 明细暂存 remark; 审批通过时按 quantity 入库
     conn.commit()
     # V11.281b 入库审批合并为一次(B方案): 创建入库单不再送审 — 待库管员"验收提交"时一次性送审, 通过即入库
     conn.close()
+    if _manual:
+        try:
+            _amt_log = round(sum(float(it.get('quantity') or 0) * float(it.get('price') or 0) for it in items), 2)
+        except Exception:
+            _amt_log = 0.0
+        log(session['user_name'], '库房手工应急入库',
+            f'{no} 供应商{_manual_sup} {len(items)}项{total_q}件 ¥{_amt_log} 待补关联; 事由: {_manual_reason}'
+            + (f'; 超限(¥{_manual_limit})领导确认: {_manual_ok_by}' if _manual_ok_by else ''))
+        _trace_create('receiving', 'receivings', 'receive_no=?', no, node='库房手工应急入库(无订单·待补关联)')
+        return jsonify({'success': True, 'id': rid, 'receive_no': no, 'manual': True, 'message': f'临时手工入库单 {no} 已创建（待入库）：请点【📤 提交审批】填写验收数量送审，审批通过自动增加库存；后期请点【🔗 补关联订单】补全采购订单/合同，未补关联前该供应商付款会被拦截'})
     log(session['user_name'], '新建入库单', f'{no} {len(items)}项 {total_q}件 待入库')
     _trace_create('receiving', 'receivings', 'receive_no=?', no, node='新建入库单(待入库·暂估)')
-    return jsonify({'success': True, 'receive_no': no, 'message': f'入库单 {no} 已创建（待入库）：请在列表点【提交审批】填写验收数量后送审，审批通过自动增加库存'})
+    return jsonify({'success': True, 'id': rid, 'receive_no': no, 'message': f'入库单 {no} 已创建（待入库）：请在列表点【提交审批】填写验收数量后送审，审批通过自动增加库存'})
+
+@app.route('/api/receivings/manual-meta')
+@login_required
+def api_rcv_manual_meta():
+    """V11.301 手工应急入库前置信息: 金额上限 + 可用库房 + 当前用户是否有权手工入库"""
+    conn = db()
+    lim = 2000.0
+    try:
+        _r = conn.execute("SELECT value FROM sys_config WHERE key='manual_recv_limit'").fetchone()
+        if _r and str(_r['value'] or '').strip():
+            lim = float(str(_r['value']).strip())
+    except Exception:
+        pass
+    whs = []
+    try:
+        whs = [x['warehouse'] for x in conn.execute(
+            "SELECT DISTINCT warehouse FROM receivings WHERE COALESCE(warehouse,'')<>'' ORDER BY warehouse").fetchall() if x['warehouse']]
+    except Exception:
+        whs = []
+    if '主库房' not in whs:
+        whs.insert(0, '主库房')
+    conn.close()
+    return jsonify({'limit': lim, 'warehouses': whs,
+                    'can': session.get('user_role') in ('库管员', '系统管理员'),
+                    'role': session.get('user_role')})
+
+
+@app.route('/api/receivings/<int:rid>/link-order', methods=['POST'])
+@login_required
+def api_rcv_link_order(rid):
+    """V11.301 手工应急入库·补关联采购订单(补全溯源链) — 补全后该供应商付款不再被拦截"""
+    if session.get('user_role') not in ('库管员', '采购员', '系统管理员'):
+        return jsonify({'error': '无权限：仅库管员/采购员/系统管理员可补关联'}), 403
+    d = request.json or {}
+    oid = d.get('order_id')
+    if not oid:
+        return jsonify({'error': '请选择要关联的采购订单'}), 400
+    conn = db()
+    r = conn.execute("SELECT * FROM receivings WHERE id=?", (rid,)).fetchone()
+    if not r:
+        conn.close(); return jsonify({'error': '入库单不存在'}), 404
+    if not (r['is_manual'] if 'is_manual' in r.keys() else 0):
+        conn.close(); return jsonify({'error': '该单不是手工应急入库单，无需补关联'}), 400
+    po = conn.execute("SELECT order_no, supplier FROM purchase_orders WHERE id=?", (oid,)).fetchone()
+    if not po:
+        conn.close(); return jsonify({'error': '所选采购订单不存在'}), 400
+    _old_sup = r['manual_supplier'] if 'manual_supplier' in r.keys() else ''
+    conn.execute("UPDATE receivings SET order_id=?, trace_no=?, link_status='已补关联', updated_at=?, remark=COALESCE(remark,'')||? WHERE id=?",
+                 (oid, po['order_no'], now(), ' | 🔗已补关联订单 ' + str(po['order_no']), rid))
+    conn.commit(); conn.close()
+    log(session['user_name'], '手工入库补关联', f"{r['receive_no']}（供应商{_old_sup}）→ 采购订单 {po['order_no']}")
+    try:
+        _trace_create('receiving', 'receivings', 'receive_no=?', r['receive_no'], node='补关联采购订单 ' + str(po['order_no']))
+    except Exception:
+        pass
+    return jsonify({'success': True, 'message': '已补关联采购订单 %s：溯源链补全，该供应商付款拦截已解除' % po['order_no']})
+
+
+@app.route('/api/receivings/manual-recon')
+@login_required
+def api_rcv_manual_recon():
+    """V11.301 手工入库对账筛查 — ①已入库无采购订单/合同(临时手工入库待补关联) ②有采购订单但库房无入库"""
+    if session.get('user_role') not in ('库管员', '采购员', '财务', '分管领导', '总经理', '系统管理员', '部门负责人'):
+        return jsonify({'error': '无权限'}), 403
+    conn = db()
+    a = []
+    for r in conn.execute("""SELECT id,receive_no,item_name,quantity,unit,status,dept,warehouse,manual_supplier,manual_reason,
+                                    manual_ok_by,manual_ok_at,attachments,received_at,created_at
+                             FROM receivings
+                             WHERE COALESCE(is_manual,0)=1 AND COALESCE(link_status,'')<>'已补关联'
+                               AND COALESCE(status,'')<>'已作废'
+                             ORDER BY id DESC""").fetchall():
+        a.append(dict_row(r))
+    b = []
+    for r in conn.execute("""SELECT po.id,po.order_no,po.supplier,po.item_name,po.quantity,po.total_amount,po.status,po.created_at
+                             FROM purchase_orders po
+                             WHERE COALESCE(po.status,'') NOT IN ('已作废','已取消','已驳回')
+                               AND (SELECT COUNT(*) FROM receivings rv WHERE rv.order_id=po.id AND COALESCE(rv.status,'')<>'已作废')=0
+                             ORDER BY po.id DESC LIMIT 200""").fetchall():
+        b.append(dict_row(r))
+    conn.close()
+    return jsonify({'in_no_order': a, 'order_no_recv': b,
+                    'in_no_order_count': len(a), 'order_no_recv_count': len(b)})
+
 
 @app.route('/api/inventory')
 @login_required
@@ -14398,6 +14560,10 @@ def api_create_payment():
         return jsonify({'error': '请填写收款人全称与收款账户(必填)'}), 400
     if str(d.get('has_contract') or '') == '是' and not str(d.get('contract_attachment') or '').strip():
         return jsonify({'error': '已选择签订合同, 请上传合同附件(必填)'}), 400
+    # V11.301 财务校验: 供应商存在「未补关联的临时手工入库单」→ 禁止付款(库房已入库无采购订单/合同, 资料不全不予付款)
+    _blk_msg = _manual_recv_block_reason(str(d.get('supplier') or '').strip())
+    if _blk_msg:
+        return jsonify({'error': _blk_msg}), 400
     conn = db()
     no = gen_no('FK', 'payment_requests', 'payment_no', conn)
     _atts = d.get('attachments') or []
@@ -14529,6 +14695,10 @@ def api_pay_payment(pid):
         c.close(); return jsonify({'error': '该付款单已完成付款'}), 400
     if r['status'] == '已作废':
         c.close(); return jsonify({'error': '该付款单已作废，不能付款'}), 400
+    # V11.301 财务校验: 手工应急入库未补关联 → 禁止付款
+    _blk_msg2 = _manual_recv_block_reason(str(r['supplier'] or '').strip())
+    if _blk_msg2:
+        c.close(); return jsonify({'error': _blk_msg2}), 400
     c.execute("UPDATE payment_requests SET status='已付款', paid_at=? WHERE id=?", (now(), pid))
     c.commit(); c.close()
     log(session['user_name'], '确认付款', '#%d' % pid)

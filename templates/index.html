@@ -394,6 +394,8 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <select id="rcvFCat" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px" onchange="loadReceivings()"><option value="">全部类别</option></select>
     <select id="rcvFType" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px" onchange="loadReceivings()"><option value="">全部入库类型</option><option value="est">暂估入库</option><option value="formal">正式入库</option></select>
     <button class="btn btn-p btn-sm" style="margin-left:auto" onclick="showRcvForm()">➕ 新建入库单</button>
+    <button class="btn btn-o btn-sm" id="mrsBtn" style="display:none" onclick="showManualRcvForm()">🧰 手工应急入库</button>
+    <button class="btn btn-o btn-sm" id="mrsReconBtn" style="display:none" onclick="showManualRecon()">📋 手工入库对账</button>
   </div>
   <div class="card"><div class="cb" id="receivingsTable"><div class="loading">加载中...</div></div></div></div>
 <div class="page" id="ppayments"><h2>💰 付款申请</h2><div style="margin-bottom:4px"><button class="btn btn-p btn-sm" onclick="showForm('payment')">+ 付款申请</button></div><div class="card"><div class="cb" id="paymentsTable"><div class="loading">加载中...</div></div></div></div>
@@ -3911,6 +3913,11 @@ async function loadReceivings(){
   const estPending=(r||[]).filter(x=>x.is_est&&!x.invoice_no);
   const estHint=estPending.length?`<div style="margin:4px 0 6px;padding:5px 8px;background:#fff3e0;border-left:3px solid #e65100;font-size:10px;color:#e65100">
     📋 <b>${estPending.length}</b> 张暂估入库单发票未回, 收到发票后点单号旁"🧾发票核对"红冲转正式</div>`:'';
+  // V11.301 手工应急入库(仅库管员/管理员) + 手工入库对账(库房/采购/财务/领导)
+  try{
+    const _mrb=id('mrsBtn'); if(_mrb)_mrb.style.display=(ME.role=='库管员'||ME.role=='系统管理员')?'':'none';
+    const _mrcb=id('mrsReconBtn'); if(_mrcb)_mrcb.style.display=(['库管员','采购员','财务','分管领导','总经理','部门负责人','系统管理员'].includes(ME.role))?'':'none';
+  }catch(e){}
   id('receivingsTable').innerHTML=estHint+groupRnder(r, x=>x.received_at||x.created_at,['单号','部门','物资','数量','交易模式','状态','驳回','操作'],
     x=>{
       // V11.37: 合同自动生成的待入库单 = 到货提醒(需先确认到货)
@@ -3939,6 +3946,9 @@ async function loadReceivings(){
       const isWarehouse=['系统管理员','库管员','部门负责人','分管领导','总经理'].includes(ME.role);
       const isOwner=(ME.role=='系统管理员'||(x.inspector&&ME.name==x.inspector));
       const ops=`<button class="lnk" onclick="showRcvDetail(${x.id})">查看详情</button>${x.is_est&&!x.invoice_no?` <button class="lnk" style="color:var(--o);font-weight:600" onclick="showInvMatch(${x.id},'${esc(x.receive_no)}')">🧾 发票核对</button>`:''}`;
+      // V11.301 手工应急入库标记 + 补关联入口(未补关联前该供应商付款被拦截)
+      const manTag = x.is_manual?` <span class="tag" style="background:#fff3e0;color:#c62828;border:1px solid #ffd7b5" title="货先到、单后到的手工应急入库：需补关联采购订单/合同">🧰临时手工入库</span>${x.link_status=='已补关联'?' <span class="tag" style="background:#e8f5e9;color:#2e7d32">已补关联</span>':' <span class="tag" style="background:#ffebee;color:#c62828">待补关联</span>'}`:'';
+      const linkBtn=(x.is_manual&&x.link_status!='已补关联')?` <button class="lnk" style="color:var(--p);font-weight:600" onclick="showLinkOrder(${x.id},'${esc(x.manual_supplier||'')}')">🔗 补关联订单</button>`:'';
       const ops2= isWarehouse&&x.status=='待入库'&&isAuto?`<button class="lnk" style="color:var(--s);font-weight:600" onclick="confirmArrived(${x.id})">✅ 确认到货</button>`
                 : isWarehouse&&x.status=='待入库'?`<button class="lnk" style="color:var(--s);font-weight:600" onclick="completeRcv(${x.id},${x.total_qty||x.quantity},${x.order_id||0})">📤 提交审批</button>`
                 : isWarehouse&&x.status=='入库中'?`<button class="lnk" style="color:var(--s);font-weight:600" onclick="completeRcv(${x.id},${x.total_qty||x.quantity},${x.order_id||0})">📤 提交审批</button>`
@@ -3951,9 +3961,9 @@ async function loadReceivings(){
                        : (x.collect_accept&&x.collect_status=='已集体验收')?' <span class="tag" style="background:#dcfce7;color:#16a34a">👥已集体验收</span>'
                        : x.collect_accept?' <span class="tag" style="background:#fef3c7;color:#b45309">👥集体验收</span>':'';
       return `<td><b>${esc(x.receive_no)}</b>${batchTag}</td><td>${deptTag}</td><td>${esc(x.item_name)}${cntTag}${urgTag}</td><td>${qtyTxt}${pendTag}</td>
-    <td><span class="tag ${x.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(x.trade_mode||'货到付款')}</span></td><td>${stTag}${estTag}${collectTag}</td>
+    <td><span class="tag ${x.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(x.trade_mode||'货到付款')}</span></td><td>${stTag}${estTag}${collectTag}${manTag}</td>
     ${rejCell(x)}
-    <td>${ops}${ops2}
+    <td>${ops}${linkBtn}${ops2}
       ${isWarehouse?`<button class="lnk" style="color:#b08900" onclick="editDoc('receiving',${x.id},'入库单')">✏️修改</button>`:''} <button class="lnk" onclick="window.open('/api/receivings/${x.id}/download','_blank')">⬇️ 下载</button> ${isWarehouse&&x.status=='已入库'?`<button class="lnk" style="color:var(--d)" onclick="voidRcv(${x.id})">作废</button>`:''} ${isWarehouse&&(x.status=='待审批'||x.status=='已通过'||x.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('receiving',${x.id},'入库单')">↩️撤回</button>`:''}${isWarehouse&&(x.status=='待审批'||x.status=='待入库'||x.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('receiving',${x.id},'入库单')">🗑️删除</button>`:''}</td>`;
     })}
 // V11.54/245: 发票核对红冲弹窗(采购对暂估入库单核对 — 会议纪要落地: 自动带出申请明细, 仅录发票号+金额(尾差可调), 专/普票类型前期已约定不再选择)
@@ -4108,8 +4118,8 @@ function addRcvItem(){
   row.innerHTML=`
     <input class="fc" style="flex:2;min-width:0" placeholder="物资名称 *" id="rcN${i}" list="invNames" onchange="rcvAutoCat(${i})">
     <input class="fc" style="flex:1.2;min-width:0" placeholder="规格" id="rcS${i}">
-    <input class="fc" style="flex:0.8;min-width:0" type="number" placeholder="数量 *" id="rcQ${i}" value="1">
-    <input class="fc" style="flex:1;min-width:0" type="number" placeholder="含税单价" id="rcP${i}">
+    <input class="fc" style="flex:0.8;min-width:0" type="number" placeholder="数量 *" id="rcQ${i}" value="1" oninput="window.calcManualAmt&&window.calcManualAmt()">
+    <input class="fc" style="flex:1;min-width:0" type="number" placeholder="含税单价" id="rcP${i}" oninput="window.calcManualAmt&&window.calcManualAmt()">
     <span id="rcCat${i}" style="font-size:8px;color:#1a6bff;background:#e8f0fe;border-radius:3px;padding:1px 4px;display:none"></span>
     <button class="btn btn-o btn-sm" style="flex:0.4;min-width:0;padding:2px 4px" onclick="this.parentElement.remove()">✕</button>`;
   box.appendChild(row);
@@ -4156,6 +4166,96 @@ async function createRcv(){
   const r=await api('/receivings',{method:'POST',body:JSON.stringify({items,attachments:window._rcvAtts||[],dept,is_est:1})});
   if(r.success){alert(`✅ ${r.receive_no} 已创建（待入库）。请在列表点【📤 提交审批】填写验收数量后送审；审批通过自动增加库存（🟠暂估），发票回来后做【发票核对】红冲转正式`);closeMod();loadReceivings();loadDashboard()}
   else alert(r.error||'提交失败');
+}
+// ============ V11.301 库房手工应急入库(货先到、单后到) ============
+async function showManualRcvForm(){
+  window._rcvAtts=[];
+  let meta={limit:2000,warehouses:['主库房'],can:false};
+  try{ meta=await api('/receivings/manual-meta'); }catch(e){}
+  window._mrsLimit=Number(meta.limit||2000);
+  const _deptOpts=(window._depts&&window._depts.length)?window._depts.map(d=>`<option>${esc(d.name)}</option>`).join(''):'<option>综合办</option><option>生产部</option><option>机电部</option>';
+  const _whOpts=(meta.warehouses||['主库房']).map(w=>`<option>${esc(w)}</option>`).join('');
+  id('dmTitle').textContent='🧰 库房手工应急入库（无采购订单）';
+  id('dmBody').innerHTML=`
+    <div style="background:#fff8e1;border:1px solid #f0d9a0;color:#8a6d3b;border-radius:6px;padding:6px 10px;font-size:10px;margin-bottom:8px">
+      用于<b>货先到、单后到</b>：加急件先到 / 五金耗材月结合同后置 / 中间商送货单滞后 / 大件设备现场直装后补单。<br>
+      管控：必须上传<b>送货单 + 货物照片</b>；单据标记「临时手工入库·待补关联」；后期必须补关联采购订单/合同；<b>未补关联禁止付款</b>；全部操作留痕可审计。
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+      <div style="flex:1;min-width:150px"><div style="font-size:10px;color:#555;margin-bottom:2px">🚚 供应商 *</div><input class="fc" id="mrsSup" style="width:100%" placeholder="送货单位名称"></div>
+      <div style="flex:1;min-width:130px"><div style="font-size:10px;color:#555;margin-bottom:2px">🏷️ 归属部门 *</div><select id="mrsDept" style="width:100%;padding:5px;border:1px solid var(--b);border-radius:4px;font-size:11px"><option value="">— 请选择 —</option>${_deptOpts}</select></div>
+      <div style="flex:0.8;min-width:110px"><div style="font-size:10px;color:#555;margin-bottom:2px">🏬 库房</div><select id="mrsWh" style="width:100%;padding:5px;border:1px solid var(--b);border-radius:4px;font-size:11px">${_whOpts}</select></div>
+    </div>
+    <div style="margin-bottom:6px"><div style="font-size:10px;color:#555;margin-bottom:2px">📝 手工入库事由 *（为什么没有采购订单）</div>
+      <input class="fc" id="mrsReason" style="width:100%" placeholder="例：加急件上午报、下午到，采购订单未下；五金耗材月结、合同后置"></div>
+    <div id="rcvItemList"></div>
+    <button class="btn btn-o btn-sm" style="margin-top:4px" onclick="addRcvItem();calcManualAmt()">+ 添加商品</button>
+    <div id="mrsAmt" style="margin-top:6px;font-size:10px;color:#555"></div>
+    <div style="margin-top:8px;border:1px dashed var(--b);border-radius:6px;padding:8px">
+      <div style="font-size:10px;color:#555;margin-bottom:4px">📎 送货单 + 货物照片 *（至少 2 个附件，强制上传）</div>
+      <input type="file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.mp4,.mov" style="font-size:10px;width:100%" onchange="rcvUpAtt(this)">
+      <div id="rcvAttList" style="margin-top:4px;font-size:9px;color:#666"></div>
+    </div>
+    <div id="mrsOver" style="margin-top:6px"></div>`;
+  id('detailModal').classList.add('show');
+  id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="createManualRcv()">提交（临时手工入库）</button>';
+  addRcvItem(); calcManualAmt();
+}
+function calcManualAmt(){
+  let t=0;
+  (window._rcvIdx||[]).forEach(i=>{ const q=parseFloat(id('rcQ'+i)?.value)||0, pr=parseFloat(id('rcP'+i)?.value)||0; t+=q*pr; });
+  const lim=Number(window._mrsLimit||2000), over=t>lim;
+  if(id('mrsAmt')) id('mrsAmt').innerHTML=`货款合计 <b>¥${t.toFixed(2)}</b>（金额上限 ¥${lim.toFixed(2)}${over?'，<span style="color:#c62828">已超限，需领导确认</span>':''}）`;
+  if(id('mrsOver')) id('mrsOver').innerHTML=over?`<div style="font-size:10px;color:#c62828;background:#ffebee;border:1px solid #ffcdd2;border-radius:6px;padding:6px 10px">⚠️ 超过金额上限 ¥${lim.toFixed(2)}，需填写确认领导姓名（全程留痕）：<input class="fc" id="mrsOkBy" style="width:55%;margin-left:6px" placeholder="例：邢果"></div>`:'';
+}
+async function createManualRcv(){
+  const sup=(id('mrsSup')?.value||'').trim();
+  const dept=(id('mrsDept')?.value||'').trim();
+  const reason=(id('mrsReason')?.value||'').trim();
+  if(!sup){alert('请填写供应商名称');return}
+  if(!dept){alert('请选择归属部门');return}
+  if(!reason){alert('请填写手工入库事由');return}
+  const items=(window._rcvIdx||[]).map(i=>{const n=id('rcN'+i); if(!n||!n.value.trim())return null;
+    return {item_name:n.value.trim(),spec:id('rcS'+i)?.value||'',unit:'个',quantity:parseFloat(id('rcQ'+i)?.value)||0,price:parseFloat(id('rcP'+i)?.value)||0,tax_rate:13};}).filter(Boolean);
+  if(!items.length){alert('请至少填写一个商品');return}
+  if((window._rcvAtts||[]).length<2){alert('手工应急入库必须上传送货单 + 货物照片（至少 2 个附件）');return}
+  const body={manual:true,manual_supplier:sup,manual_reason:reason,items,attachments:window._rcvAtts||[],dept,warehouse:id('mrsWh')?.value||'主库房',is_est:1};
+  const ok=id('mrsOkBy'); if(ok&&ok.value.trim())body.leader_confirm_name=ok.value.trim();
+  const r=await api('/receivings',{method:'POST',body:JSON.stringify(body)});
+  if(r.success){alert('✅ '+r.message);closeMod();loadReceivings();loadDashboard()}
+  else alert(r.error||'提交失败');
+}
+async function showLinkOrder(rid,sup){
+  let orders=[]; try{ orders=await api('/orders'); }catch(e){}
+  const list=(orders||[]).filter(o=>!['已作废','已取消'].includes(o.status));
+  if(!list.length){alert('系统内没有可关联的采购订单');return}
+  const opts=list.map(o=>`<option value="${o.id}">${esc(o.order_no)} | ${esc(o.supplier||'')} | ${esc(o.item_name||'')} | ¥${o.total_amount||0}</option>`).join('');
+  id('dmTitle').textContent='🔗 补关联采购订单（手工应急入库）';
+  id('dmBody').innerHTML=`<div style="font-size:11px;color:#555;margin-bottom:6px">该单为<b>临时手工入库</b>（供应商：${esc(sup||'—')}）。选择对应采购订单补全溯源链，补全后该供应商付款拦截解除。</div>
+    <select id="lnkOrder" style="width:100%;padding:6px;border:1px solid var(--b);border-radius:4px;font-size:11px">${opts}</select>`;
+  id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="doLinkOrder('+rid+')">确认补关联</button>';
+  id('detailModal').classList.add('show');
+}
+async function doLinkOrder(rid){
+  const oid=id('lnkOrder')?.value;
+  if(!oid){alert('请选择采购订单');return}
+  const r=await api(`/receivings/${rid}/link-order`,{method:'POST',body:JSON.stringify({order_id:parseInt(oid,10)})});
+  if(r.success){alert('✅ '+r.message);closeMod();loadReceivings()} else alert(r.error||'补关联失败');
+}
+async function showManualRecon(){
+  const r=await api('/receivings/manual-recon');
+  if(!r||r.error){alert((r&&r.error)||'加载失败');return}
+  const rowsA=(r.in_no_order||[]).map(x=>`<tr><td><b>${esc(x.receive_no)}</b></td><td>${esc(x.manual_supplier||'')}</td><td>${esc(x.item_name||'')} ${x.quantity||0}${esc(x.unit||'')}</td><td>${esc(x.dept||'')}</td><td>${esc(x.manual_reason||'')}</td><td>${esc(x.manual_ok_by||'—')}</td><td>${(x.received_at||x.created_at||'').slice(0,16)}</td><td>${x.status=='已入库'?`<button class="lnk" style="color:var(--p);font-weight:600" onclick="closeMod();showLinkOrder(${x.id},'${esc(x.manual_supplier||'')}')">🔗 补关联</button>`:'<span style="color:#999">待入库</span>'}</td></tr>`).join('');
+  const rowsB=(r.order_no_recv||[]).map(x=>`<tr><td><b>${esc(x.order_no)}</b></td><td>${esc(x.supplier||'')}</td><td>${esc(x.item_name||'')} ${x.quantity||0}</td><td>${esc(x.status||'')}</td><td>${(x.created_at||'').slice(0,10)}</td></tr>`).join('');
+  id('dmTitle').textContent='📋 手工入库对账（采购—库房）';
+  id('dmBody').innerHTML=`
+    <div style="font-size:10px;color:#666;margin-bottom:6px">采购与库房定期核对两类差异：①库房已入库但无采购订单/合同（临时手工入库待补关联）②有采购订单但库房无入库。</div>
+    <div style="font-weight:700;font-size:11px;color:#c62828;margin:6px 0 4px">① 库房已入库·无采购订单/合同：${(r.in_no_order||[]).length} 单</div>
+    <div style="max-height:220px;overflow:auto"><table style="width:100%;font-size:10px;border-collapse:collapse" border="1"><tr style="background:#f5f5f5"><th>入库单</th><th>供应商</th><th>物资/数量</th><th>部门</th><th>事由</th><th>超限确认</th><th>时间</th><th>操作</th></tr>${rowsA||'<tr><td colspan="8" style="color:#999">无（全部已补关联）</td></tr>'}</table></div>
+    <div style="font-weight:700;font-size:11px;color:#b08900;margin:10px 0 4px">② 有采购订单·库房无入库：${(r.order_no_recv||[]).length} 单</div>
+    <div style="max-height:200px;overflow:auto"><table style="width:100%;font-size:10px;border-collapse:collapse" border="1"><tr style="background:#f5f5f5"><th>订单号</th><th>供应商</th><th>物资/数量</th><th>订单状态</th><th>下单日期</th></tr>${rowsB||'<tr><td colspan="5" style="color:#999">无</td></tr>'}</table></div>`;
+  id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">关闭</button>';
+  id('detailModal').classList.add('show');
 }
 async function voidRcv(id){
   if(!confirm('确认作废该入库单？已入库单据作废将回滚库存'))return;
