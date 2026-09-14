@@ -800,6 +800,17 @@ def init_db():
                 print('V11.303 inventory 唯一约束已解除(%d 行数据已搬移, 支持同品多批次分条)' % _c2)
     except Exception as _ie:
         print('V11.303 inventory 去唯一约束跳过:', _ie)
+    # ---- V11.303 到货状态一次性回填: 已有订单按历史入库量补 rcv_state, 前端『全部到货/部分到货』标签即刻生效 ----
+    try:
+        if not conn.execute("SELECT 1 FROM sys_config WHERE key='rcv_state_backfilled'").fetchone():
+            _bf = conn.execute("SELECT id FROM purchase_orders WHERE COALESCE(status,'') NOT IN ('已作废','已取消','草稿')").fetchall()
+            for _pr0 in _bf:
+                _po_rcv_state(conn, _pr0['id'])
+            conn.execute("INSERT OR IGNORE INTO sys_config(key,value) VALUES('rcv_state_backfilled','1')")
+            conn.commit()
+            print('V11.303 到货状态回填完成(%d 张订单)' % len(_bf))
+    except Exception as _be:
+        print('V11.303 到货状态回填跳过:', _be)
     # ---- V11.301 手工应急入库金额上限(超限必须领导确认): 默认2000元, 幂等补齐三机一致 ----
     try:
         if not conn.execute("SELECT 1 FROM sys_config WHERE key='manual_recv_limit'").fetchone():
