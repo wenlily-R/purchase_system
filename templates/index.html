@@ -4713,20 +4713,35 @@ function reqTab(z){
   else loadRequisitions();
 }
 async function loadReqInv(){
-  // 展示全部库存商品, 支持勾选批量出库 + 单品快速出库 (V9.1: 名称+规格独立SKU)
+  // V11.309 分批次出库界面: 同品名+规格的多个批次聚合为一行, 可选「自动(先进先出)」或指定批次(模块二.3/四.2)
   const inv=await api('/inventory');
-  let h='<table><tr><th style="width:24px"></th><th>物料名称</th><th>规格</th><th>单位</th><th>剩余库存</th><th>出库数量</th><th>操作</th></tr>';
-  inv.forEach(r=>{
-    const key=r.item_name+'||'+(r.spec||'');
-    const sel=reqSel[key]||'';
-    h+=`<tr><td><input type="checkbox" onchange="reqSelToggle('${esc(key)}',this.checked)" ${reqSel[key]?'checked':''}></td>
-      <td><b>${esc(r.item_name)}</b></td><td>${esc(r.spec||'')}</td><td>${esc(r.unit||'')}</td>
-      <td style="font-weight:600;color:${(r.quantity||0)<=0?'var(--d)':'inherit'}">${r.quantity||0}</td>
-      <td><input class="fc" style="width:70px" type="number" min="1" max="${r.quantity||0}" value="${sel||''}" placeholder="数量" oninput="reqSelQty('${esc(key)}',this.value)" onchange="reqSelQty('${esc(key)}',this.value)"></td>
-      <td><button class="btn btn-o btn-sm" onclick="quickReq('${esc(r.item_name)}','${esc(r.spec||'')}',${r.quantity||0})">⚡ 直接出库</button></td></tr>`;
+  const grp={};
+  inv.forEach(r=>{ const k=r.item_name+'||'+(r.spec||'');
+    const g=grp[k]||(grp[k]={name:r.item_name,spec:r.spec||'',unit:r.unit||'',qty:0,rows:[]});
+    g.qty+=Number(r.quantity||0); g.rows.push({id:r.id,batch_no:r.batch_no||'',price:r.price||0,wh:r.warehouse||'',qty:Number(r.quantity||0)}); });
+  window._reqInvIdx=grp;   // 供出库时按所选批次校验结存
+  let h='<table><tr><th style="width:24px"></th><th>物料名称</th><th>规格</th><th>单位</th><th>剩余库存</th><th>出库批次</th><th>出库数量</th><th>操作</th></tr>';
+  Object.keys(grp).forEach(key=>{
+    const g=grp[key], sel=reqSel[key]||'';
+    const multi=g.rows.filter(x=>x.qty>0).length>1;
+    const opts=(['<option value="">自动（先进先出）</option>'].concat(g.rows.map(x=>`<option value="${esc(x.batch_no)}"${(reqBatch[key]||'')===x.batch_no?' selected':''}>${x.batch_no?esc(x.batch_no):'无批次'}｜单价¥${x.price}｜结存${x.qty}${x.wh?'｜'+esc(x.wh):''}</option>`))).join('');
+    h+=`<tr><td><input type="checkbox" onchange="reqSelToggle('${esc(key)}',this.checked)" ${sel!==undefined&&sel!==''||reqSel[key]!==undefined?'checked':''}></td>
+      <td><b>${esc(g.name)}</b>${multi?' <span class="tag" style="background:#e8f5e9;color:#2e7d32">多批次'+g.rows.filter(x=>x.qty>0).length+'</span>':''}</td>
+      <td>${esc(g.spec)}</td><td>${esc(g.unit)}</td>
+      <td style="font-weight:600;color:${g.qty<=0?'var(--d)':'inherit'}">${g.qty}</td>
+      <td><select class="fc" style="width:190px" onchange="reqSelBatch('${esc(key)}',this.value)">${opts}</select></td>
+      <td><input class="fc" style="width:70px" type="number" min="1" max="${g.qty}" value="${sel||''}" placeholder="数量" oninput="reqSelQty('${esc(key)}',this.value)" onchange="reqSelQty('${esc(key)}',this.value)"></td>
+      <td><button class="btn btn-o btn-sm" onclick="quickReq('${esc(g.name)}','${esc(g.spec)}',${g.qty})">⚡ 直接出库</button></td></tr>`;
   });
   id('reqInvTable').innerHTML=h||'<div style="padding:8px;color:#999">暂无库存数据</div>';
   reqSelBar();
+}
+let reqBatch={};
+function reqSelBatch(key,v){ reqBatch[key]=v||''; reqSelBar(); }
+function reqSelToggle(key,chk){
+  if(chk){ if(reqSel[key]===undefined)reqSel[key]=''; }
+  else { delete reqSel[key]; delete reqBatch[key]; }
+  reqSelBar(); reqSelCnt();
 }
 function reqSelToggle(key,chk){
   // V11.173: 勾选时不再清空已填数量 — 原逻辑 if(chk)reqSel[key]='' 会把先填的数量抹掉,
@@ -4772,7 +4787,9 @@ async function batchReqSubmit(){
     const name=p[0], spec=p[1]||'';
     const q=parseFloat(reqSel[key]);
     if(!q||q<=0){alert(`「${name}${spec?'('+spec+')':''}」请填写有效出库数量`);return}
-    items.push({item_name:name,spec:spec,quantity:q,purpose:''});
+    if(reqBatch[key]&&q>0){const _mx=( (window._reqInvIdx||{})[key]||[] ).filter(x=>x.batch_no===reqBatch[key]).reduce((a,b)=>a+Number(b.qty||0),0);
+      if(_mx&&q>_mx){alert(`「${name}${spec?'('+spec+')':''}」所选批次「${reqBatch[key]}」结存 ${_mx}，不足 ${q}`);return}}
+    items.push({item_name:name,spec:spec,quantity:q,purpose:'',batch_no:reqBatch[key]||''});
   }
   if(!items.length){alert('请先勾选要出库的商品');return}
   submitReq(items);
@@ -4784,7 +4801,7 @@ async function submitReq(items){
   try{ const us=await api('/users'); users=(us||[]).map(u=>u.name||u.username).filter(Boolean); }catch(e){}
   if(!users.length) users=[(ME&&ME.name)||''];
   const _opts=users.map(n=>`<option value="${esc(n)}">`).join('');
-  const _rows=items.map((x,i)=>('<tr><td>'+(i+1)+'</td><td>'+esc(x.item_name)+(x.spec?' ('+esc(x.spec)+')':'')+'</td><td>'+x.quantity+esc(x.unit||'')+'</td>'+
+  const _rows=items.map((x,i)=>('<tr><td>'+(i+1)+'</td><td>'+esc(x.item_name)+(x.spec?' ('+esc(x.spec)+')':'')+(x.batch_no?' <span style="color:#2e7d32">['+esc(x.batch_no)+']</span>':' <span style="color:#999">[自动先进先出]</span>')+'</td><td>'+x.quantity+esc(x.unit||'')+'</td>'+
     '<td><input class="fc" id="riR'+i+'" list="reqUserList2" style="width:100%" value="'+esc((ME&&ME.name)||'')+'"></td>'+
     '<td><input class="fc" id="riP'+i+'" list="reqPurpList2" style="width:100%" placeholder="检修/日常消耗/…"></td></tr>')).join('');
   id('dmTitle').textContent='📤 出库明细：领用人 / 用途（必填）';
