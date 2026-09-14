@@ -763,6 +763,10 @@ def init_db():
         ('inventory', 'order_no', "ALTER TABLE inventory ADD COLUMN order_no TEXT DEFAULT ''"),
         ('inventory', 'receive_no', "ALTER TABLE inventory ADD COLUMN receive_no TEXT DEFAULT ''"),
         ('purchase_orders', 'rcv_state', "ALTER TABLE purchase_orders ADD COLUMN rcv_state TEXT DEFAULT ''"),
+        # ---- V11.305 出库颗粒度(需求模块二.1): 明细行「领用人」+ 流水同步「领用人/用途」 ----
+        ('requisition_items', 'receiver', "ALTER TABLE requisition_items ADD COLUMN receiver TEXT DEFAULT ''"),
+        ('inventory_flows', 'receiver', "ALTER TABLE inventory_flows ADD COLUMN receiver TEXT DEFAULT ''"),
+        ('inventory_flows', 'purpose', "ALTER TABLE inventory_flows ADD COLUMN purpose TEXT DEFAULT ''"),
     ]:
         _cols = [r[1] for r in conn.execute(f"PRAGMA table_info({_tbl})").fetchall()]
         if _col not in _cols:
@@ -9405,9 +9409,10 @@ def do_requisition_stock(c, rid, warehouse='主库房', operator='系统'):
             _bt = (_row.get('batch_no') or '')
             _rmk = ('出库单%s审批通过' % rq['req_no']) + (' %s' % _bt if _bt else '') + \
                    ('（批次单价¥%s）' % (_row.get('price') or 0) if (_row.get('price') or 0) else '')
-            c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at,trace_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at,trace_no,receiver,purpose) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                       (it['item_name'], it['spec'] or '', it['unit'] or '个', '出库', 'requisition', rid, rq['req_no'],
-                       -_take, _row.get('quantity'), operator or '系统', _rmk, now(), (_row.get('trace_no') or '')))
+                       -_take, _row.get('quantity'), operator or '系统', _rmk, now(), (_row.get('trace_no') or ''),
+                       (it['receiver'] if 'receiver' in it.keys() else '') or '', (it['purpose'] if 'purpose' in it.keys() else '') or ''))
     return total_q
 
 
@@ -10047,6 +10052,7 @@ def api_requisitions():
     role = session.get('user_role')
     if role in ('采购员', '财务'):
         return jsonify([])
+    _f_recv = (request.args.get('receiver') or '').strip()
     conn = db()
     if role in ('员工',):
         rows = conn.execute("SELECT * FROM requisitions WHERE requester=? ORDER BY id DESC LIMIT 100", (session.get('user_name', ''),)).fetchall()
@@ -10054,7 +10060,13 @@ def api_requisitions():
         rows = conn.execute("SELECT * FROM requisitions ORDER BY id DESC LIMIT 100").fetchall()
     out = []
     for r in rows:
+        # V11.305 按领用人筛选: 明细行领用人命中即保留(支持同单多人)
+        _recvs = [x[0] for x in conn.execute("SELECT DISTINCT receiver FROM requisition_items WHERE requisition_id=? AND COALESCE(receiver,'')<>''", (r['id'],)).fetchall()]
+        if _f_recv and (_f_recv not in _recvs) and (_f_recv not in str(r['receiver'] or '')):
+            continue
         d = dict_row(r)
+        d['receivers'] = _recvs
+        d['recv_txt'] = '、'.join(_recvs) or (r['receiver'] or '')
         cnt = conn.execute("SELECT COUNT(*), COALESCE(SUM(quantity),0) FROM requisition_items WHERE requisition_id=?", (r['id'],)).fetchone()
         d['item_count'] = cnt[0] or 1
         d['total_qty'] = cnt[1] or r['quantity']
@@ -10094,6 +10106,16 @@ def api_create_requisition():
     items = [it for it in items if it.get('item_name') and float(it.get('quantity', 0) or 0) > 0]
     if not items:
         conn.close(); return jsonify({'error': '请至少填写一个商品及数量'}), 400
+    # V11.305 出库颗粒度: 每行明细必须写清「领用人 + 用途」(同部门多人领用分行记录, 便于追溯与按人统计)
+    _hdr_receiver = (d.get('receiver') or '').strip()
+    _hdr_purpose = (d.get('purpose') or '').strip()
+    for _i0, _it0 in enumerate(items, 1):
+        _it0['receiver'] = (str(_it0.get('receiver') or '').strip() or _hdr_receiver)
+        _it0['purpose'] = (str(_it0.get('purpose') or '').strip() or _hdr_purpose)
+        if not _it0['receiver']:
+            conn.close(); return jsonify({'error': '出库明细第 %d 行请填写「领用人」(必填)' % _i0}), 400
+        if not _it0['purpose']:
+            conn.close(); return jsonify({'error': '出库明细第 %d 行请填写「用途」(必填, 如: 检修/日常消耗/工程安装)' % _i0}), 400
     # 库存校验(拦截超量) — V9.1: 名称+规格双条件匹配独立SKU
     for it in items:
         inv = conn.execute("SELECT * FROM inventory WHERE item_name=? AND spec=? ORDER BY quantity DESC",
@@ -10108,8 +10130,13 @@ def api_create_requisition():
     total_q = sum(float(it['quantity']) for it in items)
     first = items[0]
     # V11.25: 领取人/领取部门 — 出库留痕可追溯(丢了东西能找到人)
-    receiver = (d.get('receiver') or '').strip()
+    receiver = _hdr_receiver
     receive_dept = (d.get('receive_dept') or '').strip()
+    _recv_set = list(dict.fromkeys([x['receiver'] for x in items]))
+    if len(_recv_set) > 1:
+        receiver = '多人(见明细): ' + '、'.join(_recv_set)[:80]
+    elif _recv_set:
+        receiver = _recv_set[0]
     if not receiver:
         receiver = session['user_name']
     conn.execute("INSERT INTO requisitions(req_no,dept,requester,item_name,spec,quantity,unit,purpose,status,receiver,receive_dept,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -10117,15 +10144,15 @@ def api_create_requisition():
                   total_q, first.get('unit', '个'), d.get('purpose', first.get('purpose', '')), '待审批', receiver, receive_dept, now()))
     rid = conn.execute("SELECT id FROM requisitions WHERE req_no=?", (no,)).fetchone()[0]
     for it in items:
-        conn.execute("INSERT INTO requisition_items(requisition_id,item_name,spec,unit,quantity,purpose,trace_no,created_at) VALUES(?,?,?,?,?,?,?,?)",
+        conn.execute("INSERT INTO requisition_items(requisition_id,item_name,spec,unit,quantity,purpose,trace_no,created_at,receiver) VALUES(?,?,?,?,?,?,?,?,?)",
                      (rid, it['item_name'], it.get('spec', ''), it.get('unit', '个'),
-                      float(it['quantity']), it.get('purpose', d.get('purpose', '')), it.get('_trace', ''), now()))
+                      float(it['quantity']), it.get('purpose', ''), it.get('_trace', ''), now(), it.get('receiver', '')))
     conn.commit()
     create_approvals('requisition', rid, 0, submitter=session['user_name'])
     conn.close()
     try: start_instances('requisition', rid)
     except Exception as e: print('requisition start_instances err:', e)
-    log(session['user_name'], '新建出库单', f'{no} {len(items)}项 {total_q}件 待审批')
+    log(session['user_name'], '新建出库单', f'{no} {len(items)}项 {total_q}件 待审批; 领用人: {"、".join(_recv_set)[:60]}')
     _trace_create('requisition', 'requisitions', 'req_no=?', no, node='新建提交审批')
     return jsonify({'success': True, 'req_no': no, 'id': rid, 'message': f'出库单 {no} 已提交审批，审批通过后自动扣减库存'})
 
