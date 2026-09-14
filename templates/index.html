@@ -1099,10 +1099,54 @@ async function feishuLogin(){
   }catch(e){const err=id('loginErr');err.style.display='block';err.textContent='飞书登录不可用'}
 }
 
+// ============ V11.302 全业务列表统一全局搜索(需求:模块一.1) ============
+// 覆盖: 采购申请/维修工单(同页)、三方询价、采购订单、合同管理、入库验收、出库管理、退库管理、库存查询、发票管理、发票台账、付款申请、库存盘点、费用登记、月度对账
+// 能力: 单号(精准/模糊)+物料名称+供应商+部门 关键词实时过滤; 一键清空; 切页/刷新后保留本次搜索条件(会话级)
+// 键=页面容器id(页面div是 p+菜单键), 值=搜索框提示名
+const QS_PAGES={pprequests:'采购申请 · 维修工单',pinquiries:'三方询价',porders:'采购订单',pcontracts:'合同管理',
+  preceivings:'入库验收',prequisitions:'出库管理',preturns:'退库管理',pinventory:'库存查询（支持品名/规格/货位/批次号）',
+  pinvoices:'发票管理',pledger:'发票台账',ppayments:'付款申请',pcounts:'库存盘点',pexpenses:'费用登记',psettlements:'月度对账'};
+window._Q=window._Q||{};
+function qsInit(){
+  Object.keys(QS_PAGES).forEach(pid=>{
+    const pg=document.getElementById(pid); if(!pg)return;
+    if(window._Q[pid]===undefined){ try{window._Q[pid]=sessionStorage.getItem('qs_'+pid)||''}catch(e){window._Q[pid]=''} }
+    if(!pg.querySelector('[data-qs]')){
+      const bar=document.createElement('div'); bar.setAttribute('data-qs',pid);
+      bar.style.cssText='display:flex;gap:6px;align-items:center;margin:2px 0 6px';
+      bar.innerHTML=`<input class="fc" id="qs_${pid}" style="flex:1;max-width:460px" value="${esc(window._Q[pid]||'')}"
+        placeholder="🔍 ${QS_PAGES[pid]}：单号 / 物料名称 / 供应商 / 部门 关键词，输入即过滤" oninput="qsGo('${pid}')">
+        <button class="btn btn-o btn-sm" onclick="qsClear('${pid}')">✕ 清空</button>
+        <span id="qsCnt_${pid}" style="font-size:9px;color:#888"></span>`;
+      const h2=pg.querySelector('h2');
+      if(h2&&h2.nextSibling)pg.insertBefore(bar,h2.nextSibling); else pg.insertBefore(bar,pg.firstChild);
+    }
+    qsApply(pid);
+  });
+}
+function qsGo(pid){const el=document.getElementById('qs_'+pid);if(!el)return;window._Q[pid]=el.value.trim();try{sessionStorage.setItem('qs_'+pid,window._Q[pid])}catch(e){}qsApply(pid)}
+function qsClear(pid){const el=document.getElementById('qs_'+pid);if(el)el.value='';window._Q[pid]='';try{sessionStorage.removeItem('qs_'+pid)}catch(e){}qsApply(pid)}
+function qsApply(pid){
+  const pg=document.getElementById(pid);if(!pg)return;
+  const kw=(window._Q[pid]||'').toLowerCase();let shown=0,total=0;
+  pg.querySelectorAll('table tbody tr').forEach(tr=>{
+    const hit=!kw||(tr.innerText||'').toLowerCase().includes(kw);total++;if(hit)shown++;
+    tr.style.display=hit?'':'none';
+  });
+  const c=document.getElementById('qsCnt_'+pid);if(c)c.textContent=kw?('匹配 '+shown+'/'+total+' 行'):'';
+}
+function qsWatch(){
+  Object.keys(QS_PAGES).forEach(pid=>{
+    const pg=document.getElementById(pid);if(!pg||pg.__qsObs)return;
+    pg.__qsObs=new MutationObserver(()=>{if(!(window._Q[pid]||''))return;clearTimeout(pg.__qsT);pg.__qsT=setTimeout(()=>qsApply(pid),150)});
+    pg.__qsObs.observe(pg,{childList:true,subtree:true});
+  });
+}
 function initApp(){
   id('userName').textContent=ME.name+' ('+ME.role+')';
   buildNav();
   if(typeof sideScrollInit==='function')sideScrollInit();
+  qsInit();qsWatch();   // V11.302 全业务列表统一全局搜索(含切页/刷新保留条件)
   // V11.18: 预加载公网地址, 供报价链接复制使用(商家必须用公网链接才能打开)
   (async()=>{try{const c=await fetch('/api/public-url',{credentials:'include'}).then(r=>r.json());if(c&&c.url)window._basePublicUrl=c.url}catch(e){}})();
   loadDashboard();
