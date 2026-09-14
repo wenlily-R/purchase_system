@@ -818,6 +818,23 @@ def init_db():
             print('V11.303 到货状态回填完成(%d 张订单)' % len(_bf))
     except Exception as _be:
         print('V11.303 到货状态回填跳过:', _be)
+    # ---- V11.307 需求模块五.2 兜底: 已通过订单若缺"待验收入库单"则补齐(幂等, 一次性) ----
+    try:
+        if not conn.execute("SELECT 1 FROM sys_config WHERE key='pending_rcv_backfilled'").fetchone():
+            _gap = conn.execute("""SELECT po.id FROM purchase_orders po
+                                   WHERE COALESCE(po.status,'') NOT IN ('草稿','已作废','已取消','已驳回','待审批')
+                                     AND COALESCE(po.is_sealed,0)=0
+                                     AND NOT EXISTS (SELECT 1 FROM receivings rv WHERE rv.order_id=po.id AND COALESCE(rv.status,'')<>'已作废')
+                                     AND NOT EXISTS (SELECT 1 FROM purchase_requests pr WHERE pr.id=po.req_id AND COALESCE(pr.req_type,'') LIKE '%维修%')""").fetchall()
+            _n = 0
+            for _g in _gap:
+                if _ensure_pending_receiving(conn, _g['id']):
+                    _n += 1
+            conn.execute("INSERT OR IGNORE INTO sys_config(key,value) VALUES('pending_rcv_backfilled','1')")
+            conn.commit()
+            print('V11.307 待验收入库单兜底补齐: %d 张订单' % _n)
+    except Exception as _pe:
+        print('V11.307 待验收入库单兜底跳过:', _pe)
     # ---- V11.304 多库房档案(0价入库/废旧物资库隔离): 库房清单可维护, 幂等补齐三机一致 ----
     try:
         if not conn.execute("SELECT 1 FROM sys_config WHERE key='warehouse_list'").fetchone():
@@ -9618,6 +9635,38 @@ def _po_rcv_state(c, oid):
         c.execute("UPDATE purchase_orders SET rcv_state=?, updated_at=? WHERE id=?", (state, now(), oid))
         return state
     except Exception:
+        return ''
+
+
+def _ensure_pending_receiving(c, oid):
+    """V11.307 需求模块五.2: 订单审批通过后必须在库房端生成待验收入库单 — 幂等兜底(已有单/维修类/已封单/作废订单跳过)"""
+    try:
+        po = c.execute("SELECT * FROM purchase_orders WHERE id=?", (oid,)).fetchone()
+        if not po:
+            return ''
+        if str(po['status'] or '') in ('草稿', '已作废', '已取消', '已驳回', '待审批'):
+            return ''
+        if po['is_sealed'] if 'is_sealed' in po.keys() else 0:
+            return ''
+        _rt = c.execute("SELECT COALESCE(req_type,'') rt FROM purchase_requests WHERE id=?", (po['req_id'],)).fetchone()
+        if _rt and '维修' in str(_rt['rt'] or ''):
+            return ''   # V11.296 维修件不入库
+        if c.execute("SELECT 1 FROM receivings WHERE order_id=? AND COALESCE(status,'')<>'已作废' LIMIT 1", (oid,)).fetchone():
+            return ''
+        _oi = c.execute("SELECT * FROM purchase_order_items WHERE order_id=? ORDER BY id", (oid,)).fetchall()
+        if not _oi:
+            _oi = c.execute("SELECT * FROM order_items WHERE order_id=? ORDER BY id", (oid,)).fetchall()
+        _qty = sum(float(x['quantity'] or 0) for x in _oi) if _oi else float(po['quantity'] or 0)
+        _ij = json.dumps([{'item_name': x['item_name'], 'spec': x['spec'] or '', 'quantity': x['quantity'],
+                           'unit': x['unit'] or '个', 'price': x['price'] or 0} for x in _oi], ensure_ascii=False) if _oi else ''
+        _nm = (_oi[0]['item_name'] + ' 等%d项' % len(_oi)) if len(_oi) > 1 else (_oi[0]['item_name'] if _oi else po['item_name'])
+        _rno = gen_no('RK', 'receivings', 'receive_no', c)
+        c.execute("""INSERT INTO receivings(receive_no,delivery_id,order_id,item_name,spec,quantity,unit,qualified_qty,status,
+                     received_at,remark,dept,items_json,is_est) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,0)""",
+                  (_rno, None, oid, _nm, '', _qty, '个', 0, '待入库', now(),
+                   '订单通过后自动进入入库板块(整批%d项)' % (len(_oi) if _oi else 1), po['dept'] if 'dept' in po.keys() else '', _ij))
+        return _rno
+    except Exception as _e:
         return ''
 
 
