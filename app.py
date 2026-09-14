@@ -820,7 +820,7 @@ def init_db():
         print('V11.303 到货状态回填跳过:', _be)
     # ---- V11.307 需求模块五.2 兜底: 已通过订单若缺"待验收入库单"则补齐(幂等, 一次性) ----
     try:
-        if not conn.execute("SELECT 1 FROM sys_config WHERE key='pending_rcv_backfilled'").fetchone():
+        if not conn.execute("SELECT 1 FROM sys_config WHERE key='pending_rcv_backfilled2'").fetchone():
             _gap = conn.execute("""SELECT po.id FROM purchase_orders po
                                    WHERE COALESCE(po.status,'') NOT IN ('草稿','已作废','已取消','已驳回','待审批')
                                      AND COALESCE(po.is_sealed,0)=0
@@ -830,7 +830,7 @@ def init_db():
             for _g in _gap:
                 if _ensure_pending_receiving(conn, _g['id']):
                     _n += 1
-            conn.execute("INSERT OR IGNORE INTO sys_config(key,value) VALUES('pending_rcv_backfilled','1')")
+            conn.execute("INSERT OR IGNORE INTO sys_config(key,value) VALUES('pending_rcv_backfilled2','1')")
             conn.commit()
             print('V11.307 待验收入库单兜底补齐: %d 张订单' % _n)
     except Exception as _pe:
