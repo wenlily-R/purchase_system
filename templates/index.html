@@ -281,6 +281,21 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
   .topright .uname{font-size:11px;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 }
 
+/* V11.320 需求模块六.3 移动端适配强化: 手机端表格横滑 / 表单单列 / 大点击区 / 弹窗全宽 / 图片网格 */
+@media(max-width:820px){
+  .cb{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .cb table{min-width:720px}
+  th,td{padding:3px 4px;font-size:9px;white-space:nowrap}
+  .btn{padding:6px 8px;min-height:32px}
+  .fg{display:block!important}
+  .fg .fl2{display:block;width:auto!important;margin-bottom:2px}
+  #dmBody input,#dmBody select,#dmBody textarea{width:100%!important;box-sizing:border-box}
+  #dmBody table{min-width:100%}
+  #detailModal .mc,.mod .mc{width:96vw!important;max-width:96vw!important;max-height:92vh;overflow:auto}
+  .mh h3{font-size:12px}
+  .dash-quick-cards{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))!important}
+  img{max-width:100%}
+}
 </style>
 </head>
 <body>
@@ -4015,7 +4030,7 @@ async function loadReceivings(){
       // 采购员/财务在入库页仅 查看详情/发票核对(暂估红冲)/下载
       const isWarehouse=['系统管理员','库管员','部门负责人','分管领导','总经理'].includes(ME.role);
       const isOwner=(ME.role=='系统管理员'||(x.inspector&&ME.name==x.inspector));
-      const ops=`<button class="lnk" onclick="showRcvDetail(${x.id})">查看详情</button>${x.is_est&&!x.invoice_no?` <button class="lnk" style="color:var(--o);font-weight:600" onclick="showInvMatch(${x.id},'${esc(x.receive_no)}')">🧾 发票核对</button>`:''}`;
+      const ops=`${MATIMG_BTN(x)}<button class="lnk" onclick="showRcvDetail(${x.id})">查看详情</button>${x.is_est&&!x.invoice_no?` <button class="lnk" style="color:var(--o);font-weight:600" onclick="showInvMatch(${x.id},'${esc(x.receive_no)}')">🧾 发票核对</button>`:''}`;
       // V11.301 手工应急入库标记 + 补关联入口(未补关联前该供应商付款被拦截)
       const manTag = x.is_manual?` <span class="tag" style="background:#fff3e0;color:#c62828;border:1px solid #ffd7b5" title="货先到、单后到的手工应急入库：需补关联采购订单/合同">🧰临时手工入库</span>${x.link_status=='已补关联'?' <span class="tag" style="background:#e8f5e9;color:#2e7d32">已补关联</span>':' <span class="tag" style="background:#ffebee;color:#c62828">待补关联</span>'}`:'';
       const linkBtn=(x.is_manual&&x.link_status!='已补关联')?` <button class="lnk" style="color:var(--p);font-weight:600" onclick="showLinkOrder(${x.id},'${esc(x.manual_supplier||'')}')">🔗 补关联订单</button>`:'';
@@ -4644,14 +4659,17 @@ async function loadInventory(cat){
     id('invCatFilter').innerHTML='<option value="">全部分类</option>'+cats.map(c=>`<option value="${c.code}">${esc(c.name)}</option>`).join('');
   }
   const arr=[...i].sort((a,b)=>(a[invSortKey]??0)>(b[invSortKey]??0)?invSortDir:-invSortDir);
+  window._invRows=arr;
+  // V11.320 物资图片: 列表缩略图映射(每物资取首图)
+  let _imgMap={}; try{ _imgMap=(await api('/material-images/map').catch(()=>({}))).map||{}; }catch(e){}
   const showP=canSeePrice();
   const canEditInv=['系统管理员','分管领导','总经理'].includes(ME.role)||ME.can_config;  // V11.201: 库存修改仅管理员/领导, 采购员只读
-  let h='<table><tr><th onclick="invSort(\'id\')" style="cursor:pointer">序号</th><th>供应商</th><th onclick="invSort(\'item_name\')" style="cursor:pointer">物料名称</th><th>规格型号</th><th>单位</th><th>库房</th><th>货位</th><th>批次</th><th onclick="invSort(\'quantity\')" style="cursor:pointer" title="当前库存量(入库增加/出库扣减)">剩余库存量</th>';
+  let h='<table><tr><th onclick="invSort(\'id\')" style="cursor:pointer">序号</th><th>供应商</th><th onclick="invSort(\'item_name\')" style="cursor:pointer">物料名称</th><th>图片</th><th>规格型号</th><th>单位</th><th>库房</th><th>货位</th><th>批次</th><th onclick="invSort(\'quantity\')" style="cursor:pointer" title="当前库存量(入库增加/出库扣减)">剩余库存量</th>';
   if(showP)h+='<th onclick="invSort(\'price\')" style="cursor:pointer">不含税单价</th><th>税率</th><th>含税单价</th><th onclick="invSort(\'total_taxed\')" style="cursor:pointer">合计</th>';
   h+='<th>备注</th><th>预警</th><th>溯源</th></tr>';
   arr.forEach((r,idx)=>{
     const low=(r.quantity||0)<=r.safe_stock&&r.safe_stock>0, over=r.max_stock>0&&r.quantity>=r.max_stock;
-    h+=`<tr><td>${idx+1}</td><td>${esc(r.supplier||'')}</td><td><b>${esc(r.item_name)}</b></td><td>${esc(r.spec||'')}</td><td>${esc(r.unit||'')}</td>
+    h+=`<tr><td>${idx+1}</td><td>${esc(r.supplier||'')}</td><td><b>${esc(r.item_name)}</b></td><td>${esc(r.spec||'')}</td><td>${(_imgMap[(r.item_name||"")+"|"+(r.spec||"")])?`<img src="/uploads/${encodeURIComponent(_imgMap[(r.item_name||"")+"|"+(r.spec||"")])}" style="width:36px;height:36px;object-fit:cover;border-radius:4px;border:1px solid #dfe6f0;cursor:pointer" onclick="showMatImgByIdx(${idx})" title="点击查看/上传物资图片">`:'<span style="color:#bbb;font-size:9px">无图</span>'}</td><td>${esc(r.unit||'')}</td>
       <td style="font-size:9px">${esc(r.warehouse||'')}</td>
       <td style="font-size:9px">${r.location?esc(r.location):'<span style="color:#bbb">未编货位</span>'}</td>
       <td style="font-size:9px">${r.batch_no?esc(r.batch_no):'<span style="color:#bbb">—</span>'}</td>
@@ -4659,7 +4677,7 @@ async function loadInventory(cat){
     if(showP)h+=`<td>¥${(r.price||0).toFixed(2)}</td><td>${r.tax_rate||13}%</td><td>¥${(r.price_taxed||0).toFixed(2)}</td><td>¥${(r.total_taxed||0).toFixed(2)}</td>`;
     h+=`<td>${esc(r.remark||'')}</td>
       <td>${low?'<span class="tag" style="background:#e74c3c;color:#fff">'+((r.quantity||0)<=0?'缺货':'预警')+'</span>':over?'<span class="tag" style="background:#f39c12;color:#fff">超储</span>':'<span class="tag" style="background:#27ae60;color:#fff">正常</span>'}</td>
-      <td>${low?`<button class="lnk" style="color:var(--p);font-weight:600" onclick="replenishInv(${r.id})">🛒 补货</button>`:''} ${canEditInv?`<button class="lnk" style="color:#b08900" onclick="editDoc('inventory',${r.id},'库存物资')">✏️修改</button>`:''} <button class="lnk" style="color:var(--s)" onclick="traceInv(${r.id})">🔍 溯源</button></td></tr>`;
+      <td>${low?`<button class="lnk" style="color:var(--p);font-weight:600" onclick="replenishInv(${r.id})">🛒 补货</button>`:''} ${canEditInv?`<button class="lnk" style="color:#b08900" onclick="editDoc('inventory',${r.id},'库存物资')">✏️修改</button>`:''} <button class="lnk" style="color:var(--s)" onclick="traceInv(${r.id})">🔍 溯源</button> <button class="lnk" style="color:#8e44ad" onclick="showMatImgByIdx(${idx})">📷 图片</button></td></tr>`;
   });
   id('inventoryTable').innerHTML=h||'<div style="padding:8px;color:#999">暂无库存数据</div>';
 }
@@ -5853,6 +5871,47 @@ async function srDetail(x){
   id('dmFooter').innerHTML='<button class="btn btn-o" onclick="openSupplierReturns()">返回列表</button>';
   id('detailModal').classList.add('show');
 }
+
+// ============ V11.320 物资图片(需求文档模块六.3: 物资档案图片, 入库/库存查询展示核对) ============
+function showMatImgByIdx(idx){
+  const r=(window._invRows||[])[idx]; if(!r){alert('未找到该物资行');return}
+  showMatImg(r.item_name,r.spec||'');
+}
+async function showMatImg(name,spec){
+  window._miName=name; window._miSpec=spec||'';
+  let list=[]; try{ list=await api('/material-images?item_name='+encodeURIComponent(name)+'&spec='+encodeURIComponent(spec||''),{noCache:true}); }catch(e){}
+  const g=(list||[]).map(x=>`<div style="border:1px solid #dfe6f0;border-radius:6px;padding:4px;text-align:center">
+      <img src="/uploads/${encodeURIComponent(x.file_path)}" style="width:100%;height:92px;object-fit:cover;border-radius:4px;cursor:pointer" onclick="window.open('/uploads/'+encodeURIComponent('${x.file_path}'))">
+      <div style="font-size:9px;color:#999">${esc((x.uploader||'')+' '+(x.created_at||'').slice(0,10))}</div>
+      <button class="lnk" style="color:#c0392b" onclick="matImgDel(${x.id})">删除</button></div>`).join('');
+  id('dmTitle').textContent='📷 物资图片 — '+name;
+  id('dmBody').innerHTML=`
+    <div style="font-size:10px;color:#666;margin-bottom:6px">物资档案图片用于入库验收与库存核对：列表显示缩略图，点图看大图。规格：<b>${esc(spec||'—')}</b></div>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px;background:#f7faff;border:1px dashed var(--b);border-radius:6px;padding:6px">
+      <input type="file" id="miFile" accept="image/*" style="font-size:10px">
+      <button class="btn btn-p btn-sm" onclick="matImgUpload()">⬆️ 上传并绑定该物资</button></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:6px">${g||'<div style="color:#999;font-size:11px">该物资暂无图片</div>'}</div>`;
+  id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">关闭</button>';
+  id('detailModal').classList.add('show');
+}
+async function matImgUpload(){
+  const f=id('miFile'); if(!f||!f.files||!f.files[0]){alert('请先选择图片文件');return}
+  const fd=new FormData(); fd.append('file',f.files[0]);
+  const up=await fetch('/api/upload',{method:'POST',body:fd,credentials:'include'}).then(x=>x.json()).catch(()=>({}));
+  if(!up.file_path){alert('❌ 图片上传失败：'+(up.error||'请重试'));return}
+  const r=await api('/material-images',{method:'POST',body:JSON.stringify({item_name:window._miName,spec:window._miSpec,file_path:up.file_path,doc_type:'档案'})});
+  if(r.success){alert('✅ '+r.message);showMatImg(window._miName,window._miSpec);loadInventory&&loadInventory()}
+  else alert('❌ '+(r.error||'绑定失败'));
+}
+async function matImgDel(i){
+  if(!confirm('确认删除该物资图片？'))return;
+  const r=await api('/material-images/'+i+'/delete',{method:'POST',body:'{}'});
+  if(r.success){alert('✅ '+r.message);showMatImg(window._miName,window._miSpec);loadInventory&&loadInventory()}
+  else alert('❌ '+(r.error||'删除失败'));
+}
+// 入库单据行的物资图片入口(V11.320): 传物资名/规格(HTML属性转义)
+function MATIMG_BTN(x){const n=esc(String(x.item_name||'')).replace(/'/g,'&#39;'),p=esc(String(x.spec||'')).replace(/'/g,'&#39;');
+  return ` <button class="lnk" style="color:#8e44ad" onclick="showMatImg('${n}','${p}')">📷 图片</button>`;}
 
 // ================= V11.193 退库管理 =================
 let RET_SRC_CACHE=[];

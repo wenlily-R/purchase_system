@@ -1035,6 +1035,22 @@ def init_db():
     # 供应商退货审批流配置(与退库一致: 1级部门负责人; 幂等: 已有配置不覆盖)
     if conn.execute("SELECT COUNT(*) FROM approval_flow_config WHERE biz_type='supplier_return'").fetchone()[0] == 0:
         conn.execute("INSERT INTO approval_flow_config(biz_type,level_no,role,min_amount,max_amount,label) VALUES('supplier_return',1,'部门负责人',0,1000000,'供应商退货审批-1级')")
+    # ---- V11.320 物资图片(需求文档模块六.3): 物资档案图片, 入库/库存查询展示核对 ----
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS material_images (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_name TEXT NOT NULL,
+            spec TEXT DEFAULT '',
+            file_path TEXT NOT NULL,
+            doc_type TEXT DEFAULT '档案',      -- 档案/入库/库存
+            doc_id INTEGER DEFAULT 0,
+            doc_no TEXT DEFAULT '',
+            uploader TEXT DEFAULT '',
+            remark TEXT DEFAULT '',
+            created_at TEXT DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_matimg_name ON material_images(item_name, spec);
+    """)
     # ---- V11.208 维修采购独立流程(模块五): 单表+阶段字段实现 提报→定损→报价→变更二次确认→返库验收 ----
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS repair_plans (
@@ -15832,6 +15848,84 @@ def api_sr_void(sid):
     c.commit(); c.close()
     log(session.get('user_name', ''), '作废供应商退货单', r['return_no'])
     return jsonify({'success': True, 'message': f'退货单 {r["return_no"]} 已作废（不影响库存）'})
+
+# ============================================================
+# V11.320 物资图片(需求文档模块六.3 交互体验): 物资档案支持上传图片,
+#   入库 / 库存查询时展示物资图片, 方便核对实物
+#   图片文件走通用上传 /api/upload(存 uploads/), 本模块登记图片与物资的绑定关系
+#   权限: 上传/绑定 = 库管员/采购员/领导/管理员; 删除 = 库管员/领导/管理员
+# ============================================================
+@app.route('/api/material-images', methods=['GET'])
+@login_required
+def api_material_images():
+    """物资图片清单 — 传 item_name(+spec) 查某物资, 不传导出最近 500 张"""
+    name = (request.args.get('item_name') or '').strip()
+    spec = (request.args.get('spec') or '').strip()
+    c = db()
+    if name:
+        rows = c.execute("SELECT * FROM material_images WHERE item_name=? AND COALESCE(spec,'')=? ORDER BY id DESC", (name, spec)).fetchall()
+    else:
+        rows = c.execute("SELECT * FROM material_images ORDER BY id DESC LIMIT 500").fetchall()
+    c.close()
+    return jsonify([dict_row(x) for x in rows])
+
+
+@app.route('/api/material-images/map', methods=['GET'])
+@login_required
+def api_material_images_map():
+    """列表缩略图用: 每项物资(名称+规格)取首张图片 → {item_name|spec: file_path}"""
+    c = db(); out = {}
+    try:
+        for r in c.execute("SELECT item_name, COALESCE(spec,'') spec, file_path FROM material_images ORDER BY id"):
+            k = f"{r['item_name']}|{r['spec']}"
+            if k not in out:
+                out[k] = r['file_path']
+    except Exception:
+        out = {}
+    c.close()
+    return jsonify({'map': out, 'count': len(out)})
+
+
+@app.route('/api/material-images', methods=['POST'])
+@login_required
+def api_material_image_add():
+    """绑定图片到物资档案 — body: {item_name, spec, file_path, doc_type?, doc_id?, doc_no?, remark?}
+    file_path 由 /api/upload 上传得到(仅图片扩展名)"""
+    if session.get('user_role') not in ('库管员', '采购员', '部门负责人', '分管领导', '总经理', '系统管理员'):
+        return jsonify({'error': '无权限：物资图片仅限库管员/采购员/领导/管理员'}), 403
+    d = request.json or {}
+    name = str(d.get('item_name') or '').strip()
+    path = str(d.get('file_path') or '').strip()
+    if not name:
+        return jsonify({'error': '请填写物资名称'}), 400
+    if not path:
+        return jsonify({'error': '请先上传图片'}), 400
+    if os.path.splitext(path)[1].lower() not in ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'):
+        return jsonify({'error': '仅支持图片文件（png/jpg/jpeg/gif/webp/bmp）'}), 400
+    c = db()
+    c.execute("INSERT INTO material_images(item_name,spec,file_path,doc_type,doc_id,doc_no,uploader,remark,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+              (name, str(d.get('spec') or '').strip(), path, str(d.get('doc_type') or '档案'), int(d.get('doc_id') or 0),
+               str(d.get('doc_no') or ''), session.get('user_name', ''), str(d.get('remark') or ''), now()))
+    iid = c.execute("SELECT last_insert_rowid() i").fetchone()['i']
+    c.commit(); c.close()
+    log(session.get('user_name', ''), '上传物资图片', f'{name} {os.path.basename(path)}')
+    return jsonify({'success': True, 'id': iid, 'message': f'物资「{name}」图片已保存，入库/库存查询可对照核对'})
+
+
+@app.route('/api/material-images/<int:iid>/delete', methods=['POST'])
+@login_required
+def api_material_image_del(iid):
+    """删除物资图片绑定(文件保留在 uploads/ 便于追溯)"""
+    if session.get('user_role') not in ('库管员', '部门负责人', '分管领导', '总经理', '系统管理员'):
+        return jsonify({'error': '无权限：仅库管员/领导/管理员可删除'}), 403
+    c = db()
+    r = c.execute("SELECT * FROM material_images WHERE id=?", (iid,)).fetchone()
+    if not r:
+        c.close(); return jsonify({'error': '图片记录不存在'}), 404
+    c.execute("DELETE FROM material_images WHERE id=?", (iid,))
+    c.commit(); c.close()
+    log(session.get('user_name', ''), '删除物资图片', f'{r["item_name"]} {os.path.basename(r["file_path"])}')
+    return jsonify({'success': True, 'message': '图片已删除（原始文件保留在 uploads/ 可人工清理）'})
 
 @app.route('/api/expenses', methods=['GET', 'POST'])
 @login_required
