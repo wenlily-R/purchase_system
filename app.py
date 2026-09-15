@@ -10723,6 +10723,115 @@ def _scrap_rows():
     return [v for _, v in sorted(agg.items())]
 
 
+@app.route('/api/inventory/import-template')
+@login_required
+def api_inventory_import_template():
+    """V11.312 需求模块四.3: 老库存导入模板下载(含字段说明与示例行)"""
+    import openpyxl
+    wb = openpyxl.Workbook(); ws = wb.active; ws.title = '老库存导入模板'
+    ws.append(['物资名称*', '规格型号', '单位', '数量*', '单价(不含税)', '库房', '货位', '批次号', '备注'])
+    ws.append(['角钢', '50*50*5', '米', 120, 4.5, '主库房', '主库房/A架-2层-3位', '第1批', '示例行, 导入前请删除'])
+    ws.append(['电缆', 'YJV-4*25', '米', 300, 26, '废旧物资库', '废旧物资库/暂存区', '', '旧件按0价填0'])
+    for _c in ws['A1':'I1']:
+        for _x in _c:
+            _x.font = openpyxl.styles.Font(bold=True)
+    for _w, _col in ((18, 'A'), (16, 'B'), (8, 'C'), (10, 'D'), (14, 'E'), (14, 'F'), (26, 'G'), (12, 'H'), (24, 'I')):
+        ws.column_dimensions[_col].width = _w
+    bio = io.BytesIO(); wb.save(bio); bio.seek(0)
+    from flask import send_file
+    return send_file(bio, as_attachment=True, download_name='老库存导入模板.xlsx',
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+@app.route('/api/inventory/import', methods=['POST'])
+@login_required
+def api_inventory_import():
+    """V11.312 需求模块四.3: 老库存 Excel 批量导入 — 逐行校验, 错误行原因回显; 成功行生成「期初建账」入库单并计入库存(需求四.3)"""
+    if session.get('user_role') not in ('库管员', '系统管理员', '分管领导', '总经理'):
+        return jsonify({'error': '无权限：老库存导入仅限库管员/管理员'}), 403
+    import openpyxl
+    f = request.files.get('file')
+    if not f:
+        return jsonify({'error': '请选择要导入的 Excel 文件(.xlsx)'}), 400
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(f.read()), data_only=True)
+    except Exception as _e:
+        return jsonify({'error': 'Excel 解析失败: %s' % str(_e)[:60]}), 400
+    ws = wb.active
+    rows, fail = [], []
+    for _i, r in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+        if not r or all(x in (None, '') for x in r):
+            continue
+        _nm = str(r[0] or '').strip()
+        _spec = str(r[1] or '').strip() if len(r) > 1 else ''
+        _unit = str(r[2] or '个').strip() if len(r) > 2 else '个'
+        try:
+            _qty = float(r[3]) if len(r) > 3 and r[3] not in (None, '') else 0
+        except Exception:
+            _qty = -1
+        try:
+            _pr = float(r[4]) if len(r) > 4 and r[4] not in (None, '') else 0
+        except Exception:
+            _pr = 0
+        _wh = str(r[5] or '主库房').strip() if len(r) > 5 else '主库房'
+        _loc = str(r[6] or '').strip() if len(r) > 6 else ''
+        _bt = str(r[7] or '').strip() if len(r) > 7 else ''
+        _rm = str(r[8] or '').strip() if len(r) > 8 else ''
+        if not _nm or '示例' in _rm:
+            if not _nm:
+                fail.append({'row': _i, 'reason': '物资名称必填'})
+            continue
+        if _qty <= 0:
+            fail.append({'row': _i, 'reason': '数量必须为大于0的数字'})
+            continue
+        if _pr < 0:
+            fail.append({'row': _i, 'reason': '单价不能为负数'})
+            continue
+        rows.append({'item_name': _nm, 'spec': _spec, 'unit': _unit or '个', 'quantity': _qty,
+                     'price': _pr, 'warehouse': _wh or '主库房', 'location': _loc, 'batch_no': _bt, 'remark': _rm})
+    if not rows:
+        return jsonify({'error': '没有可导入的有效数据行', 'fail': fail, 'ok_count': 0}), 400
+    c = db()
+    _no = gen_no('QC', 'receivings', 'receive_no', c)   # 期初建账单号
+    _qty_all = sum(x['quantity'] for x in rows)
+    _dept = '期初建账'
+    _ij = json.dumps([{'item_name': x['item_name'], 'spec': x['spec'], 'quantity': x['quantity'],
+                       'unit': x['unit'], 'price': x['price']} for x in rows], ensure_ascii=False)
+    c.execute("""INSERT INTO receivings(receive_no,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,dept,items_json,is_est,is_manual,location)
+                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+              (_no, None, '%s 等%d项' % (rows[0]['item_name'], len(rows)), '', _qty_all, '个', _qty_all, '已入库', now(),
+               '期初建账导入(老库存 Excel 批量导入 %d 项)' % len(rows), _dept, _ij, 0, 1, rows[0].get('location') or ''))
+    rid = c.execute("SELECT id FROM receivings WHERE receive_no=?", (_no,)).fetchone()[0]
+    for x in rows:
+        # 同品名+规格+库房+同价 → 合并; 价格/批次不同 → 独立条目(与批次成本规则一致)
+        inv = _inv_pick(c, x['item_name'], x['spec'], x['warehouse'], x['price'])
+        if inv:
+            c.execute("UPDATE inventory SET quantity=quantity+?, updated_at=?, last_move_date=? WHERE id=?",
+                      (x['quantity'], now(), now()[:10], inv['id']))
+            _iid = inv['id']
+            if x['location'] and not (inv['location'] if 'location' in inv.keys() else ''):
+                c.execute("UPDATE inventory SET location=? WHERE id=?", (x['location'], _iid))
+            if x['batch_no'] and not (inv['batch_no'] if 'batch_no' in inv.keys() else ''):
+                c.execute("UPDATE inventory SET batch_no=? WHERE id=?", (x['batch_no'], _iid))
+        else:
+            cur = c.execute("""INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,price,batch_no,location,remark,last_move_date,updated_at)
+                               VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                            (x['item_name'], x['spec'], x['unit'], x['quantity'], x['warehouse'], x['price'],
+                             x['batch_no'], x['location'], x['remark'], now()[:10], now()))
+            _iid = cur.lastrowid
+        c.execute("""INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at,warehouse,price)
+                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                  (x['item_name'], x['spec'], x['unit'], '入库', 'opening', rid, _no, x['quantity'],
+                   float((c.execute("SELECT quantity FROM inventory WHERE id=?", (_iid,)).fetchone() or [0])[0] or 0),
+                   session.get('user_name', ''), '期初建账导入' + ('｜货位: %s' % x['location'] if x['location'] else ''),
+                   now(), x['warehouse'], x['price']))
+    c.commit(); c.close()
+    log(session.get('user_name', ''), '老库存批量导入', '%s 成功%d行 失败%d行 合计%s件' % (_no, len(rows), len(fail), _qty_all))
+    _trace_create('receiving', 'receivings', 'receive_no=?', _no, node='期初建账导入')
+    return jsonify({'success': True, 'ok_count': len(rows), 'fail': fail, 'receive_no': _no,
+                    'message': '导入完成：成功 %d 行，失败 %d 行；已生成期初建账入库单 %s' % (len(rows), len(fail), _no)})
+
+
 @app.route('/api/inventory/locations')
 @login_required
 def api_inventory_locations():

@@ -457,6 +457,8 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <button class="btn btn-p btn-sm" onclick="startCount()">📋 开始盘点</button>
     <button class="btn btn-o btn-sm" onclick="loadCounts()">盘点记录</button>
     <button class="btn btn-w btn-sm" onclick="showRecon()">📊 对账勾稽</button>
+    <button class="btn btn-w btn-sm" onclick="showInvImport()">⬆️ 老库存导入</button>
+    <button class="btn btn-o btn-sm" onclick="window.open('/api/inventory/import-template','_blank')">📄 导入模板</button>
     <button class="btn btn-p btn-sm" style="margin-left:auto" onclick="exportInventory()">⬇️ 导出库存报表</button>
   </div>
   <div id="invAlertBar" style="margin-bottom:4px"></div>
@@ -4540,6 +4542,40 @@ function invSort(k){
 function exportInventory(){
   const cat=id('invCatFilter').value;
   window.open('/api/export?type=inventory'+(cat?'&cat='+encodeURIComponent(cat):''),'_blank');
+}
+// ============ V11.312 老库存 Excel 批量导入(需求模块四.3) ============
+function showInvImport(){
+  id('dmTitle').textContent='⬆️ 老库存 Excel 批量导入（期初建账）';
+  id('dmBody').innerHTML=`
+    <div style="font-size:10px;color:#555;margin-bottom:8px">用于系统上线前把线下老库存一次导入。流程：<b>下载模板 → 按列填好 → 上传</b>。
+      导入成功后系统自动生成一张<b>期初建账入库单</b>（可在入库验收页查到）并计入库存；<b>错误行会逐行提示原因，不影响其他行的导入</b>。</div>
+    <div style="margin-bottom:6px"><button class="btn btn-o btn-sm" onclick="window.open('/api/inventory/import-template','_blank')">📄 下载导入模板</button></div>
+    <input type="file" id="invImpFile" accept=".xlsx" style="font-size:10px">
+    <div style="font-size:9px;color:#999;margin-top:6px">列顺序：物资名称*、规格型号、单位、数量*、单价(不含税)、库房、货位、批次号、备注。带 * 为必填；废旧/旧件按 0 价填入废旧物资库。</div>
+    <div id="invImpResult" style="margin-top:8px;font-size:10px"></div>`;
+  id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">关闭</button><button class="btn btn-p" onclick="doInvImport(this)">开始导入</button>';
+  id('detailModal').classList.add('show');
+}
+async function doInvImport(btn){
+  const f=id('invImpFile')?.files?.[0];
+  if(!f){alert('请先选择要导入的 Excel 文件(.xlsx)');return}
+  if(btn){btn.disabled=true;btn.textContent='导入中...'}
+  const fd=new FormData(); fd.append('file',f);
+  try{
+    const resp=await fetch('/api/inventory/import',{method:'POST',body:fd});
+    const r=await resp.json();
+    let h='';
+    if(r.success){
+      h='<div style="color:#2e7d32;font-weight:700">✅ '+(r.message||'')+'</div>';
+      if((r.fail||[]).length)h+='<div style="color:#c62828;margin-top:4px">失败行：'+r.fail.map(x=>'第'+x.row+'行 '+esc(x.reason)).join('；')+'</div>';
+      loadInventory(id('invCatFilter')?.value||'');
+    }else{
+      h='<div style="color:#c62828;font-weight:700">❌ '+esc(r.error||'导入失败')+'</div>';
+      if((r.fail||[]).length)h+='<div style="color:#c62828;margin-top:4px">'+r.fail.map(x=>'第'+x.row+'行 '+esc(x.reason)).join('；')+'</div>';
+    }
+    if(id('invImpResult'))id('invImpResult').innerHTML=h;
+  }catch(e){ alert('❌ 上传失败: '+e); }
+  if(btn){btn.disabled=false;btn.textContent='开始导入'}
 }
 async function loadInventory(cat){
   // V11.311: 支持 分类 + 库房 + 货位 三维筛选(货位/批次/库房列展示, 需求模块四.1/四.2)
