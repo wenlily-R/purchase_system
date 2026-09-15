@@ -11240,6 +11240,102 @@ def api_report_scrap():
     return jsonify({'rows': _scrap_rows(), 'note': '仅统计废旧物资库/暂存库, 与正常库存隔离且不计成本'})
 
 
+# ============================================================
+# V11.324 需求模块五.1: 采购-库存对账差异表(自动展示两类差异单据)
+#   ① 有采购订单/合同, 超期未入库(含部分到货未收齐; 已封单/已终结不算)
+#   ② 已临时入库(手工应急)长期未补采购订单/合同
+#   支持 时间区间 / 供应商 / 部门 / 差异类型 / 未补天数 筛选; 单号可点击跳转全链路溯源
+# ============================================================
+@app.route('/api/recon/purchase-stock')
+@login_required
+def api_recon_purchase_stock():
+    if session.get('user_role') not in ('库管员', '采购员', '财务', '分管领导', '总经理', '系统管理员', '部门负责人'):
+        return jsonify({'error': '无权限'}), 403
+    _from = (request.args.get('from') or '').strip()
+    _to = (request.args.get('to') or '').strip()
+    _sup = (request.args.get('supplier') or '').strip()
+    _dept = (request.args.get('dept') or '').strip()
+    _type = (request.args.get('type') or '').strip()
+    try:
+        _days = int(request.args.get('days') or 7)
+    except Exception:
+        _days = 7
+    _days = max(1, min(_days, 365))
+    _today = datetime.date.today()
+    _today_s = _today.strftime('%Y-%m-%d')
+    _cut = (_today - datetime.timedelta(days=_days)).strftime('%Y-%m-%d')
+    c = db()
+    out = {'overdue_in': [], 'not_linked': [], 'summary': {}, 'today': _today_s, 'days': _days}
+    # ① 有订单/合同但超期未入库
+    if _type in ('', 'overdue'):
+        sql = """SELECT * FROM (
+                   SELECT po.id, po.order_no, po.supplier, po.target_date, po.status, po.quantity AS order_qty,
+                          po.price, po.total_amount, pr.dept, pr.req_no, pr.purpose,
+                          (SELECT ct.contract_no FROM contracts ct WHERE ct.order_id=po.id AND COALESCE(ct.status,'')<>'已作废' ORDER BY ct.id DESC LIMIT 1) AS contract_no,
+                          COALESCE((SELECT SUM(rv.quantity) FROM receivings rv WHERE rv.order_id=po.id AND rv.status='已入库' AND COALESCE(rv.is_conv,0)=0),0) AS in_qty,
+                          '' AS last_in
+                   FROM purchase_orders po LEFT JOIN purchase_requests pr ON pr.id=po.req_id
+                   WHERE COALESCE(po.status,'') NOT IN ('已作废','已完成','已关闭')
+                     AND COALESCE(po.is_sealed,0)=0
+                 ) t
+                 WHERE COALESCE(t.target_date,'')<>'' AND t.target_date < ? AND t.in_qty < t.order_qty - 0.000001"""
+        args = [_today_s]
+        if _from:
+            sql += " AND t.target_date>=?"; args.append(_from)
+        if _to:
+            sql += " AND t.target_date<=?"; args.append(_to)
+        if _sup:
+            sql += " AND t.supplier LIKE ?"; args.append('%' + _sup + '%')
+        if _dept:
+            sql += " AND COALESCE(t.dept,'')=?"; args.append(_dept)
+        sql += " ORDER BY t.target_date LIMIT 500"
+        for r in c.execute(sql, args).fetchall():
+            d = dict_row(r)
+            try:
+                d['overdue_days'] = (_today - datetime.datetime.strptime(str(d['target_date'])[:10], '%Y-%m-%d').date()).days
+            except Exception:
+                d['overdue_days'] = ''
+            d['lack_qty'] = float(d['order_qty'] or 0) - float(d['in_qty'] or 0)
+            out['overdue_in'].append(d)
+    # ② 已临时入库长期未补订单/合同
+    if _type in ('', 'not_linked'):
+        sql2 = """SELECT rv.id, rv.receive_no, rv.item_name, rv.spec, rv.warehouse, rv.quantity, rv.unit,
+                         rv.received_at, COALESCE(rv.manual_supplier,'') manual_supplier, COALESCE(rv.link_status,'') link_status,
+                         COALESCE(rv.manual_reason,'') manual_reason, COALESCE(rv.is_manual,0) is_manual,
+                         COALESCE(rv.order_id,0) order_id, COALESCE(rv.contract_no,'') contract_no, COALESCE(rv.dept,'') dept
+                  FROM receivings rv
+                  WHERE COALESCE(rv.status,'') NOT IN ('已作废')
+                    AND ( (COALESCE(rv.is_manual,0)=1 AND COALESCE(rv.link_status,'')<>'已补关联')
+                          OR (COALESCE(rv.is_manual,0)=0 AND COALESCE(rv.order_id,0)=0 AND COALESCE(rv.contract_no,'')='' AND COALESCE(rv.is_conv,0)=0) )"""
+        args2 = []
+        if _from:
+            sql2 += " AND rv.received_at>=?"; args2.append(_from)
+        if _to:
+            sql2 += " AND rv.received_at<=?"; args2.append(_to + ' 23:59:59')
+        if _sup:
+            sql2 += " AND COALESCE(rv.manual_supplier,'') LIKE ?"; args2.append('%' + _sup + '%')
+        if _dept:
+            sql2 += " AND COALESCE(rv.dept,'')=?"; args2.append(_dept)
+        sql2 += " ORDER BY rv.received_at LIMIT 500"
+        for r in c.execute(sql2, args2).fetchall():
+            d = dict_row(r)
+            _d0 = str(d['received_at'] or '')[:10]
+            if _d0 and _d0 >= _cut:
+                continue   # 未超过设定的补单期限, 不计入差异
+            try:
+                d['pending_days'] = (_today - datetime.datetime.strptime(_d0, '%Y-%m-%d').date()).days
+            except Exception:
+                d['pending_days'] = ''
+            d['link_status'] = d['link_status'] or '待补关联'
+            out['not_linked'].append(d)
+    out['summary'] = {'overdue_cnt': len(out['overdue_in']), 'not_linked_cnt': len(out['not_linked']),
+                      'lack_qty': round(sum(float(x['lack_qty'] or 0) for x in out['overdue_in']), 2),
+                      'link_qty': round(sum(float(x['quantity'] or 0) for x in out['not_linked']), 2),
+                      'total': len(out['overdue_in']) + len(out['not_linked'])}
+    c.close()
+    out['note'] = '①超期未入库=订单目标日期已过且未收齐(已封单/已作废不计); ②长期未补=手工应急入库未补关联订单/合同, 或入库单无订单无合同且超过补单期限'
+    return jsonify(out)
+
 @app.route('/api/reports/stat-export')
 @login_required
 def api_report_stat_export():

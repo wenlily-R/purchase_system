@@ -647,6 +647,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
       <button class="btn btn-p btn-sm" onclick="showStockReport('inout')">📊 出入库统计</button>
       <button class="btn btn-p btn-sm" onclick="showStockReport('issue')">👤 领用统计</button>
       <button class="btn btn-p btn-sm" onclick="showStockReport('scrap')">🧰 废旧物资报表</button>
+      <button class="btn btn-w btn-sm" onclick="showPsRecon()">📋 采购-库存对账差异表</button>
       <span style="color:#666">按 月度/季度/年度 · 库房/品类/领用人 统计，与系统数据同源</span>
     </div></div>
     <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center">
@@ -5924,6 +5925,64 @@ async function matImgDel(i){
 // 入库单据行的物资图片入口(V11.320): 传物资名/规格(HTML属性转义)
 function MATIMG_BTN(x){const n=esc(String(x.item_name||'')).replace(/'/g,'&#39;'),p=esc(String(x.spec||'')).replace(/'/g,'&#39;');
   return ` <button class="lnk" style="color:#8e44ad" onclick="showMatImg('${n}','${p}')">📷 图片</button>`;}
+
+// ============ V11.324 需求模块五.1: 采购-库存对账差异表 ============
+async function showPsRecon(){
+  if(typeof __guardOpen==='function' && __guardOpen('psrecon')) return;
+  const fFrom=(id('psrFrom')||{}).value||'', fTo=(id('psrTo')||{}).value||'', fSup=(id('psrSup')||{}).value||'',
+        fDept=(id('psrDept')||{}).value||'', fType=(id('psrType')||{}).value||'', fDays=(id('psrDays')||{}).value||'7';
+  const qs=new URLSearchParams(); if(fFrom)qs.set('from',fFrom); if(fTo)qs.set('to',fTo);
+  if(fSup)qs.set('supplier',fSup); if(fDept)qs.set('dept',fDept); if(fType)qs.set('type',fType); qs.set('days',fDays);
+  let d={}; try{ d=await api('/recon/purchase-stock?'+qs.toString(),{noCache:true}); }catch(e){}
+  if(d.error){alert(d.error);return}
+  window._psrData=d;
+  const s=d.summary||{};
+  const a=(d.overdue_in||[]).map(x=>`<tr>
+      <td><button class="lnk" style="color:var(--p);font-weight:600" onclick="openTrace('${esc(x.order_no)}')">${esc(x.order_no)}</button></td>
+      <td>${esc(x.supplier||'')}</td><td>${esc(x.dept||'')}</td><td>${esc(x.contract_no||'—')}</td>
+      <td>${esc(String(x.target_date||'').slice(0,10))}</td><td style="color:#c62828;font-weight:600">${x.overdue_days}</td>
+      <td>${x.order_qty||0} / ${x.in_qty||0} / <b style="color:#c62828">${x.lack_qty||0}</b></td>
+      <td>${esc(x.status||'')}</td></tr>`).join('');
+  const b=(d.not_linked||[]).map(x=>`<tr>
+      <td><button class="lnk" style="color:var(--p);font-weight:600" onclick="closeMod();showRcvDetail(${x.id})">${esc(x.receive_no)}</button></td>
+      <td>${esc(x.item_name||'')}</td><td>${esc(x.spec||'')}</td><td>${esc(x.warehouse||'')}</td>
+      <td>${x.quantity||0}${esc(x.unit||'')}</td><td>${esc(x.manual_supplier||'—')}</td>
+      <td style="color:#c62828">${esc(x.link_status||'待补关联')}</td><td>${x.pending_days}</td>
+      <td>${esc(String(x.received_at||'').slice(0,10))}</td></tr>`).join('');
+  id('dmTitle').textContent='📋 采购-库存对账差异表';
+  id('dmBody').innerHTML=`
+    <div style="font-size:10px;color:#666;margin-bottom:6px">自动列出两类差异单据：<b>①有订单/合同却超期没入库</b>、<b>②货已入库却长期没补订单/合同</b>。点单号可直达该单据的全链路溯源。</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:10px;margin-bottom:6px">
+      <input class="fc" id="psrFrom" type="date" value="${esc(fFrom)}" style="width:120px">
+      <span>至</span><input class="fc" id="psrTo" type="date" value="${esc(fTo)}" style="width:120px">
+      <input class="fc" id="psrSup" placeholder="供应商" value="${esc(fSup)}" style="width:110px">
+      <select class="fc" id="psrDept" style="width:110px"><option value="">全部部门</option></select>
+      <select class="fc" id="psrType" style="width:130px"><option value="">全部差异</option><option value="overdue">①超期未入库</option><option value="not_linked">②长期未补单</option></select>
+      <input class="fc" id="psrDays" placeholder="补单期限(天)" value="${esc(fDays)}" style="width:96px">
+      <button class="btn btn-p btn-sm" onclick="showPsRecon()">🔄 查询</button>
+    </div>
+    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px;font-size:11px;margin-bottom:8px">
+      差异合计 <b>${s.total||0}</b> 单 ｜ ①超期未入库 <b style="color:#c62828">${s.overdue_cnt||0}</b> 单（缺口 <b>${s.lack_qty||0}</b> 件） ｜ ②长期未补单 <b style="color:#c62828">${s.not_linked_cnt||0}</b> 单（涉及 <b>${s.link_qty||0}</b> 件）
+      <div style="color:#888;font-size:9px;margin-top:3px">${esc(d.note||'')}（补单期限 ${d.days||7} 天，统计日 ${esc(d.today||'')}）</div></div>
+    <div style="font-weight:700;font-size:11px;margin-bottom:3px">① 有采购订单/合同 · 超期未入库</div>
+    <div style="max-height:30vh;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:10px">
+      <tr style="background:#f0f4fa"><th style="border:1px solid #dfe6f0;padding:3px">订单号</th><th style="border:1px solid #dfe6f0;padding:3px">供应商</th><th style="border:1px solid #dfe6f0;padding:3px">部门</th><th style="border:1px solid #dfe6f0;padding:3px">合同号</th><th style="border:1px solid #dfe6f0;padding:3px">目标日期</th><th style="border:1px solid #dfe6f0;padding:3px">超期(天)</th><th style="border:1px solid #dfe6f0;padding:3px">订量/已入/缺口</th><th style="border:1px solid #dfe6f0;padding:3px">状态</th></tr>
+      ${a||'<tr><td colspan="8" style="text-align:center;color:#2e7d32;padding:6px">✅ 无超期未入库单据</td></tr>'}</table></div>
+    <div style="font-weight:700;font-size:11px;margin:8px 0 3px">② 已入库 · 长期未补采购订单/合同</div>
+    <div style="max-height:30vh;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:10px">
+      <tr style="background:#f0f4fa"><th style="border:1px solid #dfe6f0;padding:3px">入库单号</th><th style="border:1px solid #dfe6f0;padding:3px">物资</th><th style="border:1px solid #dfe6f0;padding:3px">规格</th><th style="border:1px solid #dfe6f0;padding:3px">库房</th><th style="border:1px solid #dfe6f0;padding:3px">数量</th><th style="border:1px solid #dfe6f0;padding:3px">供应商</th><th style="border:1px solid #dfe6f0;padding:3px">补关联状态</th><th style="border:1px solid #dfe6f0;padding:3px">已过(天)</th><th style="border:1px solid #dfe6f0;padding:3px">入库日期</th></tr>
+      ${b||'<tr><td colspan="9" style="text-align:center;color:#2e7d32;padding:6px">✅ 无未补单入库</td></tr>'}</table></div>`;
+  id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">关闭</button>';
+  id('detailModal').classList.add('show');
+  try{
+    const dp=id('psrDept');
+    if(dp && !dp.dataset.init){ dp.dataset.init='1';
+      const ds=await api('/departments').catch(()=>[]);
+      dp.innerHTML='<option value="">全部部门</option>'+(ds||[]).map(x=>`<option>${esc(x.name||x)}</option>`).join('');
+      dp.value=fDept;
+    }
+  }catch(e){}
+}
 
 // ============ V11.323 库房一体化(库房清单同源 + 库存板块显眼 + 全环节按库房筛选) ============
 async function fillWhSelect(selId, keep){
