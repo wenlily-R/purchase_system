@@ -10798,6 +10798,37 @@ def _scrap_rows():
     return [v for _, v in sorted(agg.items())]
 
 
+def _spreadsheet_xml_rows(raw):
+    """V11.322 需求四.3: 解析老系统导出的 XML 版 Excel(SpreadsheetML, 扩展名常为 .xls) → 二维表(与 openpyxl 输出同形)
+    老台账《库存明细》即为此格式, 支持直接上传无需另存为 xlsx"""
+    _txt = ''
+    for _enc in ('utf-16', 'utf-8', 'gbk'):
+        try:
+            _t = raw.decode(_enc)
+            if '<Row' in _t:
+                _txt = _t; break
+        except Exception:
+            continue
+    if not _txt:
+        return []
+    _out = []
+    for _rm in re.finditer(r'<Row[^>]*>(.*?)</Row>', _txt, re.S):
+        _cells, _idx = [], 0
+        for _cm in re.finditer(r'<Cell([^>]*?)>(.*?)</Cell>|<Cell([^>]*?)/>', _rm.group(1), re.S):
+            _at = _cm.group(1) or _cm.group(3) or ''
+            _in = _cm.group(2) or ''
+            _mi = re.search(r'ss:Index="(\d+)"', _at)
+            if _mi:
+                _idx = int(_mi.group(1)) - 1
+            while len(_cells) < _idx:
+                _cells.append('')
+            _vals = re.findall(r'<Data[^>]*>(.*?)</Data>', _in, re.S)
+            _v = re.sub(r'<[^>]+>', '', ' '.join(_vals)).replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>').strip()
+            _cells.append(_v); _idx += 1
+        _out.append(tuple(_cells))
+    return _out
+
+
 @app.route('/api/inventory/import-template')
 @login_required
 def api_inventory_import_template():
@@ -10854,13 +10885,19 @@ def api_inventory_import():
     import openpyxl
     f = request.files.get('file')
     if not f:
-        return jsonify({'error': '请选择要导入的 Excel 文件(.xlsx)'}), 400
+        return jsonify({'error': '请选择要导入的 Excel 文件(.xlsx / .xls)'}), 400
+    _raw = f.read()
+    if _raw[:8] == b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1':
+        return jsonify({'error': '这是 Excel 2003 二进制 .xls：请在 Excel 里「另存为 → Excel 工作簿(*.xlsx)」后上传；若为系统导出的 XML 版 .xls 可直接上传'}), 400
+    _all = None
     try:
-        wb = openpyxl.load_workbook(io.BytesIO(f.read()), data_only=True)
+        if _raw[:2] in (b'\xff\xfe', b'\xfe\xff') or _raw.lstrip()[:1] == b'<' or _raw[:5].lower() == b'<?xml':
+            _all = _spreadsheet_xml_rows(_raw)   # 老系统导出的 XML 版 .xls(SpreadsheetML) 直接解析
+        else:
+            _wb = openpyxl.load_workbook(io.BytesIO(_raw), data_only=True)
+            _all = [tuple(x) for x in _wb.active.iter_rows(values_only=True)]
     except Exception as _e:
-        return jsonify({'error': 'Excel 解析失败: %s' % str(_e)[:60]}), 400
-    ws = wb.active
-    _all = list(ws.iter_rows(values_only=True))
+        return jsonify({'error': 'Excel 解析失败: %s' % str(_e)[:80]}), 400
     if not _all:
         return jsonify({'error': 'Excel 内容为空'}), 400
     _hdr = [str(x or '').strip() for x in _all[0]]
