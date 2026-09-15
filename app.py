@@ -11702,9 +11702,25 @@ def api_create_count():
     d = request.json
     c = db()
     no = gen_no('PD', 'inventory_counts', 'count_no')
-    c.execute("INSERT INTO inventory_counts(count_no,status,remark) VALUES(?,?,?)", (no, '盘点中', d.get('remark','')))
+    # V11.313 需求模块四.4 盘点优化: 支持 按品类/库房/货位 抽盘 + 估算盘点(无法精确清点时按估算值登记)
+    _cat = (d.get('cat') or '').strip(); _wh = (d.get('wh') or '').strip(); _loc = (d.get('loc') or '').strip()
+    _est = bool(d.get('est'))
+    _cond, _args = [], []
+    if _cat:
+        _cond.append("cat_code=?"); _args.append(_cat)
+    if _wh:
+        _cond.append("COALESCE(warehouse,'')=?"); _args.append(_wh)
+    if _loc:
+        _cond.append("COALESCE(location,'') LIKE '%'||?||'%'"); _args.append(_loc)
+    _scope = []
+    if _cat: _scope.append('品类=%s' % _cat)
+    if _wh: _scope.append('库房=%s' % _wh)
+    if _loc: _scope.append('货位含%s' % _loc)
+    if _est: _scope.append('估算盘点(数量为估算值)')
+    _rmk = ('%s｜%s' % ('抽盘: ' + ' '.join(_scope[:3]), '｜'.join(_scope[3:])) if _scope else '') or (d.get('remark', '') or '')
+    c.execute("INSERT INTO inventory_counts(count_no,status,remark) VALUES(?,?,?)", (no, '盘点中', _rmk or (d.get('remark','') or '')))
     cid = c.execute("SELECT id FROM inventory_counts WHERE count_no=?", (no,)).fetchone()[0]
-    items = c.execute("SELECT * FROM inventory").fetchall()
+    items = c.execute("SELECT * FROM inventory" + ((" WHERE " + " AND ".join(_cond)) if _cond else ""), _args).fetchall()
     for it in items:
         c.execute("INSERT INTO inventory_count_items(count_id,inventory_id,item_name,book_qty,actual_qty) VALUES(?,?,?,?,?)",
                   (cid, it['id'], it['item_name'], it['quantity'], it['quantity']))

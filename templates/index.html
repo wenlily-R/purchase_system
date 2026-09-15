@@ -4729,18 +4729,34 @@ async function loadReports(){loadCheckpoints();loadRepairDiff&&loadRepairDiff();
 }
 // 库存盘点
 async function startCount(){
-  if(!confirm('开始盘点：将按当前库存自动生成盘点单，逐项填入实盘数量，确认？'))return;
-  const r=await api('/counts',{method:'POST',body:JSON.stringify({remark:''})});
-  if(r.success){
-    const d=await api(`/counts/${r.id}`);
-    let rows=d.items.map(it=>`<div style="display:flex;gap:4px;align-items:center;padding:3px 0;border-bottom:1px solid var(--b)">
-      <span style="flex:2"><b>${esc(it.item_name)}</b></span>
-      <span style="width:70px;color:#999">账面:${it.book_qty}</span>
-      <input type="number" class="fc" id="cqa${it.id}" value="${it.book_qty}" style="width:90px"></div>`).join('');
-    showDetail(`盘点单 ${r.count_no}（${d.items.length}项）`,
-      `<div style="font-size:9px;color:#999;margin-bottom:4px">填实盘数量，提交后自动更新库存并记录差异</div>${rows}`,
-      `<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="finishCount(${r.id},${d.items.length})">提交盘点</button>`);
-  }else alert(r.error||'失败');
+  // V11.313 需求模块四.4 盘点优化: 全盘/按品类/库房/货位抽盘 + 估算盘点
+  const cats=await api('/categories').catch(()=>[]);
+  const locs=await api('/inventory/locations').catch(()=>({warehouses:[]}));
+  id('dmTitle').textContent='📋 开始盘点（可全盘 / 抽盘 / 估算盘点）';
+  id('dmBody').innerHTML='<div style="font-size:10px;color:#555;margin-bottom:6px">范围留空=全盘；只填部分条件=按条件抽盘（账面数自动带出，逐项填实盘数）。废旧/旧件等无法精确清点的物资勾选"估算盘点"，实盘数按估算值登记并在盘点单备注留痕。</div>'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:10px;margin-bottom:6px">'
+    +'<span>品类:</span><select class="fc" id="cntCat" style="width:130px"><option value="">全部品类</option>'+((cats||[]).map(c=>`<option value="${esc(c.code)}">${esc(c.name)}</option>`).join(''))+'</select>'
+    +'<span>库房:</span><select class="fc" id="cntWh" style="width:120px"><option value="">全部库房</option>'+(((locs||{}).warehouses||[]).map(w=>`<option>${esc(w)}</option>`).join(''))+'</select>'
+    +'<span>货位:</span><input class="fc" id="cntLoc" style="width:140px" placeholder="如 A架（模糊匹配）">'
+    +'<label style="display:flex;gap:4px;align-items:center;cursor:pointer"><input type="checkbox" id="cntEst"> 🔢 估算盘点</label></div>';
+  id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="doStartCount()">开始盘点</button>';
+  id('detailModal').classList.add('show');
+}
+async function doStartCount(){
+  const body={cat:(id('cntCat')||{}).value||'',wh:(id('cntWh')||{}).value||'',loc:((id('cntLoc')||{}).value||'').trim(),est:!!(id('cntEst')||{}).checked};
+  const r=await api('/counts',{method:'POST',body:JSON.stringify(body)});
+  if(r&&r.error){alert('❌ '+r.error);return}
+  if(!r||!r.success){alert('❌ 生成盘点单失败');return}
+  closeMod();
+  const d=await api('/counts/'+r.id);
+  if(!d||!d.items||!d.items.length){alert('⚠️ '+r.count_no+' 已生成，但该范围内没有库存条目（条件可能过窄）');loadCounts&&loadCounts();return}
+  const _est=body.est;
+  let rows=d.items.map(it=>`<div style="display:flex;gap:4px;align-items:center;padding:3px 0;border-bottom:1px solid var(--b)">
+    <span style="flex:2"><b>${esc(it.item_name)}</b> ${it.spec?'('+esc(it.spec)+')':''}</span>
+    <span style="width:70px;color:#999">账面:${it.book_qty}</span>
+    <input type="number" class="fc" id="cqa${it.id}" value="${it.book_qty}" style="width:90px"></div>`).join('');
+  showDetail('盘点单 '+r.count_no+'（'+d.items.length+'项'+(_est?'·估算盘点':'')+'）',
+    '<div style="font-size:9px;color:#999;margin-bottom:6px">'+(_est?'估算盘点：实盘数按估算值填写，':'逐项填入实盘数量，')+'确认后差异自动生成报溢/报损单走审批。</div>'+rows);
 }
 async function finishCount(cid,n){
   // 收集所有盘点输入
