@@ -5980,7 +5980,7 @@ async function submitReturn(rid){
   else alert('❌ '+(r.error||'提交失败'));
 }
 async function confirmReturnWarehouse(rid){
-  // V11.304 退库去向: 完好可复用→原库房原价; 废旧损坏→废旧物资库 0 价(不计成本)
+  // V11.318 退库去向+换货: 完好可复用→原库房原价; 废旧损坏→废旧物资库 0 价(不计成本); 可勾选换货同时换入新物资
   id('dmTitle').textContent='📦 仓库清点确认入库';
   id('dmBody').innerHTML=`
     <div style="font-size:11px;color:#555;margin-bottom:8px">确认仓库已收到退回实物并清点入库？执行后库存增加、源出库单累计已退数量同步更新，单据不可再修改。</div>
@@ -5988,13 +5988,45 @@ async function confirmReturnWarehouse(rid){
       <input type="checkbox" id="retScrap" style="margin-top:2px">
       <div><b>🧰 废旧/损坏物资 → 入「废旧物资库」按 0 价登记</b>
       <div style="font-size:9px;color:#999">适用旧轮胎、旧电缆等无价值物资：只记数量、不计入库存成本，与正常库存隔离。不勾选则按原单价退回原库房。</div></div>
-    </label>`;
+    </label>
+    <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;background:#f2f8ff;border:1px dashed var(--b);border-radius:6px;padding:8px;margin-top:8px">
+      <input type="checkbox" id="retExch" style="margin-top:2px" onchange="retExchToggle()">
+      <div><b>🔁 换货（同价 / 差价）→ 同时换入新物资</b>
+      <div style="font-size:9px;color:#999">供应商换货时勾选：上方退回的旧货按所选去向入库，下方填写换来的新物资。单价填 0 = 同价换货；填新价 = 差价换货（系统自动算 新货金额−退库金额 的差价并留痕）。</div></div>
+    </label>
+    <div id="retExchBox" style="display:none;margin-top:6px;background:#fafcff;border:1px solid #dfe6f0;border-radius:6px;padding:8px">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <input id="retExName" placeholder="换入物资名称 *" style="flex:2;min-width:120px">
+        <input id="retExSpec" placeholder="规格" style="flex:1;min-width:80px">
+        <input id="retExQty" type="number" step="0.01" placeholder="数量 *" style="width:84px">
+        <input id="retExUnit" placeholder="单位" style="width:64px" value="个">
+        <input id="retExPrice" type="number" step="0.01" placeholder="单价（0=同价）" style="width:120px">
+        <input id="retExWh" placeholder="库房（默认原库房）" style="flex:1;min-width:100px">
+      </div>
+      <div style="font-size:9px;color:#999;margin-top:4px">新物资按新单价登记入指定库房，并在退库单说明栏追加「换货: 物资 x数量 单价¥ 差价¥」留痕，全程可追溯。</div>
+    </div>`;
   id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="doConfirmReturn('+rid+')">确认入库</button>';
   id('detailModal').classList.add('show');
 }
+function retExchToggle(){
+  const _on=!!(id('retExch')&&id('retExch').checked);
+  if(id('retExchBox'))id('retExchBox').style.display=_on?'block':'none';
+}
 async function doConfirmReturn(rid){
   const scrap=!!(id('retScrap')&&id('retScrap').checked);
-  const r=await api(`/returns/${rid}/confirm-warehouse`,{method:'POST',body:JSON.stringify({to_scrap:scrap})});
+  const body={to_scrap:scrap};
+  // V11.318 需求模块三.3 换货: 勾选后随单提交 exchange(名称/规格/数量/单位/单价/库房), 单价0=同价换货
+  if(id('retExch')&&id('retExch').checked){
+    const _nm=(id('retExName')?id('retExName').value:'').trim();
+    const _qt=parseFloat((id('retExQty')?id('retExQty').value:'')||'0')||0;
+    if(!_nm){alert('❌ 请填写换入物资名称');return}
+    if(!(_qt>0)){alert('❌ 换入数量必须大于 0');return}
+    body.exchange={item_name:_nm,spec:(id('retExSpec')?id('retExSpec').value:'').trim(),quantity:_qt,
+                  unit:(id('retExUnit')&&id('retExUnit').value)||'个',
+                  unit_price:parseFloat((id('retExPrice')?id('retExPrice').value:'')||'0')||0,
+                  warehouse:(id('retExWh')?id('retExWh').value:'').trim()};
+  }
+  const r=await api(`/returns/${rid}/confirm-warehouse`,{method:'POST',body:JSON.stringify(body)});
   if(r.success){alert('✅ '+r.message);closeMod();loadReturns();loadInventory&&loadInventory()}
   else alert('❌ '+(r.error||'操作失败'));
 }
