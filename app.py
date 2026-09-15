@@ -15853,7 +15853,8 @@ def api_return_confirm_warehouse(rid):
     if session.get('user_role') not in ('库管员', '部门负责人', '分管领导', '总经理', '系统管理员'):
         return jsonify({'error': '无权限：仓库确认入库仅限库管员/领导'}), 403
     _rd = request.json or {}
-    _to_scrap = bool(_rd.get('to_scrap'))   # V11.304 废旧损坏品: 入废旧物资库, 0 价登记(不计成本)
+    _to_scrap = bool(_rd.get('to_scrap'))   # V11.316 修复: 本函数内补 _loc(V11.310 货位填充语句引用, 曾致退库确认入库 NameError 500)
+    _loc = str(_rd.get('location') or '').strip()   # V11.304 废旧损坏品: 入废旧物资库, 0 价登记(不计成本)
     c = db()
     r = c.execute("SELECT * FROM return_requests WHERE id=?", (rid,)).fetchone()
     if not r:
