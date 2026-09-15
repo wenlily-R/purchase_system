@@ -4570,7 +4570,7 @@ function showInvImport(){
       导入成功后系统自动生成一张<b>期初建账入库单</b>（可在入库验收页查到）并计入库存；<b>错误行会逐行提示原因，不影响其他行的导入</b>。</div>
     <div style="margin-bottom:6px"><button class="btn btn-o btn-sm" onclick="window.open('/api/inventory/import-template','_blank')">📄 下载导入模板</button></div>
     <input type="file" id="invImpFile" accept=".xlsx" style="font-size:10px">
-    <div style="font-size:9px;color:#999;margin-top:6px">列顺序：物资名称*、规格型号、单位、数量*、单价(不含税)、库房、货位、批次号、备注。带 * 为必填；废旧/旧件按 0 价填入废旧物资库。</div>
+    <div style="font-size:9px;color:#999;margin-top:6px">模板列序与现有台账《库存明细》完全一致：品名*、规格、批号、供应商、进价、单位、数量*、库存量、进价金额、售价、金额、最低限价、品牌、分类、条码、入库日期、仓库、货位。老表可直接另存/粘贴后上传；「品名、数量」必填，进价留空但填了「进价金额」时系统按 金额÷数量 折算；品牌/分类/条码写进备注留痕；示例行(备注含"示例")自动跳过；废旧/旧件按 0 价录入。</div>
     <div id="invImpResult" style="margin-top:8px;font-size:10px"></div>`;
   id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">关闭</button><button class="btn btn-p" onclick="doInvImport(this)">开始导入</button>';
   id('detailModal').classList.add('show');

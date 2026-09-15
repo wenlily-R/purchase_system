@@ -10801,27 +10801,54 @@ def _scrap_rows():
 @app.route('/api/inventory/import-template')
 @login_required
 def api_inventory_import_template():
-    """V11.312 需求模块四.3: 老库存导入模板下载(含字段说明与示例行)"""
+    """V11.321 需求模块四.3: 老库存导入模板 — 列名与列序完全对齐现有台账《库存明细》
+    (品名/规格/批号/供应商/进价/单位/数量/库存量/进价金额/售价/金额/最低限价/品牌/分类/条码/入库日期/仓库/货位),
+    老表可直接另存/粘贴进来导入"""
     import openpyxl
-    wb = openpyxl.Workbook(); ws = wb.active; ws.title = '老库存导入模板'
-    ws.append(['物资名称*', '规格型号', '单位', '数量*', '单价(不含税)', '库房', '货位', '批次号', '备注'])
-    ws.append(['角钢', '50*50*5', '米', 120, 4.5, '主库房', '主库房/A架-2层-3位', '第1批', '示例行, 导入前请删除'])
-    ws.append(['电缆', 'YJV-4*25', '米', 300, 26, '废旧物资库', '废旧物资库/暂存区', '', '旧件按0价填0'])
-    for _c in ws['A1':'I1']:
+    wb = openpyxl.Workbook(); ws = wb.active; ws.title = '库存明细'
+    ws.append(['品名', '规格', '批号', '供应商', '进价', '单位', '数量', '库存量', '进价金额', '售价', '金额', '最低限价', '品牌', '分类', '条码', '入库日期', '仓库', '货位'])
+    ws.append(['角钢', '50*50*5', '', '府谷县兴旺达五金机电店', 4.5, '米', 120, '120米', 540, 0, 0, 0, '示例行-导入前请删除', '五金日杂', '', '2025-11-26', '生产库房', '01-01-下层'])
+    ws.append(['电缆', 'YJV-4*25', '', '', 0, '米', 300, '300米', 0, 0, 0, 0, '示例行-导入前请删除', '电缆', '', '2026-06-17', '再用库房', '暂存区'])
+    for _c in ws['A1':'R1']:
         for _x in _c:
             _x.font = openpyxl.styles.Font(bold=True)
-    for _w, _col in ((18, 'A'), (16, 'B'), (8, 'C'), (10, 'D'), (14, 'E'), (14, 'F'), (26, 'G'), (12, 'H'), (24, 'I')):
+    for _w, _col in ((20, 'A'), (16, 'B'), (10, 'C'), (28, 'D'), (12, 'E'), (8, 'F'), (10, 'G'), (12, 'H'),
+                     (12, 'I'), (10, 'J'), (10, 'K'), (10, 'L'), (10, 'M'), (14, 'N'), (14, 'O'), (13, 'P'), (12, 'Q'), (18, 'R')):
         ws.column_dimensions[_col].width = _w
+    _ws2 = wb.create_sheet('填写说明')
+    for _r in [['字段', '是否必填', '说明'],
+               ['品名', '必填', '物资名称, 如 角钢'],
+               ['规格', '选填', '规格型号, 如 50*50*5'],
+               ['批号', '选填', '同品名不同批次/不同进价时用于分开建库存条目'],
+               ['供应商', '选填', '该批物资的供应单位(库存台账、溯源展示)'],
+               ['进价', '选填', '不含税单价; 留空但填了「进价金额」时, 系统按 金额÷数量 折算'],
+               ['单位', '选填', '留空默认「个」'],
+               ['数量', '必填', '本次建账的库存数量, 必须大于 0'],
+               ['库存量', '选填', '老台账里「120米」这种文本, 数量为空时系统自动取其中数字'],
+               ['进价金额', '选填', '不含税金额, 与进价二者填一即可'],
+               ['售价/金额/最低限价', '选填', '保留原台账列(便于直接粘贴老表), 导入时不参与计算'],
+               ['品牌/条码/分类', '选填', '写入备注留痕(分类按原台账名称记录)'],
+               ['入库日期', '选填', '该批库存的入库日期, 用于期初入库记录与库存最近变动日期'],
+               ['仓库', '选填', '库房名称, 如 生产库房/生活库房/燃油气体/工程材料/再用库房; 留空默认「主库房」'],
+               ['货位', '选填', '库房→货架→层/位, 如 01-01-下层'],
+               ['提示', '—', '示例行标注「示例行-导入前请删除」, 导入时自动跳过; 错误行会逐行提示原因, 不影响其他行']]:
+        _ws2.append(_r)
+    for _c in _ws2['A1':'C1']:
+        for _x in _c:
+            _x.font = openpyxl.styles.Font(bold=True)
+    for _w, _col in ((16, 'A'), (10, 'B'), (70, 'C')):
+        _ws2.column_dimensions[_col].width = _w
     bio = io.BytesIO(); wb.save(bio); bio.seek(0)
     from flask import send_file
-    return send_file(bio, as_attachment=True, download_name='老库存导入模板.xlsx',
+    return send_file(bio, as_attachment=True, download_name='老库存导入模板(库存明细格式).xlsx',
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
 @app.route('/api/inventory/import', methods=['POST'])
 @login_required
 def api_inventory_import():
-    """V11.312 需求模块四.3: 老库存 Excel 批量导入 — 逐行校验, 错误行原因回显; 成功行生成「期初建账」入库单并计入库存(需求四.3)"""
+    """V11.321 需求模块四.3: 老库存 Excel 批量导入 — 按表头自动识别列(兼容《库存明细》18列与旧9列模板),
+    逐行校验并回显错误原因; 成功行生成「期初建账」入库单(状态已入库)并计入库存与期初流水"""
     if session.get('user_role') not in ('库管员', '系统管理员', '分管领导', '总经理'):
         return jsonify({'error': '无权限：老库存导入仅限库管员/管理员'}), 403
     import openpyxl
@@ -10833,79 +10860,146 @@ def api_inventory_import():
     except Exception as _e:
         return jsonify({'error': 'Excel 解析失败: %s' % str(_e)[:60]}), 400
     ws = wb.active
-    rows, fail = [], []
-    for _i, r in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+    _all = list(ws.iter_rows(values_only=True))
+    if not _all:
+        return jsonify({'error': 'Excel 内容为空'}), 400
+    _hdr = [str(x or '').strip() for x in _all[0]]
+
+    def _col(*keys, **kw):
+        """按表头文字定位列(老台账与旧模板都认); 找不到返回 -1"""
+        _ex = kw.get('exclude') or ()
+        for _idx, _h in enumerate(_hdr):
+            if not _h:
+                continue
+            if any(_k in _h for _k in keys) and not any(_e in _h for _e in _ex):
+                return _idx
+        return -1
+
+    C_NAME = _col('品名', '物资名称', '物料名称', '名称')
+    C_SPEC = _col('规格')
+    C_BATCH = _col('批号', '批次')
+    C_SUP = _col('供应商', '供货')
+    C_PRICE = _col('进价', '不含税单价', '单价')
+    C_AMT = _col('进价金额', '不含税金额')
+    C_UNIT = _col('单位')
+    C_QTY = _col('数量', exclude=('金额', '库存'))
+    C_STOCK = _col('库存量')
+    C_DATE = _col('入库日期', '日期')
+    C_WH = _col('仓库', '库房')
+    C_LOC = _col('货位')
+    C_BRAND = _col('品牌')
+    C_CAT = _col('分类')
+    C_CODE = _col('条码')
+    C_RM = _col('备注')
+    _posmode = (C_NAME < 0)   # 表头认不出来 → 退回旧模板的固定列序
+    if _posmode:
+        C_NAME, C_SPEC, C_UNIT, C_QTY, C_PRICE, C_WH, C_LOC, C_BATCH, C_RM = 0, 1, 2, 3, 4, 5, 6, 7, 8
+
+    def _g(r, i):
+        return r[i] if (0 <= i < len(r)) else None
+
+    def _num(v):
+        try:
+            return float(str(v).replace(',', '').strip()) if v not in (None, '') else None
+        except Exception:
+            return None
+
+    rows, fail, _dates = [], [], []
+    for _i, r in enumerate(_all[1:], start=2):
         if not r or all(x in (None, '') for x in r):
             continue
-        _nm = str(r[0] or '').strip()
-        _spec = str(r[1] or '').strip() if len(r) > 1 else ''
-        _unit = str(r[2] or '个').strip() if len(r) > 2 else '个'
-        try:
-            _qty = float(r[3]) if len(r) > 3 and r[3] not in (None, '') else 0
-        except Exception:
-            _qty = -1
-        try:
-            _pr = float(r[4]) if len(r) > 4 and r[4] not in (None, '') else 0
-        except Exception:
-            _pr = 0
-        _wh = str(r[5] or '主库房').strip() if len(r) > 5 else '主库房'
-        _loc = str(r[6] or '').strip() if len(r) > 6 else ''
-        _bt = str(r[7] or '').strip() if len(r) > 7 else ''
-        _rm = str(r[8] or '').strip() if len(r) > 8 else ''
-        if not _nm or '示例' in _rm:
-            if not _nm:
-                fail.append({'row': _i, 'reason': '物资名称必填'})
+        if any('示例' in str(x) for x in r if x not in (None, '')):
+            continue   # 模板示例行自动跳过
+        _nm = str(_g(r, C_NAME) or '').strip()
+        if not _nm:
+            fail.append({'row': _i, 'reason': '品名(物资名称)必填'})
             continue
+        _spec = str(_g(r, C_SPEC) or '').strip()
+        _unit = str(_g(r, C_UNIT) or '').strip() or '个'
+        _qty_raw = _g(r, C_QTY)
+        _qty = _num(_qty_raw)
+        if _qty is None:
+            if _qty_raw not in (None, ''):
+                fail.append({'row': _i, 'reason': '数量必须是数字（该行填了非数字）'})
+                continue
+            _mm = re.search(r'-?\d+(?:\.\d+)?', str(_g(r, C_STOCK) or ''))
+            _qty = float(_mm.group(0)) if _mm else 0
         if _qty <= 0:
-            fail.append({'row': _i, 'reason': '数量必须为大于0的数字'})
+            fail.append({'row': _i, 'reason': '数量必须大于 0'})
             continue
+        _pr = _num(_g(r, C_PRICE))
+        if _pr is None:
+            _pr = 0.0
         if _pr < 0:
-            fail.append({'row': _i, 'reason': '单价不能为负数'})
+            fail.append({'row': _i, 'reason': '进价(单价)不能为负数'})
             continue
-        rows.append({'item_name': _nm, 'spec': _spec, 'unit': _unit or '个', 'quantity': _qty,
-                     'price': _pr, 'warehouse': _wh or '主库房', 'location': _loc, 'batch_no': _bt, 'remark': _rm})
+        _amt = _num(_g(r, C_AMT)) or 0
+        if not _pr and _amt > 0 and _qty > 0:
+            _pr = round(_amt / _qty, 4)   # 老表只有金额时按 金额÷数量 折算单价
+        _wh = str(_g(r, C_WH) or '').strip() or '主库房'
+        _loc = str(_g(r, C_LOC) or '').strip()
+        _bt = str(_g(r, C_BATCH) or '').strip()
+        _sup = str(_g(r, C_SUP) or '').strip()
+        _date = str(_g(r, C_DATE) or '').strip()[:10]
+        if _date and not re.match(r'^\d{4}-\d{2}-\d{2}$', _date):
+            _date = ''
+        if _date:
+            _dates.append(_date)
+        _rm = str(_g(r, C_RM) or '').strip()
+        for _lbl, _v in (('品牌', _g(r, C_BRAND)), ('原分类', _g(r, C_CAT)), ('条码', _g(r, C_CODE))):
+            _vv = str(_v or '').strip()
+            if _vv:
+                _rm = (_rm + '｜' if _rm else '') + '%s: %s' % (_lbl, _vv)
+        rows.append({'item_name': _nm, 'spec': _spec, 'unit': _unit, 'quantity': _qty, 'price': _pr,
+                     'warehouse': _wh, 'location': _loc, 'batch_no': _bt, 'remark': _rm,
+                     'supplier': _sup, 'date': _date})
     if not rows:
         return jsonify({'error': '没有可导入的有效数据行', 'fail': fail, 'ok_count': 0}), 400
     c = db()
     _no = gen_no('QC', 'receivings', 'receive_no', c)   # 期初建账单号
     _qty_all = sum(x['quantity'] for x in rows)
     _dept = '期初建账'
+    _min_date = min(_dates) if _dates else now()[:10]
     _ij = json.dumps([{'item_name': x['item_name'], 'spec': x['spec'], 'quantity': x['quantity'],
                        'unit': x['unit'], 'price': x['price']} for x in rows], ensure_ascii=False)
     c.execute("""INSERT INTO receivings(receive_no,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,dept,items_json,is_est,is_manual,location)
                  VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-              (_no, None, '%s 等%d项' % (rows[0]['item_name'], len(rows)), '', _qty_all, '个', _qty_all, '已入库', now(),
-               '期初建账导入(老库存 Excel 批量导入 %d 项)' % len(rows), _dept, _ij, 0, 1, rows[0].get('location') or ''))
+              (_no, None, '%s 等%d项' % (rows[0]['item_name'], len(rows)), '', _qty_all, '个', _qty_all, '已入库',
+               (_min_date + ' 00:00:00') if _min_date else now(),
+               '期初建账导入(老库存 Excel 批量导入 %d 项%s)' % (len(rows), ('，日期区间 %s~%s' % (_min_date, max(_dates))) if _dates else ''),
+               _dept, _ij, 0, 1, rows[0].get('location') or ''))
     rid = c.execute("SELECT id FROM receivings WHERE receive_no=?", (_no,)).fetchone()[0]
     for x in rows:
         # 同品名+规格+库房+同价 → 合并; 价格/批次不同 → 独立条目(与批次成本规则一致)
         inv = _inv_pick(c, x['item_name'], x['spec'], x['warehouse'], x['price'])
         if inv:
             c.execute("UPDATE inventory SET quantity=quantity+?, updated_at=?, last_move_date=? WHERE id=?",
-                      (x['quantity'], now(), now()[:10], inv['id']))
+                      (x['quantity'], now(), x['date'] or now()[:10], inv['id']))
             _iid = inv['id']
             if x['location'] and not (inv['location'] if 'location' in inv.keys() else ''):
                 c.execute("UPDATE inventory SET location=? WHERE id=?", (x['location'], _iid))
             if x['batch_no'] and not (inv['batch_no'] if 'batch_no' in inv.keys() else ''):
                 c.execute("UPDATE inventory SET batch_no=? WHERE id=?", (x['batch_no'], _iid))
+            if x['supplier'] and not (inv['supplier'] if 'supplier' in inv.keys() else ''):
+                c.execute("UPDATE inventory SET supplier=? WHERE id=?", (x['supplier'], _iid))
         else:
-            cur = c.execute("""INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,price,batch_no,location,remark,last_move_date,updated_at)
-                               VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+            cur = c.execute("""INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,price,batch_no,location,remark,last_move_date,updated_at,supplier)
+                               VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
                             (x['item_name'], x['spec'], x['unit'], x['quantity'], x['warehouse'], x['price'],
-                             x['batch_no'], x['location'], x['remark'], now()[:10], now()))
+                             x['batch_no'], x['location'], x['remark'], x['date'] or now()[:10], now(), x['supplier']))
             _iid = cur.lastrowid
         c.execute("""INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at,warehouse,price)
                      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                   (x['item_name'], x['spec'], x['unit'], '入库', 'opening', rid, _no, x['quantity'],
                    float((c.execute("SELECT quantity FROM inventory WHERE id=?", (_iid,)).fetchone() or [0])[0] or 0),
-                   session.get('user_name', ''), '期初建账导入' + ('｜货位: %s' % x['location'] if x['location'] else ''),
-                   now(), x['warehouse'], x['price']))
+                   session.get('user_name', ''),
+                   '期初建账导入' + ('｜货位: %s' % x['location'] if x['location'] else '') + ('｜批号: %s' % x['batch_no'] if x['batch_no'] else ''),
+                   (x['date'] + ' 00:00:00') if x['date'] else now(), x['warehouse'], x['price']))
     c.commit(); c.close()
     log(session.get('user_name', ''), '老库存批量导入', '%s 成功%d行 失败%d行 合计%s件' % (_no, len(rows), len(fail), _qty_all))
     _trace_create('receiving', 'receivings', 'receive_no=?', _no, node='期初建账导入')
     return jsonify({'success': True, 'ok_count': len(rows), 'fail': fail, 'receive_no': _no,
                     'message': '导入完成：成功 %d 行，失败 %d 行；已生成期初建账入库单 %s' % (len(rows), len(fail), _no)})
-
 
 def _ensure_transfer_table(c):
     """V11.314 需求模块四.5: 库房调拨单表(首次调用自动建, 幂等)"""
