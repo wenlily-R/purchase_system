@@ -987,6 +987,54 @@ def init_db():
     # 退库审批流配置(首次建库时初始化; 幂等: 已有配置不覆盖)
     if conn.execute("SELECT COUNT(*) FROM approval_flow_config WHERE biz_type='return_request'").fetchone()[0] == 0:
         conn.execute("INSERT INTO approval_flow_config(biz_type,level_no,role,min_amount,max_amount,label) VALUES('return_request',1,'部门负责人',0,1000000,'退库审批-1级')")
+    # ---- V11.319 供应商退货(需求文档模块三.2): 当月作废入库单 / 跨月红字入库冲减 ----
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS supplier_returns (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            return_no TEXT UNIQUE NOT NULL,
+            supplier TEXT DEFAULT '',
+            order_id INTEGER DEFAULT 0,
+            order_no TEXT DEFAULT '',
+            contract_no TEXT DEFAULT '',
+            receiving_id INTEGER DEFAULT 0,
+            receiving_no TEXT DEFAULT '',
+            trace_no TEXT DEFAULT '',
+            warehouse TEXT DEFAULT '主库房',
+            mode TEXT DEFAULT '跨月红字',        -- 当月作废 / 跨月红字
+            part_used INTEGER DEFAULT 0,       -- 是否已部分领用(需先冲销出库记录)
+            used_note TEXT DEFAULT '',
+            reason TEXT DEFAULT '',
+            total_amount REAL DEFAULT 0,
+            status TEXT DEFAULT '草稿',         -- 草稿/待审批/审批通过/已完成/已驳回/已作废
+            requester TEXT DEFAULT '',
+            red_no TEXT DEFAULT '',
+            flush_note TEXT DEFAULT '',
+            reject_count INTEGER DEFAULT 0,
+            rejected_reason TEXT DEFAULT '',
+            attachments TEXT DEFAULT '',
+            created_at TEXT DEFAULT '',
+            updated_at TEXT DEFAULT '',
+            finished_at TEXT DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS supplier_return_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sr_id INTEGER NOT NULL,
+            item_name TEXT NOT NULL,
+            spec TEXT DEFAULT '',
+            unit TEXT DEFAULT '个',
+            qty REAL DEFAULT 0,
+            price REAL DEFAULT 0,
+            amount REAL DEFAULT 0,
+            src_receiving_id INTEGER DEFAULT 0,
+            src_receiving_no TEXT DEFAULT '',
+            restore_out INTEGER DEFAULT 0,     -- 是否已先冲销领用出库记录
+            restore_note TEXT DEFAULT '',
+            created_at TEXT DEFAULT ''
+        );
+    """)
+    # 供应商退货审批流配置(与退库一致: 1级部门负责人; 幂等: 已有配置不覆盖)
+    if conn.execute("SELECT COUNT(*) FROM approval_flow_config WHERE biz_type='supplier_return'").fetchone()[0] == 0:
+        conn.execute("INSERT INTO approval_flow_config(biz_type,level_no,role,min_amount,max_amount,label) VALUES('supplier_return',1,'部门负责人',0,1000000,'供应商退货审批-1级')")
     # ---- V11.208 维修采购独立流程(模块五): 单表+阶段字段实现 提报→定损→报价→变更二次确认→返库验收 ----
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS repair_plans (
@@ -2101,6 +2149,7 @@ def _ap_case(field):
           " WHEN ai.biz_type='repair_plan' THEN (SELECT rp.plan_no FROM repair_plans rp WHERE rp.id=ai.biz_id)"
           " WHEN ai.biz_type='collect_accept' THEN (SELECT rv.receive_no FROM receivings rv WHERE rv.id=ai.biz_id)"
           " WHEN ai.biz_type='inquiry_approval' THEN (SELECT iq.inq_no FROM inquiries iq WHERE iq.id=ai.biz_id)"
+            " WHEN ai.biz_type='supplier_return' THEN (SELECT sr.return_no FROM supplier_returns sr WHERE sr.id=ai.biz_id)"
           " ELSE '' END")
     name = ("CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.purpose FROM purchase_requests pr WHERE pr.id=ai.biz_id)"
             " WHEN ai.biz_type='purchase_order' THEN (SELECT po.item_name FROM purchase_orders po WHERE po.id=ai.biz_id)"
@@ -2113,12 +2162,14 @@ def _ap_case(field):
             " WHEN ai.biz_type='repair_plan' THEN (SELECT rp.device_name FROM repair_plans rp WHERE rp.id=ai.biz_id)"
             " WHEN ai.biz_type='collect_accept' THEN (SELECT rv.item_name FROM receivings rv WHERE rv.id=ai.biz_id)"
             " WHEN ai.biz_type='inquiry_approval' THEN (SELECT iq.purpose FROM inquiries iq WHERE iq.id=ai.biz_id)"
+            " WHEN ai.biz_type='supplier_return' THEN (SELECT sr.reason FROM supplier_returns sr WHERE sr.id=ai.biz_id)"
             " ELSE '' END")
     amount = ("CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.total_estimated FROM purchase_requests pr WHERE pr.id=ai.biz_id)"
               " WHEN ai.biz_type='contract' THEN (SELECT ct.amount FROM contracts ct WHERE ct.id=ai.biz_id)"
               " WHEN ai.biz_type='receiving' THEN (SELECT rv.quantity FROM receivings rv WHERE rv.id=ai.biz_id)"
               " WHEN ai.biz_type='requisition' THEN (SELECT rq.quantity FROM requisitions rq WHERE rq.id=ai.biz_id)"
               " WHEN ai.biz_type='repair_plan' THEN (SELECT rp.est_cost FROM repair_plans rp WHERE rp.id=ai.biz_id)"
+              " WHEN ai.biz_type='supplier_return' THEN (SELECT sr.total_amount FROM supplier_returns sr WHERE sr.id=ai.biz_id)"
               " ELSE 0 END")
     return {'no': no, 'name': name, 'amount': amount}[field]
 def biz_parent_status(biz_type, result):
@@ -2128,6 +2179,7 @@ def biz_parent_status(biz_type, result):
         'receiving': ('已入库', '已驳回'), 'requisition': ('已出库', '已驳回'),
         'return_request': ('审批通过', '已驳回'),  # V11.193 退库: 审批通过=待仓库清点入库(库存不立即加)
         'repair_plan': ('审批通过', '审批驳回'),  # V11.210 维修金额分级审批: 通过=审批通过(可录报价), 驳回=审批驳回(退回定损)
+        'supplier_return': ('审批通过', '已驳回'),  # V11.319 供应商退货: 审批通过=自动冲减库存(红字/作废)
     }
     ok, no = m.get(biz_type, ('已通过', '已驳回'))
     return ok if result == 'ok' else no
@@ -2141,7 +2193,8 @@ def biz_table(biz_type):
             'repair_plan': 'repair_plans',  # V11.208 维修采购
             'repair_change': 'purchase_requests',  # V11.285 维修定损变更确认(父单据=维修申请)
             'repair_direct': 'purchase_requests',  # V11.285 小额直接委托确认
-            'inquiry_approval': 'inquiries'}[biz_type]  # V11.133: biz_id=询价单id
+            'inquiry_approval': 'inquiries',
+            'supplier_return': 'supplier_returns'}[biz_type]  # V11.319 供应商退货 / V11.133: biz_id=询价单id
 
 # ============================================================
 # V11.64: 数据级权限 — 按角色过滤列表数据(前端隐藏菜单+后端过滤数据, 双保险)
@@ -2552,6 +2605,12 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
             do_receiving_stock(c, biz_id)
         elif biz_type == 'requisition' and st == '已出库':
             do_requisition_stock(c, biz_id)
+        elif biz_type == 'supplier_return' and st == '审批通过':
+            # V11.319 需求模块三.2: 审批通过 → 自动冲减库存(当月作废原入库单 / 跨月红字入库)
+            try:
+                print('supplier_return flush:', do_supplier_return_flush(c, biz_id))
+            except Exception as _sre:
+                print('supplier_return flush err:', _sre)
     # V7.0: 全节点自动推送 — 单据流转到下一级时, 向下一级审批人钉钉推送(待办+通知)
     try:
         if result == 'ok':
@@ -15488,6 +15547,292 @@ def api_payment_requests():
         out.append(d)
     conn.close()
     return jsonify(out)
+# ============================================================
+# V11.319 供应商退货(需求文档模块三.2)
+# 场景: 质量不合格 / 供应商多发 / 买错 → 退回供应商
+#   当月未结账退货: 直接作废对应入库单, 库存数量回退
+#   跨月退货: 生成红字入库单(负数), 冲减库存数量与成本, 并同步采购端订单
+#   已部分领用: 先冲销对应出库记录(按领用人留痕), 再冲销入库记录
+#   审批: approval_instances(biz_type=supplier_return) + 钉钉/飞书同步(既有通道)
+#   审批通过 → 自动执行冲减(库存扣减), 不允许库房单方面改库存
+# ============================================================
+def _sr_used_flows(c, item_name, spec):
+    """该物资累计领用出库明细(退货时先冲销出库记录的依据, 按领用人/用途聚合)"""
+    try:
+        return [dict_row(x) for x in c.execute(
+            "SELECT COALESCE(receiver,'') receiver, COALESCE(purpose,'') purpose, SUM(ABS(qty)) q, MAX(created_at) t "
+            "FROM inventory_flows WHERE flow_type='出库' AND item_name=? AND COALESCE(spec,'')=? "
+            "GROUP BY receiver, purpose ORDER BY q DESC LIMIT 8", (item_name, spec or '')).fetchall()]
+    except Exception:
+        return []
+
+
+def _sr_stock_qty(c, item_name, spec, warehouse):
+    r = c.execute("SELECT COALESCE(SUM(quantity),0) s FROM inventory WHERE item_name=? AND COALESCE(spec,'')=? AND warehouse=?",
+                  (item_name, spec or '', warehouse)).fetchone()
+    return float((r['s'] if r else 0) or 0)
+
+
+def do_supplier_return_flush(c, srid):
+    """执行供应商退货冲减(审批通过后自动调用; 幂等: 已完成/已作废跳过)"""
+    sr = c.execute("SELECT * FROM supplier_returns WHERE id=?", (srid,)).fetchone()
+    if not sr:
+        return '退货单不存在'
+    if sr['status'] in ('已完成', '已作废'):
+        return f'退货单 {sr["return_no"]} 当前状态({sr["status"]})无需执行'
+    its = [dict_row(x) for x in c.execute("SELECT * FROM supplier_return_items WHERE sr_id=? ORDER BY id", (srid,)).fetchall()]
+    if not its:
+        return '退货单无明细, 无法冲减'
+    mode = str(sr['mode'] or '跨月红字')
+    wh = sr['warehouse'] or '主库房'
+    notes = []
+    red_no = sr['red_no'] or ''
+    # 1) 当月未结账 → 直接作废原入库单(库存回退)
+    if mode.startswith('当月'):
+        rv = c.execute("SELECT * FROM receivings WHERE id=?", (sr['receiving_id'],)).fetchone() if sr['receiving_id'] else None
+        if rv:
+            c.execute("UPDATE receivings SET status='已作废', updated_at=?, remark=COALESCE(remark,'')||? WHERE id=?",
+                      (now(), f'｜供应商退货作废({sr["return_no"]}): {sr["reason"] or ""}', rv['id']))
+            notes.append(f'原入库单 {rv["receive_no"]} 已作废(库存回退)')
+    # 2) 跨月 → 生成红字入库单(负数入库: 冲减数量与成本)
+    else:
+        if not red_no:
+            red_no = gen_no('HZ', 'receivings', 'receive_no', c)
+            _tq = sum(float(x['qty'] or 0) for x in its)
+            _ta = sum(float(x['amount'] or 0) for x in its)
+            _f = its[0]
+            c.execute("""INSERT INTO receivings(receive_no,order_id,item_name,spec,quantity,unit,qualified_qty,defective_qty,warehouse,status,received_at,remark,created_at,contract_no,dept,trace_no,is_est,invoice_type)
+                         VALUES(?,?,?,?,?,?,0,0,?,?,?,?,?,?,?,?,0,'')""",
+                      (red_no, sr['order_id'], f'红字冲销: {_f["item_name"]}'[:60], _f.get('spec') or '', -_tq, _f.get('unit') or '个',
+                       wh, '红字冲销', now()[:10],
+                       f'供应商退货红字入库(退货单{sr["return_no"]} / 原入库单{sr["receiving_no"] or "-"} / 供应商{sr["supplier"] or "-"})：冲减数量 {_tq:g} 件、成本 ¥{_ta:g}',
+                       now(), sr['contract_no'] or '', '', sr['trace_no'] or ''))
+            notes.append(f'已生成红字入库单 {red_no}（冲减数量 {_tq:g} / 成本 ¥{_ta:g}）')
+    # 3) 逐项: 已部分领用的先冲销领用出库记录, 再扣减库存(冲销入库)
+    for it in its:
+        nm = it['item_name']; sp = it.get('spec') or ''; q = float(it['qty'] or 0)
+        if q <= 0:
+            continue
+        if not it.get('restore_out'):
+            used = _sr_used_flows(c, nm, sp)
+            if used:
+                _u = '、'.join(f'{x["receiver"] or "未知"}{float(x["q"] or 0):g}件' for x in used)
+                _uq = min(q, sum(float(x['q'] or 0) for x in used))
+                c.execute("""INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at,warehouse,price)
+                             VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                          (nm, sp, it.get('unit') or '个', '退货冲销出库', 'supplier_return', srid, sr['return_no'], -_uq,
+                           _sr_stock_qty(c, nm, sp, wh), session.get('user_name', ''),
+                           f'先冲销领用出库记录(对应领用人: {_u})｜供应商退货 {sr["return_no"]}', now(), wh, float(it['price'] or 0)))
+                c.execute("UPDATE supplier_return_items SET restore_out=1, restore_note=? WHERE id=?", (f'已冲销领用出库: {_u}', it['id']))
+                notes.append(f'{nm} 先冲销领用出库记录({_u})')
+        inv = _inv_pick(c, nm, sp, wh, float(it['price'] or 0))
+        if not inv:
+            inv = c.execute("SELECT * FROM inventory WHERE item_name=? AND COALESCE(spec,'')=? AND warehouse=? ORDER BY quantity DESC, id LIMIT 1",
+                            (nm, sp, wh)).fetchone()
+        if inv:
+            _bal = float(inv['quantity'] or 0) - q
+            c.execute("UPDATE inventory SET quantity=?, updated_at=?, last_move_date=? WHERE id=?", (_bal, now(), now()[:10], inv['id']))
+        else:
+            _bal = -q
+            c.execute("INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,price,updated_at) VALUES(?,?,?,?,?,?,?)",
+                      (nm, sp, it.get('unit') or '个', -q, wh, float(it['price'] or 0), now()))
+        c.execute("""INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at,warehouse,price)
+                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                  (nm, sp, it.get('unit') or '个', '退货出库', 'supplier_return', srid, sr['return_no'], -q, _bal,
+                   session.get('user_name', ''),
+                   f'供应商退货冲减({mode})｜{sr["return_no"]}' + (f' 红字单{red_no}' if red_no else f' 作废原单{sr["receiving_no"] or "-"}')
+                   + f' 供应商: {sr["supplier"] or "-"}', now(), wh, float(it['price'] or 0)))
+    # 4) 采购端同步: 订单挂退货标记(价格/合同同步核对)
+    if sr['order_id']:
+        po = c.execute("SELECT * FROM purchase_orders WHERE id=?", (sr['order_id'],)).fetchone()
+        if po:
+            c.execute("UPDATE purchase_orders SET remark=COALESCE(remark,'')||?, updated_at=? WHERE id=?",
+                      (f'｜供应商退货 {sr["return_no"]}（{mode}）已冲减库存, 采购端价格/合同请同步核对', now(), po['id']))
+            notes.append(f'采购端订单 {po["order_no"]} 已同步退货标记')
+    c.execute("UPDATE supplier_returns SET status='已完成', red_no=?, flush_note=?, finished_at=?, updated_at=? WHERE id=?",
+              (red_no, '；'.join(notes), now(), now(), srid))
+    return f'退货单 {sr["return_no"]} 已执行冲减（{mode}）：' + ('；'.join(notes) if notes else '库存已冲减')
+
+
+@app.route('/api/supplier-returns/receivable', methods=['GET'])
+@login_required
+def api_sr_receivable():
+    """可退货入库单清单(已入库/待入库/已通过) + 各物资当前结存/已领用量, 供建单选单"""
+    if session.get('user_role') not in ('库管员', '采购员', '部门负责人', '分管领导', '总经理', '系统管理员'):
+        return jsonify({'error': '无权限'}), 403
+    c = db()
+    rows = c.execute("""SELECT r.*, po.order_no, po.supplier, po.price AS order_price FROM receivings r
+                        LEFT JOIN purchase_orders po ON r.order_id=po.id
+                        WHERE r.status IN ('已入库','待入库','已通过')
+                        ORDER BY r.id DESC LIMIT 200""").fetchall()
+    _cur_month = datetime.date.today().strftime('%Y-%m')
+    out = []
+    for r in rows:
+        d = dict_row(r)
+        try:
+            items = json.loads(r['items_json'] or '[]') or []
+        except Exception:
+            items = []
+        if not items and r['item_name']:
+            items = [{'item_name': r['item_name'], 'spec': r['spec'] or '', 'unit': r['unit'] or '个', 'quantity': float(r['quantity'] or 0)}]
+        wh = r['warehouse'] or '主库房'
+        for it in items:
+            it['price'] = float(it.get('price') or r['order_price'] or 0)
+            it['stock_qty'] = _sr_stock_qty(c, it.get('item_name', ''), it.get('spec', '') or '', wh)
+            it['used_qty'] = sum(float(x['q'] or 0) for x in _sr_used_flows(c, it.get('item_name', ''), it.get('spec', '') or ''))
+        d['items'] = items
+        d['month'] = str(r['received_at'] or r['created_at'] or '')[:7]
+        d['mode'] = '当月作废' if d['month'] == _cur_month else '跨月红字'
+        out.append(d)
+    c.close()
+    return jsonify(out)
+
+
+@app.route('/api/supplier-returns', methods=['GET'])
+@login_required
+def api_supplier_returns():
+    """供应商退货单列表"""
+    c = db()
+    rows = c.execute("SELECT * FROM supplier_returns ORDER BY id DESC LIMIT 300").fetchall()
+    out = []
+    for r in rows:
+        d = dict_row(r)
+        d['item_count'] = c.execute("SELECT COUNT(*) n FROM supplier_return_items WHERE sr_id=?", (r['id'],)).fetchone()['n']
+        out.append(d)
+    c.close()
+    return jsonify(out)
+
+
+@app.route('/api/supplier-returns/<int:sid>', methods=['GET'])
+@login_required
+def api_supplier_return_detail(sid):
+    c = db()
+    r = c.execute("SELECT * FROM supplier_returns WHERE id=?", (sid,)).fetchone()
+    if not r:
+        c.close(); return jsonify({'error': '退货单不存在'}), 404
+    d = dict_row(r)
+    d['items'] = [dict_row(x) for x in c.execute("SELECT * FROM supplier_return_items WHERE sr_id=? ORDER BY id", (sid,)).fetchall()]
+    d['flows'] = [dict_row(x) for x in c.execute("SELECT * FROM inventory_flows WHERE doc_type='supplier_return' AND doc_id=? ORDER BY id", (sid,)).fetchall()]
+    c.close()
+    return jsonify(d)
+
+
+@app.route('/api/supplier-returns', methods=['POST'])
+@login_required
+def api_create_supplier_return():
+    """新建供应商退货单 — body: {receiving_id, reason, warehouse?, items:[{item_name,spec,unit,qty,price}]}
+    自动判定: 入库月份=当月→『当月作废』(作废原入库单+库存回退); 跨月→『跨月红字』(红字入库单冲减)
+    库存校验: 退货数量不得超过当前结存; 草稿状态(提交走审批)"""
+    if session.get('user_role') not in ('库管员', '采购员', '部门负责人', '分管领导', '总经理', '系统管理员'):
+        return jsonify({'error': '无权限：供应商退货仅限库管员/采购员/领导/管理员'}), 403
+    d = request.json or {}
+    rcv_id = int(d.get('receiving_id') or 0)
+    items = [it for it in (d.get('items') or []) if str(it.get('item_name') or '').strip() and float(it.get('qty') or 0) > 0]
+    reason = str(d.get('reason') or '').strip()
+    if not rcv_id:
+        return jsonify({'error': '请选择对应的入库单'}), 400
+    if not items:
+        return jsonify({'error': '请至少填写一项退货物资及数量'}), 400
+    if not reason:
+        return jsonify({'error': '请填写退货事由（质量不合格 / 供应商多发 / 买错等）'}), 400
+    c = db()
+    rv = c.execute("SELECT * FROM receivings WHERE id=?", (rcv_id,)).fetchone()
+    if not rv:
+        c.close(); return jsonify({'error': '入库单不存在'}), 400
+    if rv['status'] == '已作废':
+        c.close(); return jsonify({'error': '该入库单已作废，无需退货'}), 400
+    po = c.execute("SELECT * FROM purchase_orders WHERE id=?", (rv['order_id'],)).fetchone() if rv['order_id'] else None
+    wh = str(d.get('warehouse') or rv['warehouse'] or '主库房')
+    _m = str(rv['received_at'] or rv['created_at'] or '')[:7]
+    mode = '当月作废' if _m == datetime.date.today().strftime('%Y-%m') else '跨月红字'
+    part_used, used_msgs = 0, []
+    for it in items:
+        _st = _sr_stock_qty(c, it['item_name'], it.get('spec', '') or '', wh)
+        if float(it['qty']) > _st + 1e-9:
+            c.close(); return jsonify({'error': f"「{it['item_name']}」退货数量({float(it['qty']):g})超过当前结存({_st:g})，请先核对库存"}), 400
+        _used = sum(float(x['q'] or 0) for x in _sr_used_flows(c, it['item_name'], it.get('spec', '') or ''))
+        if _used > 0:
+            part_used = 1; used_msgs.append(f"{it['item_name']} 已领用 {_used:g} 件")
+    no = gen_no('SR', 'supplier_returns', 'return_no', c)
+    total = sum(float(it['qty']) * float(it.get('price') or 0) for it in items)
+    c.execute("""INSERT INTO supplier_returns(return_no,supplier,order_id,order_no,contract_no,receiving_id,receiving_no,trace_no,warehouse,mode,part_used,used_note,reason,total_amount,status,requester,created_at,updated_at)
+                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+              (no, (po['supplier'] if po else (rv['manual_supplier'] or '')), rv['order_id'], (po['order_no'] if po else ''),
+               rv['contract_no'] or '', rcv_id, rv['receive_no'], rv['trace_no'] or '', wh, mode, part_used, '；'.join(used_msgs),
+               reason, total, '草稿', session.get('user_name', ''), now(), now()))
+    sid = c.execute("SELECT id FROM supplier_returns WHERE return_no=?", (no,)).fetchone()[0]
+    for it in items:
+        c.execute("""INSERT INTO supplier_return_items(sr_id,item_name,spec,unit,qty,price,amount,src_receiving_id,src_receiving_no,created_at)
+                     VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                  (sid, it['item_name'], it.get('spec', '') or '', it.get('unit') or '个', float(it['qty']),
+                   float(it.get('price') or 0), round(float(it['qty']) * float(it.get('price') or 0), 2), rcv_id, rv['receive_no'], now()))
+    c.commit(); c.close()
+    log(session.get('user_name', ''), '新建供应商退货单', f'{no} 源入库单:{rv["receive_no"]} {len(items)}项 ¥{total:g} {mode}')
+    return jsonify({'success': True, 'id': sid, 'return_no': no, 'mode': mode, 'part_used': part_used,
+                    'message': f'退货单 {no} 已保存（草稿）；方式：{mode}（' +
+                               ('当月未结账→作废原入库单并回退库存' if mode.startswith('当月') else '跨月→生成红字入库单，冲减库存数量与成本') + '）' +
+                               ('；该物资已部分领用，审批通过后先冲销领用出库记录再冲销入库' if part_used else '')})
+
+
+@app.route('/api/supplier-returns/<int:sid>/submit', methods=['POST'])
+@login_required
+def api_sr_submit(sid):
+    """提交审批(草稿/已驳回 → 待审批 + 建审批实例 + 推钉钉/飞书)"""
+    c = db()
+    r = c.execute("SELECT * FROM supplier_returns WHERE id=?", (sid,)).fetchone()
+    if not r:
+        c.close(); return jsonify({'error': '退货单不存在'}), 404
+    if r['status'] not in ('草稿', '已驳回'):
+        c.close(); return jsonify({'error': f'当前状态({r["status"]})不可提交审批'}), 400
+    c.execute("UPDATE supplier_returns SET status='待审批', reject_count=COALESCE(reject_count,0), updated_at=? WHERE id=?", (now(), sid))
+    c.execute("DELETE FROM approval_instances WHERE biz_type='supplier_return' AND biz_id=?", (sid,))
+    c.execute("DELETE FROM dingtalk_instances WHERE biz_type='supplier_return' AND biz_id=?", (sid,))
+    c.commit()
+    amount = float(r['total_amount'] or 0)
+    create_approvals('supplier_return', sid, amount, submitter=r['requester'] or session.get('user_name', ''))
+    c.close()
+    try:
+        start_instances('supplier_return', sid)
+    except Exception as e:
+        print('supplier_return start_instances err:', e)
+    log(session['user_name'], '提交供应商退货审批', f'{r["return_no"]} 待审批 金额¥{amount:g} {r["mode"]}')
+    return jsonify({'success': True, 'message': f'退货单 {r["return_no"]} 已提交审批（{r["mode"]}）；审批通过后自动冲减库存'})
+
+
+@app.route('/api/supplier-returns/<int:sid>/flush', methods=['POST'])
+@login_required
+def api_sr_flush(sid):
+    """手动执行冲减(审批通过后; 系统在审批通过时已自动执行, 此处用于补执行/重试)"""
+    if session.get('user_role') not in ('库管员', '部门负责人', '分管领导', '总经理', '系统管理员'):
+        return jsonify({'error': '无权限'}), 403
+    c = db()
+    r = c.execute("SELECT * FROM supplier_returns WHERE id=?", (sid,)).fetchone()
+    if not r:
+        c.close(); return jsonify({'error': '退货单不存在'}), 404
+    if r['status'] != '审批通过':
+        c.close(); return jsonify({'error': f'仅审批通过的退货单可执行冲减（当前:{r["status"]}）'}), 400
+    msg = do_supplier_return_flush(c, sid)
+    c.commit(); c.close()
+    log(session.get('user_name', ''), '执行供应商退货冲减', f'{r["return_no"]} {msg}')
+    return jsonify({'success': True, 'message': msg})
+
+
+@app.route('/api/supplier-returns/<int:sid>/void', methods=['POST'])
+@login_required
+def api_sr_void(sid):
+    """作废退货单(草稿/待审批/已驳回; 不影响库存)"""
+    c = db()
+    r = c.execute("SELECT * FROM supplier_returns WHERE id=?", (sid,)).fetchone()
+    if not r:
+        c.close(); return jsonify({'error': '退货单不存在'}), 404
+    if r['status'] not in ('草稿', '待审批', '已驳回'):
+        c.close(); return jsonify({'error': f'当前状态({r["status"]})不可作废'}), 400
+    c.execute("UPDATE supplier_returns SET status='已作废', updated_at=? WHERE id=?", (now(), sid))
+    c.execute("UPDATE approval_instances SET status='cancelled' WHERE biz_type='supplier_return' AND biz_id=? AND status='pending'", (sid,))
+    c.commit(); c.close()
+    log(session.get('user_name', ''), '作废供应商退货单', r['return_no'])
+    return jsonify({'success': True, 'message': f'退货单 {r["return_no"]} 已作废（不影响库存）'})
+
 @app.route('/api/expenses', methods=['GET', 'POST'])
 @login_required
 def api_expenses():

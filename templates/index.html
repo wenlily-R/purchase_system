@@ -396,6 +396,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <button class="btn btn-p btn-sm" style="margin-left:auto" onclick="showRcvForm()">➕ 新建入库单</button>
     <button class="btn btn-o btn-sm" id="mrsBtn" style="display:none" onclick="showManualRcvForm()">🧰 手工应急入库</button>
     <button class="btn btn-o btn-sm" id="mrsReconBtn" style="display:none" onclick="showManualRecon()">📋 手工入库对账</button>
+    <button class="btn btn-o btn-sm" id="srBtn" style="display:none" onclick="openSupplierReturns()">↩️ 供应商退货</button>
   </div>
   <div class="card"><div class="cb" id="receivingsTable"><div class="loading">加载中...</div></div></div></div>
 <div class="page" id="ppayments"><h2>💰 付款申请</h2><div style="margin-bottom:4px"><button class="btn btn-p btn-sm" onclick="showForm('payment')">+ 付款申请</button></div><div class="card"><div class="cb" id="paymentsTable"><div class="loading">加载中...</div></div></div></div>
@@ -3982,6 +3983,7 @@ async function loadReceivings(){
   try{
     const _mrb=id('mrsBtn'); if(_mrb)_mrb.style.display=(ME.role=='库管员'||ME.role=='系统管理员')?'':'none';
     const _mrcb=id('mrsReconBtn'); if(_mrcb)_mrcb.style.display=(['库管员','采购员','财务','分管领导','总经理','部门负责人','系统管理员'].includes(ME.role))?'':'none';
+    const _srb=id('srBtn'); if(_srb)_srb.style.display=(['库管员','采购员','部门负责人','分管领导','总经理','系统管理员'].includes(ME.role))?'':'none';  // V11.319 供应商退货入口
   }catch(e){}
   id('receivingsTable').innerHTML=estHint+groupRnder(r, x=>x.received_at||x.created_at,['单号','部门','物资','数量','交易模式','状态','驳回','操作'],
     x=>{
@@ -5752,6 +5754,104 @@ async function rpOfflineDo(rid){
     alert(r.flowed?'✅ 线下签字件已归档，加急单已线下审批通过(流转报价环节)':'✅ 线下签字件已归档留痕');
     closeMod();loadRepairs();loadRepairs2&&loadRepairs2();
   } else alert(r.error||'归档失败');
+}
+
+// ============ V11.319 供应商退货(需求文档模块三.2: 当月作废 / 跨月红字入库) ============
+async function openSupplierReturns(){
+  let list=[]; try{ list=await api('/supplier-returns',{noCache:true}); }catch(e){}
+  window._srList=list||[];
+  const rows=(list||[]).map(x=>{
+    const _m=String(x.mode||'');
+    const stc=x.status=='已完成'?'#e8f5e9':x.status=='审批通过'?'#e3f2fd':x.status=='待审批'?'#fff8e1':x.status=='已作废'?'#f5f5f5':'#fdecea';
+    let ops=`<button class="lnk" onclick="srDetail(${x.id})">查看</button>`;
+    if(['草稿','已驳回'].includes(x.status))ops+=` <button class="lnk" style="color:#1565c0;font-weight:600" onclick="srSubmit(${x.id})">📤 提交审批</button>`;
+    if(x.status=='审批通过')ops+=` <button class="lnk" style="color:var(--o);font-weight:600" onclick="srFlush(${x.id})">⚡ 执行冲减</button>`;
+    if(['草稿','待审批','已驳回'].includes(x.status))ops+=` <button class="lnk" style="color:#c0392b" onclick="srVoid(${x.id})">作废</button>`;
+    return `<tr><td>${esc(x.return_no)}</td><td>${esc(x.supplier||'-')}</td><td>${esc(x.receiving_no||'-')}</td>
+      <td><span class="tag" style="background:${_m.indexOf('当月')>=0?'#e8f5e9':'#e3f2fd'};color:${_m.indexOf('当月')>=0?'#2e7d32':'#1565c0'}">${esc(_m)}</span>${x.part_used?' <span class="tag" style="background:#fff3e0;color:#c62828">已部分领用</span>':''}</td>
+      <td>${x.item_count||0} 项</td><td>¥${x.total_amount||0}</td>
+      <td><span class="tag" style="background:${stc}">${esc(x.status)}</span>${x.red_no?`<div style="font-size:9px;color:#999">红字单 ${esc(x.red_no)}</div>`:''}</td>
+      <td>${esc(x.reason||'')}</td><td>${ops}</td></tr>`;
+  }).join('');
+  id('dmTitle').textContent='↩️ 供应商退货（当月作废 / 跨月红字冲减）';
+  id('dmBody').innerHTML=`
+    <div style="font-size:10px;color:#666;margin-bottom:6px">质量不合格 / 供应商多发 / 买错 → 退回供应商。<b>当月未结账</b>：作废原入库单并回退库存；<b>跨月</b>：生成红字入库单，冲减库存数量与成本，并同步采购端订单。已部分领用的物资：审批通过后先冲销领用出库记录，再冲销入库。审批通过后库存自动冲减。</div>
+    <div style="display:flex;gap:6px;margin-bottom:6px">
+      <button class="btn btn-p btn-sm" onclick="srNewForm()">➕ 新建退货单</button>
+      <button class="btn btn-o btn-sm" onclick="openSupplierReturns()">🔄 刷新</button></div>
+    <div style="max-height:48vh;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:10px">
+      <tr style="background:#f0f4fa"><th style="border:1px solid #dfe6f0;padding:3px">退货单号</th><th style="border:1px solid #dfe6f0;padding:3px">供应商</th><th style="border:1px solid #dfe6f0;padding:3px">原入库单</th><th style="border:1px solid #dfe6f0;padding:3px">处理方式</th><th style="border:1px solid #dfe6f0;padding:3px">项数</th><th style="border:1px solid #dfe6f0;padding:3px">金额</th><th style="border:1px solid #dfe6f0;padding:3px">状态</th><th style="border:1px solid #dfe6f0;padding:3px">事由</th><th style="border:1px solid #dfe6f0;padding:3px">操作</th></tr>
+      ${rows||'<tr><td colspan="9" style="text-align:center;color:#999;padding:8px">暂无供应商退货单</td></tr>'}</table></div>`;
+  id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">关闭</button>';
+  id('detailModal').classList.add('show');
+}
+async function srNewForm(){
+  let list=[]; try{ list=await api('/supplier-returns/receivable',{noCache:true}); }catch(e){}
+  window._srRcv=list||[];
+  if(!(list||[]).length){alert('系统内暂无可退货的入库单（已入库/待入库）');return}
+  const opts=list.map(x=>`<option value="${x.id}">${esc(x.receive_no)} | ${esc(x.supplier||'未关联订单')} | ${esc(x.month||'')} | ${esc(x.status)} | ${esc(x.mode||'')}</option>`).join('');
+  id('dmTitle').textContent='↩️ 新建供应商退货单';
+  id('dmBody').innerHTML=`
+    <div style="font-size:11px;color:#555;margin-bottom:6px">选择要退货的入库单 → 填写本次退货数量 → 填事由。系统按入库月份自动判定处理方式（当月=作废原入库单 / 跨月=红字入库单冲减）。</div>
+    <div class="fg"><label class="fl2">对应入库单</label><div style="flex:3"><select id="srRcv" style="width:100%;padding:5px" onchange="srPickRcv()">${opts}</select></div></div>
+    <div id="srBox" style="margin-top:6px"></div>
+    <div class="fg" style="margin-top:6px"><label class="fl2">退货事由 *</label><div style="flex:3"><input id="srReason" placeholder="如：质量不合格 / 规格不符 / 供应商多发" style="width:100%"></div></div>`;
+  id('dmFooter').innerHTML='<button class="btn btn-o" onclick="openSupplierReturns()">取消</button><button class="btn btn-p" onclick="srCreate()">保存退货单（草稿）</button>';
+  id('detailModal').classList.add('show');
+  srPickRcv();
+}
+function srPickRcv(){
+  const _id=parseInt((id('srRcv')&&id('srRcv').value)||'0');
+  const r=(window._srRcv||[]).find(x=>x.id==_id);
+  if(!r){if(id('srBox'))id('srBox').innerHTML='';return}
+  const _m=String(r.mode||'');
+  const rows=(r.items||[]).map((it,i)=>`<tr>
+    <td style="border:1px solid #dfe6f0;padding:3px">${esc(it.item_name)}</td>
+    <td style="border:1px solid #dfe6f0;padding:3px">${esc(it.spec||'')}</td>
+    <td style="border:1px solid #dfe6f0;padding:3px">${it.quantity||0}${esc(it.unit||'')}</td>
+    <td style="border:1px solid #dfe6f0;padding:3px">${it.stock_qty||0}</td>
+    <td style="border:1px solid #dfe6f0;padding:3px">${it.used_qty||0}</td>
+    <td style="border:1px solid #dfe6f0;padding:3px">¥${it.price||0}</td>
+    <td style="border:1px solid #dfe6f0;padding:3px"><input id="srQ_${i}" type="number" step="0.01" value="0" style="width:70px"></td></tr>`).join('');
+  id('srBox').innerHTML=`
+    <div style="background:${_m.indexOf('当月')>=0?'#e8f5e9':'#e3f2fd'};border-radius:6px;padding:6px 10px;font-size:10px;color:#333;margin-bottom:5px">
+      📅 入库月份 <b>${esc(r.month||'')}</b> → 处理方式：<b>${esc(_m)}</b>（${_m.indexOf('当月')>=0?'作废原入库单并回退库存':'生成红字入库单，冲减库存数量与成本'}）${r.supplier?`　　供应商：<b>${esc(r.supplier)}</b>`:''}${r.order_no?`　订单：${esc(r.order_no)}`:''}</div>
+    <table style="width:100%;border-collapse:collapse;font-size:10px">
+      <tr style="background:#f0f4fa"><th style="border:1px solid #dfe6f0;padding:3px">物资</th><th style="border:1px solid #dfe6f0;padding:3px">规格</th><th style="border:1px solid #dfe6f0;padding:3px">入库数</th><th style="border:1px solid #dfe6f0;padding:3px">当前结存</th><th style="border:1px solid #dfe6f0;padding:3px">已领用</th><th style="border:1px solid #dfe6f0;padding:3px">单价</th><th style="border:1px solid #dfe6f0;padding:3px">本次退货数</th></tr>${rows}</table>`;
+}
+async function srCreate(){
+  const _id=parseInt((id('srRcv')&&id('srRcv').value)||'0'); const r=(window._srRcv||[]).find(x=>x.id==_id);
+  if(!r){alert('请选择入库单');return}
+  const reason=((id('srReason')&&id('srReason').value)||'').trim(); if(!reason){alert('请填写退货事由');return}
+  const items=[]; (r.items||[]).forEach((it,i)=>{const q=parseFloat((id('srQ_'+i)&&id('srQ_'+i).value)||'0')||0; if(q>0)items.push({item_name:it.item_name,spec:it.spec||'',unit:it.unit||'个',qty:q,price:it.price||0})});
+  if(!items.length){alert('请填写本次退货数量');return}
+  const res=await api('/supplier-returns',{method:'POST',body:JSON.stringify({receiving_id:_id,reason,warehouse:r.warehouse,items})});
+  if(res.success){alert('✅ '+res.message);openSupplierReturns();loadReceivings&&loadReceivings();loadInventory&&loadInventory()}
+  else alert('❌ '+(res.error||'保存失败'));
+}
+async function srSubmit(x){ if(!confirm('确认提交该供应商退货单审批？'))return;
+  const r=await api(`/supplier-returns/${x}/submit`,{method:'POST',body:'{}'});
+  if(r.success){alert('✅ '+r.message);openSupplierReturns()}else alert('❌ '+(r.error||'提交失败')) }
+async function srFlush(x){ if(!confirm('确认执行退货冲减？将按处理方式作废原入库单或生成红字入库单，并扣减库存'))return;
+  const r=await api(`/supplier-returns/${x}/flush`,{method:'POST',body:'{}'});
+  if(r.success){alert('✅ '+r.message);openSupplierReturns();loadInventory&&loadInventory();loadReceivings&&loadReceivings()}else alert('❌ '+(r.error||'执行失败')) }
+async function srVoid(x){ if(!confirm('确认作废该退货单？不影响库存'))return;
+  const r=await api(`/supplier-returns/${x}/void`,{method:'POST',body:'{}'});
+  if(r.success){alert('✅ '+r.message);openSupplierReturns()}else alert('❌ '+(r.error||'作废失败')) }
+async function srDetail(x){
+  let d={}; try{ d=await api('/supplier-returns/'+x,{noCache:true}); }catch(e){}
+  const rows=(d.items||[]).map(it=>`<tr><td style="border:1px solid #dfe6f0;padding:3px">${esc(it.item_name)}</td><td style="border:1px solid #dfe6f0;padding:3px">${esc(it.spec||'')}</td><td style="border:1px solid #dfe6f0;padding:3px">${it.qty}${esc(it.unit||'')}</td><td style="border:1px solid #dfe6f0;padding:3px">¥${it.price}</td><td style="border:1px solid #dfe6f0;padding:3px">¥${it.amount}</td><td style="border:1px solid #dfe6f0;padding:3px">${it.restore_out?'✅ '+esc(it.restore_note||'已冲销出库'):'—'}</td></tr>`).join('');
+  const fl=(d.flows||[]).map(f=>`<tr><td style="border:1px solid #dfe6f0;padding:3px">${esc(f.created_at||'')}</td><td style="border:1px solid #dfe6f0;padding:3px">${esc(f.flow_type)}</td><td style="border:1px solid #dfe6f0;padding:3px">${esc(f.item_name)}</td><td style="border:1px solid #dfe6f0;padding:3px">${f.qty}</td><td style="border:1px solid #dfe6f0;padding:3px">${esc(f.remark||'')}</td></tr>`).join('');
+  id('dmTitle').textContent='↩️ 供应商退货单 '+(d.return_no||'');
+  id('dmBody').innerHTML=`
+    <div class="fg"><label class="fl2">供应商</label><div style="flex:3;padding:4px 0">${esc(d.supplier||'-')}　订单：${esc(d.order_no||'-')}　原入库单：${esc(d.receiving_no||'-')}</div></div>
+    <div class="fg"><label class="fl2">处理方式</label><div style="flex:3;padding:4px 0"><b>${esc(d.mode||'')}</b>${d.red_no?`　红字入库单：<b>${esc(d.red_no)}</b>`:''}</div></div>
+    <div class="fg"><label class="fl2">状态</label><div style="flex:3;padding:4px 0">${esc(d.status||'')}${d.flush_note?`　<span style="color:#2e7d32">${esc(d.flush_note)}</span>`:''}</div></div>
+    <div class="fg"><label class="fl2">事由</label><div style="flex:3;padding:4px 0">${esc(d.reason||'')}${d.used_note?`　<span style="color:#c62828">（${esc(d.used_note)}）</span>`:''}</div></div>
+    <table style="width:100%;border-collapse:collapse;font-size:10px;margin-top:4px"><tr style="background:#f0f4fa"><th style="border:1px solid #dfe6f0;padding:3px">物资</th><th style="border:1px solid #dfe6f0;padding:3px">规格</th><th style="border:1px solid #dfe6f0;padding:3px">退货数</th><th style="border:1px solid #dfe6f0;padding:3px">单价</th><th style="border:1px solid #dfe6f0;padding:3px">金额</th><th style="border:1px solid #dfe6f0;padding:3px">先冲销出库</th></tr>${rows}</table>
+    ${fl?`<div style="margin-top:8px"><b>📈 退货冲减流水</b><table style="width:100%;border-collapse:collapse;font-size:10px;margin-top:3px"><tr style="background:#f0f4fa"><th style="border:1px solid #dfe6f0;padding:3px">时间</th><th style="border:1px solid #dfe6f0;padding:3px">类型</th><th style="border:1px solid #dfe6f0;padding:3px">物资</th><th style="border:1px solid #dfe6f0;padding:3px">变动</th><th style="border:1px solid #dfe6f0;padding:3px">说明</th></tr>${fl}</table></div>`:''}`;
+  id('dmFooter').innerHTML='<button class="btn btn-o" onclick="openSupplierReturns()">返回列表</button>';
+  id('detailModal').classList.add('show');
 }
 
 // ================= V11.193 退库管理 =================
