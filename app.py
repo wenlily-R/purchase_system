@@ -10822,6 +10822,8 @@ def api_inventory():
     """V55需求3: 库存列表含 不含税单价/税率/含税单价/合计 计算字段
     V6: 带出供应商(入库时写入, 存量空值回填自订单历史)"""
     cat = request.args.get('cat', '')
+    wh = (request.args.get('wh') or '').strip()      # V11.311 按库房筛选
+    loc = (request.args.get('loc') or '').strip()    # V11.311 按货位筛选(模糊, 需求四.1)
     conn = db()
     # 存量回填: supplier 为空时从订单历史取最近供应商
     conn.execute("""UPDATE inventory SET supplier=(SELECT po.supplier FROM purchase_orders po
@@ -10829,8 +10831,17 @@ def api_inventory():
                     WHERE (supplier IS NULL OR supplier='') AND item_name IN
                     (SELECT DISTINCT item_name FROM purchase_orders WHERE supplier!='')""")
     conn.commit()
+    _whl = [] if not wh else [wh]
+    _cond, _args = [], []
     if cat:
-        rows = conn.execute("SELECT i.*,c.name as cat_name FROM inventory i LEFT JOIN categories c ON i.cat_code=c.code WHERE i.cat_code=? ORDER BY i.id", (cat,)).fetchall()
+        _cond.append("i.cat_code=?"); _args.append(cat)
+    if wh:
+        _cond.append("COALESCE(i.warehouse,'')=?"); _args.append(wh)
+    if loc:
+        _cond.append("COALESCE(i.location,'') LIKE '%'||?||'%'"); _args.append(loc)
+    _where = (" WHERE " + " AND ".join(_cond)) if _cond else ""
+    if cat or wh or loc:
+        rows = conn.execute("SELECT i.*,c.name as cat_name FROM inventory i LEFT JOIN categories c ON i.cat_code=c.code" + _where + " ORDER BY i.id", _args).fetchall()
     else:
         rows = conn.execute("SELECT i.*,c.name as cat_name FROM inventory i LEFT JOIN categories c ON i.cat_code=c.code ORDER BY i.id").fetchall()
     conn.close()

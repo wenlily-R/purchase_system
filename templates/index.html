@@ -452,6 +452,8 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
 <div class="page" id="pinventory"><h2>📦 库存管理</h2>
   <div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap;align-items:center">
     <select class="fc" id="invCatFilter" style="width:130px" onchange="invFilterCat()"><option value="">全部分类</option></select>
+    <select class="fc" id="invWhFilter" style="width:120px" onchange="invFilterCat()"><option value="">全部库房</option></select>
+    <input class="fc" id="invLocFilter" style="width:150px" placeholder="按货位筛选(如 A架)" oninput="invFilterCat()">
     <button class="btn btn-p btn-sm" onclick="startCount()">📋 开始盘点</button>
     <button class="btn btn-o btn-sm" onclick="loadCounts()">盘点记录</button>
     <button class="btn btn-w btn-sm" onclick="showRecon()">📊 对账勾稽</button>
@@ -4540,7 +4542,14 @@ function exportInventory(){
   window.open('/api/export?type=inventory'+(cat?'&cat='+encodeURIComponent(cat):''),'_blank');
 }
 async function loadInventory(cat){
-  const i=await api('/inventory'+(cat?'?cat='+encodeURIComponent(cat):''));
+  // V11.311: 支持 分类 + 库房 + 货位 三维筛选(货位/批次/库房列展示, 需求模块四.1/四.2)
+  const wh=(id('invWhFilter')?.value||''), loc=(id('invLocFilter')?.value||'').trim();
+  const qs=[]; if(cat)qs.push('cat='+encodeURIComponent(cat)); if(wh)qs.push('wh='+encodeURIComponent(wh)); if(loc)qs.push('loc='+encodeURIComponent(loc));
+  const i=await api('/inventory'+(qs.length?'?'+qs.join('&'):''));
+  if(id('invWhFilter')&&!id('invWhFilter').dataset.init){
+    id('invWhFilter').dataset.init='1';
+    id('invWhFilter').innerHTML='<option value="">全部库房</option>'+((await api('/inventory/locations').catch(()=>({warehouses:[]}))).warehouses||[]).map(w=>`<option>${esc(w)}</option>`).join('');
+  }
   // 分类下拉初始化
   const cats=await api('/categories').catch(()=>[]);
   if(!id('invCatFilter').dataset.init){
@@ -4550,12 +4559,15 @@ async function loadInventory(cat){
   const arr=[...i].sort((a,b)=>(a[invSortKey]??0)>(b[invSortKey]??0)?invSortDir:-invSortDir);
   const showP=canSeePrice();
   const canEditInv=['系统管理员','分管领导','总经理'].includes(ME.role)||ME.can_config;  // V11.201: 库存修改仅管理员/领导, 采购员只读
-  let h='<table><tr><th onclick="invSort(\'id\')" style="cursor:pointer">序号</th><th>供应商</th><th onclick="invSort(\'item_name\')" style="cursor:pointer">物料名称</th><th>规格型号</th><th>单位</th><th onclick="invSort(\'quantity\')" style="cursor:pointer" title="当前库存量(入库增加/出库扣减)">剩余库存量</th>';
+  let h='<table><tr><th onclick="invSort(\'id\')" style="cursor:pointer">序号</th><th>供应商</th><th onclick="invSort(\'item_name\')" style="cursor:pointer">物料名称</th><th>规格型号</th><th>单位</th><th>库房</th><th>货位</th><th>批次</th><th onclick="invSort(\'quantity\')" style="cursor:pointer" title="当前库存量(入库增加/出库扣减)">剩余库存量</th>';
   if(showP)h+='<th onclick="invSort(\'price\')" style="cursor:pointer">不含税单价</th><th>税率</th><th>含税单价</th><th onclick="invSort(\'total_taxed\')" style="cursor:pointer">合计</th>';
   h+='<th>备注</th><th>预警</th><th>溯源</th></tr>';
   arr.forEach((r,idx)=>{
     const low=(r.quantity||0)<=r.safe_stock&&r.safe_stock>0, over=r.max_stock>0&&r.quantity>=r.max_stock;
     h+=`<tr><td>${idx+1}</td><td>${esc(r.supplier||'')}</td><td><b>${esc(r.item_name)}</b></td><td>${esc(r.spec||'')}</td><td>${esc(r.unit||'')}</td>
+      <td style="font-size:9px">${esc(r.warehouse||'')}</td>
+      <td style="font-size:9px">${r.location?esc(r.location):'<span style="color:#bbb">未编货位</span>'}</td>
+      <td style="font-size:9px">${r.batch_no?esc(r.batch_no):'<span style="color:#bbb">—</span>'}</td>
       <td style="font-weight:600;color:${low?'var(--d)':'inherit'}">${r.quantity||0}</td>`;
     if(showP)h+=`<td>¥${(r.price||0).toFixed(2)}</td><td>${r.tax_rate||13}%</td><td>¥${(r.price_taxed||0).toFixed(2)}</td><td>¥${(r.total_taxed||0).toFixed(2)}</td>`;
     h+=`<td>${esc(r.remark||'')}</td>
