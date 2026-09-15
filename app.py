@@ -10832,6 +10832,102 @@ def api_inventory_import():
                     'message': '导入完成：成功 %d 行，失败 %d 行；已生成期初建账入库单 %s' % (len(rows), len(fail), _no)})
 
 
+def _ensure_transfer_table(c):
+    """V11.314 需求模块四.5: 库房调拨单表(首次调用自动建, 幂等)"""
+    c.execute("""CREATE TABLE IF NOT EXISTS transfers(
+        id INTEGER PRIMARY KEY AUTOINCREMENT, transfer_no TEXT, from_wh TEXT, to_wh TEXT,
+        item_name TEXT, spec TEXT, unit TEXT, quantity REAL, price REAL, batch_no TEXT,
+        to_location TEXT, reason TEXT, operator TEXT, created_at TEXT)""")
+    c.commit()
+
+
+@app.route('/api/transfers')
+@login_required
+def api_transfers():
+    """V11.314 库房调拨记录"""
+    if session.get('user_role') not in ('库管员', '系统管理员', '分管领导', '总经理'):
+        return jsonify({'error': '无权限'}), 403
+    c = db(); _ensure_transfer_table(c)
+    rows = c.execute("SELECT * FROM transfers ORDER BY id DESC LIMIT 50").fetchall()
+    c.close()
+    return jsonify([dict_row(r) for r in rows])
+
+
+@app.route('/api/transfers', methods=['POST'])
+@login_required
+def api_create_transfer():
+    """V11.314 需求模块四.5: 库房调拨 — 从源库房扣减(按批次FIFO)并调入目标库房(带批次/单价/货位), 双向流水留痕"""
+    if session.get('user_role') not in ('库管员', '系统管理员', '分管领导', '总经理'):
+        return jsonify({'error': '无权限：库房调拨仅限库管员/管理员'}), 403
+    d = request.json or {}
+    _nm = str(d.get('item_name') or '').strip(); _sp = str(d.get('spec') or '').strip()
+    _fwh = str(d.get('from_wh') or '').strip(); _twh = str(d.get('to_wh') or '').strip()
+    try:
+        _q = float(d.get('quantity') or 0)
+    except Exception:
+        _q = 0
+    if not (_nm and _fwh and _twh and _q > 0):
+        return jsonify({'error': '请填写 物资/调出库房/调入库房/数量'}), 400
+    if _fwh == _twh:
+        return jsonify({'error': '调出与调入库房不能相同'}), 400
+    c = db(); _ensure_transfer_table(c)
+    _src = c.execute("SELECT COALESCE(SUM(quantity),0) FROM inventory WHERE item_name=? AND (?='' OR spec=?) AND COALESCE(warehouse,'')=?",
+                     (_nm, _sp, _sp, _fwh)).fetchone()[0] or 0
+    if float(_src) + 1e-9 < _q:
+        c.close(); return jsonify({'error': '调出库房「%s」中该物资结存 %s，不足 %s' % (_fwh, _src, _q)}), 400
+    _no = gen_no('DB', 'transfers', 'transfer_no', c)
+    _loc = str(d.get('to_location') or '').strip()
+    _rsn = str(d.get('reason') or '').strip()[:60]
+    _parts = _inv_deduct(c, _nm, _sp, _fwh, _q, unit=str(d.get('unit') or '个'))
+    _moved = 0.0
+    for _row, _take in _parts:
+        _moved += _take
+        _pr = float(_row.get('price') or 0); _bt = _row.get('batch_no') or ''
+        _tgt = _inv_pick(c, _nm, _sp, _twh, _pr)
+        if _tgt:
+            c.execute("UPDATE inventory SET quantity=quantity+?, updated_at=?, last_move_date=? WHERE id=?", (_take, now(), now()[:10], _tgt['id']))
+            _tid = _tgt['id']
+            if _loc and not (_tgt['location'] if 'location' in _tgt.keys() else ''):
+                c.execute("UPDATE inventory SET location=? WHERE id=?", (_loc, _tid))
+            if _bt and not (_tgt['batch_no'] if 'batch_no' in _tgt.keys() else ''):
+                c.execute("UPDATE inventory SET batch_no=? WHERE id=?", (_bt, _tid))
+        else:
+            _tid = c.execute("""INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,price,batch_no,location,last_move_date,updated_at)
+                                VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                             (_nm, _sp, str(d.get('unit') or '个'), _take, _twh, _pr, _bt, _loc, now()[:10], now())).lastrowid
+        for _ft, _wh, _sgn in (('调出', _fwh, -1), ('调入', _twh, 1)):
+            _bal = float((c.execute("SELECT quantity FROM inventory WHERE id=?", (_row['id'] if _sgn < 0 else _tid,)).fetchone() or [0])[0] or 0)
+            c.execute("""INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at,trace_no,warehouse,price)
+                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                      (_nm, _sp, str(d.get('unit') or '个'), _ft, 'transfer', 0, _no, _sgn * _take, _bal,
+                       session.get('user_name', ''), '库房调拨 %s→%s%s%s' % (_fwh, _twh, ('｜批次%s' % _bt) if _bt else '', ('｜货位%s' % _loc) if _loc else ''),
+                       now(), (_row.get('trace_no') or ''), _wh, _pr))
+        c.execute("""INSERT INTO transfers(transfer_no,from_wh,to_wh,item_name,spec,unit,quantity,price,batch_no,to_location,reason,operator,created_at)
+                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                  (_no, _fwh, _twh, _nm, _sp, str(d.get('unit') or '个'), _take, _pr, _bt, _loc, _rsn, session.get('user_name', ''), now()))
+    c.commit(); c.close()
+    log(session.get('user_name', ''), '库房调拨', '%s %s→%s %s%s 共%s' % (_no, _fwh, _twh, _nm, _sp, _moved))
+    return jsonify({'success': True, 'transfer_no': _no, 'moved': _moved,
+                    'message': '调拨完成：%s → %s 共 %s%s（%s）' % (_fwh, _twh, _moved, str(d.get('unit') or '个'), _no)})
+
+
+@app.route('/api/warehouse/overview')
+@login_required
+def api_warehouse_overview():
+    """V11.314 需求模块四.5: 多库房总览 — 各库房条目数/数量/金额(按库房隔离核算)"""
+    if session.get('user_role') not in ('库管员', '系统管理员', '分管领导', '总经理', '财务', '采购员', '部门负责人'):
+        return jsonify({'error': '无权限'}), 403
+    c = db()
+    rows = c.execute("""SELECT COALESCE(NULLIF(warehouse,''),'未指定库房') wh, COUNT(*) items,
+                               COALESCE(SUM(quantity),0) qty,
+                               COALESCE(SUM(CASE WHEN COALESCE(price,0)>0 THEN quantity*price ELSE 0 END),0) amt,
+                               SUM(CASE WHEN COALESCE(price,0)=0 THEN 1 ELSE 0 END) free_items
+                        FROM inventory GROUP BY wh ORDER BY qty DESC""").fetchall()
+    c.close()
+    return jsonify({'rows': [dict_row(r) for r in rows], 'warehouses': _warehouses(),
+                    'note': '金额=不含税单价×数量(0价废旧物资不计入金额, 单独计条目数)'})
+
+
 @app.route('/api/inventory/locations')
 @login_required
 def api_inventory_locations():

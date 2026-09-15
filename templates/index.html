@@ -458,6 +458,8 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <button class="btn btn-o btn-sm" onclick="loadCounts()">盘点记录</button>
     <button class="btn btn-w btn-sm" onclick="showRecon()">📊 对账勾稽</button>
     <button class="btn btn-w btn-sm" onclick="showInvImport()">⬆️ 老库存导入</button>
+    <button class="btn btn-w btn-sm" onclick="showTransfer()">🔁 库房调拨</button>
+    <button class="btn btn-o btn-sm" onclick="showWhOverview()">🏢 库房总览</button>
     <button class="btn btn-o btn-sm" onclick="window.open('/api/inventory/import-template','_blank')">📄 导入模板</button>
     <button class="btn btn-p btn-sm" style="margin-left:auto" onclick="exportInventory()">⬇️ 导出库存报表</button>
   </div>
@@ -4576,6 +4578,53 @@ async function doInvImport(btn){
     if(id('invImpResult'))id('invImpResult').innerHTML=h;
   }catch(e){ alert('❌ 上传失败: '+e); }
   if(btn){btn.disabled=false;btn.textContent='开始导入'}
+}
+// ============ V11.314 库房调拨 + 多库房总览(需求模块四.5) ============
+async function showTransfer(){
+  const inv=await api('/inventory');
+  const locs=await api('/inventory/locations').catch(()=>({warehouses:[]}));
+  const whs=(locs||{}).warehouses||[];
+  const names=[...new Set((inv||[]).map(x=>x.item_name).filter(Boolean))];
+  window._trInv=inv||[];
+  id('dmTitle').textContent='🔁 库房调拨（库房之间转移库存）';
+  id('dmBody').innerHTML=`
+    <div style="font-size:10px;color:#555;margin-bottom:6px">把物资从一个库房调到另一个库房：调出库房按批次（先进先出或指定批次）扣减，调入库房按原单价、批次、货位登记，两个库房各留一条流水，可追溯。</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:10px">
+      <label>物资名称*<input class="fc" id="trName" list="trNameList" style="width:100%"><datalist id="trNameList">${names.map(n=>`<option value="${esc(n)}">`).join('')}</datalist></label>
+      <label>规格型号<input class="fc" id="trSpec" style="width:100%"></label>
+      <label>数量*<input class="fc" id="trQty" type="number" min="1" style="width:100%"></label>
+      <label>单位<input class="fc" id="trUnit" style="width:100%" value="个"></label>
+      <label>调出库房*<select class="fc" id="trFrom" style="width:100%">${whs.map(w=>`<option>${esc(w)}</option>`).join('')}</select></label>
+      <label>调入库房*<select class="fc" id="trTo" style="width:100%">${whs.map(w=>`<option>${esc(w)}</option>`).join('')}</select></label>
+      <label>调入货位<input class="fc" id="trLoc" style="width:100%" placeholder="如 生活库/B架-1层"></label>
+      <label>调拨原因<input class="fc" id="trReason" style="width:100%" placeholder="如 生产领用转生活库"></label>
+    </div>
+    <div id="trSrc" style="font-size:9px;color:#666;margin-top:6px"></div>`;
+  const _chk=()=>{ const n=(id('trName')||{}).value||'', sp=(id('trSpec')||{}).value||'', f=(id('trFrom')||{}).value||'';
+    const s=(window._trInv||[]).filter(x=>x.item_name===n&&(!sp||(x.spec||'')===sp)&&(x.warehouse||'')===f).reduce((a,b)=>a+Number(b.quantity||0),0);
+    if(id('trSrc'))id('trSrc').innerHTML=n?`调出库房「${esc(f)}」结存：<b>${s}</b>`:''; };
+  ['trName','trSpec','trFrom'].forEach(x=>{const el=id(x); if(el)el.addEventListener('input',_chk); if(el)el.addEventListener('change',_chk);});
+  id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="doTransfer()">确认调拨</button>';
+  id('detailModal').classList.add('show');
+}
+async function doTransfer(){
+  const body={item_name:(id('trName')||{}).value||'',spec:(id('trSpec')||{}).value||'',quantity:(id('trQty')||{}).value||0,
+    unit:(id('trUnit')||{}).value||'个',from_wh:(id('trFrom')||{}).value||'',to_wh:(id('trTo')||{}).value||'',
+    to_location:(id('trLoc')||{}).value||'',reason:(id('trReason')||{}).value||''};
+  const r=await api('/transfers',{method:'POST',body:JSON.stringify(body)});
+  if(r&&r.success){ alert('✅ '+r.message); closeMod(); loadInventory(id('invCatFilter')?.value||''); }
+  else alert('❌ '+((r&&r.error)||'调拨失败'));
+}
+async function showWhOverview(){
+  const r=await api('/warehouse/overview');
+  if(!r||r.error){alert((r&&r.error)||'加载失败');return}
+  const rows=(r.rows||[]).map(x=>`<tr><td><b>${esc(x.wh)}</b></td><td>${x.items}</td><td>${Number(x.qty).toFixed(2)}</td><td>¥${Number(x.amt).toFixed(2)}</td><td>${x.free_items||0}</td></tr>`).join('');
+  id('dmTitle').textContent='🏢 库房总览（按库房隔离核算）';
+  id('dmBody').innerHTML=`<div style="font-size:9px;color:#999;margin-bottom:6px">${esc(r.note||'')}</div>
+    <table style="width:100%;font-size:10px;border-collapse:collapse" border="1">
+      <tr style="background:#f5f5f5"><th>库房</th><th>库存条目</th><th>数量合计</th><th>金额合计</th><th>0价条目</th></tr>${rows||'<tr><td colspan="5">暂无数据</td></tr>'}</table>`;
+  id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">关闭</button>';
+  id('detailModal').classList.add('show');
 }
 async function loadInventory(cat){
   // V11.311: 支持 分类 + 库房 + 货位 三维筛选(货位/批次/库房列展示, 需求模块四.1/四.2)
