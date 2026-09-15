@@ -15903,11 +15903,41 @@ def api_return_confirm_warehouse(rid):
         if it['source_item_id']:
             c.execute("""UPDATE requisitions SET returned_qty=COALESCE(returned_qty,0)+?
                          WHERE id=(SELECT requisition_id FROM requisition_items WHERE id=?)""", (q, it['source_item_id']))
+    # V11.317 需求模块三: 换货(同价/差价) — 旧货已按去向入库, 另把换来的新货登记入同一库房, 差价写入 reason_note 留痕
+    _ex = (_rd.get('exchange') or {}) if isinstance(_rd, dict) else {}
+    _ex_msg = ''
+    if _ex and str(_ex.get('item_name') or '').strip():
+        _en = str(_ex.get('item_name')).strip(); _es = str(_ex.get('spec') or '').strip()
+        try:
+            _eq = float(_ex.get('quantity') or 0); _ep = float(_ex.get('unit_price') or 0)
+        except Exception:
+            _eq, _ep = 0, 0
+        if _eq > 0:
+            _ewh = str(_ex.get('warehouse') or r['warehouse'] or '主库房')
+            _einv = _inv_pick(c, _en, _es, _ewh, _ep)
+            if _einv:
+                c.execute("UPDATE inventory SET quantity=quantity+?, updated_at=?, last_move_date=? WHERE id=?",
+                          (_eq, now(), now()[:10], _einv['id']))
+                _eid = _einv['id']
+            else:
+                _eid = c.execute("INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,price,updated_at) VALUES(?,?,?,?,?,?,?)",
+                                 (_en, _es, str(_ex.get('unit') or '个'), _eq, _ewh, _ep, now())).lastrowid
+            _ebal = float((c.execute("SELECT quantity FROM inventory WHERE id=?", (_eid,)).fetchone() or [0])[0] or 0)
+            _diff = round(_eq * _ep - float(r['total_amount'] or 0), 2)
+            _fl_rmk = '换货入库(退%s换%s)%s' % (r['return_no'], _en, ('｜差价¥%s' % _diff) if _diff else '｜同价换货')
+            c.execute("INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at,warehouse,price)"
+                      " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                      (_en, _es, str(_ex.get('unit') or '个'), '入库', 'return_request', rid, r['return_no'], _eq, _ebal,
+                       session.get('user_name', ''), _fl_rmk, now(), _ewh, _ep))
+            c.execute("UPDATE return_requests SET reason_note=COALESCE(reason_note,'')||? WHERE id=?",
+                      ('｜换货: %s x%s 单价¥%s%s' % (_en, _eq, _ep, (' 差价¥%s' % _diff) if _diff else ' 同价'), rid))
+            _ex_msg = '；换货入库 %s %s%s（单价¥%s%s）' % (_en, _eq, str(_ex.get('unit') or '个'), _ep,
+                                                       ('，差价¥%s' % _diff) if _diff else '，同价换货')
     c.execute("UPDATE return_requests SET status='退库已完成', warehouse_confirm_by=?, warehouse_confirm_at=?, finished_at=?, updated_at=? WHERE id=?",
               (session.get('user_name', ''), now(), now(), now(), rid))
     c.commit(); c.close()
     log(session['user_name'], '退库确认入库', f'{r["return_no"]} 库存已增加, 源单{r["source_req_no"]}累计已退回写')
-    return jsonify({'success': True, 'message': f'退库单 {r["return_no"]} 确认入库完成，库存已增加'})
+    return jsonify({'success': True, 'message': f'退库单 {r["return_no"]} 确认入库完成，库存已增加{_ex_msg}'})
 
 
 @app.route('/api/returns/<int:rid>/update', methods=['POST'])
