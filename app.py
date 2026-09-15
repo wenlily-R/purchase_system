@@ -849,6 +849,20 @@ def init_db():
             print('V11.304 库房清单已初始化(含废旧物资库)')
     except Exception as _we:
         print('V11.304 库房清单初始化跳过:', _we)
+    # ---- V11.323 库房一体化: 库房清单对齐现场台账(生产库房/生活库房/工程材料/燃油气体/再用库房)+主库房+废旧物资库
+    # 一次性纠正(幂等标记 warehouse_list_v2; 自定义过清单的机器不覆盖) ----
+    try:
+        if not conn.execute("SELECT 1 FROM sys_config WHERE key='warehouse_list_v2'").fetchone():
+            _wl = conn.execute("SELECT value FROM sys_config WHERE key='warehouse_list'").fetchone()
+            _wv = str((_wl[0] if _wl else '') or '').strip()
+            if _wv in ('', '主库房,生产库,生活库,工程材料库,气体库,废旧物资库'):
+                conn.execute("UPDATE sys_config SET value=? WHERE key='warehouse_list'",
+                             ('生产库房,生活库房,工程材料,燃油气体,再用库房,主库房,废旧物资库',))
+            conn.execute("INSERT OR IGNORE INTO sys_config(key,value) VALUES('warehouse_list_v2','1')")
+            conn.commit()
+            print('V11.323 库房清单已对齐现场台账')
+    except Exception as _w3e:
+        print('V11.323 库房清单对齐跳过:', _w3e)
     # ---- V11.301 手工应急入库金额上限(超限必须领导确认): 默认2000元, 幂等补齐三机一致 ----
     try:
         if not conn.execute("SELECT 1 FROM sys_config WHERE key='manual_recv_limit'").fetchone():
@@ -1035,6 +1049,11 @@ def init_db():
     # 供应商退货审批流配置(与退库一致: 1级部门负责人; 幂等: 已有配置不覆盖)
     if conn.execute("SELECT COUNT(*) FROM approval_flow_config WHERE biz_type='supplier_return'").fetchone()[0] == 0:
         conn.execute("INSERT INTO approval_flow_config(biz_type,level_no,role,min_amount,max_amount,label) VALUES('supplier_return',1,'部门负责人',0,1000000,'供应商退货审批-1级')")
+    # ---- V11.323 库房一体化: 出库单记录库房(按库房筛选/隔离, 与库存/流水同口径; 幂等补列) ----
+    try:
+        conn.execute("ALTER TABLE requisitions ADD COLUMN warehouse TEXT DEFAULT ''")
+    except Exception:
+        pass
     # ---- V11.320 物资图片(需求文档模块六.3): 物资档案图片, 入库/库存查询展示核对 ----
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS material_images (
@@ -9317,9 +9336,12 @@ def api_receivings():
     f_cat = (request.args.get('cat') or '').strip()
     f_type = (request.args.get('type') or '').strip()
     f_trace = (request.args.get('trace') or '').strip()
+    f_wh = (request.args.get('wh') or '').strip()   # V11.323 按库房筛选
     conn = db()
     sql = "SELECT r.*, po.trade_mode, po.order_no, po.supplier, po.is_sealed AS order_sealed FROM receivings r LEFT JOIN purchase_orders po ON r.order_id=po.id"
     where = []; args = []
+    if f_wh:
+        where.append("COALESCE(r.warehouse,'')=?"); args.append(f_wh)
     if f_trace:
         where.append("(r.trace_no=? OR po.order_no=?)"); args += [f_trace, f_trace]
     if f_dept:
@@ -9630,7 +9652,8 @@ def _warehouses(c=None):
     if c is None:
         conn.close()
     lst = [x.strip() for x in _v.split(',') if x.strip()]
-    for _w in ('主库房', '废旧物资库'):
+    # V11.323 库房一体化: 默认清单对齐现场台账(生产库房/生活库房/工程材料/燃油气体/再用库房)+主库房+废旧物资库
+    for _w in ('生产库房', '生活库房', '工程材料', '燃油气体', '再用库房', '主库房', '废旧物资库'):
         if _w not in lst:
             lst.append(_w)
     return lst
@@ -9814,7 +9837,7 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
             inv = _inv_pick(c, it['item_name'], it.get('spec', '') or '', warehouse, _price)   # V11.303 批次感知
             if inv:
                 _up = "quantity=quantity+?, last_move_date=?, updated_at=?"
-                _args = [q, now(), now()]
+                _args = [q, now(), now()]
                 # V11.303 批次分条: 同价已合并, 此处仅把空价老条目补上单价(不再加权平均, 成本按批次核算)
                 if (not inv['price'] or inv['price'] == 0) and _price:
                     _up += ", price=?"; _args.append(_price)
@@ -9855,7 +9878,7 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
             inv = _inv_pick(c, it['item_name'], it['spec'] or '', warehouse, _price)   # V11.303 批次感知
             if inv:
                 _up = "quantity=quantity+?, last_move_date=?, updated_at=?"
-                _args = [q, now(), now()]
+                _args = [q, now(), now()]
                 # V11.303 批次分条: 同价已合并, 此处仅把空价老条目补上单价(不再加权平均, 成本按批次核算)
                 if (not inv['price'] or inv['price'] == 0) and _price:
                     _up += ", price=?"; _args.append(_price)
@@ -9890,7 +9913,7 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
         inv = _inv_pick(c, rn['item_name'], rn['spec'] or '', warehouse, _price)   # V11.303 批次感知
         if inv:
             _up = "quantity=quantity+?, last_move_date=?, updated_at=?"
-            _args = [q, now(), now()]
+            _args = [q, now(), now()]
             # V11.303 批次分条: 同价已合并, 此处仅把空价老条目补上单价(不再加权平均, 成本按批次核算)
             if (not inv['price'] or inv['price'] == 0) and _price:
                 _up += ", price=?"; _args.append(_price)
@@ -10312,6 +10335,7 @@ def api_requisitions():
     if role in ('采购员', '财务'):
         return jsonify([])
     _f_recv = (request.args.get('receiver') or '').strip()
+    _f_wh = (request.args.get('wh') or '').strip()   # V11.323 按库房筛选
     conn = db()
     if role in ('员工',):
         rows = conn.execute("SELECT * FROM requisitions WHERE requester=? ORDER BY id DESC LIMIT 100", (session.get('user_name', ''),)).fetchall()
@@ -10322,6 +10346,9 @@ def api_requisitions():
         # V11.305 按领用人筛选: 明细行领用人命中即保留(支持同单多人)
         _recvs = [x[0] for x in conn.execute("SELECT DISTINCT receiver FROM requisition_items WHERE requisition_id=? AND COALESCE(receiver,'')<>''", (r['id'],)).fetchall()]
         if _f_recv and (_f_recv not in _recvs) and (_f_recv not in str(r['receiver'] or '')):
+            continue
+        # V11.323 库房筛选(出库单记录库房; 老单据无库房则仅在未筛选时显示)
+        if _f_wh and str(r['warehouse'] or '') != _f_wh:
             continue
         d = dict_row(r)
         d['receivers'] = _recvs
@@ -10399,9 +10426,11 @@ def api_create_requisition():
         receiver = _recv_set[0]
     if not receiver:
         receiver = session['user_name']
-    conn.execute("INSERT INTO requisitions(req_no,dept,requester,item_name,spec,quantity,unit,purpose,status,receiver,receive_dept,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+    # V11.323 库房一体化: 出库单记录库房(取表头或首行明细的库房), 供按库房筛选/隔离与报表同口径
+    _wh0 = str(d.get('warehouse') or '').strip() or next((str(it.get('warehouse') or '').strip() for it in items if str(it.get('warehouse') or '').strip()), '')
+    conn.execute("INSERT INTO requisitions(req_no,dept,requester,item_name,spec,quantity,unit,purpose,status,receiver,receive_dept,created_at,warehouse) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                  (no, d.get('dept', ''), session['user_name'], first['item_name'], first.get('spec', ''),
-                  total_q, first.get('unit', '个'), d.get('purpose', first.get('purpose', '')), '待审批', receiver, receive_dept, now()))
+                  total_q, first.get('unit', '个'), d.get('purpose', first.get('purpose', '')), '待审批', receiver, receive_dept, now(), _wh0))
     rid = conn.execute("SELECT id FROM requisitions WHERE req_no=?", (no,)).fetchone()[0]
     for it in items:
         conn.execute("INSERT INTO requisition_items(requisition_id,item_name,spec,unit,quantity,purpose,trace_no,created_at,receiver,batch_no) VALUES(?,?,?,?,?,?,?,?,?,?)",
@@ -10750,7 +10779,7 @@ def _inout_rows(period='month', wh='', cat='', from_d='', to_d=''):
     return out
 
 
-def _issue_rows(group='dept', from_d='', to_d=''):
+def _issue_rows(group='dept', from_d='', to_d='', wh=''):
     """V11.306 领用统计: 按部门/领用人统计领用明细(次数/数量)"""
     c = db()
     sql = """SELECT COALESCE(NULLIF(i.receiver,''), r.receiver, r.dept) recv, r.dept, i.item_name, i.spec, i.unit,
@@ -10762,6 +10791,8 @@ def _issue_rows(group='dept', from_d='', to_d=''):
         sql += " AND r.created_at>=?"; args.append(from_d)
     if to_d:
         sql += " AND r.created_at<=?"; args.append(to_d + ' 23:59:59')
+    if wh:   # V11.323 按库房统计(出库单库房)
+        sql += " AND COALESCE(r.warehouse,'')=?"; args.append(wh)
     sql += " GROUP BY " + ("recv, i.item_name, i.spec" if group == 'receiver' else "r.dept, i.item_name, i.spec")
     sql += " ORDER BY qty DESC LIMIT 500"
     rows = c.execute(sql, args).fetchall()
@@ -11120,18 +11151,43 @@ def api_create_transfer():
 @app.route('/api/warehouse/overview')
 @login_required
 def api_warehouse_overview():
-    """V11.314 需求模块四.5: 多库房总览 — 各库房条目数/数量/金额(按库房隔离核算)"""
+    """V11.314/V11.323 需求模块四.5: 多库房总览 — 各库房条目数/数量/金额/0价条目/货位数 + 合计(按库房隔离核算)"""
     if session.get('user_role') not in ('库管员', '系统管理员', '分管领导', '总经理', '财务', '采购员', '部门负责人'):
         return jsonify({'error': '无权限'}), 403
     c = db()
     rows = c.execute("""SELECT COALESCE(NULLIF(warehouse,''),'未指定库房') wh, COUNT(*) items,
                                COALESCE(SUM(quantity),0) qty,
                                COALESCE(SUM(CASE WHEN COALESCE(price,0)>0 THEN quantity*price ELSE 0 END),0) amt,
-                               SUM(CASE WHEN COALESCE(price,0)=0 THEN 1 ELSE 0 END) free_items
+                               SUM(CASE WHEN COALESCE(price,0)=0 THEN 1 ELSE 0 END) free_items,
+                               SUM(CASE WHEN COALESCE(location,'')<>'' THEN 1 ELSE 0 END) loc_items
                         FROM inventory GROUP BY wh ORDER BY qty DESC""").fetchall()
     c.close()
-    return jsonify({'rows': [dict_row(r) for r in rows], 'warehouses': _warehouses(),
+    got = {dict_row(r)['wh']: dict_row(r) for r in rows}
+    out = []
+    for _w in _warehouses():
+        d = got.pop(_w, None) or {'wh': _w, 'items': 0, 'qty': 0, 'amt': 0, 'free_items': 0, 'loc_items': 0}
+        out.append(d)
+    for k, v in got.items():
+        out.append(v)
+    total = {'items': sum(x['items'] or 0 for x in out), 'qty': sum(float(x['qty'] or 0) for x in out),
+             'amt': sum(float(x['amt'] or 0) for x in out), 'free_items': sum(x['free_items'] or 0 for x in out)}
+    return jsonify({'rows': out, 'total': total, 'warehouses': _warehouses(),
                     'note': '金额=不含税单价×数量(0价废旧物资不计入金额, 单独计条目数)'})
+
+
+@app.route('/api/warehouses')
+@login_required
+def api_warehouses():
+    """V11.323 库房一体化: 统一库房清单(全模块下拉同源) + 各库房库存概况 + 合计"""
+    d = api_warehouse_overview()
+    if isinstance(d, tuple):
+        return d
+    try:
+        j = d.get_json()
+    except Exception:
+        j = {}
+    return jsonify({'list': j.get('warehouses') or _warehouses(), 'rows': j.get('rows') or [],
+                    'total': j.get('total') or {}, 'note': j.get('note') or ''})
 
 
 @app.route('/api/inventory/locations')
@@ -11169,8 +11225,10 @@ def api_report_issue():
         return jsonify({'error': '无权限'}), 403
     group = (request.args.get('group') or 'dept').strip()
     rows = _issue_rows('receiver' if group == 'receiver' else 'dept',
-                       (request.args.get('from') or '').strip(), (request.args.get('to') or '').strip())
-    return jsonify({'rows': rows, 'group': group, 'note': '领用人按出库明细行统计(一行一个领用人)'})
+                       (request.args.get('from') or '').strip(), (request.args.get('to') or '').strip(),
+                       (request.args.get('wh') or '').strip())
+    return jsonify({'rows': rows, 'group': group, 'wh': (request.args.get('wh') or '').strip(),
+                    'note': '领用人按出库明细行统计(一行一个领用人); 可按库房筛选'})
 
 
 @app.route('/api/reports/scrap-stat')
@@ -11195,7 +11253,7 @@ def api_report_stat_export():
     wb = openpyxl.Workbook(); ws = wb.active
     if kind == 'issue':
         grp = 'receiver' if (request.args.get('group') or 'dept') == 'receiver' else 'dept'
-        rows = _issue_rows(grp, from_d, to_d)
+        rows = _issue_rows(grp, from_d, to_d, (request.args.get('wh') or '').strip())
         ws.title = '领用统计'
         head = ['领用人' if grp == 'receiver' else '部门', '物资', '规格', '单位', '数量', '笔数', '最近领用时间']
         ws.append(head)
@@ -16278,9 +16336,12 @@ def api_return_source_requisitions():
 @login_required
 def api_returns():
     """退库列表 — 支持状态/时间筛选; 权限: 库管员/部门负责人/领导/管理员/采购员(看自己提交的)"""
+    _f_wh = (request.args.get('wh') or '').strip()   # V11.323 按库房筛选
     c = db()
     rows = c.execute("SELECT * FROM return_requests ORDER BY id DESC").fetchall()
     c.close()
+    if _f_wh:
+        rows = [r for r in rows if str(r['warehouse'] or '') == _f_wh]
     # 行附带明细条数
     out = []
     c2 = db()
