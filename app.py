@@ -11275,7 +11275,7 @@ def api_recon_purchase_stock():
                           COALESCE((SELECT SUM(rv.quantity) FROM receivings rv WHERE rv.order_id=po.id AND rv.status='已入库' AND COALESCE(rv.is_conv,0)=0),0) AS in_qty,
                           '' AS last_in
                    FROM purchase_orders po LEFT JOIN purchase_requests pr ON pr.id=po.req_id
-                   WHERE COALESCE(po.status,'') NOT IN ('已作废','已完成','已关闭')
+                   WHERE COALESCE(po.status,'') NOT IN ('已作废','已完成','已关闭','草稿','待审批','已驳回','已撤回')
                      AND COALESCE(po.is_sealed,0)=0
                  ) t
                  WHERE COALESCE(t.target_date,'')<>'' AND t.target_date < ? AND t.in_qty < t.order_qty - 0.000001"""
@@ -11304,7 +11304,8 @@ def api_recon_purchase_stock():
                          COALESCE(rv.manual_reason,'') manual_reason, COALESCE(rv.is_manual,0) is_manual,
                          COALESCE(rv.order_id,0) order_id, COALESCE(rv.contract_no,'') contract_no, COALESCE(rv.dept,'') dept
                   FROM receivings rv
-                  WHERE COALESCE(rv.status,'') NOT IN ('已作废')
+                  WHERE COALESCE(rv.status,'') NOT IN ('已作废','红字冲销')
+                    AND COALESCE(rv.dept,'')<>'期初建账' AND rv.receive_no NOT LIKE 'QC-%'
                     AND ( (COALESCE(rv.is_manual,0)=1 AND COALESCE(rv.link_status,'')<>'已补关联')
                           OR (COALESCE(rv.is_manual,0)=0 AND COALESCE(rv.order_id,0)=0 AND COALESCE(rv.contract_no,'')='' AND COALESCE(rv.is_conv,0)=0) )"""
         args2 = []
