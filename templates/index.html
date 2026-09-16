@@ -477,6 +477,16 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
   <div class="card"><div class="ch"><h3>⚠️ 报溢/报损（V11.34 库存账实相符）</h3><button class="btn btn-p btn-sm" onclick="showAdjForm()">➕ 手动报溢/报损</button></div>
     <div class="cb" id="adjListBox"><div class="loading">加载中...</div></div></div>
 </div>
+<div class="page" id="pwarehouses"><h2>🏢 库房管理（仓库 - 库区 - 库位）</h2>
+  <div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap;align-items:center">
+    <span style="font-size:9px;color:#666">三级结构：<b>仓库 → 库区 → 库位</b>；「停用」的仓库/库区不再出现在入库下拉里；卡片颜色区分状态（绿=正常 蓝=待验 红=不合格 灰=停用）</span>
+    <input class="fc" id="whTreeSearch" placeholder="🔍 搜索仓库名称/编码" style="width:170px" oninput="loadWhTree()">
+    <button class="btn btn-p btn-sm" id="whAddBtn" onclick="whNewNode(0)">➕ 新增仓库</button>
+    <button class="btn btn-w btn-sm" onclick="loadWhTree()">🔄 刷新</button>
+    <button class="btn btn-o btn-sm" style="margin-left:auto" onclick="showWhOverview()">🏢 库房总览</button>
+  </div>
+  <div id="whTreeCards" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start"><div class="loading">加载中...</div></div>
+</div>
 <div class="page" id="pexpenses"><h2>💸 费用登记</h2>
   <div class="card"><div class="ch"><h3>费用记录</h3><button class="btn btn-p btn-sm" onclick="showExpenseForm()">+ 新增费用</button></div>
     <div class="cb" id="expListBox"><div class="loading">加载中...</div></div></div>
@@ -485,7 +495,12 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
   <div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap;align-items:center">
     <select class="fc" id="invCatFilter" style="width:130px" onchange="invFilterCat()"><option value="">全部分类</option></select>
     <select class="fc" id="invWhFilter" style="width:120px" onchange="invFilterCat()"><option value="">全部库房</option></select>
+    <select class="fc" id="invZoneFilter" style="width:110px" onchange="invFilterCat()"><option value="">全部库区</option></select>
     <input class="fc" id="invLocFilter" style="width:150px" placeholder="按货位筛选(如 A架)" oninput="invFilterCat()">
+    <!-- V11.325 需求模块三: 数据来源筛选(系统新增业务数据 / 历史导入归档数据) -->
+    <select class="fc" id="invSrcFilter" style="width:150px" onchange="invFilterCat()" title="老库房导入的历史存量数据与系统新增业务数据隔离，可分别查看">
+      <option value="">全部数据(含历史导入)</option><option value="sys">仅系统新增业务数据</option><option value="hist">仅历史导入归档数据</option>
+    </select>
     <button class="btn btn-p btn-sm" onclick="startCount()">📋 开始盘点</button>
     <button class="btn btn-o btn-sm" onclick="loadCounts()">盘点记录</button>
     <button class="btn btn-w btn-sm" onclick="showRecon()">📊 对账勾稽</button>
@@ -1236,7 +1251,7 @@ function buildNav(){
     // V11.227: 打通四环节流转视图 — 菜单= 报修待提→待技术定损→设备维修(执行中,新增)→已归档/作废, 与单据自动流转环节一一对应
     // V11.230: 左侧菜单按业务流程大面板重排(消除重复/包含): 报修处理(报修提交+技术定损, 原②③合并)→维修执行中(定损审批/比价/委外/验收/发票)→已归档/作废; 全部视图由维修页状态下拉提供
     ['采购管理',[['prequests','📝','采购申请'],['inquiries','🔍','三方询价'],['orders','📋','采购订单'],['contracts','📄','合同管理'],['suppliers','🏢','供应商']]],
-    ['仓储库存',[['receivings','📦','入库验收'],['requisitions','📤','出库管理'],['returns','↩️','退库管理'],['inventory','📦','库存查询'],['counts','📋','库存盘点']]],
+    ['仓储库存',[['receivings','📦','入库验收'],['requisitions','📤','出库管理'],['returns','↩️','退库管理'],['inventory','📦','库存查询'],['warehouses','🏢','库房管理'],['counts','📋','库存盘点']]],
     ['财务往来',[['payments','💰','付款申请'],['expenses','💸','费用登记'],['settlements','📊','月度对账'],['invoices','🧾','合并开票'],['ledger','🔍','往来台账'],['small','💼','小额台账']]],
     ['审批中心',[['approvals','✅','审批中心']]],
     ['报表中心',[['reports','📊','报表中心']]],
@@ -1369,6 +1384,7 @@ function sw(name){
     'payments':loadPayments,'inventory':loadInventory,'requisitions':()=>{reqTab(Array.from(document.querySelectorAll('#reqTabs button')).find(b=>b.classList.contains('act'))?.dataset?.z||'inv');loadReqInv();loadRequisitions()},'suppliers':loadSuppliers,'reports':loadReports,'feishu':loadFeishu,
     'dingtalk':loadDingTalk,
     'counts':()=>{loadAdjustments()},
+    'warehouses':loadWhTree,
     'returns':loadReturns,
     'settlements':loadSettlements,'invoices':loadInvoicePage,'ledger':loadLedger,'system':loadSystem,
     'expenses':loadExpenses,
@@ -1418,6 +1434,7 @@ function __pageRoles(name){
     'requisitions':'库管员、部门负责人、分管领导、总经理、系统管理员',
     'returns':'库管员、部门负责人、分管领导、总经理、系统管理员',
     'counts':'库管员、分管领导、总经理、系统管理员',
+    'warehouses':'库管员、采购员、部门负责人、分管领导、总经理、系统管理员',
     'payments':'财务、分管领导、总经理、系统管理员',
     'small':'采购员、库管员、财务、分管领导、总经理、系统管理员',
     'expenses':'财务、分管领导、总经理、系统管理员',
@@ -1444,6 +1461,7 @@ function __pageAllowed(name){
     'requisitions':['库管员','部门负责人','分管领导','总经理','系统管理员'],
     'returns':['库管员','部门负责人','分管领导','总经理','系统管理员'],
     'counts':['库管员','分管领导','总经理','系统管理员'],
+    'warehouses':['库管员','采购员','部门负责人','分管领导','总经理','系统管理员'],
     'payments':['财务','分管领导','总经理','系统管理员'],
     'small':['采购员','库管员','财务','分管领导','总经理','系统管理员'],
     'expenses':['财务','分管领导','总经理','系统管理员'],
@@ -4779,12 +4797,24 @@ async function showWhOverview(){
 }
 async function loadInventory(cat){
   // V11.311: 支持 分类 + 库房 + 货位 三维筛选(货位/批次/库房列展示, 需求模块四.1/四.2)
+  // V11.325: 增加 库区 + 数据来源(系统新增/历史导入) 筛选
   const wh=(id('invWhFilter')?.value||''), loc=(id('invLocFilter')?.value||'').trim();
+  const zone=(id('invZoneFilter')?.value||''), src=(id('invSrcFilter')?.value||'');
   const qs=[]; if(cat)qs.push('cat='+encodeURIComponent(cat)); if(wh)qs.push('wh='+encodeURIComponent(wh)); if(loc)qs.push('loc='+encodeURIComponent(loc));
+  if(zone)qs.push('zone='+encodeURIComponent(zone)); if(src)qs.push('src='+src);
   const i=await api('/inventory'+(qs.length?'?'+qs.join('&'):''));
   if(id('invWhFilter')&&!id('invWhFilter').dataset.init){
     id('invWhFilter').dataset.init='1';
     id('invWhFilter').innerHTML='<option value="">全部库房</option>'+((await api('/inventory/locations').catch(()=>({warehouses:[]}))).warehouses||[]).map(w=>`<option>${esc(w)}</option>`).join('');
+  }
+  // V11.325 库区下拉(取自三级库房主数据, 全库房共用库区名)
+  if(id('invZoneFilter')&&!id('invZoneFilter').dataset.init){
+    id('invZoneFilter').dataset.init='1';
+    try{
+      const _tree=await api('/warehouse/tree');
+      const _zs=[...new Set((_tree.tree||[]).flatMap(w=>(w.children||[]).map(z=>z.name)))];
+      id('invZoneFilter').innerHTML='<option value="">全部库区</option>'+_zs.map(z=>`<option>${esc(z)}</option>`).join('');
+    }catch(e){}
   }
   // 分类下拉初始化
   const cats=await api('/categories').catch(()=>[]);
@@ -4798,20 +4828,21 @@ async function loadInventory(cat){
   let _imgMap={}; try{ _imgMap=(await api('/material-images/map').catch(()=>({}))).map||{}; }catch(e){}
   const showP=canSeePrice();
   const canEditInv=['系统管理员','分管领导','总经理'].includes(ME.role)||ME.can_config;  // V11.201: 库存修改仅管理员/领导, 采购员只读
-  let h='<table><tr><th onclick="invSort(\'id\')" style="cursor:pointer">序号</th><th>供应商</th><th onclick="invSort(\'item_name\')" style="cursor:pointer">物料名称</th><th>图片</th><th>规格型号</th><th>单位</th><th>库房</th><th>货位</th><th>批次</th><th onclick="invSort(\'quantity\')" style="cursor:pointer" title="当前库存量(入库增加/出库扣减)">剩余库存量</th>';
+  let h='<table><tr><th onclick="invSort(\'id\')" style="cursor:pointer">序号</th><th>供应商</th><th onclick="invSort(\'item_name\')" style="cursor:pointer">物料名称</th><th>规格型号</th><th>图片</th><th>单位</th><th>库房</th><th>库区</th><th>货位</th><th>批次</th><th onclick="invSort(\'quantity\')" style="cursor:pointer" title="当前库存量(入库增加/出库扣减)">剩余库存量</th>';
   if(showP)h+='<th onclick="invSort(\'price\')" style="cursor:pointer">不含税单价</th><th>税率</th><th>含税单价</th><th onclick="invSort(\'total_taxed\')" style="cursor:pointer">合计</th>';
   h+='<th>备注</th><th>预警</th><th>溯源</th></tr>';
   arr.forEach((r,idx)=>{
     const low=(r.quantity||0)<=r.safe_stock&&r.safe_stock>0, over=r.max_stock>0&&r.quantity>=r.max_stock;
-    h+=`<tr><td>${idx+1}</td><td>${esc(r.supplier||'')}</td><td><b>${esc(r.item_name)}</b></td><td>${esc(r.spec||'')}</td><td>${(_imgMap[(r.item_name||"")+"|"+(r.spec||"")])?`<img src="/uploads/${encodeURIComponent(_imgMap[(r.item_name||"")+"|"+(r.spec||"")])}" style="width:36px;height:36px;object-fit:cover;border-radius:4px;border:1px solid #dfe6f0;cursor:pointer" onclick="showMatImgByIdx(${idx})" title="点击查看/上传物资图片">`:'<span style="color:#bbb;font-size:9px">无图</span>'}</td><td>${esc(r.unit||'')}</td>
+    h+=`<tr><td>${idx+1}</td><td>${esc(r.supplier||'')}</td><td><b>${esc(r.item_name)}</b>${(r.data_source=='历史导入')?' <span class="tag" style="background:#f1f3f4;color:#5f6368;border:1px dashed #c9ced4" title="老库房导入的历史存量数据（只读）：可用上方「数据来源」筛选单独查看">📦 历史导入</span>':''}</td><td>${esc(r.spec||'')}</td><td>${(_imgMap[(r.item_name||"")+"|"+(r.spec||"")])?`<img src="/uploads/${encodeURIComponent(_imgMap[(r.item_name||"")+"|"+(r.spec||"")])}" style="width:36px;height:36px;object-fit:cover;border-radius:4px;border:1px solid #dfe6f0;cursor:pointer" onclick="showMatImgByIdx(${idx})" title="点击查看/上传物资图片">`:'<span style="color:#bbb;font-size:9px">无图</span>'}</td><td>${esc(r.unit||'')}</td>
       <td style="font-size:9px">${esc(r.warehouse||'')}</td>
+      <td style="font-size:9px">${r.zone?esc(r.zone):'<span style="color:#bbb">未分区</span>'}</td>
       <td style="font-size:9px">${r.location?esc(r.location):'<span style="color:#bbb">未编货位</span>'}</td>
       <td style="font-size:9px">${r.batch_no?esc(r.batch_no):'<span style="color:#bbb">—</span>'}</td>
       <td style="font-weight:600;color:${low?'var(--d)':'inherit'}">${r.quantity||0}</td>`;
     if(showP)h+=`<td>¥${(r.price||0).toFixed(2)}</td><td>${r.tax_rate||13}%</td><td>¥${(r.price_taxed||0).toFixed(2)}</td><td>¥${(r.total_taxed||0).toFixed(2)}</td>`;
     h+=`<td>${esc(r.remark||'')}</td>
       <td>${low?'<span class="tag" style="background:#e74c3c;color:#fff">'+((r.quantity||0)<=0?'缺货':'预警')+'</span>':over?'<span class="tag" style="background:#f39c12;color:#fff">超储</span>':'<span class="tag" style="background:#27ae60;color:#fff">正常</span>'}</td>
-      <td>${low?`<button class="lnk" style="color:var(--p);font-weight:600" onclick="replenishInv(${r.id})">🛒 补货</button>`:''} ${canEditInv?`<button class="lnk" style="color:#b08900" onclick="editDoc('inventory',${r.id},'库存物资')">✏️修改</button>`:''} <button class="lnk" style="color:var(--s)" onclick="traceInv(${r.id})">🔍 溯源</button> <button class="lnk" style="color:#8e44ad" onclick="showMatImgByIdx(${idx})">📷 图片</button></td></tr>`;
+      <td>${low?`<button class="lnk" style="color:var(--p);font-weight:600" onclick="replenishInv(${r.id})">🛒 补货</button>`:''} ${(canEditInv&&r.data_source!='历史导入')?`<button class="lnk" style="color:#b08900" onclick="editDoc('inventory',${r.id},'库存物资')">✏️修改</button>`:''} <button class="lnk" style="color:var(--s)" onclick="traceInv(${r.id})">🔍 溯源</button> <button class="lnk" style="color:#8e44ad" onclick="showMatImgByIdx(${idx})">📷 图片</button></td></tr>`;
   });
   id('inventoryTable').innerHTML=h||'<div style="padding:8px;color:#999">暂无库存数据</div>';
 
@@ -6121,6 +6152,153 @@ async function fillWhSelect(selId, keep){
     if([...s.options].some(o=>o.value===cur)) s.value=cur; else s.value='';
   }catch(e){}
 }
+// ============ V11.325 需求模块一: 库房管理页(仓库-库区-库位 树形卡片式布局) ============
+function _whKpi(lbl,val,fg,bg){
+  return `<div style="min-width:120px;flex:0 0 auto;background:${bg};border:1px solid ${fg}22;border-radius:8px;padding:6px 10px">
+    <div style="font-size:9px;color:#666">${lbl}</div>
+    <div style="font-size:16px;font-weight:800;color:${fg};line-height:1.3">${val}</div></div>`;
+}
+function _whColor(tag,colors){
+  const c=(colors||{})[tag]||(colors||{}).normal||{fg:'#16a34a',bg:'#dcfce7',label:'正常'};
+  return c;
+}
+async function loadWhTree(){
+  const box=id('whTreeCards'); if(!box)return;
+  const q=(id('whTreeSearch')||{}).value||'';
+  box.innerHTML='<div class="loading">加载中...</div>';
+  let d=null;
+  try{ d=await api('/warehouse/tree'+(q?('?q='+encodeURIComponent(q)):''),{noCache:true}); }catch(e){}
+  if(!d||!d.tree){ box.innerHTML='<div style="padding:10px;color:#c0392b;font-size:11px">加载失败，请点【🔄 刷新】重试</div>'; return; }
+  window._whTree=d;
+  const canEdit=['库管员','系统管理员'].includes(ME.role);
+  const colors=d.colors||{};
+  const tot=d.total||{};
+  const btn=id('whAddBtn'); if(btn)btn.style.display=canEdit?'':'none';
+  if(!d.tree.length){ box.innerHTML='<div style="padding:10px;color:#999;font-size:11px">没有匹配的仓库</div>'; return; }
+  let h='<div style="width:100%;display:flex;gap:6px;flex-wrap:wrap;margin-bottom:2px">'
+    + _whKpi('仓库数量',d.tree.length,'#1a6bff','#eef4ff')
+    + _whKpi('库存条目',tot.items||0,'#0f9d58','#eefaf1')
+    + _whKpi('库存数量',(tot.qty||0),'#e65100','#fff6e9')
+    + _whKpi('库存金额 ¥',(tot.amt||0),'#7c3aed','#f5f0ff')
+    + `</div>`;
+  d.tree.forEach(w=>{
+    const wc=_whColor(w.color_tag,colors);
+    const stOn=(w.status||'启用')=='启用';
+    const zones=w.children||[];
+    const locCnt=zones.reduce((s,z)=>s+((z.children||[]).length),0);
+    h+=`<div class="card" style="width:336px;border-top:3px solid ${stOn?wc.fg:'#9aa3ad'}">
+      <div style="padding:8px 10px">
+        <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+          <b style="font-size:12.5px">🏢 ${esc(w.name)}</b>
+          <span class="tag" style="background:${stOn?wc.bg:'#f1f3f4'};color:${stOn?wc.fg:'#6b7280'}">${stOn?(w.color_tag=='pending'?'待验区仓':wc.label||'正常'):'已停用'}</span>
+          ${w.code?`<span style="font-size:8.5px;color:#999">${esc(w.code)}</span>`:''}
+        </div>
+        <div style="font-size:9.5px;color:#555;margin-top:4px">
+          📦 ${w.stats.items}条目 / ${w.stats.qty}件${Number(w.stats.amt)>0?(' / ¥'+w.stats.amt):''}
+          ${w.stats.free_items?` · <span style="color:#8a6d3b">0价 ${w.stats.free_items}条</span>`:''}
+          ${w.stats.hist_items?` · <span style="color:#5f6368">历史导入 ${w.stats.hist_items}条</span>`:''}
+        </div>
+        <div style="font-size:8.5px;color:#999;margin-top:1px">库区 ${zones.length} 个 · 库位 ${locCnt} 个${w.no_zone_items?` · <span style="color:#e65100">${w.no_zone_items} 条未分区(老数据)</span>`:''}</div>
+        <div style="margin-top:6px">${zones.map(z=>{
+          const zc=_whColor(z.color_tag,colors);
+          const zst=(z.status||'启用')=='启用';
+          return `<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-top:3px;padding:3px 5px;background:#fafbfc;border:1px solid #eef1f5;border-radius:5px">
+            <span class="tag" style="background:${zst?zc.bg:'#f1f3f4'};color:${zst?zc.fg:'#6b7280'};cursor:pointer" onclick="whNodeStock(${z.id},'${esc(z.name)}')" title="点击查看该库区下的库存明细">${esc(z.name)} · ${z.stats.items}条</span>
+            ${(z.children||[]).map(l=>`<span style="font-size:8.5px;color:#555;border:1px dashed #cfd6e0;border-radius:10px;padding:1px 7px;cursor:pointer;background:#fff" onclick="whNodeStock(${l.id},'${esc(l.name)}')" title="点击查看该库位库存">${esc(l.name)}${l.stats.items?(' · '+l.stats.items+'条'):''}</span>`).join('')||'<span style="font-size:8.5px;color:#bbb">无库位</span>'}
+            ${canEdit?`<button class="lnk" style="font-size:8.5px;margin-left:auto" onclick="whNewNode(${z.id})" title="在该库区下新增库位">+库位</button>`:''}
+          </div>`;
+        }).join('')||'<div style="font-size:9px;color:#bbb;margin-top:4px">暂无库区</div>'}</div>
+        <div style="display:flex;gap:4px;margin-top:7px;flex-wrap:wrap;align-items:center">
+          <button class="lnk" style="font-size:9.5px;color:var(--p)" onclick="whNodeStock(${w.id},'${esc(w.name)}')">📦 查看库存</button>
+          ${canEdit?`<button class="lnk" style="font-size:9.5px" onclick="whNewNode(${w.id})">➕ 库区</button>
+          <button class="lnk" style="font-size:9.5px;color:#b08900" onclick="whNewNode(0,${w.id})">✏️ 编辑</button>
+          <button class="lnk" style="font-size:9.5px;color:${stOn?'#c0392b':'#16a34a'}" onclick="whNodeAction(${w.id},'toggle')">${stOn?'⏸ 停用':'▶ 启用'}</button>
+          <button class="lnk" style="font-size:9.5px" onclick="whNodeAction(${w.id},'move','up')" title="上移">↑</button>
+          <button class="lnk" style="font-size:9.5px" onclick="whNodeAction(${w.id},'move','top')" title="置顶">⤒</button>`:''}
+        </div>
+      </div></div>`;
+  });
+  box.innerHTML=h;
+}
+function _whFind(nid){
+  const d=window._whTree||{tree:[]};
+  for(const w of (d.tree||[])){
+    if(w.id==nid)return w;
+    for(const z of (w.children||[])){
+      if(z.id==nid)return z;
+      for(const l of (z.children||[]))if(l.id==nid)return l;
+    }
+  }
+  return null;
+}
+async function whNodeStock(nid,name){
+  id('dmTitle').textContent='📦 库房库存明细 · '+name;
+  id('dmBody').innerHTML='<div class="loading">加载中...</div>';
+  id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">关闭</button>';
+  id('detailModal').classList.add('show');
+  let d=null; try{ d=await api('/warehouse/node/'+nid+'/stock',{noCache:true}); }catch(e){}
+  if(!d||!d.rows){ id('dmBody').innerHTML='<div style="padding:10px;color:#c0392b">加载失败</div>'; return; }
+  const showP=canSeePrice();
+  const qty=d.rows.reduce((s,x)=>s+Number(x.quantity||0),0);
+  const amt=d.rows.reduce((s,x)=>s+Number(x.amount||0),0);
+  let h=`<div style="font-size:10px;color:#555;margin-bottom:6px">${esc((d.node||{}).name||name)} · 共 <b>${d.rows.length}</b> 条 / <b>${qty}</b> 件${showP&&amt?(' / ¥'+amt.toFixed(2)):''}（最多显示300条）</div>`;
+  h+='<table class="tb" style="font-size:9px"><thead><tr><th>物资名称</th><th>规格</th><th>库区</th><th>库位</th><th>数量</th><th>批次</th><th>来源</th></tr></thead><tbody>';
+  h+=d.rows.map(r=>`<tr><td>${esc(r.item_name)}</td><td>${esc(r.spec||'')}</td><td>${esc(r.zone||'—')}</td><td>${esc(r.location||'—')}</td>
+      <td style="font-weight:600">${r.quantity||0}${esc(r.unit||'')}</td><td style="font-size:8px">${esc(r.batch_no||'—')}</td>
+      <td>${r.data_source=='历史导入'?'<span class="tag" style="background:#f1f3f4;color:#5f6368">历史导入</span>':'系统新增'}</td></tr>`).join('');
+  h+='</tbody></table>';
+  id('dmBody').innerHTML=h;
+}
+function whNewNode(parentId,nid){
+  parentId=parentId||0;
+  let nd=null, lvlTxt='一级仓库', upTxt='—（顶级）';
+  if(nid){ nd=_whFind(nid); if(!nd){alert('节点不存在，请刷新');return;} }
+  if(parentId&&!nid){ nd=null; const p=_whFind(parentId); if(p){ upTxt=p.name+'（'+(p.level==1?'仓库→新增库区':'库区→新增库位')+'）'; lvlTxt=(p.level==1?'二级库区':'三级库位'); } }
+  if(nid){ lvlTxt=(nd.level==1?'一级仓库':nd.level==2?'二级库区':'三级库位'); upTxt=nd.level==1?'—（顶级）':(_whFind(nd.parent_id)||{}).name||'—'; }
+  id('dmTitle').textContent=(nid?'✏️ 编辑':'➕ 新增')+lvlTxt+(nid?(' · '+nd.name):'');
+  const cur=nd||{};
+  id('dmBody').innerHTML=`
+    <div style="font-size:10px;color:#666;margin-bottom:6px">层级：${lvlTxt} · 上级：${esc(upTxt)}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:10px">
+      <label>名称 <span style="color:#e74c3c;font-weight:700">*</span><input class="fc" id="whNName" style="width:100%" value="${esc(cur.name||'')}" placeholder="${lvlTxt=='一级仓库'?'如 太原总仓/河曲分仓':(lvlTxt=='二级库区'?'如 待验区/合格区/A货架区':'如 A区-01货架-02层')}"></label>
+      <label>编码<input class="fc" id="whNCode" style="width:100%" value="${esc(cur.code||'')}" placeholder="如 WH01 / WH01-Z1"></label>
+      <label>状态<select class="fc" id="whNStatus" style="width:100%"><option value="启用"${((cur.status||'启用')=='启用')?' selected':''}>启用</option><option value="停用"${((cur.status||'')=='停用')?' selected':''}>停用（不出现在业务下拉）</option></select></label>
+      <label>状态色<select class="fc" id="whNColor" style="width:100%">
+        <option value="normal"${((cur.color_tag||'normal')=='normal')?' selected':''}>绿·正常</option>
+        <option value="pending"${((cur.color_tag||'')=='pending')?' selected':''}>蓝·待验</option>
+        <option value="bad"${((cur.color_tag||'')=='bad')?' selected':''}>红·不合格</option></select></label>
+    </div>
+    <label style="font-size:10px;display:block;margin-top:6px">备注<input class="fc" id="whNRemark" style="width:100%" value="${esc(cur.remark||'')}" placeholder="如 存放现场备件"></label>
+    <div style="font-size:9px;color:#999;margin-top:6px">提示：一级仓库改名会同步更新库存/入库单上的库房名称（避免库存挂在已不存在的库房下）。</div>`;
+  id('dmFooter').innerHTML=`<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="whSaveNode(${cur.id||0},${parentId})">保存</button>`;
+  id('detailModal').classList.add('show');
+}
+async function whSaveNode(nid,parentId){
+  const body={id:nid||0,parent_id:nid?((_whFind(nid)||{}).parent_id||0):(parentId||0),
+    name:(id('whNName')||{}).value||'',code:(id('whNCode')||{}).value||'',
+    status:(id('whNStatus')||{}).value||'启用',color_tag:(id('whNColor')||{}).value||'normal',
+    remark:(id('whNRemark')||{}).value||''};
+  if(!body.name.trim()){alert('请填写名称');return}
+  const r=await api('/warehouse/node',{method:'POST',body:JSON.stringify(body)});
+  if(r.success){alert('✅ '+r.message);closeMod();loadWhTree();}else alert('⛔ '+(r.error||'保存失败'));
+}
+async function whNodeAction(nid,act,dir){
+  if(act=='toggle'){
+    const r=await api('/warehouse/node/'+nid+'/toggle',{method:'POST',body:JSON.stringify({})});
+    if(r.success){alert('✅ '+r.message);loadWhTree();}else alert('⛔ '+(r.error||'操作失败'));
+    return;
+  }
+  if(act=='move'){
+    const r=await api('/warehouse/node/'+nid+'/move',{method:'POST',body:JSON.stringify({dir:dir||'up'})});
+    if(r.success)loadWhTree();else alert('⛔ '+(r.error||'排序失败'));
+    return;
+  }
+  if(act=='delete'){
+    if(!confirm('确认删除该节点？\n（有下级或已挂库存的节点不能删除，请改用「停用」）'))return;
+    const r=await api('/warehouse/node/'+nid,{method:'DELETE'});
+    if(r.success){alert('✅ '+r.message);loadWhTree();}else alert('⛔ '+(r.error||'删除失败'));
+  }
+}
 async function renderWhCards(){
   const box=id('invWhCards'); if(!box)return;
   let d={rows:[],total:{}};
@@ -6790,7 +6968,8 @@ const PAGE_REFRESH={
   preturns:()=>loadReturns(), pcounts:()=>{loadCounts();loadAdjustments()}, pexpenses:()=>loadExpenses(),
   pinventory:()=>loadInventory(id('invCatFilter')?id('invCatFilter').value:''),
   psuppliers:()=>loadSuppliers(), psettlements:()=>loadSettlements(), pinvoices:()=>loadInvoicePage(),
-  pledger:()=>loadLedger(), psmall:()=>loadSmallLedger(), palerts:()=>loadAlertCenter()
+  pledger:()=>loadLedger(), psmall:()=>loadSmallLedger(), palerts:()=>loadAlertCenter(),
+  pwarehouses:()=>loadWhTree()
 };
 function pageRefresh(pid){
   const f=PAGE_REFRESH[pid];

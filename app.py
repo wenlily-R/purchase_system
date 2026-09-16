@@ -9599,6 +9599,9 @@ def api_complete_receiving(rid):
     rn = conn.execute("SELECT * FROM receivings WHERE id=?", (rid,)).fetchone()
     if not rn:
         conn.close(); return jsonify({'error': '入库单不存在'}), 404
+    # V11.325 需求模块三: 历史导入数据只读 — 不能提交审批
+    if (rn['data_source'] or '') == '历史导入':
+        conn.close(); return jsonify({'error': '「%s」是老库房导入的历史数据（只读）：不能提交审批' % rn['receive_no']}), 400
     if rn['status'] in ('已入库', '已驳回', '已作废'):
         conn.close(); return jsonify({'error': f'当前状态({rn["status"]})不可提交审批'}), 400
     # V11.206 集体验收: 标记需集体验收的单必须先完成集体验收审批, 才能走常规入库审批
@@ -11861,6 +11864,8 @@ def api_inventory():
     cat = request.args.get('cat', '')
     wh = (request.args.get('wh') or '').strip()      # V11.311 按库房筛选
     loc = (request.args.get('loc') or '').strip()    # V11.311 按货位筛选(模糊, 需求四.1)
+    zone = (request.args.get('zone') or '').strip()  # V11.325 按库区筛选
+    src = (request.args.get('src') or '').strip()    # V11.325 数据来源: sys=仅系统新增 / hist=仅历史导入, 空=全部
     conn = db()
     # 存量回填: supplier 为空时从订单历史取最近供应商
     conn.execute("""UPDATE inventory SET supplier=(SELECT po.supplier FROM purchase_orders po
@@ -11876,8 +11881,14 @@ def api_inventory():
         _cond.append("COALESCE(i.warehouse,'')=?"); _args.append(wh)
     if loc:
         _cond.append("COALESCE(i.location,'') LIKE '%'||?||'%'"); _args.append(loc)
+    if zone:
+        _cond.append("COALESCE(i.zone,'')=?"); _args.append(zone)
+    if src == 'sys':
+        _cond.append("COALESCE(i.data_source,'系统')<>'历史导入'")
+    elif src == 'hist':
+        _cond.append("COALESCE(i.data_source,'系统')='历史导入'")
     _where = (" WHERE " + " AND ".join(_cond)) if _cond else ""
-    if cat or wh or loc:
+    if cat or wh or loc or zone or src:
         rows = conn.execute("SELECT i.*,c.name as cat_name FROM inventory i LEFT JOIN categories c ON i.cat_code=c.code" + _where + " ORDER BY i.id", _args).fetchall()
     else:
         rows = conn.execute("SELECT i.*,c.name as cat_name FROM inventory i LEFT JOIN categories c ON i.cat_code=c.code ORDER BY i.id").fetchall()
@@ -18332,6 +18343,26 @@ def api_doc_withdraw(biz_type, bid):
     return jsonify({'success': True, 'message': _msg})
 
 
+def _hist_readonly(biz_type, bid):
+    """V11.325 需求模块三: 历史导入数据只读管控 — 命中返回提示文案, 否则 None"""
+    try:
+        if biz_type == 'receiving':
+            c = db()
+            r = c.execute("SELECT data_source, receive_no FROM receivings WHERE id=?", (bid,)).fetchone()
+            c.close()
+            if r and (r['data_source'] or '') == '历史导入':
+                return '「%s」是老库房导入的历史数据（只读）：不能修改/删除/提交审批，避免误改历史存量' % (r['receive_no'] or bid)
+        elif biz_type == 'inventory':
+            c = db()
+            r = c.execute("SELECT data_source, item_name FROM inventory WHERE id=?", (bid,)).fetchone()
+            c.close()
+            if r and (r['data_source'] or '') == '历史导入':
+                return '「%s」是老库房导入的历史库存数据（只读）：不能修改/删除，避免误改历史存量' % (r['item_name'] or bid)
+    except Exception:
+        return None
+    return None
+
+
 @app.route('/api/docs/<biz_type>/<int:bid>/update', methods=['POST'])
 @login_required
 def api_doc_update(biz_type, bid):
@@ -18342,6 +18373,9 @@ def api_doc_update(biz_type, bid):
     - 金额字段自动重算(单价x数量x税率)
     - 审批中/已通过单据: 编辑后回到待审批重新走流程(撤回原审批)"""
     conn = db()
+    _ro = _hist_readonly(biz_type, bid)
+    if _ro:
+        conn.close(); return jsonify({'error': _ro}), 400
     # V11.224 模块一(全流程可修改): 权限放宽 — 系统管理员/分管领导/配置用户 或 单据提交人本人
     # (保留 V11.201 库存敏感硬边界: 库存仅 系统管理员/分管领导/总经理, 采购员/财务/员工只读)
     _me_usr = None
@@ -18840,6 +18874,9 @@ def api_doc_delete(biz_type, bid):
     - 有下游单据引用(订单引用申请/入库引用订单/合同引用订单)的: 禁止删除
     - 级联清理: 明细行/审批实例/钉钉实例/库存流水"""
     conn = db()
+    _ro = _hist_readonly(biz_type, bid)
+    if _ro:
+        conn.close(); return jsonify({'error': _ro}), 400
     if not can_manage_config():
         # V11.201: 单据提交人本人可删除自己的 草稿/已驳回 单据(未进审批流/无下游), 其余仅管理员
         _me = conn.execute("SELECT * FROM users WHERE id=?", (session.get('user_id', 0),)).fetchone()

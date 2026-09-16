@@ -224,6 +224,27 @@ try:
     st, b = api('/api/receivings?hist=1')
     _h = [x for x in json.loads(b) if x['id'] == HID]
     chk('勾选「显示历史归档数据」后可查', len(_h) == 1 and _h[0].get('data_source') == '历史导入', _h[:1])
+    # ---- 14. 历史导入数据只读(后端强制) ----
+    st, b = api('/api/docs/receiving/%d/update' % HID, {'remark': '试图改历史数据'})
+    chk('历史入库单不可修改', st == 400 and '只读' in msg(b), msg(b))
+    st, b = api('/api/docs/receiving/%d/delete' % HID, {'confirm': 1})
+    chk('历史入库单不可删除', st == 400 and '只读' in msg(b), msg(b))
+    st, b = api('/api/receivings/%d/complete' % HID, {'qualified_qty': 5})
+    chk('历史入库单不可提交审批', st == 400 and '只读' in msg(b), msg(b))
+    c = sqlite3.connect(DB)
+    cur = c.execute("""INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,price,data_source,updated_at)
+                       VALUES(?,?,?,?,?,?,?,datetime('now','localtime'))""",
+                    (TAG + '历史库存', '', '个', 7, '主库房', 3.5, '历史导入'))
+    HINV = cur.lastrowid; c.commit(); c.close()
+    st, b = api('/api/docs/inventory/%d/update' % HINV, {'quantity': 99})
+    chk('历史库存条目不可修改', st == 400 and '只读' in msg(b), msg(b))
+    # ---- 15. 库存查询 数据来源/库区 筛选 ----
+    st, b = api('/api/inventory?src=hist')
+    chk('库存「仅历史导入」筛选命中', any(x['id'] == HINV for x in json.loads(b)))
+    st, b = api('/api/inventory?src=sys')
+    chk('库存「仅系统新增」不命中历史条目', not any(x['id'] == HINV for x in json.loads(b)))
+    st, b = api('/api/inventory?zone=' + urllib.parse.quote('待验区'))
+    chk('库存按库区筛选可用', st == 200)
 
 finally:
     # ---- 清理 ----
