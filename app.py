@@ -1993,6 +1993,13 @@ def create_approvals(biz_type, biz_id, amount, submitter=''):
             if u2:
                 approver_name = u2['name'] or u2['username']
                 approver_id = u2['id']
+        if approver_id is None:
+            # V11.329 兜底防卡单: 该角色无在职账号(如生产环境缺"部门负责人")时, 落到系统管理员, 保证审批链一定有人可办
+            u3 = conn.execute("SELECT * FROM users WHERE role='系统管理员' AND is_active=1 ORDER BY id LIMIT 1").fetchone()
+            if u3:
+                approver_name = (u3['name'] or u3['username']) + '(兜底-系统管理员)'
+                approver_id = u3['id']
+                print('V11.329 审批人兜底: %s 第%s级 角色%s 无在职用户 → %s' % (biz_type, cfg['level_no'], cfg['role'], approver_name))
         conn.execute("INSERT INTO approval_instances(biz_type,biz_id,level_no,role,approver,approver_id) VALUES(?,?,?,?,?,?)",
                      (biz_type, biz_id, cfg['level_no'], cfg['role'], approver_name, approver_id))
     conn.commit(); conn.close()
@@ -2051,6 +2058,7 @@ FS_BIZ = {  # biz_type -> (审批定义名称, 表单控件前缀)
     'emergency_formal': ('应急紧急采购-正式审批', 'YJ'),
     'emergency_finance': ('应急紧急采购-财务复核', 'YJ'),
     'emergency_extend': ('应急紧急采购-延期审批', 'YJ'),
+    'emergency_convert': ('应急紧急采购-转正审批', 'YJ'),  # V11.329 转正审批节点(可配置启用)
 }
 FS_PRE = {'purchase_request': 'SQ', 'purchase_order': 'CG', 'contract': 'HT', 'credit': 'GZ', 'payment': 'FK', 'receiving': 'RK', 'requisition': 'CK'}
 FS_NODE_MAX = 3  # 审批定义中的审批节点数(与系统链路最大级数一致)
@@ -2340,7 +2348,9 @@ def _ap_case(field):
           " WHEN ai.biz_type='collect_accept' THEN (SELECT rv.receive_no FROM receivings rv WHERE rv.id=ai.biz_id)"
           " WHEN ai.biz_type='inquiry_approval' THEN (SELECT iq.inq_no FROM inquiries iq WHERE iq.id=ai.biz_id)"
             " WHEN ai.biz_type='supplier_return' THEN (SELECT sr.return_no FROM supplier_returns sr WHERE sr.id=ai.biz_id)"
-          " ELSE '' END")
+            # V11.329 应急紧急采购四条独立审批链(缺映射时审批中心显示空白 → 卡单看不见)
+            " WHEN ai.biz_type LIKE 'emergency%' THEN (SELECT ep.emg_no FROM emergency_purchases ep WHERE ep.id=ai.biz_id)"
+            " ELSE '' END")
     name = ("CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.purpose FROM purchase_requests pr WHERE pr.id=ai.biz_id)"
             " WHEN ai.biz_type='purchase_order' THEN (SELECT po.item_name FROM purchase_orders po WHERE po.id=ai.biz_id)"
             " WHEN ai.biz_type='contract' THEN (SELECT ct.contract_name FROM contracts ct WHERE ct.id=ai.biz_id)"
@@ -2353,6 +2363,7 @@ def _ap_case(field):
             " WHEN ai.biz_type='collect_accept' THEN (SELECT rv.item_name FROM receivings rv WHERE rv.id=ai.biz_id)"
             " WHEN ai.biz_type='inquiry_approval' THEN (SELECT iq.purpose FROM inquiries iq WHERE iq.id=ai.biz_id)"
             " WHEN ai.biz_type='supplier_return' THEN (SELECT sr.reason FROM supplier_returns sr WHERE sr.id=ai.biz_id)"
+            " WHEN ai.biz_type LIKE 'emergency%' THEN (SELECT ep.item_name||' '||COALESCE(ep.spec,'')||'（'||COALESCE(ep.project,'')||'）' FROM emergency_purchases ep WHERE ep.id=ai.biz_id)"
             " ELSE '' END")
     amount = ("CASE WHEN ai.biz_type='purchase_request' THEN (SELECT pr.total_estimated FROM purchase_requests pr WHERE pr.id=ai.biz_id)"
               " WHEN ai.biz_type='contract' THEN (SELECT ct.amount FROM contracts ct WHERE ct.id=ai.biz_id)"
@@ -2360,6 +2371,7 @@ def _ap_case(field):
               " WHEN ai.biz_type='requisition' THEN (SELECT rq.quantity FROM requisitions rq WHERE rq.id=ai.biz_id)"
               " WHEN ai.biz_type='repair_plan' THEN (SELECT rp.est_cost FROM repair_plans rp WHERE rp.id=ai.biz_id)"
               " WHEN ai.biz_type='supplier_return' THEN (SELECT sr.total_amount FROM supplier_returns sr WHERE sr.id=ai.biz_id)"
+              " WHEN ai.biz_type LIKE 'emergency%' THEN (SELECT COALESCE(NULLIF(ep.actual_amount,0),ep.est_amount) FROM emergency_purchases ep WHERE ep.id=ai.biz_id)"
               " ELSE 0 END")
     return {'no': no, 'name': name, 'amount': amount}[field]
 def biz_parent_status(biz_type, result):
@@ -2373,6 +2385,7 @@ def biz_parent_status(biz_type, result):
         # V11.327 应急紧急采购: 临时审批→采购接单 / 正式分级审批→财务复核 / 财务复核→待转正 / 延期→已延期
         'emergency_temp': ('采购接单', '已驳回'), 'emergency_formal': ('财务复核', '待补资料'),
         'emergency_finance': ('待转正', '待补资料'), 'emergency_extend': ('已延期', '已驳回'),
+        'emergency_convert': ('待转正', '待补资料'),  # V11.329 转正审批节点(启用时财务复核通过→转正审批→待转正)
     }
     ok, no = m.get(biz_type, ('已通过', '已驳回'))
     return ok if result == 'ok' else no
@@ -2389,6 +2402,7 @@ def biz_table(biz_type):
             'inquiry_approval': 'inquiries',
             'emergency_temp': 'emergency_purchases', 'emergency_formal': 'emergency_purchases',
             'emergency_finance': 'emergency_purchases', 'emergency_extend': 'emergency_purchases',  # V11.327 应急采购
+            'emergency_convert': 'emergency_purchases',  # V11.329 应急采购-转正审批节点(可配置启用)
             'supplier_return': 'supplier_returns'}[biz_type]  # V11.319 供应商退货 / V11.133: biz_id=询价单id
 
 # ============================================================
@@ -2585,11 +2599,12 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
         return True
 
     # V11.327 应急紧急采购: 各节点通过/驳回后的专属字段与状态流转(临时审批人/正式审批/财务复核/延期解锁)
-    if biz_type in ('emergency_temp', 'emergency_formal', 'emergency_finance', 'emergency_extend'):
+    if biz_type in ('emergency_temp', 'emergency_formal', 'emergency_finance', 'emergency_extend', 'emergency_convert'):
         _er = c.execute("SELECT * FROM emergency_purchases WHERE id=?", (biz_id,)).fetchone()
         if not _er:
             c.close(); return False
         _eno = _er['emg_no'] or str(biz_id)
+        _new_fin = _new_cv = False
         if biz_type == 'emergency_temp':
             if result == 'ok':
                 c.execute("UPDATE emergency_purchases SET status='采购接单', temp_approved_by=?, temp_approved_at=?, updated_at=? WHERE id=?",
@@ -2613,13 +2628,30 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
                 _new_fin = False
         elif biz_type == 'emergency_finance':
             if result == 'ok':
-                c.execute("UPDATE emergency_purchases SET status='待转正', finance_status='已复核', finance_remark=?, updated_at=? WHERE id=?",
-                          ((comment or '')[:200], now(), biz_id))
-                emergency_log(c, biz_id, '财务复核通过', approver, '资料完整/价格合理 → 待采购转正闭环')
+                # V11.329 可配置转正审批节点: 开启时财务复核通过 → 再走「转正审批」，通过后才到待转正(采购专员转正闭环)
+                if str(cfg_get('emg_convert_need') or '0') == '1':
+                    c.execute("UPDATE emergency_purchases SET status='转正审批中', finance_status='已复核', finance_remark=?, updated_at=? WHERE id=?",
+                              ((comment or '')[:200], now(), biz_id))
+                    emergency_log(c, biz_id, '财务复核通过', approver, '资料完整/价格合理 → 转正审批节点')
+                    _new_cv = True
+                else:
+                    c.execute("UPDATE emergency_purchases SET status='待转正', finance_status='已复核', finance_remark=?, updated_at=? WHERE id=?",
+                              ((comment or '')[:200], now(), biz_id))
+                    emergency_log(c, biz_id, '财务复核通过', approver, '资料完整/价格合理 → 待采购转正闭环')
+                    _new_cv = False
             else:
                 c.execute("UPDATE emergency_purchases SET status='待补资料', finance_status='已退回', finance_remark=?, updated_at=? WHERE id=?",
                           ((comment or '')[:200], now(), biz_id))
                 emergency_log(c, biz_id, '财务复核退回', approver, (comment or '')[:200])
+                _new_cv = False
+        elif biz_type == 'emergency_convert':
+            if result == 'ok':
+                c.execute("UPDATE emergency_purchases SET status='待转正', updated_at=? WHERE id=?", (now(), biz_id))
+                emergency_log(c, biz_id, '转正审批通过', approver, '转正审批通过 → 待采购专员转正闭环(临时入库单转正式入库, 解锁付款)')
+            else:
+                c.execute("""UPDATE emergency_purchases SET status='待补资料', reject_count=COALESCE(reject_count,0)+1,
+                             abnormal=CASE WHEN COALESCE(reject_count,0)+1>=2 THEN 1 ELSE abnormal END, updated_at=? WHERE id=?""", (now(), biz_id))
+                emergency_log(c, biz_id, '转正审批驳回', approver, (comment or '')[:200] + ' → 退回采购补资料')
         else:  # emergency_extend
             if result == 'ok':
                 _dl = _emg_wd_add(_er['deadline'] or now()[:10], int(emg_num('emg_promise_days', 3)))
@@ -2639,6 +2671,13 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
                 start_instances('emergency_finance', biz_id)
             except Exception as _fe:
                 print('V11.327 财务复核审批创建失败:', _fe)
+        # V11.329 财务复核通过 + 已开启转正审批节点 → 自动发起转正审批
+        if biz_type == 'emergency_finance' and result == 'ok' and _new_cv:
+            try:
+                create_approvals('emergency_convert', biz_id, float(_er['actual_amount'] or _er['est_amount'] or 0), submitter=approver)
+                start_instances('emergency_convert', biz_id)
+            except Exception as _ce:
+                print('V11.329 转正审批创建失败:', _ce)
         return True
 
     # V11.206: 集体验收审批 — 独立处理: 父单据=receivings, 通过只置 collect_status(不动 status 状态机, 由常规入库审批继续流转)
@@ -3205,6 +3244,7 @@ DT_BIZ = {  # biz_type -> 审批模板名称
     'emergency_formal': '应急紧急采购-正式审批',
     'emergency_finance': '应急紧急采购-财务复核',
     'emergency_extend': '应急紧急采购-延期审批',
+    'emergency_convert': '应急紧急采购-转正审批',  # V11.329
 }
 DT_FORM = [('单据编号', 'text'), ('内容摘要', 'text'), ('金额(元)', 'text'), ('申请人', 'text'), ('提交时间', 'text')]
 
@@ -16960,6 +17000,84 @@ def api_emergency_export():
     from flask import send_file
     return send_file(bio, as_attachment=True, download_name='应急采购台账_%s.xlsx' % today(),
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+EMG_CHAINS = (('emergency_temp', '① 应急临时审批（提交申请后先走这里）'), ('emergency_formal', '⑦ 应急正式分级审批（资料补齐后）'),
+              ('emergency_finance', '⑧ 财务复核'), ('emergency_extend', '⑤ 延期审批（超期锁单后申请延期）'),
+              ('emergency_convert', '⑨ 转正审批（可选：启用后财务复核通过→转正审批→采购转正）'))
+
+
+@app.route('/api/emergency/flow-config')
+@login_required
+def api_emergency_flow_config():
+    """V11.329 系统设置-审批流设置: 应急采购独立审批流配置(节点/审批人/金额阈值/转正审批节点)"""
+    if session.get('user_role') not in ('系统管理员', '分管领导', '总经理'):
+        return jsonify({'error': '无权限'}), 403
+    c = db()
+    chains = {}
+    for bt, label in EMG_CHAINS:
+        chains[bt] = {'label': label, 'levels': [dict_row(r) for r in c.execute(
+            "SELECT * FROM approval_flow_config WHERE biz_type=? ORDER BY level_no", (bt,)).fetchall()]}
+    users = [{'username': r['username'], 'name': r['name'] or r['username'], 'role': r['role']}
+             for r in c.execute("SELECT username,name,role FROM users WHERE is_active=1 ORDER BY id").fetchall()]
+    depts = [r['name'] for r in c.execute("SELECT name FROM departments ORDER BY id").fetchall()] if c.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='departments'").fetchone() else []
+    c.close()
+    return jsonify({'chains': chains, 'chain_labels': [{'biz_type': b, 'label': l} for b, l in EMG_CHAINS], 'users': users, 'depts': depts,
+                    'roles': ['部门负责人', '库管员', '采购员', '财务', '分管领导', '总经理'],
+                    'limits': {'emg_limit_a': emg_num('emg_limit_a', 5000), 'emg_limit_b': emg_num('emg_limit_b', 20000),
+                               'emg_month_freq': int(emg_num('emg_month_freq', 3)), 'emg_price_dev': emg_num('emg_price_dev', 20),
+                               'emg_promise_days': int(emg_num('emg_promise_days', 3))},
+                    'convert': {'need': str(cfg_get('emg_convert_need') or '0'), 'role': str(cfg_get('emg_convert_role') or '分管领导'),
+                                'approver': str(cfg_get('emg_convert_approver') or '')}})
+
+
+@app.route('/api/emergency/flow-config', methods=['POST'])
+@login_required
+def api_emergency_flow_config_save():
+    """V11.329 保存应急采购审批流配置: 阈值参数 + 各节点(金额区间/角色/审批人) + 转正审批节点开关"""
+    if session.get('user_role') not in ('系统管理员', '分管领导', '总经理'):
+        return jsonify({'error': '无权限'}), 403
+    d = request.json or {}
+    c = db()
+    # ① 金额阈值与参数
+    for k in ('emg_limit_a', 'emg_limit_b', 'emg_month_freq', 'emg_price_dev', 'emg_promise_days'):
+        if k in (d.get('limits') or {}):
+            try:
+                c.execute("INSERT INTO sys_config(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                          (k, str(d['limits'][k])))
+            except Exception:
+                c.execute("UPDATE sys_config SET value=? WHERE key=?", (str(d['limits'][k]), k))
+    # ② 各审批链节点
+    _saved = []
+    for bt, row in (d.get('chains') or {}).items():
+        if bt not in [x[0] for x in EMG_CHAINS]:
+            continue
+        c.execute("DELETE FROM approval_flow_config WHERE biz_type=?", (bt,))
+        for i, lv in enumerate(row.get('levels') or [], 1):
+            c.execute("""INSERT INTO approval_flow_config(biz_type,level_no,role,min_amount,max_amount,label,approver)
+                         VALUES(?,?,?,?,?,?,?)""",
+                      (bt, i, str(lv.get('role') or '部门负责人').strip(), float(lv.get('min_amount') or 0),
+                       float(lv.get('max_amount') or 999999999), str(lv.get('label') or '').strip()[:60] or ('第%d级' % i),
+                       str(lv.get('approver') or '').strip()))
+        _saved.append(bt)
+    # ③ 转正审批节点(可选)
+    _cv = d.get('convert') or {}
+    for k, v in (('emg_convert_need', '1' if str(_cv.get('need') or '0') == '1' else '0'),
+                 ('emg_convert_role', str(_cv.get('role') or '分管领导').strip()),
+                 ('emg_convert_approver', str(_cv.get('approver') or '').strip())):
+        try:
+            c.execute("INSERT INTO sys_config(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (k, v))
+        except Exception:
+            c.execute("UPDATE sys_config SET value=? WHERE key=?", (v, k))
+    # 转正审批链路配置: 开关打开时若链为空, 用配置的角色/审批人生成1级
+    if str(_cv.get('need') or '0') == '1' and not c.execute("SELECT 1 FROM approval_flow_config WHERE biz_type='emergency_convert'").fetchone():
+        c.execute("""INSERT INTO approval_flow_config(biz_type,level_no,role,min_amount,max_amount,label,approver)
+                     VALUES('emergency_convert',1,?,0,999999999,'转正审批节点',?)""",
+                  (str(_cv.get('role') or '分管领导').strip(), str(_cv.get('approver') or '').strip()))
+    c.commit(); c.close()
+    log(session.get('user_name', ''), '保存应急采购审批流配置', '节点链:%s 转正审批:%s' % (','.join(_saved), '开启' if str(_cv.get('need') or '0') == '1' else '关闭'))
+    return jsonify({'success': True, 'message': '已保存应急采购审批流配置（%d 条审批链 + 金额阈值 + 转正审批节点）；新提交的单据按新配置走' % len(_saved)})
 
 
 @app.route('/api/emergency/sweep', methods=['POST'])

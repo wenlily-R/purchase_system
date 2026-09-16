@@ -499,7 +499,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <select id="emgFStatus" onchange="loadEmergency()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px">
       <option value="">全部状态</option><option>待临时审批</option><option>采购接单</option><option>待临时入库</option>
       <option>待补资料</option><option>延期审批中</option><option>正式审批中</option><option>财务复核</option>
-      <option>待转正</option><option>已锁定</option><option>已闭环</option><option>已驳回</option><option>已作废</option>
+      <option>转正审批中</option><option>待转正</option><option>已锁定</option><option>已闭环</option><option>已驳回</option><option>已作废</option>
     </select>
     <select id="emgFProject" onchange="loadEmergency()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="">全部项目/工地</option></select>
     <select id="emgFExtend" onchange="loadEmergency()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="">是否延期(不限)</option><option value="1">仅已延期</option></select>
@@ -817,6 +817,15 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
         <button class="btn btn-o btn-sm" onclick="afAddLevel()">+ 添加审批环节</button>
         <button class="btn btn-p btn-sm" onclick="afSave()">💾 保存审批流</button>
         <span id="afMsg" style="color:var(--s);font-size:9px"></span>
+      </div>
+    </div></div>
+  <div class="card"><div class="ch"><h3>⚡ 应急采购审批流配置（V11.329 独立配置页）</h3></div>
+    <div class="cb" style="font-size:9px;line-height:1.6">
+      <div style="color:#666;margin-bottom:4px">应急紧急采购专项通道的<b>独立审批流</b>：分别配置 临时审批 / 正式分级审批 / 财务复核 / 延期审批 / 转正审批 的金额区间、审批角色与审批人；下方同时配置金额阈值与「转正审批节点」开关。保存后<b>新提交</b>的应急单按新配置走，审批中的单据不受影响。</div>
+      <div id="emgFlowBox"><div class="loading">加载中...</div></div>
+      <div style="display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-p btn-sm" onclick="emgSaveFlow()">💾 保存应急采购审批流</button>
+        <span id="emgFlowMsg" style="color:var(--s);font-size:9px"></span>
       </div>
     </div></div>
   <div class="card"><div class="ch"><h3>🧾 税率参数配置（V11.224 模块三·金蝶式优先级匹配）</h3>
@@ -1640,6 +1649,7 @@ function jumpAlert(t,id2){
   else if(t=='contract'){sw('contracts');setTimeout(()=>showContract(id2),350)}
   else if(t=='payment')sw('payments');
   else if(t=='supplier')sw('suppliers');
+  else if(String(t||'').indexOf('emergency')===0){sw('emergency');setTimeout(()=>emgDetail(id2),350)}
   else sw('approvals');
 }
 function apprZone(z){
@@ -3190,10 +3200,10 @@ function exportXls(type){window.open('/api/export?type='+type,'_blank')}
 let APPR_FILTER='';
 const APPR_TM={purchase_request:['📝采购申请','#2f6fed'],purchase_order:['📋订单','#e8890c'],inquiry_approval:['🔍比价单','#8e44ad'],contract:['📄合同','#0aa574'],credit:['📑挂账','#b08900'],payment:['💰付款','#d64541'],receiving:['📦入库','#7b5bdb'],collect_accept:['👥集体验收','#16a34a'],repair_plan:['🔧维修','#e67e22'],requisition:['📤出库','#00a896'],return_request:['↩️退库','#e67e22'],
   // V11.327 应急紧急采购专项通道(独立审批链)
-  emergency_temp:['⚡应急-临时审批','#e65100'],emergency_formal:['⚡应急-正式审批','#c62828'],emergency_finance:['⚡应急-财务复核','#0891b2'],emergency_extend:['⚡应急-延期审批','#7c3aed']};
+  emergency_temp:['⚡应急-临时审批','#e65100'],emergency_formal:['⚡应急-正式审批','#c62828'],emergency_finance:['⚡应急-财务复核','#0891b2'],emergency_extend:['⚡应急-延期审批','#7c3aed'],emergency_convert:['⚡应急-转正审批','#0f9d58']};
 let APPR_CENTER='buy';  // V11.221: 审批中心双中心 buy=采购 / repair=维修
 const APPR_CENTER_TABS={
-  buy:[['','全部'],['purchase_request','📝采购申请'],['inquiry_approval','🔍比价单'],['contract','📄合同'],['receiving','📦入库'],['collect_accept','👥集体验收'],['requisition','📤出库'],['return_request','↩️退库'],['payment','💰付款'],['emergency_temp','⚡应急-临时审批'],['emergency_formal','⚡应急-正式审批'],['emergency_finance','⚡应急-财务复核'],['emergency_extend','⚡应急-延期审批'],['rejected','❌未通过']],
+  buy:[['','全部'],['purchase_request','📝采购申请'],['inquiry_approval','🔍比价单'],['contract','📄合同'],['receiving','📦入库'],['collect_accept','👥集体验收'],['requisition','📤出库'],['return_request','↩️退库'],['payment','💰付款'],['emergency_temp','⚡应急-临时审批'],['emergency_formal','⚡应急-正式审批'],['emergency_finance','⚡应急-财务复核'],['emergency_extend','⚡应急-延期审批'],['emergency_convert','⚡应急-转正审批'],['rejected','❌未通过']],
   repair:[['','全部'],['repair_req','🛠维修申请'],['repair_plan','🔧存量定损'],['rejected','❌未通过']]
 };
 const APPR_REPAIR_TYPES=['repair_plan'];  // 维修中心旧类型(存量定损单)
@@ -3426,7 +3436,7 @@ async function showChain(bt,bid){
   if(!ns.length){id('dmBody').innerHTML='<div style="padding:20px;color:#888;font-size:11px">该单据未关联采购申请链路（独立单）。</div>';return}
   const ICON={purchase_request:'📝',inquiry:'🔍',purchase_order:'📦',contract:'📄',receiving:'📥',payment:'💳'};
   const OPEN={purchase_request:'showPRequest',inquiry:'showInquiry',purchase_order:'showOrder',contract:'showContract',receiving:'showRcvDetail',
-    emergency_temp:'emgDetail',emergency_formal:'emgDetail',emergency_finance:'emgDetail',emergency_extend:'emgDetail'};
+    emergency_temp:'emgDetail',emergency_formal:'emgDetail',emergency_finance:'emgDetail',emergency_extend:'emgDetail',emergency_convert:'emgDetail'};
   let rows=ns.map(n=>{
     const cur=(n.type==bt&&n.id==bid);
     const btn=OPEN[n.type]?`<button class="lnk" onclick="${OPEN[n.type]}(${n.id})">查看 ↗</button>`:'';
@@ -6336,7 +6346,7 @@ function emgStageIdx(st){
   if(st=='采购接单')return 2; if(st=='待临时入库')return 3;
   if(st=='待补资料'||st=='延期审批中')return 4;
   if(st=='正式审批中')return 5; if(st=='财务复核')return 6;
-  if(st=='待转正'||st=='已闭环')return 7; if(st=='已锁定')return 4;
+  if(st=='待转正'||st=='已闭环'||st=='转正审批中')return 7; if(st=='已锁定')return 4;
   return 0;
 }
 function emgTag(st){
@@ -8496,7 +8506,7 @@ async function loadSystem(){
     if(id('techBackup'))id('techBackup').value=s.last_backup?('✅ '+s.last_backup):'尚未备份';
     if(id('techPubUrl')){try{const pu=await api('/public-url',{noCache:true});id('techPubUrl').value=(pu&&pu.url)?pu.url:'(未获取到公网地址, 检查隧道)'}catch(e){id('techPubUrl').value='(未获取到公网地址)'}}
   }catch(e){}
-  loadTpls();loadSysLogs();loadSecUsers();loadConfigUsers();loadApprConfigCheck();loadApprovalFlowEdit();
+  loadTpls();loadSysLogs();loadSecUsers();loadConfigUsers();loadApprConfigCheck();loadApprovalFlowEdit();loadEmgFlowCfg();
   // V11.224 模块三: 税率参数配置
   loadTaxCfg();
   // V11.196: 公告管理(管理员/获授权用户可见)
@@ -8750,6 +8760,80 @@ function afRoleChanged(sel){
   const role=sel.value;
   const cand=AF_USERS.filter(u=>u.role===role);
   if(cand.length===1)userSel.value=cand[0].username;
+}
+// ================= V11.329 应急采购审批流配置（独立配置页） =================
+let EMG_FLOW=null;
+async function loadEmgFlowCfg(){
+  const box=id('emgFlowBox'); if(!box)return;
+  box.innerHTML='<div class="loading">加载中...</div>';
+  let d=null; try{ d=await api('/emergency/flow-config',{noCache:true}); }catch(e){}
+  if(!d||!d.chains){ box.innerHTML='<div style="color:#e74c3c;font-size:9px">加载失败：需要系统管理员/领导权限</div>'; return; }
+  EMG_FLOW=d;
+  const L=d.limits||{}, cv=d.convert||{};
+  const num=(i,v,w)=>`<input class="fc" id="${i}" type="number" value="${v}" style="width:${w}px">`;
+  let h=`<div style="background:#f7f8fa;border:1px solid var(--b);border-radius:6px;padding:6px 8px;margin-bottom:6px">
+      <b>金额阈值与参数</b>　金额档A ${num('emgLmtA',L.emg_limit_a,80)} 元（≤A 临时审批只需1级；A~B 增加事业部领导）
+      　应急上限B ${num('emgLmtB',L.emg_limit_b,90)} 元（＞B 禁用应急通道）
+      　月度频次N ${num('emgLmtN',L.emg_month_freq,55)} 次（同项目月度预警线）
+      　价格异常 ${num('emgLmtP',L.emg_price_dev,55)} %（超基准强制填说明）
+      　补资料时限 ${num('emgLmtD',L.emg_promise_days,55)} 个工作日（超时锁单）
+    </div>
+    <div style="background:#fff8e1;border:1px solid #f0d9a0;border-radius:6px;padding:6px 8px;margin-bottom:6px">
+      <label style="font-size:9.5px"><input type="checkbox" id="emgCvNeed" ${cv.need=='1'?'checked':''}> <b>启用「转正审批」节点</b>（财务复核通过 → 转正审批 → 采购专员转正闭环；不启用则财务复核通过后直接待转正）</label><br>
+      <span style="font-size:9.5px">转正审批角色 <select class="fc" id="emgCvRole" style="width:110px">${(d.roles||[]).map(r=>`<option ${r==cv.role?'selected':''}>${r}</option>`).join('')}</select>
+      　审批人 <select class="fc" id="emgCvApprover" style="width:190px">${emgUserOpts(cv.approver)}</select></span>
+    </div>`;
+  (d.chain_labels||[]).forEach(cl=>{
+    const ch=(d.chains||{})[cl.biz_type]||{levels:[]};
+    h+=`<div style="margin-top:8px;border-top:1px dashed var(--b);padding-top:5px">
+      <div style="font-size:10px;font-weight:700;color:#334">${esc(cl.label)}</div>
+      <div id="emgLv_${cl.biz_type}">${(ch.levels||[]).map(l=>emgFlowRow(l)).join('')||'<div style="color:#999;font-size:9px">未配置（该节点不启用）</div>'}</div>
+      <button class="btn btn-o btn-sm" style="margin-top:3px" onclick="emgFlowAdd('${cl.biz_type}')">+ 添加该节点审批级</button></div>`;
+  });
+  box.innerHTML=h;
+}
+function emgUserOpts(sel){
+  let h='<option value="">按角色自动找在职用户</option>';
+  ((EMG_FLOW&&EMG_FLOW.users)||[]).forEach(u=>{h+=`<option value="${esc(u.username)}" ${u.username==sel?'selected':''}>${esc(u.name)}（${esc(u.username)}·${esc(u.role)}）</option>`});
+  return h;
+}
+function emgFlowRow(l){
+  const roles=((EMG_FLOW&&EMG_FLOW.roles)||['部门负责人','库管员','采购员','财务','分管领导','总经理']);
+  return `<div class="emg-af" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:3px">
+    <span style="font-size:9px;color:#888">金额</span><input class="fc" style="width:80px" type="number" data-k="min" value="${l.min_amount||0}">
+    <span style="font-size:9px;color:#888">~</span><input class="fc" style="width:90px" type="number" data-k="max" value="${(l.max_amount>=9999999?'':l.max_amount)}">
+    <span style="font-size:9px;color:#888">元 角色</span>
+    <select class="fc" style="width:105px" data-k="role">${roles.map(r=>`<option ${r==l.role?'selected':''}>${r}</option>`).join('')}</select>
+    <select class="fc" style="width:190px" data-k="approver">${emgUserOpts(l.approver||'')}</select>
+    <input class="fc" style="width:150px" data-k="label" value="${esc(l.label||'')}" placeholder="节点名称">
+    <button class="btn btn-o btn-sm" onclick="this.closest('.emg-af').remove()">✕</button>
+    <span style="color:#bbb;font-size:8px">第${l.level_no}级</span></div>`;
+}
+function emgFlowAdd(bt){
+  const box=id('emgLv_'+bt); if(!box)return;
+  const lv=box.querySelectorAll('.emg-af').length+1;
+  if(box.querySelector('div[style*="999"]')||box.innerText.indexOf('未配置')>=0)box.innerHTML='';
+  box.insertAdjacentHTML('beforeend',emgFlowRow({level_no:lv,min_amount:0,max_amount:'',role:'部门负责人',approver:'',label:'第'+lv+'级'}));
+}
+async function emgSaveFlow(){
+  if(!EMG_FLOW)return;
+  const chains={};
+  ((EMG_FLOW.chain_labels)||[]).forEach(cl=>{
+    const rows=[...(id('emgLv_'+cl.biz_type)||document.createElement('div')).querySelectorAll('.emg-af')];
+    chains[cl.biz_type]={levels:rows.map((r,i)=>{
+      const g=k=>{const e=r.querySelector('[data-k="'+k+'"]');return e?e.value:''};
+      return {level_no:i+1,min_amount:parseFloat(g('min')||'0')||0,max_amount:parseFloat(g('max')||'')||(g('max')===''?999999999:parseFloat(g('max'))),
+              role:g('role')||'部门负责人',approver:g('approver'),label:g('label')||('第'+(i+1)+'级')};
+    })};
+  });
+  const body={limits:{emg_limit_a:parseFloat((id('emgLmtA')||{}).value||'5000'),emg_limit_b:parseFloat((id('emgLmtB')||{}).value||'20000'),
+                      emg_month_freq:parseInt((id('emgLmtN')||{}).value||'3',10),emg_price_dev:parseFloat((id('emgLmtP')||{}).value||'20'),
+                      emg_promise_days:parseInt((id('emgLmtD')||{}).value||'3',10)},
+              chains:chains,
+              convert:{need:((id('emgCvNeed')||{}).checked?'1':'0'),role:(id('emgCvRole')||{}).value||'分管领导',approver:(id('emgCvApprover')||{}).value||''}};
+  const m=id('emgFlowMsg'); if(m)m.textContent='保存中...';
+  const r=await api('/emergency/flow-config',{method:'POST',body:JSON.stringify(body)});
+  if(r.success){ if(m)m.textContent='✅ '+r.message; loadEmgFlowCfg(); }else{ if(m)m.textContent='⛔ '+(r.error||'保存失败') }
 }
 // ================= V11.224 模块三: 税率参数配置 =================
 let _TAX_CFG=[];
@@ -9728,7 +9812,7 @@ async function tqSearch(){
 async function tqGoto(biz,bid){
   // 关联跳转: 打开对应业务详情(复用各模块查看函数); 无详情函数类型弹行数据
   const map={'purchase_request':'showPRequest','purchase_order':'showOrder','receiving':'showRcvDetail','requisition':'showRequisitionDetail','return_request':'showReturnDetail','repair_plan':'showRepairDetail','repair_change':'showPRequest','repair_direct':'showPRequest','contract':'showContract','inquiry':'showInquiry',
-    'emergency_temp':'emgDetail','emergency_formal':'emgDetail','emergency_finance':'emgDetail','emergency_extend':'emgDetail'};
+    'emergency_temp':'emgDetail','emergency_formal':'emgDetail','emergency_finance':'emgDetail','emergency_extend':'emgDetail','emergency_convert':'emgDetail'};
   const fn=map[biz];
   if(fn&&typeof window[fn]==='function'){try{await window[fn](bid);return}catch(e){}}
   // 降级: 展示原始行
