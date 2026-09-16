@@ -52,6 +52,8 @@ ps aux | grep -E "watchdog|app.py" | grep -v grep    # 服务在跑则确认已�
 curl -s http://127.0.0.1:5899/ | head -c 120         # 本机服务正常
 ---
 - 注意：表结构类改动依赖迁移纪律（migrate_db.py 自动应用 migrations/ 下的 .sql）；纯代码改动不需要迁移
+- **Mac 上重启服务的唯一正确方式（2026-09-16 实测，禁用 nohup）**：Mac 的 app.py 由 launchd 托管的 `app_watchdog.py` 拉起，**绝不能** `pkill -f app.py; nohup python3 app.py &`（会变成两个进程抢 5899 端口、守护判断混乱反复重启，Mac 端 Hermes 已明确拒绝此类指令）。要重启只用二选一：`touch app.py`（守护检测到文件变化自动重启，Mac 端一直用这个）；或 `pkill -f "purchase_system/app.py"`（watchdog 约 30 秒自动拉起）。Windows 端给 Mac 写指令时不要再带 nohup。
+- **判断"同步到底到没到"只认三条实证**：Mac `git log -1 --oneline`；**本机与公网各一次** `curl /api/version`（公网 `http://erp.firmamental.work:3388/api/version`）；前端改动再抓公网 `/app.js` 比对本机 `static/app.js`（比字节数/md5）。mac-deploy-watch 遇到 Mac 有未提交改动会跳过本轮、但常在之后自动消化 —— 不要凭单次查询就断言"没同步"，也不要只看版本号就宣布上线成功。
 
 ## 四、用户上下文（新会话必知）
 
