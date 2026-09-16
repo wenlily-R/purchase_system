@@ -12689,17 +12689,20 @@ def api_feishu_instances():
 
 # V11.239: 版本探测端点 — 返回当前部署的 git HEAD(短哈希), 供双机自动部署核验: 推送到GitHub后, 刷 http://<公网>/api/version 看到新提交号即=Mac已同步生效
 import subprocess as _sp
-_version_cache = {'t': 0.0, 'sha': ''}
+_version_cache = {'t': 0.0, 'sha': '', 'date': ''}
 @app.route('/api/version')
 def api_version():
     if time.time() - _version_cache['t'] > 30:
         try:
             _r = _sp.run(['git', 'rev-parse', '--short', 'HEAD'], cwd=BASE, capture_output=True, text=True, timeout=10)
             _version_cache['sha'] = (_r.stdout or '').strip()
+            # V11.330: 同时返回最近提交时间, 前端顶部版本号可显示"构建时间", 同事一眼看出是否已更新
+            _r2 = _sp.run(['git', 'log', '-1', '--format=%ci'], cwd=BASE, capture_output=True, text=True, timeout=10)
+            _version_cache['date'] = (_r2.stdout or '').strip()[:19]
         except Exception:
             _version_cache['sha'] = _version_cache['sha'] or 'unknown'
         _version_cache['t'] = time.time()
-    return jsonify({'version': _version_cache['sha'] or 'unknown'})
+    return jsonify({'version': _version_cache['sha'] or 'unknown', 'date': _version_cache.get('date', '')})
 
 @app.route('/api/public-url')
 def api_public_url():

@@ -1143,6 +1143,47 @@ function esc(s){const d=document.createElement('div');d.textContent=s||'';return
 function showLogin(){id('loginPage').style.display='flex';id('appMain').style.display='none'}
 function showApp(){id('loginPage').style.display='none';id('appMain').style.display='block'}
 
+// ================= V11.330: 版本监控 + 自动更新(解决"同事电脑看不到新功能") =================
+// 背景: 前端是单页应用, 页面一旦打开就一直跑旧JS; 同事不会主动按 Ctrl+F5, 所以改了功能他们看不到。
+// 做法: ①顶部版本号显示真实构建号(点一下=手动检查更新) ②每3分钟+切回标签页时比对 /api/version,
+//      发现更新 → 顶部弹更新条, 若当前没有打开任何弹窗则5秒后自动刷新(不打断正在填单的场景)。
+let _VER_AT_LOAD='';
+function _verBanner(txt,cls){
+  let b=id('verUpdateBar');
+  if(!b){b=document.createElement('div');b.id='verUpdateBar';
+    b.style.cssText='position:fixed;left:0;right:0;top:0;z-index:99999;padding:7px 14px;font-size:12px;text-align:center;'
+      +'box-shadow:0 2px 8px rgba(0,0,0,.18);font-family:inherit';
+    document.body.appendChild(b);}
+  b.style.background=cls==='bad'?'#c62828':(cls==='ok'?'#0f9d58':'#14508c');
+  b.style.color='#fff';b.innerHTML=txt;b.style.display='block';
+}
+async function verWatchCheck(manual){
+  try{
+    const r=await fetch('/api/version?_='+Date.now(),{credentials:'include',cache:'no-store'});
+    const d=await r.json();const v=(d&&d.version)||'';
+    if(!v)return;
+    const tag=id('appVerTag');
+    if(tag)tag.textContent=v.slice(0,7)+(d.date?(' · '+String(d.date).slice(5,16)):'');
+    if(!_VER_AT_LOAD){_VER_AT_LOAD=v;return}
+    if(v!==_VER_AT_LOAD){
+      const idle=!document.querySelector('.mod.show');
+      _verBanner('🔧 系统已更新（'+_VER_AT_LOAD.slice(0,7)+' → '+v.slice(0,7)+'）：'+(idle?'5 秒后自动刷新以加载最新功能':'请保存当前填写内容后刷新')
+        +' 　<button onclick="location.reload(true)" style="border:0;border-radius:4px;padding:3px 10px;cursor:pointer;font-weight:700">立即刷新</button>','ok');
+      if(idle){let n=5;const bar=id('verUpdateBar');
+        const t=setInterval(()=>{n--;if(n<=0){clearInterval(t);location.reload(true);return}
+          if(bar)bar.innerHTML='🔧 系统已更新（'+_VER_AT_LOAD.slice(0,7)+' → '+v.slice(0,7)+'）：'+n+' 秒后自动刷新　<button onclick="location.reload(true)" style="border:0;border-radius:4px;padding:3px 10px;cursor:pointer;font-weight:700">立即刷新</button>';},1000);
+      }
+    }else if(manual&&tag){_verBanner('✅ 已是最新版本 '+v.slice(0,7),'ok');setTimeout(()=>{const b=id('verUpdateBar');if(b)b.style.display='none'},2500)}
+  }catch(e){}
+}
+function verWatchInit(){
+  const tag=id('appVerTag');
+  if(tag){tag.style.cursor='pointer';tag.title='点击检查更新（当前构建号）';tag.onclick=()=>verWatchCheck(true)}
+  verWatchCheck(false);
+  setInterval(()=>verWatchCheck(false),180000);            // 每 3 分钟
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)verWatchCheck(false)});  // 切回标签页
+}
+
 function testDebug(){
   alert('JS正常！用户名输入框ID: '+id('loginUser').id+' 密码框ID: '+id('loginPass').id);
   alert('点击了测试按钮，说明JS可以工作');
@@ -1249,6 +1290,7 @@ function initApp(){
   buildNav();
   if(typeof sideScrollInit==='function')sideScrollInit();
   qsInit();qsWatch();   // V11.302 全业务列表统一全局搜索(含切页/刷新保留条件)
+  verWatchInit();       // V11.330: 版本监控 + 自动更新提示(同事电脑不用手动Ctrl+F5)
   // V11.18: 预加载公网地址, 供报价链接复制使用(商家必须用公网链接才能打开)
   (async()=>{try{const c=await fetch('/api/public-url',{credentials:'include'}).then(r=>r.json());if(c&&c.url)window._basePublicUrl=c.url}catch(e){}})();
   loadDashboard();
