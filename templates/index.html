@@ -297,6 +297,38 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
   img{max-width:100%}
 }
 </style>
+<script>
+/* V11.331b 应用脚本独立加载 + 自动重试
+   背景: 公网隧道对较大响应会中途断流(实测首页只返回12万~43万字节, 完整应87万),
+         内联脚本被截断后 登录按钮/api 等全部未定义 → 表现为"点了登录没反应/进不去系统"。
+   做法: 脚本拆成独立文件(可缓存), 加载失败自动重试6次并提示, 首屏HTML缩到约86KB。*/
+(function(){
+  var V='{{ appver }}';
+  function bar(msg,retry){
+    var d=document.getElementById('__bootbar');
+    if(!d){d=document.createElement('div');d.id='__bootbar';
+      d.style.cssText='position:fixed;left:0;right:0;top:0;padding:10px 14px;text-align:center;font-size:14px;color:#fff;z-index:99999;box-shadow:0 2px 8px rgba(0,0,0,.2)';
+      document.body.appendChild(d);}
+    d.style.background=retry?'#c62828':'#14508c';
+    d.innerHTML=msg+(retry?' <button onclick="location.reload(true)" style="border:0;border-radius:4px;padding:4px 12px;cursor:pointer;font-weight:700">重新加载</button>':'');
+    if(!retry)setTimeout(function(){if(d&&d.parentNode)d.parentNode.removeChild(d)},2000);
+  }
+  function boot(n){
+    var s=document.createElement('script');
+    s.src='/app.js?v='+V+(n?('&r='+n+'-'+Date.now()):'');
+    s.onload=function(){
+      if(typeof api!=='function'){ if(n<6)setTimeout(function(){boot(n+1)},400); else bar('⚠️ 程序加载不完整（网络不稳定），请',true); }
+      else{var d=document.getElementById('__bootbar');if(d&&d.parentNode)d.parentNode.removeChild(d)}
+    };
+    s.onerror=function(){
+      if(n<6){bar('🔁 网络不稳，正在自动重试加载程序（第'+(n+2)+'次）...',false);setTimeout(function(){boot(n+1)},400*(n+1))}
+      else bar('⚠️ 程序加载失败（网络不稳定），请',true);
+    };
+    document.head.appendChild(s);
+  }
+  boot(0);
+})();
+</script>
 </head>
 <body>
 <div id="loginPage" class="login-page">
@@ -980,37 +1012,6 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
   <div class="mc"><div class="mh"><h3 id="dmTitle">详情</h3><button class="mx" onclick="closeMod()">&times;</button></div>
     <div class="mb" id="dmBody"></div><div class="mf" id="dmFooter"><button class="btn btn-o" onclick="closeMod()">关闭</button></div></div>
 </div>
-<script>
-/* V11.331b 应用脚本独立加载 + 自动重试
-   背景: 公网隧道对较大响应会中途断流(实测首页只返回12万~43万字节, 完整应87万),
-         内联脚本被截断后 登录按钮/api 等全部未定义 → 表现为"点了登录没反应/进不去系统"。
-   做法: 脚本拆成独立文件(可缓存), 加载失败自动重试6次并提示, 首屏HTML缩到约86KB。*/
-(function(){
-  var V='{{ appver }}';
-  function bar(msg,retry){
-    var d=document.getElementById('__bootbar');
-    if(!d){d=document.createElement('div');d.id='__bootbar';
-      d.style.cssText='position:fixed;left:0;right:0;top:0;padding:10px 14px;text-align:center;font-size:14px;color:#fff;z-index:99999;box-shadow:0 2px 8px rgba(0,0,0,.2)';
-      document.body.appendChild(d);}
-    d.style.background=retry?'#c62828':'#14508c';
-    d.innerHTML=msg+(retry?' <button onclick="location.reload(true)" style="border:0;border-radius:4px;padding:4px 12px;cursor:pointer;font-weight:700">重新加载</button>':'');
-    if(!retry)setTimeout(function(){if(d&&d.parentNode)d.parentNode.removeChild(d)},2000);
-  }
-  function boot(n){
-    var s=document.createElement('script');
-    s.src='/app.js?v='+V+(n?('&r='+n+'-'+Date.now()):'');
-    s.onload=function(){
-      if(typeof api!=='function'){ if(n<6)setTimeout(function(){boot(n+1)},400); else bar('⚠️ 程序加载不完整（网络不稳定），请',true); }
-      else{var d=document.getElementById('__bootbar');if(d&&d.parentNode)d.parentNode.removeChild(d)}
-    };
-    s.onerror=function(){
-      if(n<6){bar('🔁 网络不稳，正在自动重试加载程序（第'+(n+2)+'次）...',false);setTimeout(function(){boot(n+1)},400*(n+1))}
-      else bar('⚠️ 程序加载失败（网络不稳定），请',true);
-    };
-    document.head.appendChild(s);
-  }
-  boot(0);
-})();
-</script>
+
  </body>
 </html>
