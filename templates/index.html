@@ -1657,11 +1657,14 @@ function apprZone(z){
   document.querySelectorAll('#apprZoneTabs button').forEach(b=>{if(b.dataset.z==z)b.classList.add('act')});
   const d=window._dashAppr||{};
   const box=id('apprZoneBody');
-  const typeName=t=>({purchase_request:'申请',purchase_order:'订单',contract:'合同',credit:'挂账',payment:'付款'})[t]||t;
+  const typeName=t=>(({purchase_request:'申请',purchase_order:'订单',contract:'合同',credit:'挂账',payment:'付款',
+    emergency_temp:'应急临时审批',emergency_formal:'应急正式审批',emergency_finance:'应急财务复核',
+    emergency_extend:'应急延期审批',emergency_convert:'应急转正审批'})[t]||t);
   if(z=='todo'){
     const list=d.my_pending||[];
     id('azTodoN').textContent=list.length;
-    const BIZ_IC={purchase_request:'📝',purchase_order:'📋',contract:'📄',credit:'💳',payment:'💰',receiving:'📦',requisition:'📤'};
+    const BIZ_IC={purchase_request:'📝',purchase_order:'📋',contract:'📄',credit:'💳',payment:'💰',receiving:'📦',requisition:'📤',
+      emergency_temp:'⚡',emergency_formal:'⚡',emergency_finance:'⚡',emergency_extend:'⚡',emergency_convert:'⚡'};  // V11.329 应急采购
     box.innerHTML=list.length?list.map(x=>`<div class="v9-todo${x.urgent?' urgent':''}">
       ${x.urgent?'<span class="uflag">🚨</span>':''}
       <span class="tag" style="background:${x.urgent?'#e74c3c':'#14508c'};color:#fff;min-width:52px;text-align:center">${BIZ_IC[x.biz_type]||''}${typeName(x.biz_type)}</span>
@@ -3287,6 +3290,8 @@ function viewBiz(t,oid){
     // V11.173: 挂账/付款详情弹窗(原为alert提示, 体验差)
     showFinDetail(t,oid);
   }
+  // V11.329 应急紧急采购: 审批中心/待办 点「查看详情」原来无分支→弹窗空白(详情页打不开), 现直达应急单详情
+  else if(String(t||'').indexOf('emergency')===0)emgDetail(oid);
 }
 async function showFinDetail(t,oid){
   // V11.173: 挂账/付款 审批详情 — 从列表接口取单据数据展示
