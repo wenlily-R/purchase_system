@@ -6616,6 +6616,18 @@ async function emgConvert(eid){
   const r=await api('/emergency/'+eid+'/convert',{method:'POST',body:JSON.stringify({})});
   if(r.success){alert('✅ '+r.message);loadEmergency();loadReceivings();}else alert('⛔ '+(r.error||'转正失败'));
 }
+async function emgRebind(eid){
+  // V11.329: 卡单急救 — 按当前配置重新解析待审节点审批人(历史单据提交时该角色无在职账号 → 审批人空白)
+  const types=['emergency_temp','emergency_formal','emergency_finance','emergency_extend','emergency_convert'];
+  let msgs=[];
+  for(const t of types){
+    try{ const r=await api('/approvals/'+t+'/'+eid+'/rebind',{method:'POST',body:JSON.stringify({})});
+      if(r.success&&(r.fixed||[]).length)msgs.push(r.message);
+    }catch(e){}
+  }
+  alert(msgs.length?('✅ '+msgs.join('\n')):'该单据待审节点审批人已正常，无需修复');
+  emgDetail(eid);
+}
 function emgOpenOrder(oid){ closeMod(); try{ showOrder(oid); }catch(e){ alert('打开订单失败：'+e.message) } }
 // ---- 详情(阶段条 + 时间轴留痕) ----
 async function emgDetail(eid){
@@ -6667,6 +6679,9 @@ async function emgDetail(eid){
   if(['待补资料','延期审批中','已锁定'].includes(d.status)&&!(Number(d.extend_count||0)>0))fb+=`<button class="btn btn-o btn-sm" style="color:#7c3aed" onclick="emgExtendForm(${d.id})">⏳ 申请延期</button>`;
   if(d.status=='待转正'&&_canBuy)fb+=`<button class="btn btn-p btn-sm" onclick="emgConvert(${d.id})">✅ 转正闭环</button>`;
   if(d.temp_receive_id)fb+=`<button class="btn btn-o btn-sm" onclick="closeMod();showRcvDetail(${d.temp_receive_id})">临时入库单</button>`;
+  // V11.329 卡单急救: 管理员/领导可一键补绑待审节点审批人(历史单据审批人空白时用)
+  if(['系统管理员','分管领导','总经理'].includes(ME.role)&&!['已闭环','已作废','已驳回'].includes(d.status))
+    fb+=`<button class="btn btn-o btn-sm" style="color:#b08900;border-color:#d9a05b" onclick="emgRebind(${d.id})" title="提交时该审批角色没有在职账号会导致审批人空白、无人可办；点此按当前配置重新指派">🔧 补绑审批人</button>`;
   id('dmFooter').innerHTML=fb;
 }
 // ---- 独立台账 ----

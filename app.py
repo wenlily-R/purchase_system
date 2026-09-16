@@ -17080,6 +17080,51 @@ def api_emergency_flow_config_save():
     return jsonify({'success': True, 'message': '已保存应急采购审批流配置（%d 条审批链 + 金额阈值 + 转正审批节点）；新提交的单据按新配置走' % len(_saved)})
 
 
+@app.route('/api/approvals/<biz_type>/<int:biz_id>/rebind', methods=['POST'])
+@login_required
+def api_approval_rebind(biz_type, biz_id):
+    """V11.329 补绑审批人(救活历史卡单): 按当前审批流配置重新解析待审节点的审批人
+    场景: 提交时该角色没有在职账号 → 审批人空白 → 前端显示无权、无人可办(卡单)。管理员点一下即修复。"""
+    if session.get('user_role') not in ('系统管理员', '分管领导', '总经理'):
+        return jsonify({'error': '无权限'}), 403
+    if biz_type not in ('emergency_temp', 'emergency_formal', 'emergency_finance', 'emergency_extend', 'emergency_convert',
+                        'purchase_request', 'purchase_order', 'contract', 'payment', 'receiving', 'requisition',
+                        'return_request', 'repair_plan', 'collect_accept', 'inquiry_approval', 'supplier_return'):
+        return jsonify({'error': '不支持的单据类型'}), 400
+    c = db()
+    cfg = {r['level_no']: dict_row(r) for r in c.execute(
+        "SELECT * FROM approval_flow_config WHERE biz_type=? ORDER BY level_no", (biz_type,)).fetchall()}
+    fixed = []
+    for r in c.execute("SELECT * FROM approval_instances WHERE biz_type=? AND biz_id=? AND status='pending' ORDER BY level_no",
+                       (biz_type, biz_id)).fetchall():
+        _cfg = cfg.get(r['level_no']) or {}
+        _name, _uid = '', None
+        _ap = str(_cfg.get('approver') or '').strip()
+        if _ap:
+            u = c.execute("SELECT id,name,username FROM users WHERE username=? AND is_active=1", (_ap,)).fetchone()
+            if u:
+                _name, _uid = u['name'] or u['username'], u['id']
+        if _uid is None:
+            u = c.execute("SELECT id,name,username FROM users WHERE role=? AND is_active=1 ORDER BY id LIMIT 1",
+                          (_cfg.get('role') or r['role'],)).fetchone()
+            if u:
+                _name, _uid = u['name'] or u['username'], u['id']
+        if _uid is None:
+            u = c.execute("SELECT id,name,username FROM users WHERE role='系统管理员' AND is_active=1 ORDER BY id LIMIT 1").fetchone()
+            if u:
+                _name, _uid = (u['name'] or u['username']) + '(兜底-系统管理员)', u['id']
+        if _uid and (r['approver_id'] != _uid or (r['approver'] or '') != _name):
+            c.execute("UPDATE approval_instances SET approver=?, approver_id=? WHERE id=?", (_name, _uid, r['id']))
+            fixed.append({'level': r['level_no'], 'role': r['role'], 'approver': _name})
+    c.commit()
+    _left = c.execute("SELECT COUNT(*) n FROM approval_instances WHERE biz_type=? AND biz_id=? AND status='pending'", (biz_type, biz_id)).fetchone()['n']
+    c.close()
+    log(session.get('user_name', ''), '补绑审批人', '%s#%s 修复%d个节点, 剩余待审%d' % (biz_type, biz_id, len(fixed), _left))
+    return jsonify({'success': True, 'fixed': fixed, 'pending_left': _left,
+                    'message': ('已补绑审批人：%s；审批中心现在可以正常办理' % '、'.join('第%d级→%s' % (x['level'], x['approver']) for x in fixed))
+                               if fixed else '该单据当前待审节点的审批人已正常，无需修复'})
+
+
 @app.route('/api/emergency/sweep', methods=['POST'])
 @login_required
 def api_emergency_sweep():
