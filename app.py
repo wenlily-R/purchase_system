@@ -16602,7 +16602,13 @@ def api_emergency_create():
         c.close()
         return jsonify({'error': '疑似拆分订单规避金额管控：该项目「%s」近7天已有 %d 单应急采购合计 ¥%s，加本次合计 ¥%s 超过上限 ¥%s。'
                                  '请合并为一张常规采购申请走正常流程。' % (_nm, _r7['n'], round(_sum7 - _amt, 2), round(_sum7, 2), _B)}), 400
-    _no = gen_no('YJ', 'emergency_purchases', 'emg_no', c)
+    # V11.328 需求2.3 单号规则: YJ + 日期(YYYYMMDD) + 流水号(当日4位), 与文档一致
+    _day = datetime.date.today().strftime('%Y%m%d')
+    _seq = c.execute("SELECT COUNT(*) FROM emergency_purchases WHERE emg_no LIKE ?", ('YJ-' + _day + '-%',)).fetchone()[0] + 1
+    _no = 'YJ-%s-%04d' % (_day, _seq)
+    while c.execute("SELECT 1 FROM emergency_purchases WHERE emg_no=?", (_no,)).fetchone():
+        _seq += 1
+        _no = 'YJ-%s-%04d' % (_day, _seq)
     cur = c.execute("""INSERT INTO emergency_purchases(emg_no,project,dept,requester,requester_id,item_name,spec,unit,quantity,
                         est_amount,actual_amount,need_arrive,reason,attachments,status,label,created_at,updated_at)
                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,'待临时审批','应急采购 - 待转正',?,?)""",

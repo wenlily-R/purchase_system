@@ -3,7 +3,7 @@
 覆盖: 发起/阈值B拦截/拆分拦截/临时审批(金额分级)/接单/临时入库(立即入账可领料)/未转正禁付款
       /超期锁单(禁领料禁付款禁转正)/延期1次解锁/补资料6类/正式分级审批/财务复核/转正闭环/台账月报导出/频次预警
 """
-import json, os, sqlite3, sys, time, urllib.request, urllib.error, http.cookiejar, urllib.parse as up
+import json, os, re, sqlite3, sys, time, urllib.request, urllib.error, http.cookiejar, urllib.parse as up
 
 BASE = 'http://127.0.0.1:5899'
 DB = os.path.abspath(r'C:\Users\35322\Desktop\purchase_system\data\purchase.db')
@@ -99,6 +99,7 @@ try:
     # ---- 3. 发起(普通档 ≤A, 1级临时审批) + 大额档(2级) ----
     st, r3 = new_emg(TAG + 'C工地', TAG + '急用料C', 3000, 5); EIDS.append(r3.get('id'))
     chk('发起应急申请成功(YJ编号)', st == 200 and str(r3.get('emg_no', '')).startswith('YJ-'), r3.get('emg_no'))
+    chk('单号规则=YJ+日期+流水号(YYYYMMDD-4位)', bool(re.match(r'^YJ-\d{8}-\d{4}$', str(r3.get('emg_no') or ''))), r3.get('emg_no'))
     E1 = r3.get('id')
     lv1 = q("SELECT COUNT(*) n FROM approval_instances WHERE biz_type='emergency_temp' AND biz_id=?", (E1,))[0]['n']
     chk('≤¥5000: 临时审批仅1级(部门负责人)', lv1 == 1, lv1)
