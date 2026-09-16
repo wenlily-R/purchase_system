@@ -781,6 +781,10 @@ def init_db():
         # ---- V11.325 需求模块三: 数据来源标记(历史导入数据与系统新增业务数据隔离) ----
         ('receivings', 'data_source', "ALTER TABLE receivings ADD COLUMN data_source TEXT DEFAULT '系统'"),
         ('inventory', 'data_source', "ALTER TABLE inventory ADD COLUMN data_source TEXT DEFAULT '系统'"),
+        # ---- V11.327 应急紧急采购: 临时入库标记(临时入库单→转正后变正式) ----
+        ('receivings', 'is_emg', "ALTER TABLE receivings ADD COLUMN is_emg INTEGER DEFAULT 0"),
+        ('receivings', 'is_emg_converted', "ALTER TABLE receivings ADD COLUMN is_emg_converted INTEGER DEFAULT 0"),
+        ('receivings', 'emg_no', "ALTER TABLE receivings ADD COLUMN emg_no TEXT DEFAULT ''"),
     ]:
         _cols = [r[1] for r in conn.execute(f"PRAGMA table_info({_tbl})").fetchall()]
         if _col not in _cols:
@@ -937,6 +941,78 @@ def init_db():
             print('V11.325 历史导入数据标记完成')
     except Exception as _dse:
         print('V11.325 历史导入数据标记跳过:', _dse)
+    # ---- V11.327 应急紧急采购(V11.327): 独立专项通道 表结构 + 阈值参数 + 审批链配置(金额分级) ----
+    try:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS emergency_purchases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                emg_no TEXT UNIQUE,
+                project TEXT DEFAULT '',
+                dept TEXT DEFAULT '',
+                requester TEXT DEFAULT '',
+                requester_id INTEGER DEFAULT 0,
+                item_name TEXT DEFAULT '', spec TEXT DEFAULT '', unit TEXT DEFAULT '个', quantity REAL DEFAULT 0,
+                est_amount REAL DEFAULT 0, actual_amount REAL DEFAULT 0,
+                need_arrive TEXT DEFAULT '', reason TEXT DEFAULT '',
+                attachments TEXT DEFAULT '',
+                status TEXT DEFAULT '待临时审批',
+                label TEXT DEFAULT '应急采购 - 待转正',
+                temp_approved_by TEXT DEFAULT '', temp_approved_at TEXT DEFAULT '',
+                supplier TEXT DEFAULT '', quote_amt REAL DEFAULT 0, quote_files TEXT DEFAULT '',
+                no_compare_reason TEXT DEFAULT '', supplier_confirmed_at TEXT DEFAULT '',
+                temp_receive_id INTEGER DEFAULT 0, temp_receive_no TEXT DEFAULT '',
+                temp_received_at TEXT DEFAULT '', deadline TEXT DEFAULT '',
+                extend_count INTEGER DEFAULT 0, extend_reason TEXT DEFAULT '', extend_status TEXT DEFAULT '',
+                formal_docs TEXT DEFAULT '', formal_submitted_at TEXT DEFAULT '', formal_approved_at TEXT DEFAULT '',
+                finance_status TEXT DEFAULT '', finance_remark TEXT DEFAULT '',
+                price_ref REAL DEFAULT 0, price_dev_pct REAL DEFAULT 0, price_note TEXT DEFAULT '',
+                reject_count INTEGER DEFAULT 0, abnormal INTEGER DEFAULT 0,
+                linked_order_no TEXT DEFAULT '', linked_contract_no TEXT DEFAULT '',
+                converted_at TEXT DEFAULT '', locked_at TEXT DEFAULT '', lock_reason TEXT DEFAULT '',
+                void_reason TEXT DEFAULT '',
+                created_at TEXT DEFAULT (datetime('now','localtime')), updated_at TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_emg_status ON emergency_purchases(status);
+            CREATE INDEX IF NOT EXISTS idx_emg_project ON emergency_purchases(project);
+            CREATE TABLE IF NOT EXISTS emergency_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                emg_id INTEGER NOT NULL,
+                action TEXT DEFAULT '', operator TEXT DEFAULT '', detail TEXT DEFAULT '',
+                created_at TEXT DEFAULT (datetime('now','localtime'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_emg_logs ON emergency_logs(emg_id);
+        """)
+        # 阈值/口径参数(系统设置可改, 无需改代码): A/B 金额档、月度频次预警线、价格异常比例、补齐资料工作日
+        for _k, _v, _d in (('emg_limit_a', '5000', '应急临时审批金额档A(≥A需事业部领导)'),
+                           ('emg_limit_b', '20000', '应急通道金额上限B(>B禁用应急, 强制常规采购)'),
+                           ('emg_month_freq', '3', '同一项目月度应急次数预警线N'),
+                           ('emg_price_dev', '20', '应急价格超基准价比例%(超此比例正式审批必须填说明)'),
+                           ('emg_promise_days', '3', '临时入库后补齐资料工作日数')):
+            if not conn.execute("SELECT 1 FROM sys_config WHERE key=?", (_k,)).fetchone():
+                conn.execute("INSERT INTO sys_config(key,value) VALUES(?,?)", (_k, _v))
+                print('V11.327 应急参数 %s=%s (%s)' % (_k, _v, _d))
+        # 审批链(金额分级, 与常规采购分开): 临时审批 → 正式分级审批 → 财务复核 → 延期审批
+        def _emg_p(k, dv):
+            try:
+                _r = conn.execute("SELECT value FROM sys_config WHERE key=?", (k,)).fetchone()
+                return float(str(_r[0]).strip()) if _r and str(_r[0] or '').strip() else float(dv)
+            except Exception:
+                return float(dv)
+        _A, _B = _emg_p('emg_limit_a', 5000), _emg_p('emg_limit_b', 20000)
+        _emg_cfg = [('emergency_temp', 1, '部门负责人', 0, _B, '应急临时审批-需求部门负责人'),
+                    ('emergency_temp', 2, '分管领导', _A, _B, '应急临时审批-大额增加事业部领导'),
+                    ('emergency_formal', 1, '部门负责人', 0, _B, '应急正式审批-部门负责人'),
+                    ('emergency_formal', 2, '分管领导', _A, _B, '应急正式审批-事业部领导'),
+                    ('emergency_finance', 1, '财务', 0, 9999999, '应急财务复核'),
+                    ('emergency_extend', 1, '分管领导', 0, 9999999, '应急延期审批-事业部领导')]
+        for _bt, _lv, _role, _mn, _mx, _lb in _emg_cfg:
+            if not conn.execute("SELECT 1 FROM approval_flow_config WHERE biz_type=? AND level_no=?", (_bt, _lv)).fetchone():
+                conn.execute("""INSERT INTO approval_flow_config(biz_type,level_no,role,min_amount,max_amount,label)
+                                VALUES(?,?,?,?,?,?)""", (_bt, _lv, _role, _mn, _mx, _lb))
+        conn.commit()
+        print('V11.327 应急紧急采购 表结构/参数/审批链 就绪')
+    except Exception as _eme:
+        print('V11.327 应急采购初始化跳过:', _eme)
     # ---- V11.301 手工应急入库金额上限(超限必须领导确认): 默认2000元, 幂等补齐三机一致 ----
     try:
         if not conn.execute("SELECT 1 FROM sys_config WHERE key='manual_recv_limit'").fetchone():
@@ -1970,6 +2046,11 @@ FS_BIZ = {  # biz_type -> (审批定义名称, 表单控件前缀)
     'payment':          ('付款审批', 'FK'),
     'receiving':        ('入库审批', 'RK'),
     'requisition':      ('出库审批', 'CK'),
+    # V11.327 应急紧急采购专项通道(独立审批链)
+    'emergency_temp':   ('应急紧急采购-临时审批', 'YJ'),
+    'emergency_formal': ('应急紧急采购-正式审批', 'YJ'),
+    'emergency_finance': ('应急紧急采购-财务复核', 'YJ'),
+    'emergency_extend': ('应急紧急采购-延期审批', 'YJ'),
 }
 FS_PRE = {'purchase_request': 'SQ', 'purchase_order': 'CG', 'contract': 'HT', 'credit': 'GZ', 'payment': 'FK', 'receiving': 'RK', 'requisition': 'CK'}
 FS_NODE_MAX = 3  # 审批定义中的审批节点数(与系统链路最大级数一致)
@@ -2289,6 +2370,9 @@ def biz_parent_status(biz_type, result):
         'return_request': ('审批通过', '已驳回'),  # V11.193 退库: 审批通过=待仓库清点入库(库存不立即加)
         'repair_plan': ('审批通过', '审批驳回'),  # V11.210 维修金额分级审批: 通过=审批通过(可录报价), 驳回=审批驳回(退回定损)
         'supplier_return': ('审批通过', '已驳回'),  # V11.319 供应商退货: 审批通过=自动冲减库存(红字/作废)
+        # V11.327 应急紧急采购: 临时审批→采购接单 / 正式分级审批→财务复核 / 财务复核→待转正 / 延期→已延期
+        'emergency_temp': ('采购接单', '已驳回'), 'emergency_formal': ('财务复核', '待补资料'),
+        'emergency_finance': ('待转正', '待补资料'), 'emergency_extend': ('已延期', '已驳回'),
     }
     ok, no = m.get(biz_type, ('已通过', '已驳回'))
     return ok if result == 'ok' else no
@@ -2303,6 +2387,8 @@ def biz_table(biz_type):
             'repair_change': 'purchase_requests',  # V11.285 维修定损变更确认(父单据=维修申请)
             'repair_direct': 'purchase_requests',  # V11.285 小额直接委托确认
             'inquiry_approval': 'inquiries',
+            'emergency_temp': 'emergency_purchases', 'emergency_formal': 'emergency_purchases',
+            'emergency_finance': 'emergency_purchases', 'emergency_extend': 'emergency_purchases',  # V11.327 应急采购
             'supplier_return': 'supplier_returns'}[biz_type]  # V11.319 供应商退货 / V11.133: biz_id=询价单id
 
 # ============================================================
@@ -2496,6 +2582,63 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
         except Exception as e:
             print('repair change/direct finish err:', e)
         c.close()
+        return True
+
+    # V11.327 应急紧急采购: 各节点通过/驳回后的专属字段与状态流转(临时审批人/正式审批/财务复核/延期解锁)
+    if biz_type in ('emergency_temp', 'emergency_formal', 'emergency_finance', 'emergency_extend'):
+        _er = c.execute("SELECT * FROM emergency_purchases WHERE id=?", (biz_id,)).fetchone()
+        if not _er:
+            c.close(); return False
+        _eno = _er['emg_no'] or str(biz_id)
+        if biz_type == 'emergency_temp':
+            if result == 'ok':
+                c.execute("UPDATE emergency_purchases SET status='采购接单', temp_approved_by=?, temp_approved_at=?, updated_at=? WHERE id=?",
+                          (approver, now(), now(), biz_id))
+                emergency_log(c, biz_id, '临时审批通过', approver, '临时快速审批通过 → 转采购接单(佐证截图后续补传)')
+            else:
+                c.execute("""UPDATE emergency_purchases SET status='已驳回', label='应急采购 - 待转正',
+                             reject_count=COALESCE(reject_count,0)+1,
+                             abnormal=CASE WHEN COALESCE(reject_count,0)+1>=2 THEN 1 ELSE abnormal END, updated_at=? WHERE id=?""", (now(), biz_id))
+                emergency_log(c, biz_id, '临时审批驳回', approver, (comment or '')[:200])
+        elif biz_type == 'emergency_formal':
+            if result == 'ok':
+                c.execute("UPDATE emergency_purchases SET status='财务复核', formal_approved_at=?, updated_at=? WHERE id=?", (now(), now(), biz_id))
+                emergency_log(c, biz_id, '正式分级审批通过', approver, '转财务复核')
+                _new_fin = True
+            else:
+                c.execute("""UPDATE emergency_purchases SET status='待补资料', reject_count=COALESCE(reject_count,0)+1,
+                             abnormal=CASE WHEN COALESCE(reject_count,0)+1>=2 THEN 1 ELSE abnormal END,
+                             finance_status='', updated_at=? WHERE id=?""", (now(), biz_id))
+                emergency_log(c, biz_id, '正式审批驳回', approver, (comment or '')[:200] + ' → 退回采购修改资料')
+                _new_fin = False
+        elif biz_type == 'emergency_finance':
+            if result == 'ok':
+                c.execute("UPDATE emergency_purchases SET status='待转正', finance_status='已复核', finance_remark=?, updated_at=? WHERE id=?",
+                          ((comment or '')[:200], now(), biz_id))
+                emergency_log(c, biz_id, '财务复核通过', approver, '资料完整/价格合理 → 待采购转正闭环')
+            else:
+                c.execute("UPDATE emergency_purchases SET status='待补资料', finance_status='已退回', finance_remark=?, updated_at=? WHERE id=?",
+                          ((comment or '')[:200], now(), biz_id))
+                emergency_log(c, biz_id, '财务复核退回', approver, (comment or '')[:200])
+        else:  # emergency_extend
+            if result == 'ok':
+                _dl = _emg_wd_add(_er['deadline'] or now()[:10], int(emg_num('emg_promise_days', 3)))
+                c.execute("""UPDATE emergency_purchases SET deadline=?, extend_count=COALESCE(extend_count,0)+1, extend_status='已延期',
+                             status=CASE WHEN status IN ('已锁定','延期审批中') THEN '待补资料' ELSE status END, locked_at='', lock_reason='',
+                             updated_at=? WHERE id=?""", (_dl, now(), biz_id))
+                emergency_log(c, biz_id, '延期审批通过', approver, '资料补齐截止日顺延至 %s（仅允许延期1次）' % _dl)
+            else:
+                c.execute("UPDATE emergency_purchases SET extend_status='已驳回', updated_at=? WHERE id=?", (now(), biz_id))
+                emergency_log(c, biz_id, '延期审批驳回', approver, (comment or '')[:200])
+            _new_fin = False
+        c.commit(); c.close()
+        # 正式审批通过 → 自动发起财务复核审批
+        if biz_type == 'emergency_formal' and result == 'ok' and _new_fin:
+            try:
+                create_approvals('emergency_finance', biz_id, float(_er['actual_amount'] or _er['est_amount'] or 0), submitter=approver)
+                start_instances('emergency_finance', biz_id)
+            except Exception as _fe:
+                print('V11.327 财务复核审批创建失败:', _fe)
         return True
 
     # V11.206: 集体验收审批 — 独立处理: 父单据=receivings, 通过只置 collect_status(不动 status 状态机, 由常规入库审批继续流转)
@@ -3029,6 +3172,10 @@ def scheduler_loop():
             except Exception:
                 pass
             if cfg_get('xia_enabled') == '1': continue  # 虾接管提醒推送
+            try:
+                emergency_sweep()   # V11.327 应急采购: 3工作日倒计时提醒/超期锁单/项目月度频次预警
+            except Exception:
+                pass
             if feishu_enabled(): fs_send_reminders()
             if dingtalk_enabled(): dt_send_reminders()
         except Exception:
@@ -3053,6 +3200,11 @@ DT_BIZ = {  # biz_type -> 审批模板名称
     'collect_accept':   '集体验收审批',  # V11.206
     'repair_plan':      '维修采购审批',  # V11.208
     'inquiry_approval': '采购比价单审批',  # V11.142: 补全, 否则dt_send_todo抛KeyError
+    # V11.327 应急紧急采购专项通道(钉钉模板需在OA后台按同名创建; 未配模板时仅系统内审批, 不阻断流程)
+    'emergency_temp':   '应急紧急采购-临时审批',
+    'emergency_formal': '应急紧急采购-正式审批',
+    'emergency_finance': '应急紧急采购-财务复核',
+    'emergency_extend': '应急紧急采购-延期审批',
 }
 DT_FORM = [('单据编号', 'text'), ('内容摘要', 'text'), ('金额(元)', 'text'), ('申请人', 'text'), ('提交时间', 'text')]
 
@@ -10554,6 +10706,10 @@ def api_create_requisition():
     items = [it for it in items if it.get('item_name') and float(it.get('quantity', 0) or 0) > 0]
     if not items:
         conn.close(); return jsonify({'error': '请至少填写一个商品及数量'}), 400
+    # V11.327 应急采购风控: 已锁定(超期未补齐资料)的应急单物资 → 禁止新增领料(锁单不影响已入库库存, 但不再放行新领用)
+    _emg_lead = _emg_lead_block_reason([it.get('item_name') for it in items])
+    if _emg_lead:
+        conn.close(); return jsonify({'error': _emg_lead}), 400
     # V11.305 出库颗粒度: 每行明细必须写清「领用人 + 用途」(同部门多人领用分行记录, 便于追溯与按人统计)
     _hdr_receiver = (d.get('receiver') or '').strip()
     _hdr_purpose = (d.get('purpose') or '').strip()
@@ -16180,6 +16336,704 @@ def api_order_download(oid):
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 # ---- 单据导出 xlsx ----
+# ============================================================
+# V11.327 应急紧急采购(V11.327): 独立专项通道 — 上午提需求/下午到货领用, 资料后补转正, 超时锁单
+#   发起 → 临时审批(金额分级) → 采购接单 → 临时入库(可领料·未转正禁付款) → 3工作日倒计时提醒/锁单
+#   → 补提正式资料 → 正式分级审批 → 财务复核 → 转正闭环; 独立台账/月度报表/项目频次预警/全程留痕
+#   阈值参数(系统设置可改): emg_limit_a=A档 / emg_limit_b=B上限 / emg_month_freq=N频次 / emg_price_dev=价格异常% / emg_promise_days=补资料工作日
+# ============================================================
+EMG_OPEN_STATES = ('待临时审批', '已驳回', '采购接单', '待临时入库', '待补资料', '延期审批中', '正式审批中', '财务复核', '待转正', '已锁定')
+EMG_INIT_ROLES = ('员工', '采购员', '库管员', '部门负责人', '分管领导', '总经理', '系统管理员')
+EMG_BUY_ROLES = ('采购员', '系统管理员')
+EMG_RECV_ROLES = ('库管员', '部门负责人', '分管领导', '总经理', '系统管理员')
+EMG_DOC_KEYS = (('formal_request', '正式采购申请'), ('compare_record', '比价记录'), ('contract_or_order', '采购合同/订单协议'),
+                ('invoice', '发票'), ('temp_approve_shot', '临时审批截图'), ('situation_note', '应急情况说明'))
+
+
+def emg_num(key, default=0):
+    """V11.327: 读应急采购阈值参数(系统设置可改, 免改代码)"""
+    try:
+        r = cfg_get(key)
+        return float(str(r).strip()) if str(r or '').strip() else float(default)
+    except Exception:
+        return float(default)
+
+
+def _emg_wd_add(base, n):
+    """V11.327: 工作日顺延(周一~周五; 系统无节假日表, 按工作日口径)"""
+    try:
+        d = datetime.datetime.strptime(str(base)[:10], '%Y-%m-%d').date()
+    except Exception:
+        d = datetime.date.today()
+    left = int(n)
+    while left > 0:
+        d += datetime.timedelta(days=1)
+        if d.weekday() < 5:
+            left -= 1
+    return d.strftime('%Y-%m-%d')
+
+
+def _emg_wd_left(deadline):
+    """V11.327: 距资料补齐截止日的剩余工作日(当天不计; 已超期为负)"""
+    try:
+        dl = datetime.datetime.strptime(str(deadline)[:10], '%Y-%m-%d').date()
+    except Exception:
+        return 0
+    t = datetime.date.today()
+    if dl < t:
+        n = 0
+        d = dl
+        while d < t:
+            d += datetime.timedelta(days=1)
+            if d.weekday() < 5:
+                n += 1
+        return -n
+    n, d = 0, t
+    while d < dl:
+        d += datetime.timedelta(days=1)
+        if d.weekday() < 5:
+            n += 1
+    return n
+
+
+def emergency_log(c, eid, action, operator='', detail=''):
+    """V11.327: 应急采购全流程留痕(独立日志表, 审计可查)"""
+    try:
+        c.execute("INSERT INTO emergency_logs(emg_id,action,operator,detail) VALUES(?,?,?,?)",
+                  (eid, action, operator or _op_name() or '系统', (detail or '')[:500]))
+    except Exception as _le:
+        print('V11.327 应急日志写入跳过:', _le)
+
+
+def _emg_price_ref(c, item_name):
+    """V11.327: 价格基准=该物资近3次采购价均价(不足时取最近一次; 无历史则0)"""
+    try:
+        rows = c.execute("""SELECT price FROM purchase_orders WHERE item_name=? AND COALESCE(price,0)>0
+                            ORDER BY id DESC LIMIT 3""", (item_name,)).fetchall()
+        ps = [float(r['price']) for r in rows if r['price']]
+        return round(sum(ps) / len(ps), 4) if ps else 0.0
+    except Exception:
+        return 0.0
+
+
+def _emg_pay_block_reason(supplier):
+    """V11.327 风控: 应急采购未转正/已锁定 → 禁止付款(与临时手工入库禁付款同一口径)"""
+    _sup = (supplier or '').strip()
+    if not _sup:
+        return ''
+    try:
+        c = db()
+        r = c.execute("""SELECT emg_no,status FROM emergency_purchases
+                         WHERE supplier=? AND COALESCE(status,'') NOT IN ('已闭环','已作废','已驳回')
+                         ORDER BY id DESC LIMIT 1""", (_sup,)).fetchone()
+        c.close()
+        if r:
+            return ('禁止付款：供应商「%s」存在未转正的应急紧急采购单（%s，当前状态：%s）。应急采购需先补齐资料并转正闭环，'
+                    '转正后才纳入正常付款排期。' % (_sup, r['emg_no'], r['status']))
+    except Exception:
+        return ''
+    return ''
+
+
+def _emg_lead_block_reason(names):
+    """V11.327 风控: 已锁定的应急单禁止新增领料(锁单不影响已入库库存, 但不再放行新的领用)"""
+    _ns = [str(n or '').strip() for n in (names or []) if str(n or '').strip()]
+    if not _ns:
+        return ''
+    try:
+        c = db()
+        for _n in _ns:
+            r = c.execute("""SELECT emg_no FROM emergency_purchases
+                             WHERE status='已锁定' AND (item_name=? OR EXISTS(
+                               SELECT 1 FROM receivings rv WHERE rv.id=emergency_purchases.temp_receive_id
+                                 AND COALESCE(rv.items_json,'') LIKE '%'||?||'%')) LIMIT 1""", (_n, _n)).fetchone()
+            if r:
+                c.close()
+                return ('禁止新增领料：「%s」来自已锁定（超期未补齐资料）的应急采购单 %s，'
+                        '请先补齐资料申请延期解锁，或改用常规采购。' % (_n, r['emg_no']))
+        c.close()
+    except Exception:
+        return ''
+    return ''
+
+
+def _emg_enrich(c, d):
+    """V11.327: 列表/详情统一补充 剩余工作日/是否超期/标签色/关联单/价格异常提示"""
+    d['days_left'] = _emg_wd_left(d.get('deadline') or '') if d.get('deadline') else 0
+    d['overdue'] = 1 if (d.get('deadline') and d['days_left'] < 0 and d.get('status') not in ('已闭环', '已作废')) else 0
+    d['lockable'] = 1 if (d.get('deadline') and d['days_left'] < 0 and d.get('status') not in ('已闭环', '已作废', '已锁定')) else 0
+    d['price_warn'] = 1 if float(d.get('price_dev_pct') or 0) > emg_num('emg_price_dev', 20) else 0
+    d['temp_receive_id'] = d.get('temp_receive_id') or 0
+    return d
+
+
+@app.route('/api/emergency', methods=['GET'])
+@login_required
+def api_emergency_list():
+    """V11.327 应急紧急采购列表(员工/需求人只见本人单据; 支持 状态/项目/延期/异常/日期 筛选)"""
+    role = session.get('user_role')
+    if role not in EMG_INIT_ROLES + ('财务',):
+        return jsonify([])
+    f_st = (request.args.get('status') or '').strip()
+    f_pj = (request.args.get('project') or '').strip()
+    f_ext = (request.args.get('extend') or '').strip()
+    f_abn = (request.args.get('abnormal') or '').strip()
+    f_from = (request.args.get('from') or '').strip()
+    f_to = (request.args.get('to') or '').strip()
+    c = db()
+    sql = "SELECT * FROM emergency_purchases WHERE 1=1"
+    args = []
+    if role in ('员工',):
+        sql += " AND requester_id=?"; args.append(session.get('user_id', 0))
+    if f_st:
+        sql += " AND status=?"; args.append(f_st)
+    if f_pj:
+        sql += " AND project=?"; args.append(f_pj)
+    if f_ext == '1':
+        sql += " AND COALESCE(extend_count,0)>0"
+    if f_abn == '1':
+        sql += " AND COALESCE(abnormal,0)=1"
+    if f_from:
+        sql += " AND substr(created_at,1,10)>=?"; args.append(f_from)
+    if f_to:
+        sql += " AND substr(created_at,1,10)<=?"; args.append(f_to)
+    sql += " ORDER BY id DESC LIMIT 300"
+    rows = [_emg_enrich(c, dict_row(r)) for r in c.execute(sql, args).fetchall()]
+    # 底部汇总(不受分页影响: 按筛选条件统计)
+    tot = c.execute("SELECT COUNT(*) n, COALESCE(SUM(CASE WHEN status='已闭环' THEN actual_amount ELSE est_amount END),0) amt FROM emergency_purchases").fetchone()
+    kpi = {'total': tot['n'] or 0, 'amount': round(float(tot['amt'] or 0), 2)}
+    kpi['wait_lock'] = c.execute("SELECT COUNT(*) n FROM emergency_purchases WHERE status NOT IN ('已闭环','已作废','已锁定')").fetchone()['n'] or 0
+    kpi['locked'] = c.execute("SELECT COUNT(*) n FROM emergency_purchases WHERE status='已锁定'").fetchone()['n'] or 0
+    kpi['converted'] = c.execute("SELECT COUNT(*) n FROM emergency_purchases WHERE status='已闭环'").fetchone()['n'] or 0
+    kpi['month_cnt'] = c.execute("SELECT COUNT(*) n FROM emergency_purchases WHERE substr(created_at,1,7)=?", (now()[:7],)).fetchone()['n'] or 0
+    projects = [r['project'] for r in c.execute("SELECT DISTINCT project FROM emergency_purchases WHERE COALESCE(project,'')<>'' ORDER BY project").fetchall()]
+    c.close()
+    return jsonify({'rows': rows, 'kpi': kpi, 'projects': projects,
+                    'limits': {'a': emg_num('emg_limit_a', 5000), 'b': emg_num('emg_limit_b', 20000),
+                               'n': int(emg_num('emg_month_freq', 3)), 'price_dev': emg_num('emg_price_dev', 20),
+                               'days': int(emg_num('emg_promise_days', 3))}})
+
+
+@app.route('/api/emergency/<int:eid>')
+@login_required
+def api_emergency_detail(eid):
+    """V11.327 应急采购详情(含流程日志/关联单号/倒计时/附件)"""
+    c = db()
+    r = c.execute("SELECT * FROM emergency_purchases WHERE id=?", (eid,)).fetchone()
+    if not r:
+        c.close(); return jsonify({'error': '应急单不存在'}), 404
+    d = _emg_enrich(c, dict_row(r))
+    d['logs'] = [dict_row(x) for x in c.execute("SELECT * FROM emergency_logs WHERE emg_id=? ORDER BY id", (eid,)).fetchall()]
+    d['docs'] = {}
+    try:
+        d['docs'] = json.loads(d.get('formal_docs') or '{}') or {}
+    except Exception:
+        d['docs'] = {}
+    _rv = c.execute("SELECT * FROM receivings WHERE id=?", (d.get('temp_receive_id') or 0,)).fetchone()
+    d['temp_receive'] = dict_row(_rv) if _rv else None
+    d['doc_keys'] = [{'key': k, 'label': v} for k, v in EMG_DOC_KEYS]
+    c.close()
+    return jsonify(d)
+
+
+@app.route('/api/emergency/meta')
+@login_required
+def api_emergency_meta():
+    """V11.327 应急采购页面元数据(阈值/项目/部门/当前角色可做哪些操作)"""
+    c = db()
+    projects = [dict_row(r) for r in c.execute("SELECT * FROM projects ORDER BY id").fetchall()] if c.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='projects'").fetchone() else []
+    depts = [r['name'] for r in c.execute("SELECT name FROM departments ORDER BY id").fetchall()] if c.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='departments'").fetchone() else []
+    warehouses = _warehouses(c)
+    c.close()
+    role = session.get('user_role')
+    return jsonify({'limit_a': emg_num('emg_limit_a', 5000), 'limit_b': emg_num('emg_limit_b', 20000),
+                    'month_freq': int(emg_num('emg_month_freq', 3)), 'price_dev': emg_num('emg_price_dev', 20),
+                    'promise_days': int(emg_num('emg_promise_days', 3)),
+                    'projects': projects, 'depts': depts, 'warehouses': warehouses,
+                    'roles': {'can_init': role in EMG_INIT_ROLES, 'can_buy': role in EMG_BUY_ROLES,
+                              'can_recv': role in EMG_RECV_ROLES, 'can_finance': role == '财务',
+                              'can_ledger': role in ('系统管理员', '分管领导', '总经理', '财务')}})
+
+
+@app.route('/api/emergency', methods=['POST'])
+@login_required
+def api_emergency_create():
+    """V11.327 发起应急申请(必填+阈值B校验+拆分订单拦截) → 临时审批(金额分级)"""
+    if session.get('user_role') not in EMG_INIT_ROLES:
+        return jsonify({'error': '无权限发起应急采购'}), 403
+    d = request.json or {}
+    _pj = str(d.get('project') or '').strip()
+    _nm = str(d.get('item_name') or '').strip()
+    _rs = str(d.get('reason') or '').strip()
+    _na = str(d.get('need_arrive') or '').strip()
+    try:
+        _q = float(d.get('quantity') or 0); _amt = float(d.get('est_amount') or 0)
+    except Exception:
+        _q, _amt = 0, 0
+    if not _pj:
+        return jsonify({'error': '请填写收货工地/项目名称（必填）'}), 400
+    if not _nm:
+        return jsonify({'error': '请填写物资名称（必填）'}), 400
+    if _q <= 0:
+        return jsonify({'error': '数量必须大于0'}), 400
+    if _amt <= 0:
+        return jsonify({'error': '预估金额必须大于0'}), 400
+    if not _na:
+        return jsonify({'error': '请填写要求到货时间（必填，应急通道按此考核）'}), 400
+    if not _rs:
+        return jsonify({'error': '请填写紧急事由（必填：如某工序停工待料/抢险）'}), 400
+    _B = emg_num('emg_limit_b', 20000)
+    if _amt > _B:
+        return jsonify({'error': '预估金额 ¥%s 超过应急采购上限 ¥%s：≥上限禁止使用应急通道，请走常规采购流程（大额主材不适用）' % (_amt, _B)}), 400
+    c = db()
+    # 拆分订单拦截: 同项目+同物资 近7天应急单金额合计 + 本次 > B → 拦截
+    _r7 = c.execute("""SELECT COALESCE(SUM(est_amount),0) s, COUNT(*) n FROM emergency_purchases
+                       WHERE project=? AND item_name=? AND status NOT IN ('已作废','已驳回')
+                         AND substr(created_at,1,10) >= date('now','localtime','-7 day')""", (_pj, _nm)).fetchone()
+    _sum7 = float(_r7['s'] or 0) + _amt
+    if _sum7 > _B:
+        c.close()
+        return jsonify({'error': '疑似拆分订单规避金额管控：该项目「%s」近7天已有 %d 单应急采购合计 ¥%s，加本次合计 ¥%s 超过上限 ¥%s。'
+                                 '请合并为一张常规采购申请走正常流程。' % (_nm, _r7['n'], round(_sum7 - _amt, 2), round(_sum7, 2), _B)}), 400
+    _no = gen_no('YJ', 'emergency_purchases', 'emg_no', c)
+    cur = c.execute("""INSERT INTO emergency_purchases(emg_no,project,dept,requester,requester_id,item_name,spec,unit,quantity,
+                        est_amount,actual_amount,need_arrive,reason,attachments,status,label,created_at,updated_at)
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,'待临时审批','应急采购 - 待转正',?,?)""",
+                    (_no, _pj, str(d.get('dept') or session.get('dept_name') or '').strip(), session.get('user_name', ''),
+                     session.get('user_id', 0), _nm, str(d.get('spec') or '').strip(), str(d.get('unit') or '个').strip()[:6], _q,
+                     _amt, _amt, _na, _rs, json.dumps(d.get('attachments') or [], ensure_ascii=False), now(), now()))
+    eid = cur.lastrowid
+    emergency_log(c, eid, '发起应急申请', session.get('user_name', ''), '项目:%s 物资:%s 预估¥%s 要求到货:%s' % (_pj, _nm, _amt, _na))
+    c.commit(); c.close()
+    try:
+        create_approvals('emergency_temp', eid, _amt, submitter=session.get('user_name', ''))
+        start_instances('emergency_temp', eid)
+    except Exception as _e:
+        print('V11.327 临时审批创建失败:', _e)
+    log(session.get('user_name', ''), '发起应急采购', '%s %s 预估¥%s 待临时审批' % (_no, _nm, _amt))
+    return jsonify({'success': True, 'id': eid, 'emg_no': _no, 'message': '应急申请 %s 已提交：先走临时审批（≤¥%s 仅部门负责人；¥%s~%s 增加事业部领导），通过后采购接单' % (_no, emg_num('emg_limit_a', 5000), emg_num('emg_limit_a', 5000), _B)})
+
+
+@app.route('/api/emergency/<int:eid>/supplier', methods=['POST'])
+@login_required
+def api_emergency_supplier(eid):
+    """V11.327 采购接单&供应商确认: 供应商/报价/比价资料(或无法多比价理由); 无法满足到货时间则驳回退回需求方"""
+    if session.get('user_role') not in EMG_BUY_ROLES:
+        return jsonify({'error': '无权限：采购接单仅限采购专员/系统管理员'}), 403
+    d = request.json or {}
+    c = db()
+    r = c.execute("SELECT * FROM emergency_purchases WHERE id=?", (eid,)).fetchone()
+    if not r:
+        c.close(); return jsonify({'error': '应急单不存在'}), 404
+    if r['status'] != '采购接单':
+        c.close(); return jsonify({'error': '当前状态(%s)不可接单' % r['status']}), 400
+    if not d.get('supplier_ok', True):
+        c.execute("UPDATE emergency_purchases SET status='已驳回', updated_at=? WHERE id=?", (now(), eid))
+        emergency_log(c, eid, '采购无法供货', session.get('user_name', ''), str(d.get('remark') or '无法满足到货时间')[:200])
+        c.commit(); c.close()
+        return jsonify({'success': True, 'message': '已退回需求方（无法满足要求到货时间）'})
+    _sup = str(d.get('supplier') or '').strip()
+    try:
+        _qamt = float(d.get('quote_amt') or 0)
+    except Exception:
+        _qamt = 0
+    if not _sup:
+        c.close(); return jsonify({'error': '请填写供应商（必填）'}), 400
+    if _qamt <= 0:
+        c.close(); return jsonify({'error': '请填写供应商报价（必填）'}), 400
+    _files = d.get('quote_files') or []
+    _nocomp = bool(d.get('no_compare'))
+    if _nocomp and not str(d.get('no_compare_reason') or '').strip():
+        c.close(); return jsonify({'error': '勾选「无法多比价」必须填写理由（风控留痕）'}), 400
+    if not _nocomp and not _files:
+        c.close(); return jsonify({'error': '请上传比价资料（至少1份）；确实无法多家比价时请勾选「无法多比价」并填写理由'}), 400
+    _ref = _emg_price_ref(c, r['item_name'])
+    _q = float(r['quantity'] or 0) or 1
+    _dev = round((_qamt / _q - _ref) / _ref * 100, 2) if _ref > 0 else 0.0
+    c.execute("""UPDATE emergency_purchases SET supplier=?, quote_amt=?, actual_amount=?, quote_files=?, no_compare_reason=?,
+                 supplier_confirmed_at=?, price_ref=?, price_dev_pct=?, status='待临时入库', updated_at=? WHERE id=?""",
+              (_sup, _qamt, _qamt, json.dumps(_files, ensure_ascii=False),
+               ('无法多比价: ' + str(d.get('no_compare_reason') or '').strip()) if _nocomp else '', now(), _ref, _dev, now(), eid))
+    emergency_log(c, eid, '采购接单', session.get('user_name', ''),
+                  '供应商:%s 报价¥%s%s' % (_sup, _qamt, ('；价格高于基准价%.2f%%（基准¥%s/单位）' % (_dev, _ref)) if _dev > emg_num('emg_price_dev', 20) else ''))
+    c.commit(); c.close()
+    _msg = '已接单，供应商「%s」报价 ¥%s → 现场临时入库' % (_sup, _qamt)
+    if _dev > emg_num('emg_price_dev', 20):
+        _msg += '；⚠️ 价格高于基准价 %.2f%%，正式审批时须填写价格说明' % _dev
+    return jsonify({'success': True, 'message': _msg, 'price_dev_pct': _dev, 'price_ref': _ref})
+
+
+@app.route('/api/emergency/<int:eid>/temp-stock', methods=['POST'])
+@login_required
+def api_emergency_temp_stock(eid):
+    """V11.327 临时入库: 实收数量/验收状态 + 送货单/验收照片 → 生成临时入库单并立即入账(可领料), 开始3工作日倒计时"""
+    if session.get('user_role') not in EMG_RECV_ROLES:
+        return jsonify({'error': '无权限：临时入库仅限仓库/现场收货员'}), 403
+    d = request.json or {}
+    c = db()
+    r = c.execute("SELECT * FROM emergency_purchases WHERE id=?", (eid,)).fetchone()
+    if not r:
+        c.close(); return jsonify({'error': '应急单不存在'}), 404
+    if r['status'] not in ('待临时入库', '采购接单'):
+        c.close(); return jsonify({'error': '当前状态(%s)不可临时入库' % r['status']}), 400
+    try:
+        _q = float(d.get('qty') or 0)
+    except Exception:
+        _q = 0
+    if _q <= 0:
+        c.close(); return jsonify({'error': '实收数量必须大于0'}), 400
+    _atts = [str(x) for x in (d.get('attachments') or []) if x]
+    if len(_atts) < 2:
+        c.close(); return jsonify({'error': '临时入库必须上传：送货单 + 验收照片（至少2个附件，责任留证）'}), 400
+    _wh = str(d.get('warehouse') or '').strip() or '主库房'
+    _zn = str(d.get('zone') or '').strip() or '待验区'
+    _loc = str(d.get('location') or '').strip()
+    _qualified = 0 if str(d.get('qualified') or '合格') == '不合格' else 1
+    _no = gen_no('RK', 'receivings', 'receive_no', c)
+    _ij = json.dumps([{'item_name': r['item_name'], 'spec': r['spec'] or '', 'quantity': _q,
+                       'unit': r['unit'] or '个', 'price': round(float(r['quote_amt'] or 0) / _q, 4)}], ensure_ascii=False)
+    cur = c.execute("""INSERT INTO receivings(receive_no,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,
+                        items_json,attachments,dept,is_est,is_manual,inspector,warehouse,zone,location,data_source,is_emg,emg_no)
+                        VALUES(?,NULL,?,?,?,?,?,?,?,?,?,?,?,0,0,?,?,?,?,'系统',1,?)""",
+                    (_no, r['item_name'], r['spec'] or '', _q, r['unit'] or '个', _q if _qualified else 0, '待入库', now(),
+                     '⚡应急采购临时入库 %s（未转正禁止付款）｜供应商: %s｜验收: %s' % (r['emg_no'], r['supplier'] or '—',
+                                                       '合格' if _qualified else '不合格'), _ij,
+                     json.dumps(_atts, ensure_ascii=False), r['dept'] or '', session.get('user_name', ''), _wh, _zn, _loc, r['emg_no']))
+    rid = cur.lastrowid
+    c.execute("UPDATE receivings SET status='已入库' WHERE id=?", (rid,))
+    c.commit()
+    try:
+        do_receiving_stock(c, rid, warehouse=_wh, location=_loc)
+        c.execute("UPDATE receivings SET is_emg=1, emg_no=? WHERE id=?", (r['emg_no'], rid))
+        c.commit()
+    except Exception as _se:
+        print('V11.327 临时入库入账异常:', _se)
+    _dl = _emg_wd_add(datetime.date.today().strftime('%Y-%m-%d'), int(emg_num('emg_promise_days', 3)))
+    c.execute("""UPDATE emergency_purchases SET temp_receive_id=?, temp_receive_no=?, temp_received_at=?, deadline=?,
+                 status='待补资料', updated_at=? WHERE id=?""", (rid, _no, now(), _dl, now(), eid))
+    emergency_log(c, eid, '临时入库', session.get('user_name', ''),
+                  '实收 %s%s 验收%s 库房 %s/%s｜临时入库单 %s｜资料补齐截止 %s（%s个工作日）'
+                  % (_q, r['unit'] or '', '合格' if _qualified else '不合格', _wh, _zn, _no, _dl, int(emg_num('emg_promise_days', 3))))
+    c.commit(); c.close()
+    log(session.get('user_name', ''), '应急临时入库', '%s 临时入库单%s 实收%s 截止%s' % (r['emg_no'], _no, _q, _dl))
+    return jsonify({'success': True, 'receive_no': _no, 'receive_id': rid, 'deadline': _dl,
+                    'message': '临时入库完成：%s 已入账（%s/%s），物资可正常领用；未转正前禁止付款。请在 %s 前补齐正式资料。'
+                               % (_no, _wh, _zn, _dl)})
+
+
+@app.route('/api/emergency/<int:eid>/extend', methods=['POST'])
+@login_required
+def api_emergency_extend(eid):
+    """V11.327 延期分支: 提交延期说明 → 事业部领导审批(仅允许延期1次)"""
+    d = request.json or {}
+    _rs = str(d.get('reason') or '').strip()
+    if not _rs:
+        return jsonify({'error': '请填写延期说明（必填）'}), 400
+    c = db()
+    r = c.execute("SELECT * FROM emergency_purchases WHERE id=?", (eid,)).fetchone()
+    if not r:
+        c.close(); return jsonify({'error': '应急单不存在'}), 404
+    if r['status'] in ('已闭环', '已作废'):
+        c.close(); return jsonify({'error': '单据已闭环/作废，不能申请延期'}), 400
+    if int(r['extend_count'] or 0) >= 1:
+        c.close(); return jsonify({'error': '本单已延期过1次，不能再延期（风控限制）'}), 400
+    c.execute("UPDATE emergency_purchases SET extend_reason=?, extend_status='待审批', status='延期审批中', updated_at=? WHERE id=?",
+              (_rs[:200], now(), eid))
+    emergency_log(c, eid, '提交延期申请', session.get('user_name', ''), _rs[:200])
+    c.commit(); c.close()
+    try:
+        create_approvals('emergency_extend', eid, float(r['actual_amount'] or r['est_amount'] or 0), submitter=session.get('user_name', ''))
+        start_instances('emergency_extend', eid)
+    except Exception as _e:
+        print('V11.327 延期审批创建失败:', _e)
+    return jsonify({'success': True, 'message': '延期申请已提交事业部领导审批；通过后截止日顺延 %s 个工作日，锁定的单据自动解锁' % int(emg_num('emg_promise_days', 3))})
+
+
+@app.route('/api/emergency/<int:eid>/formal-docs', methods=['POST'])
+@login_required
+def api_emergency_formal_docs(eid):
+    """V11.327 补提正式采购资料(6类附件齐全) → 正式分级审批; 价格超基准比例须填说明"""
+    if session.get('user_role') not in EMG_BUY_ROLES:
+        return jsonify({'error': '无权限：资料补齐仅限采购专员/系统管理员'}), 403
+    d = request.json or {}
+    c = db()
+    r = c.execute("SELECT * FROM emergency_purchases WHERE id=?", (eid,)).fetchone()
+    if not r:
+        c.close(); return jsonify({'error': '应急单不存在'}), 404
+    if r['status'] == '已锁定':
+        c.close(); return jsonify({'error': '单据已锁定（超期未补齐资料）：不能转正，请先补齐资料并申请延期解锁'}), 400
+    if r['status'] not in ('待补资料', '延期审批中', '已延期'):
+        c.close(); return jsonify({'error': '当前状态(%s)不可补提资料' % r['status']}), 400
+    _docs = d.get('docs') or {}
+    _miss = [lbl for k, lbl in EMG_DOC_KEYS if not [x for x in (_docs.get(k) or []) if x]]
+    if _miss:
+        c.close(); return jsonify({'error': '正式资料不齐：缺少 %s（6类资料必须全部上传后才可提交正式审批）' % '、'.join(_miss)}), 400
+    _pn = str(d.get('price_note') or '').strip()
+    if float(r['price_dev_pct'] or 0) > emg_num('emg_price_dev', 20) and not _pn:
+        c.close(); return jsonify({'error': '⚠️ 本单价格高于基准价 %.2f%%（超过 %.0f%% 阈值），正式审批必须填写价格说明'
+                                          % (float(r['price_dev_pct'] or 0), emg_num('emg_price_dev', 20))}), 400
+    _ord = str(d.get('linked_order_no') or '').strip()
+    _ct = str(d.get('linked_contract_no') or '').strip()
+    c.execute("""UPDATE emergency_purchases SET formal_docs=?, price_note=?, formal_submitted_at=?, status='正式审批中',
+                 linked_order_no=?, linked_contract_no=?, updated_at=? WHERE id=?""",
+              (json.dumps(_docs, ensure_ascii=False), _pn[:300], now(), _ord, _ct, now(), eid))
+    emergency_log(c, eid, '补提正式资料', session.get('user_name', ''),
+                  '6类资料齐全%s → 提交正式分级审批' % ('；价格说明: ' + _pn[:80] if _pn else ''))
+    c.commit(); c.close()
+    try:
+        create_approvals('emergency_formal', eid, float(r['actual_amount'] or r['est_amount'] or 0), submitter=session.get('user_name', ''))
+        start_instances('emergency_formal', eid)
+    except Exception as _e:
+        print('V11.327 正式审批创建失败:', _e)
+    return jsonify({'success': True, 'message': '资料已补齐，已提交正式分级审批（按金额分支）→ 通过后财务复核 → 转正闭环'})
+
+
+@app.route('/api/emergency/<int:eid>/convert', methods=['POST'])
+@login_required
+def api_emergency_convert(eid):
+    """V11.327 转正闭环: 标签转【已闭环】+ 临时入库单转正式入库单 + 解锁 + 纳入正常付款排期"""
+    if session.get('user_role') not in EMG_BUY_ROLES:
+        return jsonify({'error': '无权限：转正操作仅限采购专员/系统管理员'}), 403
+    c = db()
+    r = c.execute("SELECT * FROM emergency_purchases WHERE id=?", (eid,)).fetchone()
+    if not r:
+        c.close(); return jsonify({'error': '应急单不存在'}), 404
+    if r['status'] != '待转正':
+        c.close(); return jsonify({'error': '当前状态(%s)：财务复核通过后才能转正闭环' % r['status']}), 400
+    _rid = int(r['temp_receive_id'] or 0)
+    if _rid:
+        c.execute("""UPDATE receivings SET is_emg=0, is_emg_converted=1,
+                     remark=COALESCE(remark,'')||'｜应急采购已转正闭环('||?||')' WHERE id=?""", (r['emg_no'], _rid))
+    c.execute("""UPDATE emergency_purchases SET status='已闭环', label='应急采购 - 已闭环', converted_at=?,
+                 locked_at='', lock_reason='', updated_at=? WHERE id=?""", (now(), now(), eid))
+    emergency_log(c, eid, '转正闭环', session.get('user_name', ''),
+                  '临时入库单 %s 已转正式入库；单据解锁并纳入正常付款排期' % (r['temp_receive_no'] or '—'))
+    c.commit(); c.close()
+    log(session.get('user_name', ''), '应急采购转正', '%s 已闭环(临时入库单%s转正式)' % (r['emg_no'], r['temp_receive_no']))
+    return jsonify({'success': True, 'message': '🎉 %s 已转正闭环：临时入库单 %s 转为正式入库单，付款限制解除（可正常走付款排期）' % (r['emg_no'], r['temp_receive_no'] or '—')})
+
+
+@app.route('/api/emergency/<int:eid>/void', methods=['POST'])
+@login_required
+def api_emergency_void(eid):
+    """V11.327 作废应急单(未入库前可作废; 已入库需先走供应商退货/退库)"""
+    if session.get('user_role') not in ('系统管理员', '分管领导', '总经理'):
+        return jsonify({'error': '无权限：作废仅限管理员/领导'}), 403
+    d = request.json or {}
+    c = db()
+    r = c.execute("SELECT * FROM emergency_purchases WHERE id=?", (eid,)).fetchone()
+    if not r:
+        c.close(); return jsonify({'error': '应急单不存在'}), 404
+    if r['temp_receive_id'] and r['status'] != '已闭环':
+        c.close(); return jsonify({'error': '该单已临时入库：不能直接作废，请走供应商退货/退库流程冲减库存'}), 400
+    c.execute("UPDATE emergency_purchases SET status='已作废', void_reason=?, updated_at=? WHERE id=?",
+              (str(d.get('reason') or '')[:200], now(), eid))
+    emergency_log(c, eid, '作废', session.get('user_name', ''), str(d.get('reason') or '')[:200])
+    c.commit(); c.close()
+    return jsonify({'success': True, 'message': '已作废 %s' % r['emg_no']})
+
+
+@app.route('/api/emergency/ledger')
+@login_required
+def api_emergency_ledger():
+    """V11.327 独立应急采购台账(字段: 应急单号/项目/物资/金额/临时审批人/入库时间/资料截止日/转正状态/是否延期/异常标记)"""
+    if session.get('user_role') not in ('系统管理员', '分管领导', '总经理', '财务', '采购员', '部门负责人'):
+        return jsonify({'error': '无权限'}), 403
+    f_from = (request.args.get('from') or '').strip()
+    f_to = (request.args.get('to') or '').strip()
+    f_pj = (request.args.get('project') or '').strip()
+    c = db()
+    sql = "SELECT * FROM emergency_purchases WHERE 1=1"
+    args = []
+    if f_from:
+        sql += " AND substr(created_at,1,10)>=?"; args.append(f_from)
+    if f_to:
+        sql += " AND substr(created_at,1,10)<=?"; args.append(f_to)
+    if f_pj:
+        sql += " AND project=?"; args.append(f_pj)
+    sql += " ORDER BY id DESC"
+    rows = []
+    for r in c.execute(sql, args).fetchall():
+        d = _emg_enrich(c, dict_row(r))
+        d['extend_txt'] = ('已延期(%d次)' % int(d.get('extend_count') or 0)) if int(d.get('extend_count') or 0) else '未延期'
+        d['abnormal_txt'] = '异常' if int(d.get('abnormal') or 0) else ('驳回%d次' % int(d.get('reject_count') or 0) if int(d.get('reject_count') or 0) else '正常')
+        rows.append(d)
+    tot = {'n': len(rows), 'amt': round(sum(float(x.get('actual_amount') or x.get('est_amount') or 0) for x in rows), 2),
+           'converted': len([x for x in rows if x.get('status') == '已闭环']),
+           'locked': len([x for x in rows if x.get('status') == '已锁定']),
+           'extended': len([x for x in rows if int(x.get('extend_count') or 0) > 0]),
+           'abnormal': len([x for x in rows if int(x.get('abnormal') or 0) > 0])}
+    c.close()
+    return jsonify({'rows': rows, 'total': tot,
+                    'note': '应急采购独立台账：仅统计应急通道单据，与常规采购分开；超时/延单/异常单独标记，供内审复盘'})
+
+
+@app.route('/api/emergency/report')
+@login_required
+def api_emergency_report():
+    """V11.327 月度应急采购统计报表(单据数/总金额/超时清单/按项目/延期与异常)"""
+    if session.get('user_role') not in ('系统管理员', '分管领导', '总经理', '财务', '采购员', '部门负责人'):
+        return jsonify({'error': '无权限'}), 403
+    _m = (request.args.get('month') or now()[:7]).strip()[:7]
+    c = db()
+    rows = [dict_row(r) for r in c.execute("SELECT * FROM emergency_purchases WHERE substr(created_at,1,7)=? ORDER BY id", (_m,)).fetchall()]
+    for d in rows:
+        _emg_enrich(c, d)
+    _over = [d for d in rows if (d.get('overdue') or d.get('status') == '已锁定')]
+    _bypj = {}
+    for d in rows:
+        k = d.get('project') or '未填项目'
+        _bypj.setdefault(k, {'project': k, 'n': 0, 'amt': 0.0, 'locked': 0, 'extended': 0})
+        _bypj[k]['n'] += 1
+        _bypj[k]['amt'] = round(_bypj[k]['amt'] + float(d.get('actual_amount') or d.get('est_amount') or 0), 2)
+        if d.get('status') == '已锁定':
+            _bypj[k]['locked'] += 1
+        if int(d.get('extend_count') or 0):
+            _bypj[k]['extended'] += 1
+    _N = int(emg_num('emg_month_freq', 3))
+    # 频次预警: 同项目当月次数 ≥ N → 预警中心 + 事业部
+    _warn = []
+    for k, v in _bypj.items():
+        if v['n'] >= _N:
+            _warn.append(v)
+    c.close()
+    return jsonify({'month': _m, 'count': len(rows),
+                    'amount': round(sum(float(d.get('actual_amount') or d.get('est_amount') or 0) for d in rows), 2),
+                    'converted': len([d for d in rows if d.get('status') == '已闭环']),
+                    'locked': len([d for d in rows if d.get('status') == '已锁定']),
+                    'extended': len([d for d in rows if int(d.get('extend_count') or 0) > 0]),
+                    'abnormal': len([d for d in rows if int(d.get('abnormal') or 0) > 0]),
+                    'overdue_rows': _over, 'by_project': list(_bypj.values()),
+                    'freq_warn': _warn, 'freq_limit': _N,
+                    'note': '用于内审复盘：超时/锁定单据清单、按项目分布、月度频次预警线 N=%d' % _N})
+
+
+@app.route('/api/emergency/export')
+@login_required
+def api_emergency_export():
+    """V11.327 应急采购台账/月报 Excel 导出"""
+    if session.get('user_role') not in ('系统管理员', '分管领导', '总经理', '财务', '采购员', '部门负责人'):
+        return jsonify({'error': '无权限'}), 403
+    from openpyxl import Workbook
+    import io as _io
+    f_from = (request.args.get('from') or '').strip()
+    f_to = (request.args.get('to') or '').strip()
+    c = db()
+    sql = "SELECT * FROM emergency_purchases WHERE 1=1"
+    args = []
+    if f_from:
+        sql += " AND substr(created_at,1,10)>=?"; args.append(f_from)
+    if f_to:
+        sql += " AND substr(created_at,1,10)<=?"; args.append(f_to)
+    sql += " ORDER BY id DESC"
+    rows = [_emg_enrich(c, dict_row(r)) for r in c.execute(sql, args).fetchall()]
+    c.close()
+    wb = Workbook(); ws = wb.active; ws.title = '应急采购台账'
+    ws.append(['应急单号', '项目/工地', '部门', '需求人', '物资名称', '规格', '数量', '单位', '预估金额', '实际金额',
+               '临时审批人', '审批时间', '供应商', '临时入库单号', '入库时间', '资料补齐截止日', '剩余工作日',
+               '转正状态', '是否延期', '异常标记', '驳回次数', '价格偏差%', '价格说明', '关联订单号', '关联合同号', '创建时间'])
+    for d in rows:
+        ws.append([d.get('emg_no'), d.get('project'), d.get('dept'), d.get('requester'), d.get('item_name'), d.get('spec'),
+                   d.get('quantity'), d.get('unit'), d.get('est_amount'), d.get('actual_amount'),
+                   d.get('temp_approved_by'), d.get('temp_approved_at'), d.get('supplier'), d.get('temp_receive_no'),
+                   d.get('temp_received_at'), d.get('deadline'), d.get('days_left'),
+                   d.get('label') or d.get('status'), ('已延期%d次' % int(d.get('extend_count') or 0)) if int(d.get('extend_count') or 0) else '未延期',
+                   '异常' if int(d.get('abnormal') or 0) else ('驳回%d次' % int(d.get('reject_count') or 0) if int(d.get('reject_count') or 0) else '正常'),
+                   d.get('reject_count'), d.get('price_dev_pct'), d.get('price_note'),
+                   d.get('linked_order_no'), d.get('linked_contract_no'), (d.get('created_at') or '')[:19]])
+    for _cl, _w in (('A', 16), ('B', 18), ('E', 18), ('N', 16), ('P', 14), ('V', 20), ('Y', 20)):
+        ws.column_dimensions[_cl].width = _w
+    bio = _io.BytesIO(); wb.save(bio); bio.seek(0)
+    from flask import send_file
+    return send_file(bio, as_attachment=True, download_name='应急采购台账_%s.xlsx' % today(),
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+@app.route('/api/emergency/sweep', methods=['POST'])
+@login_required
+def api_emergency_sweep():
+    """V11.327 立即巡检(管理员/领导手动触发): 倒计时提醒 + 超期锁单 + 项目频次预警(与定时任务同一逻辑)"""
+    if session.get('user_role') not in ('系统管理员', '分管领导', '总经理'):
+        return jsonify({'error': '无权限'}), 403
+    emergency_sweep()
+    return jsonify({'success': True, 'message': '已巡检：倒计时提醒/超期锁单/频次预警已按当前数据执行'})
+
+
+def emergency_sweep():
+    """V11.327 定时巡检(每分钟由 scheduler_loop 调用): 3工作日倒计时提醒(T+1/T+2) → 超期锁单 → 项目月度频次预警"""
+    try:
+        c = db()
+        _days = int(emg_num('emg_promise_days', 3))
+        _price = emg_num('emg_price_dev', 20)
+        for r in c.execute("""SELECT * FROM emergency_purchases
+                              WHERE status NOT IN ('已闭环','已作废','已驳回','待临时审批') AND COALESCE(deadline,'')<>''""").fetchall():
+            d = dict_row(r)
+            _left = _emg_wd_left(d.get('deadline'))
+            # 1) 超期自动锁单: 不影响已入库库存, 禁止新增领料/禁止转正/禁止付款
+            if _left < 0 and d.get('status') not in ('已锁定',):
+                c.execute("""UPDATE emergency_purchases SET status='已锁定', label='应急采购 - 已锁定', locked_at=?,
+                             lock_reason=?, updated_at=? WHERE id=?""",
+                          (now(), '资料补齐超期（%s 个工作日）自动锁定：禁止新增领料、禁止转正、禁止付款' % _days, now(), d['id']))
+                emergency_log(c, d['id'], '系统自动锁定', '系统', '资料补齐超期 %s 天 → 锁单（可申请延期1次解锁）' % abs(_left))
+                try:
+                    c.execute("""INSERT INTO alert_items(alert_type,level,title,content,biz_type,biz_id,status,created_at,updated_at)
+                                 VALUES('emg_locked','orange',?,?, 'emergency', ?, 'pending', ?, ?)""",
+                              ('应急采购已锁单 %s' % d['emg_no'],
+                               '项目%s 物资%s 资料补齐超期未补，已自动锁单：禁止新增领料/付款' % (d.get('project'), d.get('item_name')),
+                               d['id'], now(), now()))
+                except Exception:
+                    pass
+            # 2) T+1/T+2 提醒(每单每档只推一次, reminder_log 去重)
+            elif 0 < _left <= max(1, _days - 1):
+                _rk = 'emg_deadline'
+                _key = '%s_T%d' % (d['emg_no'], _left)
+                if not c.execute("SELECT 1 FROM reminder_log WHERE rule=? AND key=?", (_rk, _key)).fetchone():
+                    c.execute("INSERT INTO reminder_log(rule,key) VALUES(?,?)", (_rk, _key))
+                    _txt = ('⏰ 应急采购资料补齐提醒\n单号 %s（项目%s 物资%s）\n资料补齐截止 %s，剩余 %d 个工作日，'
+                            '超期将自动锁单（禁止新增领料/付款）。请及时补齐合同/发票等正式资料。'
+                            % (d['emg_no'], d.get('project'), d.get('item_name'), d.get('deadline'), _left))
+                    try:
+                        _uid = d.get('requester_id') or 0
+                        if _uid:
+                            c.execute("INSERT INTO notifications(user_id,type,title,content,biz_type,biz_id) VALUES(?,?,?,?,?,?)",
+                                      (_uid, '应急采购提醒', '资料补齐倒计时 %d 个工作日' % _left, _txt, 'emergency', d['id']))
+                        for _u in c.execute("SELECT id FROM users WHERE role IN ('采购员','分管领导','总经理') AND is_active=1").fetchall():
+                            c.execute("INSERT INTO notifications(user_id,type,title,content,biz_type,biz_id) VALUES(?,?,?,?,?,?)",
+                                      (_u['id'], '应急采购提醒', '%s 资料补齐剩 %d 个工作日' % (d['emg_no'], _left), _txt, 'emergency', d['id']))
+                    except Exception:
+                        pass
+                    try:
+                        _cn = c.execute("SELECT dingtalk_userid,name FROM users WHERE id=?", (d.get('requester_id') or 0,)).fetchone()
+                        if _cn and _cn['dingtalk_userid']:
+                            dt_send_todo([_cn['dingtalk_userid']], '⏰ 应急采购资料补齐提醒', _txt, biz_type='emergency', biz_id=d['id'], operator='系统')
+                    except Exception:
+                        pass
+        # 3) 同项目月度频次预警(≥N 次推事业部; 每项目每月一次)
+        _N = int(emg_num('emg_month_freq', 3))
+        _m = now()[:7]
+        for r in c.execute("""SELECT project, COUNT(*) n, COALESCE(SUM(est_amount),0) amt FROM emergency_purchases
+                              WHERE substr(created_at,1,7)=? AND COALESCE(project,'')<>'' AND status NOT IN ('已作废','已驳回')
+                              GROUP BY project HAVING COUNT(*)>=?""", (_m, _N)).fetchall():
+            _rk, _key = 'emg_freq', '%s_%s' % (r['project'], _m)
+            if not c.execute("SELECT 1 FROM reminder_log WHERE rule=? AND key=?", (_rk, _key)).fetchone():
+                c.execute("INSERT INTO reminder_log(rule,key) VALUES(?,?)", (_rk, _key))
+                try:
+                    c.execute("""INSERT INTO alert_items(alert_type,level,title,content,biz_type,biz_id,status,created_at,updated_at)
+                                 VALUES('emg_freq','orange',?,?,'emergency',0,'pending',?,?)""",
+                              ('项目应急采购频次超限：%s' % r['project'],
+                               '%s 月度应急采购 %d 次（阈值 %d 次），合计 ¥%s。请核查是否常态化使用应急通道，需走常规采购。'
+                               % (r['project'], r['n'], _N, round(float(r['amt'] or 0), 2)), now(), now()))
+                except Exception:
+                    pass
+                emergency_log(c, 0, '频次预警', '系统', '项目%s 本月应急 %d 次(阈值%d)' % (r['project'], r['n'], _N))
+        c.commit(); c.close()
+    except Exception as _se:
+        print('V11.327 应急巡检异常:', _se)
+
+
+# ---- 单据导出 xlsx ----
 @app.route('/api/export')
 @login_required
 def api_export():
@@ -16304,6 +17158,10 @@ def api_create_payment():
     _blk_msg = _manual_recv_block_reason(str(d.get('supplier') or '').strip())
     if _blk_msg:
         return jsonify({'error': _blk_msg}), 400
+    # V11.327 应急采购风控: 该供应商存在未转正/已锁定的应急紧急采购单 → 禁止付款(转正后才纳入付款排期)
+    _emg_blk = _emg_pay_block_reason(str(d.get('supplier') or '').strip())
+    if _emg_blk:
+        return jsonify({'error': _emg_blk}), 400
     conn = db()
     no = gen_no('FK', 'payment_requests', 'payment_no', conn)
     _atts = d.get('attachments') or []
