@@ -5,7 +5,7 @@ import urllib.request, urllib.parse
 import glob, secrets
 from flask import Flask, jsonify, request, render_template, redirect, url_for, session, send_from_directory, make_response
 from flask_cors import CORS
-import sqlite3
+import sqlite3, threading
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 
@@ -39,11 +39,40 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 DB = os.path.join(BASE, 'data', 'purchase.db')
 os.makedirs(os.path.join(BASE, 'data'), exist_ok=True)
 
+_tls_conns = threading.local()   # V11.332: 本请求打开的连接登记处(请求结束统一回收)
+
+
+def _reg_conn(c):
+    try:
+        lst = getattr(_tls_conns, 'conns', None)
+        if lst is None:
+            lst = _tls_conns.conns = []
+        lst.append(c)
+    except Exception:
+        pass
+
+
+@app.teardown_request
+def _reap_conns(exc=None):
+    """V11.332 写锁兜底: 请求内打开但未归还的连接 → rollback+close。
+    修复"接口中途异常不释放SQLite写锁 → 全库写操作(登录/审批/入库)全部500"这一类故障。"""
+    lst = getattr(_tls_conns, 'conns', None)
+    if not lst:
+        return
+    for _c in lst:
+        try:
+            _c.close()
+        except Exception:
+            pass
+    _tls_conns.conns = []
+
+
 def db():
     conn = sqlite3.connect(DB, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    _reg_conn(conn)
     return conn
 
 # ── 安全配置: 会话Cookie加固 (V5.1) ──
@@ -941,6 +970,64 @@ def init_db():
             print('V11.325 历史导入数据标记完成')
     except Exception as _dse:
         print('V11.325 历史导入数据标记跳过:', _dse)
+    # ---- V11.332 需求《应急采购全链路后续流程打通》: 单家询价 → 应急订单 → 应急入库验收(临时待分配库) → 临时库存自主分配 → 转正 ----
+    try:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS stock_alloc_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                alloc_no TEXT DEFAULT '', emg_id INTEGER DEFAULT 0, emg_no TEXT DEFAULT '',
+                recv_id INTEGER DEFAULT 0, recv_no TEXT DEFAULT '',
+                item_name TEXT DEFAULT '', spec TEXT DEFAULT '', unit TEXT DEFAULT '个',
+                quantity REAL DEFAULT 0, price REAL DEFAULT 0,
+                from_wh TEXT DEFAULT '', to_wh TEXT DEFAULT '', to_location TEXT DEFAULT '',
+                remark TEXT DEFAULT '', operator TEXT DEFAULT '',
+                revoked INTEGER DEFAULT 0, revoked_at TEXT DEFAULT '', revoke_reason TEXT DEFAULT '', revoked_by TEXT DEFAULT '',
+                created_at TEXT DEFAULT (datetime('now','localtime'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_alloc_emg ON stock_alloc_logs(emg_id);
+        """)
+        for _t, _col, _ddl in (
+            ('emergency_purchases', 'inq_supplier', "ALTER TABLE emergency_purchases ADD COLUMN inq_supplier TEXT DEFAULT ''"),
+            ('emergency_purchases', 'inq_amount', "ALTER TABLE emergency_purchases ADD COLUMN inq_amount REAL DEFAULT 0"),
+            ('emergency_purchases', 'inq_tax_rate', "ALTER TABLE emergency_purchases ADD COLUMN inq_tax_rate REAL DEFAULT 0"),
+            ('emergency_purchases', 'inq_amount_ex', "ALTER TABLE emergency_purchases ADD COLUMN inq_amount_ex REAL DEFAULT 0"),
+            ('emergency_purchases', 'inq_tax', "ALTER TABLE emergency_purchases ADD COLUMN inq_tax REAL DEFAULT 0"),
+            ('emergency_purchases', 'inq_valid_until', "ALTER TABLE emergency_purchases ADD COLUMN inq_valid_until TEXT DEFAULT ''"),
+            ('emergency_purchases', 'inq_delivery_days', "ALTER TABLE emergency_purchases ADD COLUMN inq_delivery_days TEXT DEFAULT ''"),
+            ('emergency_purchases', 'inq_pay_method', "ALTER TABLE emergency_purchases ADD COLUMN inq_pay_method TEXT DEFAULT ''"),
+            ('emergency_purchases', 'inq_files', "ALTER TABLE emergency_purchases ADD COLUMN inq_files TEXT DEFAULT ''"),
+            ('emergency_purchases', 'inq_at', "ALTER TABLE emergency_purchases ADD COLUMN inq_at TEXT DEFAULT ''"),
+            ('emergency_purchases', 'inq_by', "ALTER TABLE emergency_purchases ADD COLUMN inq_by TEXT DEFAULT ''"),
+            ('emergency_purchases', 'order_id', "ALTER TABLE emergency_purchases ADD COLUMN order_id INTEGER DEFAULT 0"),
+            ('emergency_purchases', 'order_no', "ALTER TABLE emergency_purchases ADD COLUMN order_no TEXT DEFAULT ''"),
+            ('emergency_purchases', 'shipped_at', "ALTER TABLE emergency_purchases ADD COLUMN shipped_at TEXT DEFAULT ''"),
+            ('emergency_purchases', 'recv_done_qty', "ALTER TABLE emergency_purchases ADD COLUMN recv_done_qty REAL DEFAULT 0"),
+            ('emergency_purchases', 'alloc_state', "ALTER TABLE emergency_purchases ADD COLUMN alloc_state TEXT DEFAULT ''"),
+            ('receivings', 'is_temp_alloc', "ALTER TABLE receivings ADD COLUMN is_temp_alloc INTEGER DEFAULT 0"),
+            ('receivings', 'emg_order_id', "ALTER TABLE receivings ADD COLUMN emg_order_id INTEGER DEFAULT 0"),
+            ('purchase_orders', 'is_emg', "ALTER TABLE purchase_orders ADD COLUMN is_emg INTEGER DEFAULT 0"),
+            ('purchase_orders', 'emg_no', "ALTER TABLE purchase_orders ADD COLUMN emg_no TEXT DEFAULT ''"),
+            ('inventory', 'is_emg_temp', "ALTER TABLE inventory ADD COLUMN is_emg_temp INTEGER DEFAULT 0"),
+            ('inventory', 'emg_no', "ALTER TABLE inventory ADD COLUMN emg_no TEXT DEFAULT ''"),
+            ('warehouse_nodes', 'is_temp_alloc', "ALTER TABLE warehouse_nodes ADD COLUMN is_temp_alloc INTEGER DEFAULT 0"),
+        ):
+            try:
+                conn.execute(_ddl)
+            except Exception:
+                pass
+        _twh = conn.execute("SELECT id FROM warehouse_nodes WHERE name=? AND COALESCE(parent_id,0)=0", ('临时待分配库',)).fetchone()
+        if not _twh:
+            # 真实表结构: id/parent_id/level/code/name/wh/status/color_tag/sort_no/remark/created_at
+            conn.execute("""INSERT INTO warehouse_nodes(name,code,parent_id,level,sort_no,status,color_tag,remark,is_temp_alloc,created_at)
+                            VALUES('临时待分配库','TMP-ALLOC',0,1,99,'启用','#0ea5e9','应急采购临时入库过渡库(待库管自主分配到正式库房)',1,?)""", (now(),))
+            conn.execute("""INSERT INTO warehouse_nodes(name,parent_id,level,sort_no,status,color_tag,remark,is_temp_alloc,created_at)
+                            VALUES('待检区',(SELECT id FROM warehouse_nodes WHERE name='临时待分配库' AND COALESCE(parent_id,0)=0),2,1,'启用','#f59e0b','应急到货待检区',1,?)""", (now(),))
+        else:
+            conn.execute("UPDATE warehouse_nodes SET is_temp_alloc=1 WHERE id=?", (_twh['id'],))
+        conn.commit()
+        print('V11.332 应急全链路: 临时待分配库/分配流水表/询价与订单字段 就绪')
+    except Exception as _e332:
+        print('V11.332 应急全链路初始化跳过:', _e332)
     # ---- V11.327 应急紧急采购(V11.327): 独立专项通道 表结构 + 阈值参数 + 审批链配置(金额分级) ----
     try:
         conn.executescript("""
@@ -987,7 +1074,9 @@ def init_db():
                            ('emg_limit_b', '20000', '应急通道金额上限B(>B禁用应急, 强制常规采购)'),
                            ('emg_month_freq', '3', '同一项目月度应急次数预警线N'),
                            ('emg_price_dev', '20', '应急价格超基准价比例%(超此比例正式审批必须填说明)'),
-                           ('emg_promise_days', '3', '临时入库后补齐资料工作日数')):
+                           ('emg_promise_days', '3', '临时入库后补齐资料工作日数'),
+                           ('emg_alloc_days', '3', '临时待分配库存超期未分配天数(超期预警推库管)'),          # V11.332
+                           ('emg_recv_days', '2', '应急订单发出后超期待验收天数(超期预警推库管)')):          # V11.332
             if not conn.execute("SELECT 1 FROM sys_config WHERE key=?", (_k,)).fetchone():
                 conn.execute("INSERT INTO sys_config(key,value) VALUES(?,?)", (_k, _v))
                 print('V11.327 应急参数 %s=%s (%s)' % (_k, _v, _d))
@@ -1004,7 +1093,8 @@ def init_db():
                     ('emergency_formal', 1, '部门负责人', 0, _B, '应急正式审批-部门负责人'),
                     ('emergency_formal', 2, '分管领导', _A, _B, '应急正式审批-事业部领导'),
                     ('emergency_finance', 1, '财务', 0, 9999999, '应急财务复核'),
-                    ('emergency_extend', 1, '分管领导', 0, 9999999, '应急延期审批-事业部领导')]
+                    ('emergency_extend', 1, '分管领导', 0, 9999999, '应急延期审批-事业部领导'),
+                    ('emergency_receive', 1, '库管员', 0, 9999999, '应急入库验收-库管员（默认绑定库管）')]  # V11.332
         for _bt, _lv, _role, _mn, _mx, _lb in _emg_cfg:
             if not conn.execute("SELECT 1 FROM approval_flow_config WHERE biz_type=? AND level_no=?", (_bt, _lv)).fetchone():
                 conn.execute("""INSERT INTO approval_flow_config(biz_type,level_no,role,min_amount,max_amount,label)
@@ -2058,6 +2148,8 @@ FS_BIZ = {  # biz_type -> (审批定义名称, 表单控件前缀)
     'emergency_formal': ('应急紧急采购-正式审批', 'YJ'),
     'emergency_finance': ('应急紧急采购-财务复核', 'YJ'),
     'emergency_extend': ('应急紧急采购-延期审批', 'YJ'),
+    'emergency_inquiry': ('应急紧急采购-询价定标审批', 'YJ'),   # V11.332 询价定标审批(可选)
+    'emergency_receive': ('应急入库验收审批', 'RK'),            # V11.332 应急入库验收(默认库管)
     'emergency_convert': ('应急紧急采购-转正审批', 'YJ'),  # V11.329 转正审批节点(可配置启用)
 }
 FS_PRE = {'purchase_request': 'SQ', 'purchase_order': 'CG', 'contract': 'HT', 'credit': 'GZ', 'payment': 'FK', 'receiving': 'RK', 'requisition': 'CK'}
@@ -2386,6 +2478,8 @@ def biz_parent_status(biz_type, result):
         'emergency_temp': ('采购接单', '已驳回'), 'emergency_formal': ('财务复核', '待补资料'),
         'emergency_finance': ('待转正', '待补资料'), 'emergency_extend': ('已延期', '已驳回'),
         'emergency_convert': ('待转正', '待补资料'),  # V11.329 转正审批节点(启用时财务复核通过→转正审批→待转正)
+        # V11.332 应急全链路: 询价定标审批(可选) / 应急入库验收审批(默认库管)
+        'emergency_inquiry': ('待发货', '待定标'), 'emergency_receive': ('已入库', '待验收'),
     }
     ok, no = m.get(biz_type, ('已通过', '已驳回'))
     return ok if result == 'ok' else no
@@ -2403,6 +2497,8 @@ def biz_table(biz_type):
             'emergency_temp': 'emergency_purchases', 'emergency_formal': 'emergency_purchases',
             'emergency_finance': 'emergency_purchases', 'emergency_extend': 'emergency_purchases',  # V11.327 应急采购
             'emergency_convert': 'emergency_purchases',  # V11.329 应急采购-转正审批节点(可配置启用)
+            'emergency_inquiry': 'emergency_purchases',  # V11.332 应急询价定标审批(父单=应急单)
+            'emergency_receive': 'receivings',           # V11.332 应急入库验收审批(父单=入库单, biz_id=receivings.id)
             'supplier_return': 'supplier_returns'}[biz_type]  # V11.319 供应商退货 / V11.133: biz_id=询价单id
 
 # ============================================================
@@ -2598,6 +2694,38 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
         c.close()
         return True
 
+    # V11.332 应急入库验收审批(父单=入库单): 通过→自动临时入库到「临时待分配库」; 驳回→退回采购端重新发货
+    if biz_type == 'emergency_receive':
+        _rv = c.execute("SELECT * FROM receivings WHERE id=?", (biz_id,)).fetchone()
+        if not _rv:
+            c.close(); return False
+        if result == 'ok':
+            try:
+                _emg_recv_pass(c, biz_id, approver)
+            except Exception as _e:
+                print('V11.332 验收通过入库异常:', _e)
+        else:
+            c.execute("UPDATE receivings SET status='已驳回' WHERE id=?", (biz_id,))
+            _e2 = c.execute("SELECT id FROM emergency_purchases WHERE emg_no=?", (_rv['emg_no'] or '',)).fetchone()
+            if _e2:
+                c.execute("UPDATE emergency_purchases SET status='待发货', reject_count=COALESCE(reject_count,0)+1, updated_at=? WHERE id=?", (now(), _e2['id']))
+                emergency_log(c, _e2['id'], '验收驳回', approver, '入库单 %s 验收驳回：%s → 退回采购端重新发货' % (_rv['receive_no'], (comment or '')[:160]))
+        c.commit(); c.close()
+        return True
+    # V11.332 应急询价定标审批(可选链): 通过→自动生成应急采购订单
+    if biz_type == 'emergency_inquiry':
+        _ei = c.execute("SELECT * FROM emergency_purchases WHERE id=?", (biz_id,)).fetchone()
+        if not _ei:
+            c.close(); return False
+        if result == 'ok':
+            _oid, _ono = _emg_create_order(c, biz_id)
+            emergency_log(c, biz_id, '询价审批通过', approver, '定标审批通过 → 自动生成应急采购订单 %s' % _ono)
+        else:
+            c.execute("UPDATE emergency_purchases SET status='待定标', reject_count=COALESCE(reject_count,0)+1, updated_at=? WHERE id=?", (now(), biz_id))
+            emergency_log(c, biz_id, '询价审批驳回', approver, (comment or '')[:200] + ' → 退回采购员修改报价')
+        c.commit(); c.close()
+        return True
+
     # V11.327 应急紧急采购: 各节点通过/驳回后的专属字段与状态流转(临时审批人/正式审批/财务复核/延期解锁)
     if biz_type in ('emergency_temp', 'emergency_formal', 'emergency_finance', 'emergency_extend', 'emergency_convert'):
         _er = c.execute("SELECT * FROM emergency_purchases WHERE id=?", (biz_id,)).fetchone()
@@ -2607,9 +2735,9 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
         _new_fin = _new_cv = False
         if biz_type == 'emergency_temp':
             if result == 'ok':
-                c.execute("UPDATE emergency_purchases SET status='采购接单', temp_approved_by=?, temp_approved_at=?, updated_at=? WHERE id=?",
+                c.execute("UPDATE emergency_purchases SET status='待询价', temp_approved_by=?, temp_approved_at=?, updated_at=? WHERE id=?",
                           (approver, now(), now(), biz_id))
-                emergency_log(c, biz_id, '临时审批通过', approver, '临时快速审批通过 → 转采购接单(佐证截图后续补传)')
+                emergency_log(c, biz_id, '临时审批通过', approver, '临时快速审批通过 → 转「应急单家询价」(采购员1家报价→定标生成应急订单)；佐证截图后续补传')
             else:
                 c.execute("""UPDATE emergency_purchases SET status='已驳回', label='应急采购 - 待转正',
                              reject_count=COALESCE(reject_count,0)+1,
@@ -3244,6 +3372,8 @@ DT_BIZ = {  # biz_type -> 审批模板名称
     'emergency_formal': '应急紧急采购-正式审批',
     'emergency_finance': '应急紧急采购-财务复核',
     'emergency_extend': '应急紧急采购-延期审批',
+    'emergency_inquiry': '应急紧急采购-询价定标审批',  # V11.332
+    'emergency_receive': '应急入库验收审批',          # V11.332
     'emergency_convert': '应急紧急采购-转正审批',  # V11.329
 }
 DT_FORM = [('单据编号', 'text'), ('内容摘要', 'text'), ('金额(元)', 'text'), ('申请人', 'text'), ('提交时间', 'text')]
@@ -16445,7 +16575,8 @@ def api_order_download(oid):
 #   → 补提正式资料 → 正式分级审批 → 财务复核 → 转正闭环; 独立台账/月度报表/项目频次预警/全程留痕
 #   阈值参数(系统设置可改): emg_limit_a=A档 / emg_limit_b=B上限 / emg_month_freq=N频次 / emg_price_dev=价格异常% / emg_promise_days=补资料工作日
 # ============================================================
-EMG_OPEN_STATES = ('待临时审批', '已驳回', '采购接单', '待临时入库', '待补资料', '延期审批中', '正式审批中', '财务复核', '待转正', '已锁定')
+EMG_OPEN_STATES = ('待临时审批', '已驳回', '待询价', '询价审批中', '待定标', '待发货', '待验收', '采购接单', '待临时入库',
+                   '待补资料', '延期审批中', '正式审批中', '财务复核', '转正审批中', '待转正', '已锁定')  # V11.332 增询价/发货/验收
 EMG_INIT_ROLES = ('员工', '采购员', '库管员', '部门负责人', '分管领导', '总经理', '系统管理员')
 EMG_BUY_ROLES = ('采购员', '系统管理员')
 EMG_RECV_ROLES = ('库管员', '部门负责人', '分管领导', '总经理', '系统管理员')
@@ -16922,6 +17053,10 @@ def api_emergency_convert(eid):
                      remark=COALESCE(remark,'')||'｜应急采购已转正闭环('||?||')' WHERE id=?""", (r['emg_no'], _rid))
     c.execute("""UPDATE emergency_purchases SET status='已闭环', label='应急采购 - 已闭环', converted_at=?,
                  locked_at='', lock_reason='', updated_at=? WHERE id=?""", (now(), now(), eid))
+    # V11.332 需求四.45: 分配到正式库房的临时库存 → 转正后变正式库存(清除临时属性, 解锁付款)
+    _twh = _emg_temp_wh(c)
+    _clr = c.execute("UPDATE inventory SET is_emg_temp=0 WHERE COALESCE(is_emg_temp,0)=1 AND emg_no=?", (r['emg_no'],)).rowcount
+    c.execute("""UPDATE stock_alloc_logs SET remark=COALESCE(remark,'')||'｜已转正('||?||')' WHERE emg_no=?""", (r['emg_no'], r['emg_no']))
     emergency_log(c, eid, '转正闭环', session.get('user_name', ''),
                   '临时入库单 %s 已转正式入库；单据解锁并纳入正常付款排期' % (r['temp_receive_no'] or '—'))
     c.commit(); c.close()
@@ -17065,7 +17200,551 @@ def api_emergency_export():
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
-EMG_CHAINS = (('emergency_temp', '① 应急临时审批（提交申请后先走这里）'), ('emergency_formal', '⑦ 应急正式分级审批（资料补齐后）'),
+# ============================================================
+# V11.332 应急采购全链路打通(需求《应急采购全链路后续流程打通》):
+#   临时审批通过 → 应急单家询价(仅1家供应商) → 提交定标 → 自动生成应急采购订单
+#   → 标记发货 → 应急入库验收(库管审批, 分批) → 自动临时入库到「临时待分配库」
+#   → 库管自主分配至正式库房(生成调拨流水, 保留临时属性) → 补资料转正后转正式库存并解锁付款
+# ============================================================
+def _emg_temp_wh(c):
+    """V11.332: 取「临时待分配库」名称(库房节点里 is_temp_alloc=1 的那个虚拟过渡库)"""
+    try:
+        r = c.execute("SELECT name FROM warehouse_nodes WHERE COALESCE(is_temp_alloc,0)=1 ORDER BY id LIMIT 1").fetchone()
+        return (r['name'] if r else '临时待分配库')
+    except Exception:
+        return '临时待分配库'
+
+
+def _emg_ensure_supplier(c, name, contact=''):
+    """V11.332 需求一.10: 询价供应商同步至供应商档案(不存在则自动建档), 与常规询价共用底层数据"""
+    _n = (name or '').strip()
+    if not _n:
+        return
+    try:
+        if c.execute("SELECT 1 FROM suppliers WHERE name=?", (_n,)).fetchone():
+            return
+        cols = [x[1] for x in c.execute("PRAGMA table_info(suppliers)").fetchall()]
+        kv = {'name': _n, 'contact': contact or '', 'status': '合作中'}
+        if 'created_at' in cols:
+            kv['created_at'] = now()
+        _ks = [k for k in kv if k in cols]
+        c.execute("INSERT INTO suppliers(%s) VALUES(%s)" % (','.join(_ks), ','.join(['?'] * len(_ks))), [kv[k] for k in _ks])
+    except Exception as _e:
+        print('V11.332 供应商建档跳过:', _e)
+
+
+def _emg_alloc_state(c, eid):
+    """V11.332: 计算应急单的临时库存分配进度 → '' / 待分配 / 部分分配 / 已分配"""
+    try:
+        e = c.execute("SELECT quantity, recv_done_qty FROM emergency_purchases WHERE id=?", (eid,)).fetchone()
+        _done = c.execute("""SELECT COALESCE(SUM(quantity),0) FROM stock_alloc_logs
+                              WHERE emg_id=? AND COALESCE(revoked,0)=0""", (eid,)).fetchone()[0] or 0
+        _recv = float(e['recv_done_qty'] or 0) if e else 0
+        if _recv <= 0:
+            return ''
+        if float(_done) + 1e-9 >= _recv:
+            return '已分配'
+        return '部分分配' if float(_done) > 0 else '待分配'
+    except Exception:
+        return ''
+
+
+def _emg_create_order(c, eid):
+    """V11.332 需求一.9: 定标后自动生成应急采购订单(与现有订单同一张表, 供价格库/采购历史复用)"""
+    r = c.execute("SELECT * FROM emergency_purchases WHERE id=?", (eid,)).fetchone()
+    if not r:
+        return None, '应急单不存在'
+    _no = gen_no('CG', 'purchase_orders', 'order_no', c)
+    _q = float(r['quantity'] or 0) or 1
+    _amt = float(r['inq_amount'] or 0) or float(r['est_amount'] or 0)
+    _price = round(_amt / _q, 4)
+    _cols = [x[1] for x in c.execute("PRAGMA table_info(purchase_orders)").fetchall()]
+    kv = {'order_no': _no, 'item_name': r['item_name'], 'spec': r['spec'] or '', 'unit': r['unit'] or '个',
+          'quantity': _q, 'price': _price, 'total_amount': _amt, 'supplier': r['inq_supplier'] or r['supplier'] or '',
+          'trade_mode': '应急采购', 'status': '已下单', 'dept': r['dept'] or '', 'created_at': now(), 'updated_at': now(),
+          'is_emg': 1, 'emg_no': r['emg_no'] or '', 'remark': '⚡应急采购自动生成（关联应急单 %s）' % (r['emg_no'] or '')}
+    _ks = [k for k in kv if k in _cols]
+    oid = c.execute("INSERT INTO purchase_orders(%s) VALUES(%s)" % (','.join(_ks), ','.join(['?'] * len(_ks))), [kv[k] for k in _ks]).lastrowid
+    c.execute("""UPDATE emergency_purchases SET order_id=?, order_no=?, actual_amount=?, supplier=?, status='待发货', updated_at=? WHERE id=?""",
+              (oid, _no, _amt, r['inq_supplier'] or r['supplier'] or '', now(), eid))
+    emergency_log(c, eid, '提交定标', session.get('user_name', ''),
+                  '单家询价定标（无需比价开标）→ 自动生成应急采购订单 %s，供应商 %s，含税 ¥%s' % (_no, r['inq_supplier'] or '', _amt))
+    return oid, _no
+
+
+@app.route('/api/emergency/<int:eid>/inquiry', methods=['POST'])
+@login_required
+def api_emergency_inquiry(eid):
+    """V11.332 需求一: 应急单家询价 — 仅支持1家供应商报价; 自动算含税/不含税/税额(与常规询价同口径); 可传报价单附件"""
+    if session.get('user_role') not in ('采购员', '系统管理员'):
+        return jsonify({'error': '无权限：应急询价仅限采购专员/系统管理员'}), 403
+    d = request.json or {}
+    c = db()
+    r = c.execute("SELECT * FROM emergency_purchases WHERE id=?", (eid,)).fetchone()
+    if not r:
+        c.close(); return jsonify({'error': '应急单不存在'}), 404
+    if r['status'] not in ('待询价', '采购接单'):
+        c.close(); return jsonify({'error': '当前状态(%s)不可发起应急询价' % r['status']}), 400
+    _sup = str(d.get('supplier') or '').strip()
+    try:
+        _amt = float(d.get('amount') or 0)
+        _rate = float(d.get('tax_rate') if str(d.get('tax_rate') or '') != '' else 13)
+    except Exception:
+        _amt, _rate = 0, 13
+    if not _sup:
+        c.close(); return jsonify({'error': '请填写供应商（应急单家询价仅支持1家）'}), 400
+    if _amt <= 0:
+        c.close(); return jsonify({'error': '请填写供应商报价金额（含税）'}), 400
+    if _rate < 0 or _rate > 100:
+        c.close(); return jsonify({'error': '税率请填 0~100 之间'}), 400
+    _ex = round(_amt / (1 + _rate / 100.0), 2)
+    _tax = round(_amt - _ex, 2)
+    _q = float(r['quantity'] or 0) or 1
+    _ref = _emg_price_ref(c, r['item_name'])
+    _dev = round((_amt / _q - _ref) / _ref * 100, 2) if _ref > 0 else 0.0
+    _files = [str(x) for x in (d.get('files') or []) if x]
+    c.execute("""UPDATE emergency_purchases SET inq_supplier=?, inq_amount=?, inq_tax_rate=?, inq_amount_ex=?, inq_tax=?,
+                 inq_valid_until=?, inq_delivery_days=?, inq_pay_method=?, inq_files=?, inq_at=?, inq_by=?,
+                 price_ref=?, price_dev_pct=?, status='待定标', updated_at=? WHERE id=?""",
+              (_sup, _amt, _rate, _ex, _tax, str(d.get('valid_until') or '').strip(), str(d.get('delivery_days') or '').strip(),
+               str(d.get('pay_method') or '').strip(), json.dumps(_files, ensure_ascii=False), now(), session.get('user_name', ''),
+               _ref, _dev, now(), eid))
+    _emg_ensure_supplier(c, _sup)
+    emergency_log(c, eid, '应急单家询价', session.get('user_name', ''),
+                  '供应商:%s 含税¥%s 不含税¥%s 税额¥%s 税率%s%%%s' % (_sup, _amt, _ex, _tax, _rate,
+                  ('；报价高于基准价%.2f%%' % _dev) if _dev > emg_num('emg_price_dev', 20) else ''))
+    c.commit(); c.close()
+    _msg = '应急询价已保存：%s 含税 ¥%s（不含税 ¥%s，税额 ¥%s）→ 请确认后提交定标' % (_sup, _amt, _ex, _tax)
+    if _dev > emg_num('emg_price_dev', 20):
+        _msg += '；⚠️ 单价高于基准价 %.2f%%，转正审批需填写价格说明' % _dev
+    return jsonify({'success': True, 'message': _msg, 'amount_ex': _ex, 'tax': _tax, 'price_dev_pct': _dev})
+
+
+@app.route('/api/emergency/<int:eid>/award', methods=['POST'])
+@login_required
+def api_emergency_award(eid):
+    """V11.332 需求一.9: 提交定标(无需比价开标) → 自动生成应急采购订单并流转入库验收。
+    若后台在「应急询价」节点配置了审批级, 则先走该审批(默认未配置=直接定标, 不卡单)。"""
+    if session.get('user_role') not in ('采购员', '系统管理员'):
+        return jsonify({'error': '无权限：定标仅限采购专员/系统管理员'}), 403
+    c = db()
+    r = c.execute("SELECT * FROM emergency_purchases WHERE id=?", (eid,)).fetchone()
+    if not r:
+        c.close(); return jsonify({'error': '应急单不存在'}), 404
+    if r['status'] != '待定标':
+        c.close(); return jsonify({'error': '当前状态(%s)不可定标（需先完成应急询价）' % r['status']}), 400
+    _lv = c.execute("SELECT COUNT(*) n FROM approval_flow_config WHERE biz_type='emergency_inquiry'").fetchone()['n'] or 0
+    if _lv > 0:
+        c.execute("UPDATE emergency_purchases SET status='询价审批中', updated_at=? WHERE id=?", (now(), eid))
+        emergency_log(c, eid, '提交定标', session.get('user_name', ''), '已按后台配置提交应急询价审批(%d级)' % _lv)
+        c.commit(); c.close()
+        try:
+            create_approvals('emergency_inquiry', eid, float(r['inq_amount'] or r['est_amount'] or 0), submitter=session.get('user_name', ''))
+            start_instances('emergency_inquiry', eid)
+        except Exception as _e:
+            print('V11.332 应急询价审批创建失败:', _e)
+        return jsonify({'success': True, 'message': '已提交应急询价定标审批（后台配置了询价审批节点）；通过后自动生成应急订单'})
+    oid, ono = _emg_create_order(c, eid)
+    c.commit(); c.close()
+    log(session.get('user_name', ''), '应急定标', '%s → 生成订单 %s' % (r['emg_no'], ono))
+    return jsonify({'success': True, 'order_id': oid, 'order_no': ono,
+                    'message': '定标完成：已自动生成应急采购订单 %s（供应商 %s）。下一步：标记发货 → 库管在「应急入库验收」验收。' % (ono, r['inq_supplier'] or '')})
+
+
+@app.route('/api/emergency/<int:eid>/ship', methods=['POST'])
+@login_required
+def api_emergency_ship(eid):
+    """V11.332 需求二: 应急订单标记发货 → 生成待验收入库单(目标=临时待分配库) + 推送库管验收；支持分批发货"""
+    if session.get('user_role') not in ('采购员', '系统管理员', '库管员'):
+        return jsonify({'error': '无权限'}), 403
+    d = request.json or {}
+    c = db()
+    r = c.execute("SELECT * FROM emergency_purchases WHERE id=?", (eid,)).fetchone()
+    if not r:
+        c.close(); return jsonify({'error': '应急单不存在'}), 404
+    if r['status'] not in ('待发货', '待验收'):
+        c.close(); return jsonify({'error': '当前状态(%s)不可标记发货（需先完成定标生成订单）' % r['status']}), 400
+    try:
+        _q = float(d.get('qty') or 0)
+    except Exception:
+        _q = 0
+    _left = float(r['quantity'] or 0) - float(r['recv_done_qty'] or 0)
+    if _q <= 0:
+        _q = _left if _left > 0 else float(r['quantity'] or 0)
+    if _q <= 0:
+        c.close(); return jsonify({'error': '发货数量必须大于0'}), 400
+    if _q - 1e-9 > _left:
+        c.close(); return jsonify({'error': '本批发货 %s 超过剩余待发货 %s' % (_q, _left)}), 400
+    _twh = _emg_temp_wh(c)
+    _no = gen_no('RK', 'receivings', 'receive_no', c)
+    _insp = ''
+    _u = c.execute("SELECT name FROM users WHERE role='库管员' AND is_active=1 ORDER BY id LIMIT 1").fetchone()
+    _insp = (_u['name'] if _u else session.get('user_name', ''))
+    _ij = json.dumps([{'item_name': r['item_name'], 'spec': r['spec'] or '', 'quantity': _q, 'unit': r['unit'] or '个',
+                       'price': round(float(r['inq_amount'] or 0) / (float(r['quantity'] or 0) or 1), 4)}], ensure_ascii=False)
+    rid = c.execute("""INSERT INTO receivings(receive_no,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,
+                        items_json,attachments,dept,is_est,is_manual,inspector,warehouse,zone,location,data_source,is_emg,emg_no,
+                        is_temp_alloc,emg_order_id)
+                        VALUES(?,?,?,?,?,?,0,'待审批',?,?,?,'[]',?,0,0,?,?,?,'','系统',1,?,1,?)""",
+                    (_no, r['order_id'] or 0, r['item_name'], r['spec'] or '', _q, r['unit'] or '个', now(),
+                     '⚡应急采购到货待验收（临时待分配库）｜应急单 %s｜供应商 %s' % (r['emg_no'], r['inq_supplier'] or ''),
+                     _ij, r['dept'] or '', _insp, _twh, '待检区', r['emg_no'], r['order_id'] or 0)).lastrowid
+    c.execute("UPDATE emergency_purchases SET status='待验收', shipped_at=?, updated_at=? WHERE id=?", (now(), now(), eid))
+    if r['order_id']:
+        try:
+            c.execute("UPDATE purchase_orders SET status='已发货', updated_at=? WHERE id=?", (now(), r['order_id']))
+        except Exception:
+            pass
+    emergency_log(c, eid, '标记发货', session.get('user_name', ''), '本批 %s%s → 生成待验收入库单 %s（目标：%s），已推送库管验收' % (_q, r['unit'] or '', _no, _twh))
+    c.commit(); c.close()
+    try:
+        create_approvals('emergency_receive', rid, 0, submitter=session.get('user_name', ''))
+        start_instances('emergency_receive', rid)
+    except Exception as _e:
+        print('V11.332 应急入库验收审批创建失败:', _e)
+    return jsonify({'success': True, 'receive_id': rid, 'receive_no': _no, 'warehouse': _twh,
+                    'message': '已标记发货：生成待验收入库单 %s（目标库：%s），已推送库管到「入库验收 → 应急入库验收」验收。' % (_no, _twh)})
+
+
+@app.route('/api/emergency/receivings')
+@login_required
+def api_emergency_receivings():
+    """V11.332 需求二.2: 「应急入库验收」板块数据 — 应急采购待验收单据(与常规入库分区展示)"""
+    if session.get('user_role') not in ('库管员', '采购员', '部门负责人', '分管领导', '总经理', '系统管理员', '财务'):
+        return jsonify({'rows': [], 'counts': {}}), 200
+    c = db()
+    _f = (request.args.get('status') or '').strip()
+    sql = """SELECT rv.*, ep.emg_no AS emg_no2, ep.project, ep.inq_supplier, ep.need_arrive, ep.status AS emg_status, ep.deadline
+             FROM receivings rv LEFT JOIN emergency_purchases ep ON ep.id=(SELECT id FROM emergency_purchases e2 WHERE e2.emg_no=rv.emg_no LIMIT 1)
+             WHERE COALESCE(rv.is_emg,0)=1 AND COALESCE(rv.is_temp_alloc,0)=1"""
+    args = []
+    if _f:
+        sql += " AND rv.status=?"; args.append(_f)
+    else:
+        sql += " AND rv.status IN ('待审批','待入库','已驳回','部分入库')"
+    sql += " ORDER BY rv.id DESC LIMIT 300"
+    rows = [dict_row(r) for r in c.execute(sql, args).fetchall()]
+    counts = {}
+    for st in ('待审批', '已驳回'):
+        counts[st] = c.execute("SELECT COUNT(*) n FROM receivings WHERE COALESCE(is_emg,0)=1 AND COALESCE(is_temp_alloc,0)=1 AND status=?", (st,)).fetchone()['n'] or 0
+    counts['today_in'] = c.execute("""SELECT COUNT(*) n FROM receivings WHERE COALESCE(is_emg,0)=1 AND COALESCE(is_temp_alloc,0)=1
+                                       AND status='已入库' AND substr(received_at,1,10)=date('now','localtime')""").fetchone()['n'] or 0
+    c.close()
+    return jsonify({'rows': rows, 'counts': counts, 'note': '应急采购专属验收：验收通过后自动临时入库到「临时待分配库」，再由库管自主分配到正式库房'})
+
+
+@app.route('/api/emergency/receivings/<int:rid>/accept', methods=['POST'])
+@login_required
+def api_emergency_recv_accept(rid):
+    """V11.332 需求二.3: 库管验收(品名/规格/数量核对 + 送货单/验收照片) → 审批通过后自动临时入库到临时待分配库"""
+    if session.get('user_role') not in ('库管员', '系统管理员', '分管领导', '总经理'):
+        return jsonify({'error': '无权限：应急验收仅限库管员/管理员'}), 403
+    d = request.json or {}
+    c = db()
+    rv = c.execute("SELECT * FROM receivings WHERE id=? AND COALESCE(is_emg,0)=1", (rid,)).fetchone()
+    if not rv:
+        c.close(); return jsonify({'error': '应急入库单不存在'}), 404
+    if rv['status'] == '已入库':
+        c.close(); return jsonify({'error': '该批已验收完成'}), 400
+    try:
+        _q = float(d.get('qty') or 0)
+    except Exception:
+        _q = 0
+    if _q <= 0:
+        c.close(); return jsonify({'error': '请填写实收数量'}), 400
+    _atts = [str(x) for x in (d.get('attachments') or []) if x]
+    if len(_atts) < 2:
+        c.close(); return jsonify({'error': '验收必须上传：供应商送货单 + 现场验收照片（至少2个附件，责任留证）'}), 400
+    _qual = 0 if str(d.get('qualified') or '合格') == '不合格' else 1
+    try:
+        c.execute("""UPDATE receivings SET quantity=?, qualified_qty=?, attachments=?, inspector=?, location=?,
+                     remark=COALESCE(remark,'')||? , status='待审批' WHERE id=?""",
+                  (_q, _q if _qual else 0, json.dumps(_atts, ensure_ascii=False), session.get('user_name', ''),
+                   str(d.get('location') or '').strip(), '｜验收核对:%s%s' % ('合格' if _qual else '不合格', ('｜' + str(d.get('remark') or '')[:80]) if d.get('remark') else ''), rid))
+    except Exception as _ue:
+        c.close(); return jsonify({'error': '保存验收信息失败: %s' % _ue}), 500
+    c.commit(); c.close()
+    # 审批: 若当前节点审批人就是本人 → 一步通过(不卡单); 否则提交待审批
+    _inst = None
+    c2 = db()
+    _inst = c2.execute("""SELECT * FROM approval_instances WHERE biz_type='emergency_receive' AND biz_id=? AND status='pending'
+                           ORDER BY level_no LIMIT 1""", (rid,)).fetchone()
+    if not _inst:
+        _inst = c2.execute("SELECT * FROM approval_instances WHERE biz_type='emergency_receive' AND biz_id=? AND level_no=1", (rid,)).fetchone()
+    c2.close()
+    if _inst and _inst['status'] == 'pending':
+        _ap = c2 = None
+        _can = (session.get('user_role') == '系统管理员') or ((_inst['approver'] or '') == session.get('user_name', '')) or ((_inst['role'] or '') == session.get('user_role', ''))
+        if _can:
+            _res = do_approve('emergency_receive', rid, session.get('user_name', ''), session.get('user_id', 0), 'approved', '库管验收通过', '')
+            if _res.get('success'):
+                # do_approve 仅标记节点; 本链最后一级通过后需触发业务落地(临时入库) — 与审批路由同口径
+                try:
+                    _c4 = db()
+                    _left = _c4.execute("SELECT COUNT(*) n FROM approval_instances WHERE biz_type='emergency_receive' AND biz_id=? AND status='pending'", (rid,)).fetchone()['n'] or 0
+                    _c4.close()
+                    if not _left:
+                        finish_approvals('emergency_receive', rid, 'ok', session.get('user_name', ''), session.get('user_id', 0), '库管验收通过')
+                except Exception as _fe:
+                    print('V11.332 验收落地异常:', _fe)
+                return jsonify({'success': True, 'message': '验收通过：物资已临时入库到「临时待分配库」，请到「临时库存分配」分配到正式库房'})
+            return jsonify({'error': _res.get('error') or '验收审批失败'}), 400
+        return jsonify({'success': True, 'message': '验收信息已提交，已推送审批人（%s）审批，通过后自动临时入库' % (_inst['approver'] or _inst['role'])})
+    # 无审批实例 → 直接按库管验收通过处理
+    c3 = db()
+    try:
+        _ok = _emg_recv_pass(c3, rid, session.get('user_name', ''))
+        c3.commit(); c3.close()
+    except Exception as _e:
+        c3.close(); return jsonify({'error': '验收入库失败: %s' % _e}), 500
+    return jsonify({'success': True, 'message': '验收通过：物资已临时入库到「临时待分配库」，请到「临时库存分配」分配到正式库房'})
+
+
+def _emg_recv_pass(c, rid, operator=''):
+    """V11.332: 应急验收通过 → 正式入账到「临时待分配库」(复用 do_receiving_stock), 标记临时属性与分配进度"""
+    rv = c.execute("SELECT * FROM receivings WHERE id=?", (rid,)).fetchone()
+    if not rv:
+        return False
+    _twh = _emg_temp_wh(c)
+    _loc = rv['location'] if 'location' in rv.keys() else ''
+    try:
+        do_receiving_stock(c, rid, warehouse=_twh, inspector=operator or rv['inspector'] or '', location=_loc or '')
+    except Exception as _e:
+        print('V11.332 临时入库入账异常:', _e)
+    c.execute("UPDATE receivings SET is_temp_alloc=1, status='已入库' WHERE id=?", (rid,))
+    # 库存行打上"临时"属性(分配到正式库房后仍保留, 转正后清除)
+    c.execute("""UPDATE inventory SET is_emg_temp=1, emg_no=? WHERE item_name=? AND COALESCE(spec,'')=COALESCE(?,'') AND warehouse=?""",
+              (rv['emg_no'] or '', rv['item_name'], rv['spec'], _twh))
+    e = c.execute("SELECT * FROM emergency_purchases WHERE emg_no=?", (rv['emg_no'],)).fetchone()
+    if e:
+        _recv = float(e['recv_done_qty'] or 0) + float(rv['quantity'] or 0)
+        _all = _recv + 1e-9 >= float(e['quantity'] or 0)
+        _dl = e['deadline'] or _emg_wd_add(now()[:10], int(emg_num('emg_promise_days', 3)))
+        c.execute("UPDATE emergency_purchases SET recv_done_qty=? WHERE id=?", (_recv, e['id']))
+        c.execute("""UPDATE emergency_purchases SET alloc_state=?, deadline=?, status=?, updated_at=? WHERE id=?""",
+                  (_emg_alloc_state(c, e['id']), _dl, '待补资料' if _all else '待验收', now(), e['id']))
+        emergency_log(c, e['id'], '库管验收通过', operator,
+                      '本批实收 %s%s 临时入库到「%s」%s；累计验收 %s/%s%s；资料补齐截止 %s'
+                      % (rv['quantity'], rv['unit'] or '', _twh, ('库位' + _loc) if _loc else '',
+                         _recv, e['quantity'], rv['unit'] or '', _dl))
+    if rv['order_id']:
+        try:
+            _s = c.execute("SELECT COALESCE(SUM(quantity),0) s FROM receivings WHERE order_id=? AND status='已入库'", (rv['order_id'],)).fetchone()['s'] or 0
+            _oq = c.execute("SELECT quantity FROM purchase_orders WHERE id=?", (rv['order_id'],)).fetchone()
+            _st = '全部已验收' if _oq and float(_s) + 1e-9 >= float(_oq['quantity'] or 0) else '部分到货，待继续验收'
+            c.execute("UPDATE purchase_orders SET status=?, updated_at=? WHERE id=?", (_st, now(), rv['order_id']))
+        except Exception:
+            pass
+    return True
+
+
+@app.route('/api/emergency/temp-stock')
+@login_required
+def api_emergency_temp_stock_page():
+    """V11.332 需求三.1: 「临时库存分配」页数据 — 临时待分配库中待分配的应急物资(含应急单/入库单溯源)
+    注意: 函数名与 V11.327 的 /api/emergency/<eid>/temp-stock(临时入库) 区分, 避免 Flask endpoint 重名"""
+    if session.get('user_role') not in ('库管员', '系统管理员', '分管领导', '总经理'):
+        return jsonify({'rows': [], 'summary': {}, 'error': '无权限'}), 200
+    c = db()
+    _twh = _emg_temp_wh(c)
+    rows = []
+    for r in c.execute("""SELECT * FROM inventory WHERE warehouse=? AND COALESCE(quantity,0)>0 ORDER BY id DESC""", (_twh,)).fetchall():
+        d = dict_row(r)
+        _src = c.execute("""SELECT receive_no, emg_no, received_at, id FROM receivings
+                             WHERE item_name=? AND COALESCE(spec,'')=COALESCE(?,'') AND COALESCE(is_temp_alloc,0)=1 AND status='已入库'
+                             ORDER BY id DESC LIMIT 1""", (d.get('item_name'), d.get('spec'))).fetchone()
+        d['recv_no'] = _src['receive_no'] if _src else ''
+        d['recv_id'] = _src['id'] if _src else 0
+        d['src_emg_no'] = (_src['emg_no'] if _src else (d.get('emg_no') or ''))
+        d['received_at'] = (_src['received_at'] if _src else '')
+        _e = c.execute("SELECT id, project, need_arrive, deadline, status FROM emergency_purchases WHERE emg_no=? LIMIT 1",
+                       (d['src_emg_no'] or '',)).fetchone()
+        d['emg_id'] = _e['id'] if _e else 0
+        d['project'] = _e['project'] if _e else ''
+        d['emg_status'] = _e['status'] if _e else ''
+        d['days_in_temp'] = 0
+        try:
+            if d['received_at']:
+                d1 = datetime.datetime.strptime(str(d['received_at'])[:10], '%Y-%m-%d').date()
+                d['days_in_temp'] = (datetime.date.today() - d1).days
+        except Exception:
+            pass
+        rows.append(d)
+    summary = {'kinds': len(rows), 'qty': round(sum(float(x.get('quantity') or 0) for x in rows), 2),
+               'amount': round(sum(float(x.get('quantity') or 0) * float(x.get('price') or 0) for x in rows), 2),
+               'warehouse': _twh,
+               'overdue_days': int(emg_num('emg_alloc_days', 3))}
+    whs = _warehouses(c)
+    c.close()
+    return jsonify({'rows': rows, 'summary': summary, 'warehouses': whs,
+                    'note': '临时待分配库=应急采购临时入库的过渡库；库管可单条/批量分配到任意正式库房（含废旧物资库按0价核算）'})
+
+
+@app.route('/api/emergency/alloc', methods=['POST'])
+@login_required
+def api_emergency_alloc():
+    """V11.332 需求三.2/3: 临时库存自主分配(单条/批量) — 扣减临时待分配库、增加目标库房库存、生成标准调拨流水与分配留痕；
+    目标库房为「废旧物资库」时按 0 价核算(与现有0价入库逻辑互通)"""
+    if session.get('user_role') not in ('库管员', '系统管理员', '分管领导', '总经理'):
+        return jsonify({'error': '无权限：临时库存分配仅限库管员/管理员'}), 403
+    d = request.json or {}
+    items = d.get('items') or []
+    if not items and d.get('item_name'):
+        items = [d]
+    if not items:
+        return jsonify({'error': '请选择要分配的物资'}), 400
+    c = db(); _ensure_transfer_table(c)
+    _twh = _emg_temp_wh(c)
+    done, errs = [], []
+    for it in items:
+        _nm = str(it.get('item_name') or '').strip(); _sp = str(it.get('spec') or '').strip()
+        _tgt = str(it.get('to_wh') or '').strip()
+        try:
+            _q = float(it.get('qty') or it.get('quantity') or 0)
+        except Exception:
+            _q = 0
+        if not (_nm and _tgt and _q > 0):
+            errs.append('%s：缺少物资/目标库房/数量' % (_nm or '?')); continue
+        if _tgt == _twh:
+            errs.append('%s：目标库房不能是临时待分配库' % _nm); continue
+        _bal = c.execute("SELECT COALESCE(SUM(quantity),0) FROM inventory WHERE item_name=? AND COALESCE(spec,'')=COALESCE(?,'') AND warehouse=?",
+                         (_nm, _sp, _twh)).fetchone()[0] or 0
+        if float(_bal) + 1e-9 < _q:
+            errs.append('%s：临时待分配库结存 %s，不足 %s' % (_nm, _bal, _q)); continue
+        _is_scrap = ('废旧' in _tgt)
+        _no = gen_no('DB', 'transfers', 'transfer_no', c)
+        _loc = str(it.get('to_location') or '').strip()
+        _rsn = ('应急临时库存分配' + ('（废旧物资0价核算）' if _is_scrap else ''))[:60]
+        try:
+            _parts = _inv_deduct(c, _nm, _sp, _twh, _q, unit=str(it.get('unit') or '个'))
+        except Exception as _de:
+            errs.append('%s：扣减失败(%s)' % (_nm, _de)); continue
+        _moved = 0.0
+        for _row, _take in _parts:
+            _moved += _take
+            _pr = 0.0 if _is_scrap else float(_row.get('price') or 0)
+            _bt = _row.get('batch_no') or ''
+            _tgt_inv = _inv_pick(c, _nm, _sp, _tgt, _pr) if not _is_scrap else None
+            if _tgt_inv:
+                c.execute("UPDATE inventory SET quantity=quantity+?, updated_at=?, last_move_date=? WHERE id=?",
+                          (_take, now(), now()[:10], _tgt_inv['id']))
+                _tid = _tgt_inv['id']
+                if _loc:
+                    c.execute("UPDATE inventory SET location=? WHERE id=?", (_loc, _tid))
+            else:
+                _tid = c.execute("""INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,price,batch_no,location,last_move_date,updated_at,is_emg_temp,emg_no)
+                                    VALUES(?,?,?,?,?,?,?,?,?,?,1,?)""",
+                                 (_nm, _sp, str(it.get('unit') or '个'), _take, _tgt, _pr, _bt, _loc, now()[:10], now(),
+                                  it.get('emg_no') or '')).lastrowid
+            # 目标库房库存保留"临时"属性(转正后清除)
+            c.execute("UPDATE inventory SET is_emg_temp=1, emg_no=COALESCE(NULLIF(emg_no,''),?) WHERE id=?", (it.get('emg_no') or '', _tid))
+            for _ft, _wh, _sgn, _iid in (('调出', _twh, -1, _row['id']), ('调入', _tgt, 1, _tid)):
+                _b2 = float((c.execute("SELECT quantity FROM inventory WHERE id=?", (_iid,)).fetchone() or [0])[0] or 0)
+                c.execute("""INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at,trace_no,warehouse,price)
+                             VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                          (_nm, _sp, str(it.get('unit') or '个'), _ft, 'transfer', 0, _no, _sgn * _take, _b2,
+                           session.get('user_name', ''), '应急临时库存分配 %s→%s%s%s' % (_twh, _tgt, ('｜批次' + _bt) if _bt else '', ('｜货位' + _loc) if _loc else ''),
+                           now(), (_row.get('trace_no') or ''), _wh, _pr))
+            c.execute("""INSERT INTO transfers(transfer_no,from_wh,to_wh,item_name,spec,unit,quantity,price,batch_no,to_location,reason,operator,created_at)
+                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                      (_no, _twh, _tgt, _nm, _sp, str(it.get('unit') or '个'), _take, _pr, _bt, _loc, _rsn, session.get('user_name', ''), now()))
+        _eid = 0
+        _eno = it.get('emg_no') or ''
+        _e = c.execute("SELECT id FROM emergency_purchases WHERE emg_no=? LIMIT 1", (_eno,)).fetchone() if _eno else None
+        _eid = _e['id'] if _e else 0
+        c.execute("""INSERT INTO stock_alloc_logs(alloc_no,emg_id,emg_no,recv_id,recv_no,item_name,spec,unit,quantity,price,
+                     from_wh,to_wh,to_location,remark,operator,created_at)
+                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                  (_no, _eid, _eno, int(it.get('recv_id') or 0), str(it.get('recv_no') or ''), _nm, _sp,
+                   str(it.get('unit') or '个'), _moved, 0.0 if _is_scrap else float(_parts[0][0].get('price') or 0) if _parts else 0,
+                   _twh, _tgt, _loc, str(it.get('remark') or '')[:80], session.get('user_name', ''), now()))
+        if _eid:
+            c.execute("UPDATE emergency_purchases SET alloc_state=?, updated_at=? WHERE id=?", (_emg_alloc_state(c, _eid), now(), _eid))
+            emergency_log(c, _eid, '临时库存分配', session.get('user_name', ''),
+                          '%s%s 从「%s」分配到「%s」%s%s（流水 %s）' % (_moved, str(it.get('unit') or '个'), _twh, _tgt,
+                          ('库位' + _loc) if _loc else '', '，0价核算' if _is_scrap else '', _no))
+        done.append({'item_name': _nm, 'spec': _sp, 'moved': _moved, 'to_wh': _tgt, 'transfer_no': _no})
+    c.commit(); c.close()
+    log(session.get('user_name', ''), '应急临时库存分配', '成功%d条 失败%d条' % (len(done), len(errs)))
+    if not done:
+        return jsonify({'error': '分配失败：' + '；'.join(errs[:3])}), 400
+    return jsonify({'success': True, 'done': done, 'errors': errs,
+                    'message': '分配完成 %d 条：%s%s' % (len(done), '、'.join('%s→%s' % (x['item_name'], x['to_wh']) for x in done[:3]),
+                                                     ('；部分未处理：' + '；'.join(errs[:2])) if errs else '')})
+
+
+@app.route('/api/emergency/alloc/<int:lid>/revoke', methods=['POST'])
+@login_required
+def api_emergency_alloc_revoke(lid):
+    """V11.332 需求三.4: 分配撤回重分 — 反向调拨回临时待分配库, 标记撤回并留痕(操作人/时间)"""
+    if session.get('user_role') not in ('库管员', '系统管理员', '分管领导', '总经理'):
+        return jsonify({'error': '无权限'}), 403
+    d = request.json or {}
+    c = db(); _ensure_transfer_table(c)
+    lg = c.execute("SELECT * FROM stock_alloc_logs WHERE id=?", (lid,)).fetchone()
+    if not lg:
+        c.close(); return jsonify({'error': '分配记录不存在'}), 404
+    if int(lg['revoked'] or 0) == 1:
+        c.close(); return jsonify({'error': '该分配已撤回，不能重复撤回'}), 400
+    _twh = _emg_temp_wh(c)
+    _q = float(lg['quantity'] or 0)
+    _bal = c.execute("SELECT COALESCE(SUM(quantity),0) FROM inventory WHERE item_name=? AND COALESCE(spec,'')=COALESCE(?,'') AND warehouse=?",
+                     (lg['item_name'], lg['spec'], lg['to_wh'])).fetchone()[0] or 0
+    if float(_bal) + 1e-9 < _q:
+        c.close(); return jsonify({'error': '目标库房「%s」现有 %s，不足撤回 %s（可能已被领用/调拨）' % (lg['to_wh'], _bal, _q)}), 400
+    _no = gen_no('DB', 'transfers', 'transfer_no', c)
+    try:
+        _parts = _inv_deduct(c, lg['item_name'], lg['spec'], lg['to_wh'], _q, unit=lg['unit'] or '个')
+    except Exception as _de:
+        c.close(); return jsonify({'error': '撤回扣减失败：%s' % _de}), 400
+    for _row, _take in _parts:
+        _pr = float(_row.get('price') or 0); _bt = _row.get('batch_no') or ''
+        _tgt = _inv_pick(c, lg['item_name'], lg['spec'], _twh, _pr)
+        if _tgt:
+            c.execute("UPDATE inventory SET quantity=quantity+?, updated_at=?, last_move_date=? WHERE id=?", (_take, now(), now()[:10], _tgt['id']))
+            _tid = _tgt['id']
+        else:
+            _tid = c.execute("""INSERT INTO inventory(item_name,spec,unit,quantity,warehouse,price,batch_no,last_move_date,updated_at,is_emg_temp,emg_no)
+                                VALUES(?,?,?,?,?,?,?,?,?,1,?)""",
+                             (lg['item_name'], lg['spec'], lg['unit'] or '个', _take, _twh, _pr, _bt, now()[:10], now(), lg['emg_no'] or '')).lastrowid
+        c.execute("UPDATE inventory SET is_emg_temp=1, emg_no=COALESCE(NULLIF(emg_no,''),?) WHERE id=?", (lg['emg_no'] or '', _twh and _tid))
+        for _ft, _wh, _sgn, _iid in (('调出', lg['to_wh'], -1, _row['id']), ('调入', _twh, 1, _tid)):
+            _b2 = float((c.execute("SELECT quantity FROM inventory WHERE id=?", (_iid,)).fetchone() or [0])[0] or 0)
+            c.execute("""INSERT INTO inventory_flows(item_name,spec,unit,flow_type,doc_type,doc_id,doc_no,qty,balance_after,operator,remark,created_at,trace_no,warehouse,price)
+                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                      (lg['item_name'], lg['spec'], lg['unit'] or '个', _ft, 'transfer', 0, _no, _sgn * _take, _b2,
+                       session.get('user_name', ''), '分配撤回 %s→%s（原分配 %s）' % (lg['to_wh'], _twh, lg['alloc_no']),
+                       now(), (_row.get('trace_no') or ''), _wh, _pr))
+        c.execute("""INSERT INTO transfers(transfer_no,from_wh,to_wh,item_name,spec,unit,quantity,price,batch_no,to_location,reason,operator,created_at)
+                     VALUES(?,?,?,?,?,?,?,?,?,'','分配撤回(%s)',?,?)""",
+                  (_no, lg['to_wh'], _twh, lg['item_name'], lg['spec'], lg['unit'] or '个', _take, _pr, _bt,
+                   session.get('user_name', ''), now()))
+    c.execute("""UPDATE stock_alloc_logs SET revoked=1, revoked_at=?, revoke_reason=?, revoked_by=? WHERE id=?""",
+              (now(), str(d.get('reason') or '')[:100], session.get('user_name', ''), lid))
+    if lg['emg_id']:
+        c.execute("UPDATE emergency_purchases SET alloc_state=?, updated_at=? WHERE id=?", (_emg_alloc_state(c, lg['emg_id']), now(), lg['emg_id']))
+        emergency_log(c, lg['emg_id'], '分配撤回', session.get('user_name', ''), '%s%s 从「%s」撤回至「%s」（流水 %s）' % (_q, lg['unit'] or '', lg['to_wh'], _twh, _no))
+    c.commit(); c.close()
+    log(session.get('user_name', ''), '应急分配撤回', '%s %s→%s 共%s' % (lg['item_name'], lg['to_wh'], _twh, _q))
+    return jsonify({'success': True, 'message': '已撤回：%s%s 从「%s」退回「%s」（可重新分配），全程留痕' % (_q, lg['unit'] or '', lg['to_wh'], _twh)})
+
+
+@app.route('/api/emergency/alloc-logs')
+@login_required
+def api_emergency_alloc_logs():
+    """V11.332 需求三.4: 分配留痕记录(操作人/时间/撤回)"""
+    if session.get('user_role') not in ('库管员', '系统管理员', '分管领导', '总经理', '采购员', '财务'):
+        return jsonify({'rows': [], 'error': '无权限'}), 200
+    c = db()
+    rows = [dict_row(r) for r in c.execute("SELECT * FROM stock_alloc_logs ORDER BY id DESC LIMIT 300").fetchall()]
+    for r in rows:
+        r['state'] = '已撤回' if int(r.get('revoked') or 0) else '已分配'
+    c.close()
+    return jsonify({'rows': rows, 'note': '临时库存分配留痕：含操作人、操作时间、撤回记录，可关联应急单与入库单全链路溯源'})
+
+EMG_CHAINS = (('emergency_temp', '① 应急临时审批（提交申请后先走这里）'), ('emergency_inquiry', '② 应急询价定标审批（可选：配置后定标需先审批）'),
+              ('emergency_receive', '③ 应急入库验收审批（默认审批角色=库管）'),
+              ('emergency_formal', '⑦ 应急正式分级审批（资料补齐后）'),
               ('emergency_finance', '⑧ 财务复核'), ('emergency_extend', '⑤ 延期审批（超期锁单后申请延期）'),
               ('emergency_convert', '⑨ 转正审批（可选：启用后财务复核通过→转正审批→采购转正）'))
 
@@ -17275,9 +17954,78 @@ def emergency_sweep():
                 except Exception:
                     pass
                 emergency_log(c, 0, '频次预警', '系统', '项目%s 本月应急 %d 次(阈值%d)' % (r['project'], r['n'], _N))
+        c.commit()   # V11.332: 分段提交, 避免后面新预警出错时把前面的写操作一起回滚/占用写锁
+        # 4) V11.332 需求四.44: 应急订单超期待验收 → 预警推送库管
+        _rd = int(emg_num('emg_recv_days', 2))
+        for r in c.execute("""SELECT rv.*, ep.project, ep.emg_no AS en FROM receivings rv
+                              LEFT JOIN emergency_purchases ep ON ep.emg_no=rv.emg_no
+                              WHERE COALESCE(rv.is_emg,0)=1 AND COALESCE(rv.is_temp_alloc,0)=1 AND rv.status IN ('待审批','待入库')""").fetchall():
+            _days_gone = 0
+            try:
+                _d0 = datetime.datetime.strptime(str(r['received_at'])[:10], '%Y-%m-%d').date()
+                _days_gone = (datetime.date.today() - _d0).days
+            except Exception:
+                pass
+            if _days_gone > _rd:
+                _rk, _key = 'emg_recv_overdue', '%s_D%d' % (r['receive_no'], datetime.date.today().isoformat())
+                if not c.execute("SELECT 1 FROM reminder_log WHERE rule=? AND key=?", (_rk, _key)).fetchone():
+                    c.execute("INSERT INTO reminder_log(rule,key) VALUES(?,?)", (_rk, _key))
+                    try:
+                        c.execute("""INSERT INTO alert_items(alert_type,level,title,content,biz_type,biz_id,status,created_at,updated_at)
+                                     VALUES('emg_recv_overdue','orange',?,?,'receiving',?,'pending',?,?)""",
+                                  ('应急到货超期未验收：%s' % r['receive_no'],
+                                   '应急单%s 物资%s 到货 %d 天仍未验收（阈值 %d 天），请库管及时验收。' % (r['emg_no'] or '', r['item_name'], _days_gone, _rd),
+                                   r['id'], now(), now()))
+                        _txt = '⏰ 应急到货待验收超期\n入库待验收单 %s（应急单 %s 物资 %s）已到货 %d 天未验收（阈值 %d 天）。\n请到「入库验收 → 应急入库验收」完成任务。' % (r['receive_no'], r['emg_no'] or '', r['item_name'], _days_gone, _rd)
+                        for _u in c.execute("SELECT id,dingtalk_userid FROM users WHERE role='库管员' AND is_active=1").fetchall():
+                            c.execute("INSERT INTO notifications(user_id,type,title,content,biz_type,biz_id) VALUES(?,?,?,?,?,?)",
+                                      (_u['id'], '应急验收提醒', '待验收超期 %d 天' % _days_gone, _txt, 'receiving', r['id']))
+                            if _u['dingtalk_userid']:
+                                dt_send_todo([_u['dingtalk_userid']], '⏰ 应急到货超期未验收', _txt, biz_type='receiving', biz_id=r['id'], operator='系统')
+                    except Exception:
+                        pass
+        # 5) V11.332 需求四.44: 临时待分配库存超期未分配 → 预警推送库管
+        _ad = int(emg_num('emg_alloc_days', 3))
+        _twh2 = _emg_temp_wh(c)
+        for r in c.execute("SELECT * FROM inventory WHERE warehouse=? AND COALESCE(quantity,0)>0", (_twh2,)).fetchall():
+            _dg = 0
+            try:
+                _d0 = datetime.datetime.strptime(str(r['last_move_date'] or now()[:10])[:10], '%Y-%m-%d').date()
+                _dg = (datetime.date.today() - _d0).days
+            except Exception:
+                pass
+            if _dg > _ad:
+                _rk, _key = 'emg_alloc_overdue', '%s_%s_D%s' % (r['item_name'], r['spec'] or '', datetime.date.today().isoformat())
+                if not c.execute("SELECT 1 FROM reminder_log WHERE rule=? AND key=?", (_rk, _key)).fetchone():
+                    c.execute("INSERT INTO reminder_log(rule,key) VALUES(?,?)", (_rk, _key))
+                    try:
+                        c.execute("""INSERT INTO alert_items(alert_type,level,title,content,biz_type,biz_id,status,created_at,updated_at)
+                                     VALUES('emg_alloc_overdue','orange',?,?,'inventory',0,'pending',?,?)""",
+                                  ('临时待分配库存超期未分配：%s' % r['item_name'],
+                                   '「%s」中 %s%s 结存 %s，已 %d 天未分配到正式库房（阈值 %d 天），请库管及时分配。'
+                                   % (_twh2, r['item_name'], r['spec'] or '', r['quantity'], _dg, _ad), now(), now()))
+                        _txt = '⏰ 临时待分配库存超期\n%s%s 在「%s」结存 %s，已 %d 天未分配到正式库房（阈值 %d 天）。\n请到「库存管理 → 临时库存分配」完成分配。' % (r['item_name'], r['spec'] or '', _twh2, r['quantity'], _dg, _ad)
+                        for _u in c.execute("SELECT id,dingtalk_userid FROM users WHERE role='库管员' AND is_active=1").fetchall():
+                            c.execute("INSERT INTO notifications(user_id,type,title,content,biz_type,biz_id) VALUES(?,?,?,?,?,?)",
+                                      (_u['id'], '临时库存分配提醒', '超期未分配 %d 天' % _dg, _txt, 'inventory', 0))
+                            if _u['dingtalk_userid']:
+                                dt_send_todo([_u['dingtalk_userid']], '⏰ 临时待分配库存超期未分配', _txt, biz_type='inventory', biz_id=0, operator='系统')
+                    except Exception:
+                        pass
         c.commit(); c.close()
     except Exception as _se:
+        import traceback as _tb
         print('V11.327 应急巡检异常:', _se)
+        _tb.print_exc()
+        try:
+            c.rollback(); c.close()
+        except Exception:
+            pass
+    finally:
+        try:
+            c.close()
+        except Exception:
+            pass
 
 
 # ---- 单据导出 xlsx ----

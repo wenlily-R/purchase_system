@@ -343,7 +343,7 @@ function buildNav(){
     // V11.227: 打通四环节流转视图 — 菜单= 报修待提→待技术定损→设备维修(执行中,新增)→已归档/作废, 与单据自动流转环节一一对应
     // V11.230: 左侧菜单按业务流程大面板重排(消除重复/包含): 报修处理(报修提交+技术定损, 原②③合并)→维修执行中(定损审批/比价/委外/验收/发票)→已归档/作废; 全部视图由维修页状态下拉提供
     ['采购管理',[['prequests','📝','采购申请'],['emergency','⚡','应急采购'],['inquiries','🔍','三方询价'],['orders','📋','采购订单'],['contracts','📄','合同管理'],['suppliers','🏢','供应商']]],
-    ['仓储库存',[['receivings','📦','入库验收'],['requisitions','📤','出库管理'],['returns','↩️','退库管理'],['inventory','📦','库存查询'],['warehouses','🏢','库房管理'],['counts','📋','库存盘点']]],
+    ['仓储库存',[['receivings','📦','入库验收'],['requisitions','📤','出库管理'],['returns','↩️','退库管理'],['inventory','📦','库存查询'],['emgalloc','📦','临时库存分配'],['warehouses','🏢','库房管理'],['counts','📋','库存盘点']]],
     ['财务往来',[['payments','💰','付款申请'],['expenses','💸','费用登记'],['settlements','📊','月度对账'],['invoices','🧾','合并开票'],['ledger','🔍','往来台账'],['small','💼','小额台账']]],
     ['审批中心',[['approvals','✅','审批中心']]],
     ['报表中心',[['reports','📊','报表中心']]],
@@ -477,6 +477,7 @@ function sw(name){
     'dingtalk':loadDingTalk,
     'counts':()=>{loadAdjustments()},
     'warehouses':loadWhTree,
+    'emgalloc':loadEmgAlloc,          // V11.332 临时库存分配(应急临时入库→正式库房)
     'emergency':loadEmergency,
     'returns':loadReturns,
     'settlements':loadSettlements,'invoices':loadInvoicePage,'ledger':loadLedger,'system':loadSystem,
@@ -528,6 +529,7 @@ function __pageRoles(name){
     'returns':'库管员、部门负责人、分管领导、总经理、系统管理员',
     'counts':'库管员、分管领导、总经理、系统管理员',
     'warehouses':'库管员、采购员、部门负责人、分管领导、总经理、系统管理员',
+    'emgalloc':'库管员、采购员、部门负责人、分管领导、总经理、系统管理员',   // V11.332 临时库存分配
     'emergency':'员工、采购员、库管员、部门负责人、财务、分管领导、总经理、系统管理员',
     'payments':'财务、分管领导、总经理、系统管理员',
     'small':'采购员、库管员、财务、分管领导、总经理、系统管理员',
@@ -556,6 +558,7 @@ function __pageAllowed(name){
     'returns':['库管员','部门负责人','分管领导','总经理','系统管理员'],
     'counts':['库管员','分管领导','总经理','系统管理员'],
     'warehouses':['库管员','采购员','部门负责人','分管领导','总经理','系统管理员'],
+    'emgalloc':['库管员','采购员','部门负责人','分管领导','总经理','系统管理员'],  // V11.332 临时库存分配
     'emergency':['员工','采购员','库管员','部门负责人','财务','分管领导','总经理','系统管理员'],
     'payments':['财务','分管领导','总经理','系统管理员'],
     'small':['采购员','库管员','财务','分管领导','总经理','系统管理员'],
@@ -5459,6 +5462,11 @@ async function loadEmergency(){
     if(r.price_warn)marks.push('<span class="tag" style="background:#fff3e0;color:#e65100">价格超基准'+r.price_dev_pct+'%</span>');
     if(r.status=='已闭环')marks.push('<span class="tag" style="background:#e8f5e9;color:#2e7d32">已转正</span>');
     let ops=`<button class="lnk" onclick="emgDetail(${r.id})">详情</button>`;
+    if(['待询价','采购接单'].includes(r.status)&&canBuy)ops+=` <button class="lnk" style="color:var(--p);font-weight:600" onclick="emgInquiryForm(${r.id})">📝 应急询价</button>`;
+    if(r.status=='待定标'&&canBuy)ops+=` <button class="lnk" style="color:var(--s);font-weight:700" onclick="emgAward(${r.id})">✅ 提交定标</button>`;
+    if(['待发货'].includes(r.status)&&canBuy)ops+=` <button class="lnk" style="color:var(--p);font-weight:600" onclick="emgShipForm(${r.id})">🚚 标记发货</button>`;
+    if(r.status=='待验收'&&canRecv)ops+=` <button class="lnk" style="color:var(--s);font-weight:700" onclick="sw('receivings');setTimeout(()=>emgRcvTabGo('emg'),350)">📥 去验收</button>`;
+    if(r.alloc_state&&r.alloc_state!=='已分配'&&canRecv)ops+=` <button class="lnk" style="color:#7c3aed;font-weight:600" onclick="sw('emgalloc')">📦 临时库存分配</button>`;
     if(r.status=='采购接单'&&canBuy)ops+=` <button class="lnk" style="color:var(--p);font-weight:600" onclick="emgSupplierForm(${r.id})">📞 接单</button>`;
     if(r.status=='待临时入库'&&canRecv)ops+=` <button class="lnk" style="color:var(--s);font-weight:600" onclick="emgTempStockForm(${r.id})">📥 临时入库</button>`;
     if(['待补资料','延期审批中'].includes(r.status)&&canBuy)ops+=` <button class="lnk" style="color:var(--p);font-weight:600" onclick="emgFormalForm(${r.id})">📎 补资料提正式审批</button>`;
@@ -5714,6 +5722,8 @@ async function emgDetail(eid){
       <dt>资料补齐截止</dt><dd>${esc(d.deadline||'—')} ${d.deadline?`<span style="color:${d.days_left<0?'#c62828':'#e65100'}">(${d.days_left<0?'超期 '+Math.abs(d.days_left)+' 个工作日':'剩 '+d.days_left+' 个工作日'})</span>`:''}</dd>
       <dt>延期</dt><dd>${Number(d.extend_count||0)>0?('已延期'+d.extend_count+'次：'+esc(d.extend_reason||'')):'未延期'}</dd>
       <dt>价格偏差</dt><dd>${d.price_ref?`基准¥${d.price_ref} · 偏差${d.price_dev_pct}%`:'—'}${d.price_note?`<div style="font-size:8px;color:#666">价格说明：${esc(d.price_note)}</div>`:''}</dd>
+      <dt>应急单家询价</dt><dd>${d.inq_supplier?`${esc(d.inq_supplier)} · 含税¥${d.inq_amount||0} · 不含税¥${d.inq_amount_ex||0} · 税额¥${d.inq_tax||0} · 税率${d.inq_tax_rate||0}%${d.inq_delivery_days?(' · 交货'+esc(d.inq_delivery_days)+'天'):''}${d.inq_pay_method?(' · '+esc(d.inq_pay_method)):''}<div style="font-size:8px;color:#666">${esc((d.inq_by||'')+' '+String(d.inq_at||'').slice(0,16))}</div>`:'未询价（审批通过后采购员录入1家报价）'}</dd>
+      <dt>应急订单/收货/分配</dt><dd>${d.order_no?`<button class="lnk" onclick="emgOpenOrder(${d.order_id})">${esc(d.order_no)}</button>`:'—'}${d.recv_done_qty?` · 已验收 ${d.recv_done_qty}/${d.quantity}`:''}${d.alloc_state?` · 分配进度 <b>${esc(d.alloc_state)}</b>`:''}</dd>
     </div></div>`;
   if(d.status=='已锁定')h+=`<div style="margin-top:6px;background:#fee2e2;border:1px solid #f5c2c2;color:#c62828;border-radius:6px;padding:6px 10px;font-size:10px">🔒 已锁单：${esc(d.lock_reason||'超期未补齐资料')}（不影响已入库库存，但禁止新增领料/转正/付款；可申请延期1次解锁）</div>`;
   if(d.price_warn&&d.status!='已闭环')h+=`<div style="margin-top:6px;background:#fff3e0;border:1px solid #f5cba7;color:#a05a12;border-radius:6px;padding:6px 10px;font-size:10px">⚠️ 价格异常提醒：本单单价高于基准价 ${d.price_dev_pct}%（基准 ¥${d.price_ref}/单位，报价 ¥${d.quote_amt||''}），正式审批必须填写价格说明${d.price_note?'（已填）':'（<b>未填，提交时会被拦截</b>）'}</div>`;
@@ -5733,6 +5743,11 @@ async function emgDetail(eid){
   id('dmBody').innerHTML=h;
   const _canBuy=['采购员','系统管理员'].includes(ME.role), _canRecv=['库管员','部门负责人','分管领导','总经理','系统管理员'].includes(ME.role);
   let fb='<button class="btn btn-o" onclick="closeMod()">关闭</button>';
+  if(['待询价','采购接单'].includes(d.status)&&_canBuy)fb+=`<button class="btn btn-p btn-sm" onclick="emgInquiryForm(${d.id})">📝 应急询价</button>`;
+  if(d.status=='待定标'&&_canBuy)fb+=`<button class="btn btn-p btn-sm" onclick="emgAward(${d.id})">✅ 提交定标</button>`;
+  if(d.status=='待发货'&&_canBuy)fb+=`<button class="btn btn-p btn-sm" onclick="emgShipForm(${d.id})">🚚 标记发货</button>`;
+  if(d.status=='待验收'&&_canRecv)fb+=`<button class="btn btn-p btn-sm" onclick="sw('receivings');closeMod();setTimeout(()=>emgRcvTabGo('emg'),350)">📥 去应急入库验收</button>`;
+  if(d.alloc_state&&d.alloc_state!=='已分配'&&_canRecv)fb+=`<button class="btn btn-o btn-sm" onclick="sw('emgalloc');closeMod()">📦 临时库存分配</button>`;
   if(d.status=='采购接单'&&_canBuy)fb+=`<button class="btn btn-p btn-sm" onclick="emgSupplierForm(${d.id})">📞 接单</button>`;
   if(d.status=='待临时入库'&&_canRecv)fb+=`<button class="btn btn-p btn-sm" onclick="emgTempStockForm(${d.id})">📥 临时入库</button>`;
   if(['待补资料','延期审批中'].includes(d.status)&&_canBuy)fb+=`<button class="btn btn-p btn-sm" onclick="emgFormalForm(${d.id})">📎 补资料提正式审批</button>`;
@@ -6463,7 +6478,8 @@ const PAGE_REFRESH={
   pinventory:()=>loadInventory(id('invCatFilter')?id('invCatFilter').value:''),
   psuppliers:()=>loadSuppliers(), psettlements:()=>loadSettlements(), pinvoices:()=>loadInvoicePage(),
   pledger:()=>loadLedger(), psmall:()=>loadSmallLedger(), palerts:()=>loadAlertCenter(),
-  pwarehouses:()=>loadWhTree(), pemergency:()=>loadEmergency()
+  pwarehouses:()=>loadWhTree(), pemergency:()=>loadEmergency(),
+  pemgalloc:()=>loadEmgAlloc()
 };
 function pageRefresh(pid){
   const f=PAGE_REFRESH[pid];
@@ -8922,3 +8938,247 @@ async function tqExport(){
 function openTimeQueryFor(bizKey){sw('reports');setTimeout(()=>showTimeQuery(bizKey),300)}
 function tqFromReports(){showTimeQuery('purchase_order')}
 
+// ============================================================
+// V11.332 应急采购全链路打通（需求《应急采购全链路后续流程打通》）
+//   应急询价(单家) → 提交定标(自动生成应急订单) → 标记发货 → 应急入库验收(库管审批,分批)
+//   → 自动临时入库「临时待分配库」 → 库管自主分配到正式库房(调拨流水+留痕,可撤回) → 补资料转正
+// 与常规流程物理分区(独立Tab/独立页), 底层共用(订单/入库/库存/调拨/供应商档案/价格库)
+// ============================================================
+function emgInqCalc(){
+  const a=parseFloat((id('emgInqAmt')||{}).value||0)||0, r0=parseFloat((id('emgInqRate')||{}).value||0)||0;
+  const ex=a>0?(a/(1+r0/100)):0;
+  if(id('emgInqEx'))id('emgInqEx').textContent='¥'+ex.toFixed(2);
+  if(id('emgInqTax'))id('emgInqTax').textContent='¥'+(a-ex).toFixed(2);
+}
+async function emgInqUp(){
+  const f=id('emgInqFile'); if(!f||!f.files||!f.files[0])return;
+  const fd=new FormData(); fd.append('file',f.files[0]);
+  const r=await fetch('/api/upload',{method:'POST',body:fd,credentials:'include'}).then(x=>x.json()).catch(()=>({}));
+  const p=r.file_path||r.path||r.url||r.filename;
+  if(p){ window.__emgInqAtts=(window.__emgInqAtts||[]).concat(p); id('emgInqAtts').textContent='📎 已上传 '+window.__emgInqAtts.length+' 个'; }
+  else alert('附件上传失败：'+(r.error||'请重试'));
+}
+async function emgInquiryForm(eid){
+  const r=(window._emgRows||[]).find(x=>x.id==eid)||{};
+  window.__emgInqAtts=[];
+  showDetail('📝 应急单家询价 · '+esc(r.emg_no||''),
+    `<div style="font-size:10px;color:#666;margin-bottom:6px">应急通道仅支持 <b>1家供应商</b> 报价（精简流程，无需三方比价/开标）；保存后点【✅ 提交定标】即自动生成应急采购订单。</div>
+     <div class="c2">
+       <div><dt>物资</dt><dd>${esc(r.item_name||'')} ${esc(r.spec||'')} × ${r.quantity||0}${esc(r.unit||'')}</dd></div>
+       <div><dt>供应商（限1家）*</dt><dd><input class="fc" id="emgInqSup" value="${esc(r.inq_supplier||'')}" placeholder="供应商名称（自动同步供应商档案）"></dd></div>
+       <div><dt>报价金额(含税) *</dt><dd><input class="fc" type="number" step="0.01" id="emgInqAmt" value="${r.inq_amount||r.est_amount||0}" oninput="emgInqCalc()"></dd></div>
+       <div><dt>税率 %</dt><dd><input class="fc" type="number" step="1" id="emgInqRate" value="${r.inq_tax_rate||13}" oninput="emgInqCalc()"></dd></div>
+       <div><dt>不含税金额</dt><dd><b id="emgInqEx">—</b></dd></div>
+       <div><dt>税额</dt><dd><b id="emgInqTax">—</b></dd></div>
+       <div><dt>报价有效期</dt><dd><input class="fc" type="date" id="emgInqValid" value="${esc(r.inq_valid_until||'')}"></dd></div>
+       <div><dt>交货周期(天)</dt><dd><input class="fc" id="emgInqDays" value="${esc(r.inq_delivery_days||'')}" placeholder="如 2"></dd></div>
+       <div><dt>付款方式</dt><dd><input class="fc" id="emgInqPay" value="${esc(r.inq_pay_method||'')}" placeholder="如 月结30天"></dd></div>
+       <div><dt>报价单附件</dt><dd><input type="file" id="emgInqFile" onchange="emgInqUp()"><span id="emgInqAtts" style="font-size:9px;color:#666">未上传</span></dd></div>
+     </div>`,
+    `<button class="btn btn-p" onclick="emgInquirySave(${eid})">💾 保存报价</button> <button class="btn btn-o" onclick="closeMod()">取消</button>`);
+  emgInqCalc();
+}
+async function emgInquirySave(eid){
+  const b={supplier:(id('emgInqSup')||{}).value||'', amount:(id('emgInqAmt')||{}).value||0,
+           tax_rate:(id('emgInqRate')||{}).value||13, valid_until:(id('emgInqValid')||{}).value||'',
+           delivery_days:(id('emgInqDays')||{}).value||'', pay_method:(id('emgInqPay')||{}).value||'',
+           files:window.__emgInqAtts||[]};
+  const r=await api('/emergency/'+eid+'/inquiry',{method:'POST',body:JSON.stringify(b)});
+  if(r.success){toast('✅ '+r.message);closeMod();loadEmergency();}else alert('⛔ '+(r.error||'保存失败'));
+}
+async function emgAward(eid){
+  if(!confirm('确认提交定标？\n应急单家询价确认后无需比价开标，系统将自动生成应急采购订单并流转入库验收。'))return;
+  const r=await api('/emergency/'+eid+'/award',{method:'POST',body:JSON.stringify({})});
+  if(r.success){alert('✅ '+r.message);closeMod();loadEmergency();}else alert('⛔ '+(r.error||'定标失败'));
+}
+async function emgShipForm(eid){
+  const r=(window._emgRows||[]).find(x=>x.id==eid)||{};
+  const left=Math.max(0,(parseFloat(r.quantity||0)||0)-(parseFloat(r.recv_done_qty||0)||0));
+  showDetail('🚚 标记发货 · '+esc(r.emg_no||''),
+    `<div style="font-size:10px;color:#666;margin-bottom:6px">标记发货后自动生成<b>待验收入库单</b>（目标库：临时待分配库），并推送库管到「入库验收 → 应急入库验收」；支持分批发货/分批验收。</div>
+     <div class="c2">
+       <div><dt>应急订单</dt><dd>${esc(r.order_no||'—')}</dd></div>
+       <div><dt>供应商</dt><dd>${esc(r.inq_supplier||r.supplier||'—')}</dd></div>
+       <div><dt>订单数量</dt><dd>${r.quantity||0}${esc(r.unit||'')}（已验收 ${r.recv_done_qty||0}）</dd></div>
+       <div><dt>本批发货数量 *</dt><dd><input class="fc" type="number" step="0.01" id="emgShipQty" value="${left||r.quantity||0}"></dd></div>
+     </div>`,
+    `<button class="btn btn-p" onclick="emgShipSave(${eid})">🚚 确认发货</button> <button class="btn btn-o" onclick="closeMod()">取消</button>`);
+}
+async function emgShipSave(eid){
+  const q=(id('emgShipQty')||{}).value||0;
+  const r=await api('/emergency/'+eid+'/ship',{method:'POST',body:JSON.stringify({qty:q})});
+  if(r.success){alert('✅ '+r.message);closeMod();loadEmergency();}else alert('⛔ '+(r.error||'发货失败'));
+}
+
+// ---- 入库验收页: 应急入库验收 子Tab(与常规入库分区展示) ----
+function emgRcvTabGo(z){
+  ['norm','emg'].forEach(k=>{const p=id('rcvPanel'+k),b=id('rcvTab'+k); if(p)p.style.display=(k===z?'':'none'); if(b)b.className=(k===z?'act':'');});
+  if(z==='emg')loadEmgRcv();
+}
+async function loadEmgRcv(){
+  const box=id('emgRcvBox'); if(!box)return;
+  box.innerHTML='<div class="loading">加载中...</div>';
+  let d=null; try{ d=await api('/emergency/receivings',{noCache:true}); }catch(e){}
+  if(!d){ box.innerHTML='<div style="padding:10px;color:#c0392b;font-size:11px">加载失败，请重试</div>'; return; }
+  const c=d.counts||{}, rows=d.rows||[];
+  window._emgRcvRows=rows;
+  const ck=(lbl,v,fg,bg)=>`<div style="min-width:110px;background:${bg};border:1px solid ${fg}22;border-radius:8px;padding:6px 10px"><div style="font-size:9px;color:#666">${lbl}</div><div style="font-size:16px;font-weight:800;color:${fg};line-height:1.3">${v}</div></div>`;
+  const kpi=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">${ck('待验收',c['待审批']||0,'#e65100','#fff6e9')}${ck('已驳回',c['已驳回']||0,'#c62828','#fee2e2')}${ck('今日已验收',c.today_in||0,'#0f9d58','#eefaf1')}</div>`;
+  if(!rows.length){ box.innerHTML=kpi+'<div style="padding:12px;color:#999;font-size:11px">暂无应急采购待验收单据（应急订单标记发货后自动出现在这里）</div>'; return; }
+  const canRecv=['库管员','部门负责人','分管领导','总经理','系统管理员'].includes(ME.role);
+  let h=kpi+'<table><tr><th>入库单号</th><th>应急单号</th><th>项目/工地</th><th>物资</th><th>数量</th><th>供应商</th><th>到货时间</th><th>状态</th><th>操作</th></tr>';
+  rows.forEach(r=>{
+    const tag=r.status==='已驳回'?'<span class="tag" style="background:#fee2e2;color:#c62828">已驳回</span>':'<span class="tag" style="background:#fff3e0;color:#e65100">待验收</span>';
+    let ops=`<button class="lnk" onclick="showRcvDetail(${r.id})">详情</button>`;
+    if(canRecv&&r.status!=='已驳回')ops+=` <button class="lnk" style="color:var(--s);font-weight:600" onclick="emgRcvAcceptForm(${r.id})">✅ 验收</button>`;
+    h+=`<tr><td><b>${esc(r.receive_no||'')}</b><div style="font-size:8px;color:#999">⚡应急采购-临时入库</div></td>
+      <td>${esc(r.emg_no||'—')}</td><td>${esc(r.project||'—')}</td>
+      <td>${esc(r.item_name||'')} <span style="font-size:8px;color:#999">${esc(r.spec||'')}</span></td>
+      <td>${r.quantity||0}${esc(r.unit||'')}</td><td>${esc(r.inq_supplier||'—')}</td>
+      <td>${esc(String(r.received_at||'').slice(0,16))}</td><td>${tag}</td><td>${ops}</td></tr>`;
+  });
+  box.innerHTML=h+'</table><div style="font-size:9px;color:#999;margin-top:4px">'+(d.note||'')+'</div>';
+}
+async function emgRcvUp(which){
+  const f=id('emgRcvFile_'+which); if(!f||!f.files||!f.files[0])return;
+  const fd=new FormData(); fd.append('file',f.files[0]);
+  const r=await fetch('/api/upload',{method:'POST',body:fd,credentials:'include'}).then(x=>x.json()).catch(()=>({}));
+  const p=r.file_path||r.path||r.url||r.filename;
+  if(p){ window.__emgRcvAtts=(window.__emgRcvAtts||[]).concat(p); const el=id('emgRcvAtts_'+which); if(el)el.textContent='📎 已上传'; }
+  else alert('附件上传失败：'+(r.error||'请重试'));
+}
+function emgRcvAcceptForm(rid){
+  const r=(window._emgRcvRows||[]).find(x=>x.id==rid)||{};
+  window.__emgRcvAtts=[];
+  showDetail('✅ 应急入库验收 · '+esc(r.receive_no||''),
+    `<div style="font-size:10px;color:#666;margin-bottom:6px">库管核对品名/规格/数量并上传凭证；验收通过后物资自动进入「临时待分配库」，再由库管自主分配到正式库房。</div>
+     <div class="c2">
+       <div><dt>应急单号</dt><dd>${esc(r.emg_no||'—')}</dd></div>
+       <div><dt>供应商</dt><dd>${esc(r.inq_supplier||'—')}</dd></div>
+       <div><dt>物资</dt><dd>${esc(r.item_name||'')} ${esc(r.spec||'')}</dd></div>
+       <div><dt>通知到货量</dt><dd>${r.quantity||0}${esc(r.unit||'')}</dd></div>
+       <div><dt>实收数量 *</dt><dd><input class="fc" type="number" step="0.01" id="emgRcvQty" value="${r.quantity||0}"></dd></div>
+       <div><dt>验收结论 *</dt><dd><select class="fc" id="emgRcvQual"><option>合格</option><option>不合格</option></select></dd></div>
+       <div><dt>拟放库位</dt><dd><input class="fc" id="emgRcvLoc" value="${esc(r.location||'')}" placeholder="如 A-01（临时库库位）"></dd></div>
+       <div><dt>送货单 *</dt><dd><input type="file" id="emgRcvFile_send" onchange="emgRcvUp('send')"><span id="emgRcvAtts_send" style="font-size:9px;color:#666">未上传</span></dd></div>
+       <div><dt>验收照片 *</dt><dd><input type="file" id="emgRcvFile_photo" onchange="emgRcvUp('photo')"><span id="emgRcvAtts_photo" style="font-size:9px;color:#666">未上传</span></dd></div>
+       <div><dt>备注/差异说明</dt><dd><input class="fc" id="emgRcvRemark" placeholder="如 数量短少/外观破损"></dd></div>
+     </div>`,
+    `<button class="btn btn-p" onclick="emgRcvAcceptSave(${rid})">✅ 提交验收</button> <button class="btn btn-o" onclick="closeMod()">取消</button>`);
+}
+async function emgRcvAcceptSave(rid){
+  const b={qty:(id('emgRcvQty')||{}).value||0, qualified:(id('emgRcvQual')||{}).value||'合格',
+           location:(id('emgRcvLoc')||{}).value||'', remark:(id('emgRcvRemark')||{}).value||'',
+           attachments:window.__emgRcvAtts||[]};
+  const r=await api('/emergency/receivings/'+rid+'/accept',{method:'POST',body:JSON.stringify(b)});
+  if(r.success){alert('✅ '+r.message);closeMod();loadEmgRcv();loadReceivings();}else alert('⛔ '+(r.error||'验收失败'));
+}
+
+// ---- 临时库存分配页(库存管理) ----
+async function loadEmgAlloc(){
+  const box=id('emgAllocBox'); if(!box)return;
+  box.innerHTML='<div class="loading">加载中...</div>';
+  let d=null; try{ d=await api('/emergency/temp-stock',{noCache:true}); }catch(e){}
+  if(!d){ box.innerHTML='<div style="padding:10px;color:#c0392b;font-size:11px">加载失败，请点【🔄 刷新】重试</div>'; return; }
+  const s=d.summary||{}, rows=d.rows||[];
+  window._emgTempRows=rows;
+  const whs=(d.warehouses||[]).map(w=>typeof w==='string'?w:(w.name||''));
+  const ck=(lbl,v,fg,bg)=>`<div style="min-width:110px;background:${bg};border:1px solid ${fg}22;border-radius:8px;padding:6px 10px"><div style="font-size:9px;color:#666">${lbl}</div><div style="font-size:16px;font-weight:800;color:${fg};line-height:1.3">${v}</div></div>`;
+  const kpi=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">${ck('待分配品类',s.kinds||0,'#e65100','#fff6e9')}${ck('待分配数量',s.qty||0,'#1a6bff','#eef4ff')}${ck('暂估金额 ¥',s.amount||0,'#0891b2','#ecfeff')}${ck('超期预警(天)',s.overdue_days||3,'#7c3aed','#f5f0ff')}</div>`;
+  const canOp=['库管员','系统管理员','分管领导','总经理'].includes(ME.role);
+  const ops=canOp?`<div style="background:#f7f8fa;border:1px solid var(--b);border-radius:6px;padding:6px 8px;margin-bottom:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:10px">
+      <b>批量分配：</b>已选 <span id="emgAllocSel">0</span> 项
+      <select class="fc" id="emgAllocWh" style="max-width:170px"><option value="">选择目标库房 *</option>${whs.map(w=>`<option>${esc(w)}</option>`).join('')}</select>
+      <input class="fc" id="emgAllocLoc" placeholder="目标货位(可选)" style="max-width:150px">
+      <input class="fc" id="emgAllocRmk" placeholder="备注(可选)" style="max-width:170px">
+      <button class="btn btn-p btn-sm" onclick="emgAllocSave()">📦 确认分配</button>
+      <span style="color:#999">废旧/损坏物资可直接选「废旧物资库」，自动按0价核算</span></div>`:'';
+  if(!rows.length){ box.innerHTML=kpi+ops+'<div style="padding:12px;color:#999;font-size:11px">临时待分配库暂无库存（应急采购验收通过后自动进入此库，再由库管分配）</div>'; }
+  else{
+    let h=ops+'<table><tr><th style="width:26px"><input type="checkbox" onchange="emgAllocTglAll(this)"></th><th>物资</th><th>规格</th><th>数量</th><th>库位</th><th>应急单</th><th>入库单</th><th>在库天数</th><th>操作</th></tr>';
+    rows.forEach(r=>{
+      const od=Number(r.days_in_temp||0)>(s.overdue_days||3);
+      h+=`<tr><td><input type="checkbox" class="emgAllocCk" data-id="${r.id}" onchange="emgAllocCnt()"></td>
+        <td>${esc(r.item_name||'')}<div style="font-size:8px;color:#999">${esc(r.warehouse||'')}</div></td>
+        <td>${esc(r.spec||'')}</td><td>${r.quantity||0}${esc(r.unit||'')}</td><td>${esc(r.location||'—')}</td>
+        <td>${esc(r.src_emg_no||'—')}</td><td>${esc(r.recv_no||'—')}</td>
+        <td${od?' style="color:#c62828;font-weight:700"':''}>${r.days_in_temp||0} 天${od?' ⏰':''}</td>
+        <td><button class="lnk" style="color:var(--p);font-weight:600" onclick="emgAllocOne(${r.id})">📦 分配</button></td></tr>`;
+    });
+    box.innerHTML=kpi+h+'</table><div style="font-size:9px;color:#999;margin-top:4px">'+(d.note||'')+'</div>';
+  }
+  // 分配记录(留痕)
+  const lgBox=id('emgAllocLogBox');
+  if(lgBox){
+    let l=null; try{ l=await api('/emergency/alloc-logs',{noCache:true}); }catch(e){}
+    const lr=(l&&l.rows)||[];
+    if(!lr.length){ lgBox.innerHTML='<div style="padding:8px;color:#999;font-size:11px">暂无分配记录</div>'; }
+    else{
+      let t='<table><tr><th>流水号</th><th>物资</th><th>数量</th><th>调入库房</th><th>货位</th><th>应急单</th><th>操作人</th><th>时间</th><th>状态</th><th>操作</th></tr>';
+      lr.forEach(g=>{
+        const rev=Number(g.revoked||0)===1;
+        t+=`<tr><td>${esc(g.alloc_no||'')}</td><td>${esc(g.item_name||'')} <span style="font-size:8px;color:#999">${esc(g.spec||'')}</span></td>
+          <td>${g.quantity||0}${esc(g.unit||'')}</td><td>${esc(g.to_wh||'')}</td><td>${esc(g.to_location||'—')}</td>
+          <td>${esc(g.emg_no||'—')}</td><td>${esc(g.operator||'')}</td><td>${esc(String(g.created_at||'').slice(0,16))}</td>
+          <td>${rev?'<span class="tag" style="background:#fee2e2;color:#c62828">已撤回</span>':'<span class="tag" style="background:#e8f5e9;color:#2e7d32">已分配</span>'}</td>
+          <td>${(!rev&&canOp)?`<button class="lnk" style="color:#c62828" onclick="emgAllocRevoke(${g.id})">↩️ 撤回重分</button>`:'—'}</td></tr>`;
+      });
+      lgBox.innerHTML=t+'</table>';
+    }
+  }
+}
+function emgAllocTglAll(cb){document.querySelectorAll('.emgAllocCk').forEach(c=>c.checked=cb.checked);emgAllocCnt();}
+function emgAllocCnt(){
+  const n=document.querySelectorAll('.emgAllocCk:checked').length;
+  const el=id('emgAllocSel'); if(el)el.textContent=n;
+  return n;
+}
+async function emgAllocOne(id1){
+  const r=(window._emgTempRows||[]).find(x=>x.id==id1); if(!r)return;
+  const d=await api('/warehouse/options',{noCache:true}).catch(()=>null);
+  const whs=((d&&d.warehouses)||[]).map(w=>typeof w==='string'?w:(w.name||''));
+  showDetail('📦 临时库存分配 · '+esc(r.item_name||''),
+    `<div style="font-size:10px;color:#666;margin-bottom:6px">从「${esc(r.warehouse||'临时待分配库')}」分配到正式库房；确认后自动扣减临时库、增加目标库库存并生成标准调拨流水（可撤回重分）。</div>
+     <div class="c2">
+       <div><dt>物资</dt><dd>${esc(r.item_name||'')} ${esc(r.spec||'')}</dd></div>
+       <div><dt>临时库结存</dt><dd>${r.quantity||0}${esc(r.unit||'')}</dd></div>
+       <div><dt>来源应急单</dt><dd>${esc(r.src_emg_no||'—')}</dd></div>
+       <div><dt>本次分配数量 *</dt><dd><input class="fc" type="number" step="0.01" id="emgAllocQty1" value="${r.quantity||0}"></dd></div>
+       <div><dt>目标库房 *</dt><dd><select class="fc" id="emgAllocWh1"><option value="">请选择</option>${whs.map(w=>`<option${w==='废旧物资库'?'':' flat'}>${esc(w)}</option>`).join('')}</select></dd></div>
+       <div><dt>目标货位</dt><dd><input class="fc" id="emgAllocLoc1" placeholder="如 B-09"></dd></div>
+       <div><dt>备注</dt><dd><input class="fc" id="emgAllocRmk1" placeholder="如 生产领用/损坏入废旧"></dd></div>
+     </div>
+     <div style="font-size:9px;color:#999">提示：选「废旧物资库」时按 <b>0 价</b> 核算入库。</div>`,
+    `<button class="btn btn-p" onclick="emgAllocOneSave(${id1})">📦 确认分配</button> <button class="btn btn-o" onclick="closeMod()">取消</button>`);
+  window.__emgAllocRow=r;
+}
+async function emgAllocOneSave(id1){
+  const r=window.__emgAllocRow||{};
+  const b={items:[{item_name:r.item_name, spec:r.spec||'', unit:r.unit||'个', qty:(id('emgAllocQty1')||{}).value||0,
+                   to_wh:(id('emgAllocWh1')||{}).value||'', to_location:(id('emgAllocLoc1')||{}).value||'',
+                   remark:(id('emgAllocRmk1')||{}).value||'', emg_no:r.src_emg_no||'', recv_no:r.recv_no||'', recv_id:r.recv_id||0}]};
+  const x=await api('/emergency/alloc',{method:'POST',body:JSON.stringify(b)});
+  if(x.success){alert('✅ '+x.message);closeMod();loadEmgAlloc();}else alert('⛔ '+(x.error||'分配失败'));
+}
+async function emgAllocSave(){
+  const n=emgAllocCnt();
+  if(!n){alert('请先勾选要分配的物资');return}
+  const tw=(id('emgAllocWh')||{}).value||'';
+  if(!tw){alert('请选择目标库房');return}
+  const loc=(id('emgAllocLoc')||{}).value||'', rmk=(id('emgAllocRmk')||{}).value||'';
+  const items=[];
+  document.querySelectorAll('.emgAllocCk:checked').forEach(c=>{
+    const r=(window._emgTempRows||[]).find(x=>String(x.id)===String(c.dataset.id)); if(!r)return;
+    items.push({item_name:r.item_name, spec:r.spec||'', unit:r.unit||'个', qty:r.quantity||0, to_wh:tw,
+                to_location:loc, remark:rmk, emg_no:r.src_emg_no||'', recv_no:r.recv_no||'', recv_id:r.recv_id||0});
+  });
+  if(!confirm('确认将已选 '+items.length+' 项物资分配到「'+tw+'」？\n将自动生成调拨流水，可在下方分配记录中撤回。'))return;
+  const x=await api('/emergency/alloc',{method:'POST',body:JSON.stringify({items})});
+  if(x.success){alert('✅ '+x.message);loadEmgAlloc();}else alert('⛔ '+(x.error||'分配失败'));
+}
+async function emgAllocRevoke(lid){
+  const rsn=prompt('撤回原因（分配错误/重分，会写入留痕）：','分配错误，重新分配');
+  if(rsn===null)return;
+  const x=await api('/emergency/alloc/'+lid+'/revoke',{method:'POST',body:JSON.stringify({reason:rsn})});
+  if(x.success){alert('✅ '+x.message);loadEmgAlloc();}else alert('⛔ '+(x.error||'撤回失败'));
+}
