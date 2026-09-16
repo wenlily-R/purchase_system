@@ -22029,6 +22029,40 @@ if __name__ == '__main__':
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)  # V11.327: 开启多线程(原单线程致多人并发时请求排队、整体变慢); 0.0.0.0=局域网可直连(李总等同事可用 http://本机IP:5899)
 
 
+# V11.328: 响应压缩(解决导入库存后 /api/inventory 返回 1.47MB 导致多人访问卡死的问题)
+# 说明: 对 JSON/HTML 等文本响应做 gzip, 体积约降至 1/10; 仅压缩 >1KB 且客户端支持的情况
+import gzip as _gzip_mod
+_COMPRESS_MIME = ('application/json', 'text/html', 'text/plain', 'text/css', 'application/javascript', 'text/javascript')
+_COMPRESS_MIN = 1024
+
+@app.after_request
+def _compress_response(resp):
+    try:
+        if resp.direct_passthrough:
+            return resp
+        if (resp.headers.get('Content-Encoding') or '') != '':
+            return resp
+        if 'gzip' not in (request.headers.get('Accept-Encoding') or '').lower():
+            return resp
+        mt = (resp.mimetype or '').lower()
+        if mt not in _COMPRESS_MIME:
+            return resp
+        data = resp.get_data()
+        if len(data) < _COMPRESS_MIN:
+            return resp
+        # 小整数级压缩级别: 速度快、效果好
+        comp = _gzip_mod.compress(data, 6)
+        if len(comp) >= len(data):
+            return resp
+        resp.set_data(comp)
+        resp.headers['Content-Encoding'] = 'gzip'
+        resp.headers['Content-Length'] = str(len(comp))
+        resp.headers['Vary'] = 'Accept-Encoding'
+        return resp
+    except Exception:
+        return resp
+
+
 @app.route('/api/_debug')
 @login_required
 def api_debug():
