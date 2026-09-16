@@ -17456,11 +17456,23 @@ def api_emergency_recv_accept(rid):
     if len(_atts) < 2:
         c.close(); return jsonify({'error': '验收必须上传：供应商送货单 + 现场验收照片（至少2个附件，责任留证）'}), 400
     _qual = 0 if str(d.get('qualified') or '合格') == '不合格' else 1
+    # V11.332 分批验收: 入账数量必须以库管填写的"实收数量"为准(items_json 原为发货通知量, 直接入账会多入)
+    try:
+        _ij = json.loads(rv['items_json'] or '[]')
+    except Exception:
+        _ij = []
+    if _ij:
+        _tot = sum(float(x.get('quantity') or 0) for x in _ij) or 1
+        for _x in _ij:
+            _x['quantity'] = round(_q * (float(_x.get('quantity') or 0) / _tot), 4)
+    else:
+        _ij = [{'item_name': rv['item_name'], 'spec': rv['spec'] or '', 'quantity': _q, 'unit': rv['unit'] or '个'}]
     try:
         c.execute("""UPDATE receivings SET quantity=?, qualified_qty=?, attachments=?, inspector=?, location=?,
-                     remark=COALESCE(remark,'')||? , status='待审批' WHERE id=?""",
+                     items_json=?, remark=COALESCE(remark,'')||? , status='待审批' WHERE id=?""",
                   (_q, _q if _qual else 0, json.dumps(_atts, ensure_ascii=False), session.get('user_name', ''),
-                   str(d.get('location') or '').strip(), '｜验收核对:%s%s' % ('合格' if _qual else '不合格', ('｜' + str(d.get('remark') or '')[:80]) if d.get('remark') else ''), rid))
+                   str(d.get('location') or '').strip(), json.dumps(_ij, ensure_ascii=False),
+                   '｜验收核对:%s%s' % ('合格' if _qual else '不合格', ('｜' + str(d.get('remark') or '')[:80]) if d.get('remark') else ''), rid))
     except Exception as _ue:
         c.close(); return jsonify({'error': '保存验收信息失败: %s' % _ue}), 500
     c.commit(); c.close()
