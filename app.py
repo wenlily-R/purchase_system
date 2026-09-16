@@ -16578,7 +16578,7 @@ def api_order_download(oid):
 EMG_OPEN_STATES = ('待临时审批', '已驳回', '待询价', '询价审批中', '待定标', '待发货', '待验收', '采购接单', '待临时入库',
                    '待补资料', '延期审批中', '正式审批中', '财务复核', '转正审批中', '待转正', '已锁定')  # V11.332 增询价/发货/验收
 EMG_INIT_ROLES = ('员工', '采购员', '库管员', '部门负责人', '分管领导', '总经理', '系统管理员')
-EMG_BUY_ROLES = ('采购员', '系统管理员')
+EMG_BUY_ROLES = ('采购员', '库管员', '部门负责人', '分管领导', '总经理', '系统管理员')  # V11.333 放宽: 生产环境无「采购员」账号 → 原口径导致应急采购接单/询价只有管理员能做, 分管领导(穆娇/邢果)看不到按钮
 EMG_RECV_ROLES = ('库管员', '部门负责人', '分管领导', '总经理', '系统管理员')
 EMG_DOC_KEYS = (('formal_request', '正式采购申请'), ('compare_record', '比价记录'), ('contract_or_order', '采购合同/订单协议'),
                 ('invoice', '发票'), ('temp_approve_shot', '临时审批截图'), ('situation_note', '应急情况说明'))
@@ -16866,7 +16866,7 @@ def api_emergency_create():
 def api_emergency_supplier(eid):
     """V11.327 采购接单&供应商确认: 供应商/报价/比价资料(或无法多比价理由); 无法满足到货时间则驳回退回需求方"""
     if session.get('user_role') not in EMG_BUY_ROLES:
-        return jsonify({'error': '无权限：采购接单仅限采购专员/系统管理员'}), 403
+        return jsonify({'error': '无权限：采购接单仅限采购员/库管员/领导/管理员'}), 403
     d = request.json or {}
     c = db()
     r = c.execute("SELECT * FROM emergency_purchases WHERE id=?", (eid,)).fetchone()
@@ -17276,8 +17276,8 @@ def _emg_create_order(c, eid):
 @login_required
 def api_emergency_inquiry(eid):
     """V11.332 需求一: 应急单家询价 — 仅支持1家供应商报价; 自动算含税/不含税/税额(与常规询价同口径); 可传报价单附件"""
-    if session.get('user_role') not in ('采购员', '系统管理员'):
-        return jsonify({'error': '无权限：应急询价仅限采购专员/系统管理员'}), 403
+    if session.get('user_role') not in EMG_BUY_ROLES:
+        return jsonify({'error': '无权限：应急询价仅限采购员/库管员/领导/管理员'}), 403
     d = request.json or {}
     c = db()
     r = c.execute("SELECT * FROM emergency_purchases WHERE id=?", (eid,)).fetchone()
@@ -17325,8 +17325,8 @@ def api_emergency_inquiry(eid):
 def api_emergency_award(eid):
     """V11.332 需求一.9: 提交定标(无需比价开标) → 自动生成应急采购订单并流转入库验收。
     若后台在「应急询价」节点配置了审批级, 则先走该审批(默认未配置=直接定标, 不卡单)。"""
-    if session.get('user_role') not in ('采购员', '系统管理员'):
-        return jsonify({'error': '无权限：定标仅限采购专员/系统管理员'}), 403
+    if session.get('user_role') not in EMG_BUY_ROLES:
+        return jsonify({'error': '无权限：定标仅限采购员/库管员/领导/管理员'}), 403
     c = db()
     r = c.execute("SELECT * FROM emergency_purchases WHERE id=?", (eid,)).fetchone()
     if not r:
@@ -17355,7 +17355,7 @@ def api_emergency_award(eid):
 @login_required
 def api_emergency_ship(eid):
     """V11.332 需求二: 应急订单标记发货 → 生成待验收入库单(目标=临时待分配库) + 推送库管验收；支持分批发货"""
-    if session.get('user_role') not in ('采购员', '系统管理员', '库管员'):
+    if session.get('user_role') not in EMG_BUY_ROLES:
         return jsonify({'error': '无权限'}), 403
     d = request.json or {}
     c = db()

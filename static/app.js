@@ -5449,7 +5449,7 @@ async function loadEmergency(){
   if(pjSel){const cur=pjSel.value; pjSel.innerHTML='<option value="">全部项目/工地</option>'+(d.projects||[]).map(p=>`<option>${esc(p)}</option>`).join(''); pjSel.value=cur;}
   const rows=d.rows||[];
   if(!rows.length){ box.innerHTML='<div style="padding:12px;color:#999;font-size:11px">暂无应急采购单据（点右上【➕ 发起应急采购】开始）</div>'; return; }
-  const canBuy=['采购员','系统管理员'].includes(ME.role), canRecv=['库管员','部门负责人','分管领导','总经理','系统管理员'].includes(ME.role);
+  const canBuy=['采购员','库管员','部门负责人','分管领导','总经理','系统管理员'].includes(ME.role), canRecv=['库管员','部门负责人','分管领导','总经理','系统管理员'].includes(ME.role);
   let h='<table><tr><th>应急单号</th><th>项目/工地</th><th>物资</th><th>数量</th><th>金额</th><th>临时审批</th><th>临时入库</th><th>资料截止</th><th>状态</th><th>标记</th><th>操作</th></tr>';
   rows.forEach(r=>{
     const dl=r.deadline?`${esc(r.deadline)}<div style="font-size:8px;color:${r.days_left<0?'#c62828':(r.days_left<=1?'#e65100':'#666')}">${r.days_left<0?('已超期 '+Math.abs(r.days_left)+' 个工作日'):('剩 '+r.days_left+' 个工作日')}</div>`:'—';
@@ -5741,7 +5741,7 @@ async function emgDetail(eid){
   h+=`<h4 style="font-size:10px;margin:8px 0 3px">🕘 全流程留痕（${(d.logs||[]).length} 条）</h4><table class="tb" style="font-size:9px"><thead><tr><th>时间</th><th>环节</th><th>操作人</th><th>说明</th></tr></thead><tbody>`
     +(d.logs||[]).map(x=>`<tr><td style="font-size:8px;color:#666">${esc((x.created_at||'').slice(0,19))}</td><td>${esc(x.action||'')}</td><td>${esc(x.operator||'')}</td><td>${esc(x.detail||'')}</td></tr>`).join('')+'</tbody></table>';
   id('dmBody').innerHTML=h;
-  const _canBuy=['采购员','系统管理员'].includes(ME.role), _canRecv=['库管员','部门负责人','分管领导','总经理','系统管理员'].includes(ME.role);
+  const _canBuy=['采购员','库管员','部门负责人','分管领导','总经理','系统管理员'].includes(ME.role), _canRecv=['库管员','部门负责人','分管领导','总经理','系统管理员'].includes(ME.role);
   let fb='<button class="btn btn-o" onclick="closeMod()">关闭</button>';
   if(['待询价','采购接单'].includes(d.status)&&_canBuy)fb+=`<button class="btn btn-p btn-sm" onclick="emgInquiryForm(${d.id})">📝 应急询价</button>`;
   if(d.status=='待定标'&&_canBuy)fb+=`<button class="btn btn-p btn-sm" onclick="emgAward(${d.id})">✅ 提交定标</button>`;
