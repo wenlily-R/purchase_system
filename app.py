@@ -8396,6 +8396,43 @@ def _inq_no_store(resp):
         pass
     return resp
 
+
+@app.after_request
+def _gz_compress(resp):
+    """V11.331 传输压缩(应急修复"公网首页加载不全导致所有人进不去"):
+    现象: 首页 index.html 约 873KB, 经公网隧道传输时反复被截断(实测只到 188~435KB), 浏览器脚本加载不完整 →
+          登录按钮无反应, 三个用户全部进不去系统; 本机访问始终完整, 说明是公网大响应传输不稳。
+    做法: 对 HTML/JSON/CSS/JS 文本响应做 gzip(压到约 1/5), 显著降低截断概率; 仅当客户端声明支持 gzip、
+          状态码 200、响应体≥1KB、未压缩、且不是附件下载时启用。"""
+    try:
+        if resp.status_code != 200 or resp.direct_passthrough:
+            return resp
+        if 'gzip' not in (request.headers.get('Accept-Encoding') or '').lower():
+            return resp
+        ct = (resp.content_type or '').lower()
+        if not any(k in ct for k in ('text/html', 'application/json', 'text/css', 'javascript', 'text/plain', 'text/xml')):
+            return resp
+        if 'attachment' in (resp.headers.get('Content-Disposition') or '').lower() or resp.headers.get('Content-Encoding'):
+            return resp
+        data = resp.get_data()
+        if len(data) < 1024:
+            return resp
+        import gzip as _gzip
+        buf = io.BytesIO()
+        with _gzip.GzipFile(fileobj=buf, mode='wb', compresslevel=6) as _f:
+            _f.write(data)
+        out = buf.getvalue()
+        if len(out) >= len(data):
+            return resp
+        resp.set_data(out)
+        resp.headers['Content-Encoding'] = 'gzip'
+        resp.headers['Content-Length'] = str(len(out))
+        resp.headers['Vary'] = 'Accept-Encoding'
+        resp.headers.pop('ETag', None)
+    except Exception as _ge:
+        print('V11.331 压缩跳过:', _ge)
+    return resp
+
 @app.route('/api/inquiry/<int:iid>/access-unlock', methods=['POST'])
 @login_required
 def api_inquiry_access_unlock(iid):
