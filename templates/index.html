@@ -408,7 +408,14 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <select id="rcvFDept" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px" onchange="loadReceivings()"><option value="">全部部门</option></select>
     <select id="rcvFCat" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px" onchange="loadReceivings()"><option value="">全部类别</option></select>
     <select id="rcvFType" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px" onchange="loadReceivings()"><option value="">全部入库类型</option><option value="est">暂估入库</option><option value="formal">正式入库</option></select>
-    <select id="rcvFWh" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px" onchange="loadReceivings()"><option value="">全部库房</option></select>
+    <select id="rcvFWh" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px" onchange="loadReceivings()"><option value="">全部库房</option></select>
+    <!-- V11.325 需求模块一: 单据状态筛选(部分入库/全部入库完成) + 需求模块三: 历史归档数据开关(默认不显示) -->
+    <select id="rcvFFlow" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px" onchange="loadReceivings()">
+      <option value="">全部状态</option><option value="部分入库">🔶 部分入库</option><option value="全部入库完成">✅ 全部入库完成</option>
+    </select>
+    <label style="font-size:9.5px;color:#666;display:flex;align-items:center;gap:3px;background:#f7f8fa;border:1px solid var(--b);border-radius:4px;padding:3px 6px" title="老库房导入的历史存量数据默认不显示, 勾选后才展示(历史数据只读, 不能提交审批)">
+      <input type="checkbox" id="rcvFHist" onchange="loadReceivings()"> 📦 显示历史归档数据
+    </label>
     <button class="btn btn-p btn-sm" style="margin-left:auto" onclick="showRcvForm()">➕ 新建入库单</button>
     <button class="btn btn-o btn-sm" id="mrsBtn" style="display:none" onclick="showManualRcvForm()">🧰 手工应急入库</button>
     <button class="btn btn-o btn-sm" id="mrsReconBtn" style="display:none" onclick="showManualRecon()">📋 手工入库对账</button>
@@ -435,9 +442,12 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
       <span style="color:#999">按领用人筛选（同一张单可含多个领用人，命中即显示）</span>
       <button class="btn btn-o btn-sm" style="margin-left:auto" onclick="batchPrintReq()">🖨️ 批量打印(已选 <span id="reqChkCnt">0</span>)</button>
       <button class="btn btn-w btn-sm" onclick="batchSubmitReq()">📤 批量提交审批</button>
-    </div><div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap">
-    <select id="rqFWh" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px" onchange="loadRequisitions()"><option value="">全部库房</option></select>
-    <span style="font-size:9px;color:#666">按库房看出库记录（出库单已记录库房，与库存/流水同口径）</span></div>
+    </div><div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap">
+
+    <select id="rqFWh" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px" onchange="loadRequisitions()"><option value="">全部库房</option></select>
+
+    <span style="font-size:9px;color:#666">按库房看出库记录（出库单已记录库房，与库存/流水同口径）</span></div>
+
 <div class="card"><div class="cb" id="reqListBox"><div class="loading">加载中...</div></div></div>
   </div>
 </div>
@@ -451,7 +461,8 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <select id="retStatusF" onchange="loadReturns()" style="font-size:10px;padding:2px 4px">
       <option value="">全部</option><option>草稿</option><option>待审批</option><option>审批通过</option><option>退库已完成</option><option>已驳回</option><option>已作废</option>
     </select>
-    <select id="retFWh" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px" onchange="loadReturns()"><option value="">全部库房</option></select>
+    <select id="retFWh" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px" onchange="loadReturns()"><option value="">全部库房</option></select>
+
     <input id="retSearchF" placeholder="🔍 源出库单号/退库单号" style="font-size:10px;padding:2px 4px;width:160px" oninput="loadReturns()">
   </div>
   <div class="card"><div class="cb" id="returnsTable"><div class="loading">加载中...</div></div></div>
@@ -485,7 +496,8 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <button class="btn btn-p btn-sm" style="margin-left:auto" onclick="exportInventory()">⬇️ 导出库存报表</button>
   </div>
   <div id="invAlertBar" style="margin-bottom:4px"></div>
-  <div id="invWhCards" style="display:flex;gap:6px;flex-wrap:wrap;align-items:stretch;margin-bottom:6px"></div>
+  <div id="invWhCards" style="display:flex;gap:6px;flex-wrap:wrap;align-items:stretch;margin-bottom:6px"></div>
+
 <div class="card"><div class="cb" id="inventoryTable"><div class="loading">加载中...</div></div></div>
   <div class="card" id="countListCard" style="display:none"><div class="ch"><h3>📋 盘点记录</h3><button class="btn btn-o btn-sm" onclick="window.id('countListCard').style.display='none'">收起</button></div><div class="cb" id="countListBox"></div></div>
 </div>
@@ -643,7 +655,8 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
   <div id="reportStock" style="display:none"><div class="card" style="margin-bottom:6px"><div class="ch"><h3>📦 库存统计报表（出入库 / 领用 / 废旧物资）</h3>
       <span style="font-size:9px;color:#999;margin-left:8px">数据同源库存流水与出库/入库单据，可直接导出 Excel</span></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;font-size:10px;align-items:center">
-      <select id="srWh" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="">全部库房</option></select>
+      <select id="srWh" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="">全部库房</option></select>
+
       <button class="btn btn-p btn-sm" onclick="showStockReport('inout')">📊 出入库统计</button>
       <button class="btn btn-p btn-sm" onclick="showStockReport('issue')">👤 领用统计</button>
       <button class="btn btn-p btn-sm" onclick="showStockReport('scrap')">🧰 废旧物资报表</button>
@@ -3935,6 +3948,9 @@ async function showRcvDetail(id){
   const r=(await api('/receivings')).find(x=>x.id===id);
   if(!r){if(my!==__dmSeq)return;alert('入库单不存在');return}
   const items=r.items||[];
+  // V11.325 需求模块一: 拉取该原始订单下的全部批次入库记录(详情页展示 + 可导出)
+  let _batches=null;
+  if(r.order_id){try{_batches=await api('/receivings/'+r.id+'/batches',{noCache:true});}catch(e){}}
   let h=`<div class="c2"><div><dt>入库单号</dt><dd><b>${esc(r.receive_no)}</b></dd><dt>状态</dt><dd>${tag(r.status)}</dd><dt>仓库</dt><dd>${esc(r.warehouse||'主库房')}</dd><dt>验收人</dt><dd>${esc(r.inspector||'-')}</dd></div>
     <div><dt>订单号</dt><dd>${esc(r.order_no||'-')}</dd><dt>供应商</dt><dd>${esc(r.supplier||'-')}</dd><dt>交易模式</dt><dd>${esc(r.trade_mode||'-')}</dd><dt>创建时间</dt><dd>${esc((r.created_at||'').slice(0,19))}</dd>${r.dept?`<dt>归属部门</dt><dd><span class="tag" style="background:#eef7ee;color:#2e7d32">${esc(r.dept)}</span></dd>`:''}</div></div>`;
   if(items.length){
@@ -3943,11 +3959,27 @@ async function showRcvDetail(id){
       <table class="tb" style="font-size:9px"><thead><tr><th>物资名称</th><th>规格</th><th>单价</th><th>本次入库数量</th><th>税率</th><th>金额</th></tr></thead>
       <tbody>${items.map((it,i)=>`<tr><td>${esc(it.item_name||'')}</td><td>${esc(it.spec||'')}</td><td>¥${(it.price||0).toFixed(2)}</td><td>${it.quantity||0}${esc(it.unit||'')}</td><td>${(it.tax_rate===null||it.tax_rate===undefined)?'—':(it.tax_rate+'%')}</td><td>¥${((it.price||0)*(it.quantity||0)).toFixed(2)}</td></tr>`).join('')}
       <tr style="font-weight:700;background:#f4f7fd"><td colspan="3">本次入库合计</td><td>${r.total_qty||r.quantity}</td><td></td><td>¥${_amt.toFixed(2)}</td></tr></tbody></table>`;
-    // V11.269: 订单剩余待入库量(原始订购量仅后台留存供分批校验, 不在此展示)
+    // V11.325 需求模块一: 订单总量 / 已入库 / 剩余待入库 三数字醒目卡片(一眼看清核心数据)
     if(r.order_id&&r.order_pending_qty!==undefined&&r.order_pending_qty!==null){
-      const _pend=Number(r.order_pending_qty||0);
+      const _tot=Number(r.order_total_qty||0), _acc=Number(r.order_accepted_qty||0), _pend=Number(r.order_pending_qty||0);
+      const _done=_pend<=0.0001;
+      const _card=(lbl,val,fg,bg)=>`<div style="flex:1;min-width:96px;background:${bg};border:1px solid ${fg}22;border-radius:8px;padding:7px 10px">
+          <div style="font-size:9px;color:#666">${lbl}</div>
+          <div style="font-size:17px;font-weight:800;color:${fg};line-height:1.25">${val}<span style="font-size:9px;font-weight:400;color:#888">${esc(r.unit||'')}</span></div></div>`;
+      h+=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+        ${_card('订单总数量',_tot,'#1a6bff','#eef4ff')}
+        ${_card('已入库数量',_acc,'#0f9d58','#eefaf1')}
+        ${_card('待入库剩余数量',_pend,_pend>0.0001?'#e65100':'#2e7d32',_pend>0.0001?'#fff6e9':'#eefaf1')}
+      </div>`;
       h+=`<div style="margin-top:6px;font-size:10px;padding:5px 8px;border-radius:4px;background:${_pend>0.0001?'#fff8e1':'#e8f5e9'};border:1px solid ${_pend>0.0001?'#f0d9a0':'#b7dfb9'};color:${_pend>0.0001?'#8a6d3b':'#2e7d32'}">
-        ${r.order_sealed?'🔒 该订单已封单，剩余不再验收（按实到闭环）':(_pend>0.0001?`📦 本订单<b>剩余待入库 ${_pend}${esc(r.unit||'')}</b>，可继续分批入库（采购订单详情 → 验收入库 → ➕新增验收批次）`:'✅ 本订单已全部验收完成')}</div>`;
+        ${r.order_sealed?'🔒 该订单已封单，剩余不再验收（按实到闭环）':(_pend>0.0001?(_acc>0.001?`🔶 单据状态：<b>部分入库</b>（已入 ${_acc} / 总 ${_tot}，剩余 ${_pend}${esc(r.unit||'')}）— 请在本页底部点【➕ 新增批次入库申请】继续分批入库`:`📦 单据状态：<b>尚未入库</b>（总量 ${_tot}，待入库 ${_pend}${esc(r.unit||'')}）— 提交审批通过后即变为【部分入库】`)  :`✅ 单据状态：<b>全部入库完成</b>（已全部入库，本单不再显示新增批次申请）`)}</div>`;
+      if(_batches&&(_batches.rows||[]).length){
+        const _rows=_batches.rows;
+        h+=`<h4 style="font-size:10px;margin:8px 0 3px">🧾 批次入库记录 — 原始订单 ${esc(_batches.order_no||'—')}（共 ${_rows.length} 批，已入库 ${_batches.batch_done} 批）</h4>
+          <table class="tb" style="font-size:9px"><thead><tr><th>批次</th><th>入库单号</th><th>类型</th><th>本批数量</th><th>目标仓库/库区/库位</th><th>状态</th><th>入库时间</th></tr></thead>
+          <tbody>${_rows.map(b=>`<tr><td>${esc(b.batch_no||'整批')}</td><td><button class="lnk" onclick="showRcvDetail(${b.id})">${esc(b.receive_no)}</button></td><td>${esc(b.doc_type_txt||'')}</td><td>${b._qty}${esc(b.unit||'')}</td><td style="font-size:8px">${esc(b.warehouse||'—')}${b.zone?' / '+esc(b.zone):''}${b.location?' / '+esc(b.location):''}</td><td>${tag(b.status)}</td><td style="font-size:8px;color:#666">${esc((b.completed_at||b.created_at||'').slice(0,19))}</td></tr>`).join('')}</tbody></table>
+          <div style="font-size:8px;color:#999;margin-top:3px">所有批次全程关联原始订单号 ${esc(_batches.order_no||'')}，可追溯；点底部【📥 导出批次记录】可导出 Excel</div>`;
+      }
     }
   }
   if(r.remark)h+=`<div style="font-size:9px;color:#666;margin-top:6px">备注: ${esc(r.remark)}</div>`;
@@ -3969,8 +4001,10 @@ async function showRcvDetail(id){
   }
   const btns=`<button class="btn btn-o" onclick="closeMod()">关闭</button>
     <button class="lnk" style="color:#7c5cff" onclick="showDocOps('receiving',${r.id},'入库单 ${esc(r.receive_no)}')">🕘 操作记录</button>
+    ${(r.order_id&&Number(r.order_pending_qty||0)>0.0001&&!r.order_sealed&&['库管员','部门负责人','分管领导','总经理','系统管理员'].includes(ME.role))?`<button class="btn btn-p btn-sm" onclick="showRcvBatchForm(${r.order_id})">➕ 新增批次入库申请</button>`:''}
+    ${r.order_id?`<button class="btn btn-o btn-sm" onclick="window.open('/api/export?type=rcv_batches&rid=${r.id}','_blank')">📥 导出批次记录</button>`:''}
     ${r.status=='待入库'?`<button class="btn btn-p btn-sm" onclick="completeRcv(${r.id},${r.total_qty||r.quantity},${r.order_id||0})">📤 提交审批</button>`:''}
-    <button class="btn btn-o btn-sm" style="color:#b08900;border-color:#b08900" onclick="editDoc('receiving',${r.id},'入库单')">✏️ 修改</button>
+    <button class="btn btn-o btn-sm" style="color:#b08900;border-color:#b08900" onclick="editDoc('receiving',${r.id},'入库单')" ${r.data_source=='历史导入'?'disabled title="历史导入数据只读" style="display:none"':''}>✏️ 修改</button>
     ${((r.status=='已驳回'||(r.status=='草稿'&&(r.reject_count||0)>0))&&(ME.role=='系统管理员'||ME.name==r.inspector))?`<button class="btn btn-p btn-sm" style="background:#16a34a;border-color:#16a34a" onclick="resubmitDoc('receiving',${r.id},'入库单','${esc(r.receive_no)}')">🔄 再次提交审批</button>`:''}`;
   if(my!==__dmSeq)return;  // V11.150: 已被更新的详情打开覆盖则丢弃
   showDetail(`入库单 ${r.receive_no}`,h+'<div id="approvalFlowBox"></div><div id="rejectLogsBox"></div>',btns+`<button class="btn btn-o btn-sm" style="color:#7c5cff" onclick="showChain('receiving',${r.id})">🔗 采购链路</button>`);
@@ -3981,8 +4015,11 @@ async function loadReceivings(){
   // V11.158: 强制noCache — 入库验收高频操作页, 每次拉最新(提交审批/确认到货/作废后立即反映)
   // V11.29: 部门/类别筛选
   const fDept=id('rcvFDept')?.value||'', fCat=id('rcvFCat')?.value||'', fType=id('rcvFType')?.value||'', fWh=id('rcvFWh')?.value||'';
+  const fFlow=id('rcvFFlow')?.value||'', fHist=(id('rcvFHist')&&id('rcvFHist').checked)?'1':'';
   const qs=new URLSearchParams();if(fDept)qs.set('dept',fDept);if(fCat)qs.set('cat',fCat);if(fType)qs.set('type',fType);if(fWh)qs.set('wh',fWh);
-  const r=await api('/receivings'+(qs.toString()?'?'+qs:''),{noCache:true});
+  if(fFlow)qs.set('rcv_state',fFlow); if(fHist)qs.set('hist','1');   // V11.325 部分入库筛选 + 历史归档数据开关
+  const r=await api('/receivings'+(qs.toString()?'?'+qs:''),{noCache:true});
+
   fillWhSelect('rcvFWh');   // V11.323 库房清单同源
   // 填充筛选下拉(部门/类别选项)
   try{
@@ -4033,11 +4070,20 @@ async function loadReceivings(){
       // V11.303 分批入库强化: 订单总量 / 已入库 / 剩余待入库 三数实时展示
       const _totN=Number(x.order_total_qty||0), _accN=Number(x.order_accepted_qty||0), _pendN=Number(x.order_pending_qty||0);
       const pendTag = (x.order_id&&x.status!=='已作废')
-        ? ` <span class="tag" style="background:${_pendN>0.0001?'#fff8e1':'#e8f5e9'};color:${_pendN>0.0001?'#8a6d3b':'#2e7d32'};border:1px solid #f0d9a0" title="订单总量 ${_totN} · 已验收入库 ${_accN} · 剩余待入库 ${_pendN}（可继续分批：订单详情→验收入库→➕新增验收批次）">订单 ${_totN} · 已入 ${_accN} · 剩余 ${_pendN}</span>`
+        ? ` <span class="tag" style="background:${_pendN>0.0001?'#fff8e1':'#e8f5e9'};color:${_pendN>0.0001?'#8a6d3b':'#2e7d32'};border:1px solid #f0d9a0" title="订单总量 ${_totN} · 已验收入库 ${_accN} · 剩余待入库 ${_pendN}（可继续分批：入库验收详情页→➕新增批次入库申请）">订单 ${_totN} · 已入 ${_accN} · 剩余 ${_pendN}</span>`
         : '';
+      // V11.325 需求模块一: 单据状态【部分入库】/【全部入库完成】(醒目展示, 只要累计＜总量就是部分入库)
+      const flowTag = x.rcv_state_label=='部分入库'
+        ? ` <span class="tag" style="background:#fff8e1;color:#b45309;border:1px solid #f0d9a0;font-weight:700" title="该订单已入库 ${_accN} / 总量 ${_totN}，还有 ${_pendN} 未入库 → 详情页可点【➕ 新增批次入库申请】继续分批入库">🔶 部分入库</span>`
+        : x.rcv_state_label=='全部入库完成'
+          ? ` <span class="tag" style="background:#e8f5e9;color:#2e7d32;border:1px solid #b7dfb9;font-weight:700" title="订单全部数量已入库完毕，不再显示「新增批次入库申请」">✅ 全部入库完成</span>` : '';
+      // V11.325 需求模块三: 历史导入数据标记(只读)
+      const histTag = (x.data_source=='历史导入')?` <span class="tag" style="background:#f1f3f4;color:#5f6368;border:1px dashed #c9ced4" title="老库房导入的历史存量数据：默认不显示、只读，不能修改/提交审批">📦 历史导入数据</span>`:'';
       // V11.201 岗位分界: 库房操作(确认到货/提交审批/作废/修改/删除/撤回)仅 库管员/部门负责人/领导/管理员;
       // 采购员/财务在入库页仅 查看详情/发票核对(暂估红冲)/下载
-      const isWarehouse=['系统管理员','库管员','部门负责人','分管领导','总经理'].includes(ME.role);
+      // V11.325 需求模块三: 历史导入数据只读(不给出库房写操作按钮)
+      const _isHist=(x.data_source=='历史导入');
+      const isWarehouse=! _isHist && ['系统管理员','库管员','部门负责人','分管领导','总经理'].includes(ME.role);
       const isOwner=(ME.role=='系统管理员'||(x.inspector&&ME.name==x.inspector));
       const ops=`${MATIMG_BTN(x)}<button class="lnk" onclick="showRcvDetail(${x.id})">查看详情</button>${x.is_est&&!x.invoice_no?` <button class="lnk" style="color:var(--o);font-weight:600" onclick="showInvMatch(${x.id},'${esc(x.receive_no)}')">🧾 发票核对</button>`:''}`;
       // V11.301 手工应急入库标记 + 补关联入口(未补关联前该供应商付款被拦截)
@@ -4055,7 +4101,7 @@ async function loadReceivings(){
                        : (x.collect_accept&&x.collect_status=='已集体验收')?' <span class="tag" style="background:#dcfce7;color:#16a34a">👥已集体验收</span>'
                        : x.collect_accept?' <span class="tag" style="background:#fef3c7;color:#b45309">👥集体验收</span>':'';
       return `<td><b>${esc(x.receive_no)}</b>${batchTag}</td><td>${deptTag}</td><td>${esc(x.item_name)}${cntTag}${urgTag}</td><td>${qtyTxt}${pendTag}</td>
-    <td><span class="tag ${x.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(x.trade_mode||'货到付款')}</span></td><td>${stTag}${estTag}${collectTag}${manTag}</td>
+    <td><span class="tag ${x.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(x.trade_mode||'货到付款')}</span></td><td>${stTag}${flowTag}${estTag}${collectTag}${manTag}${histTag}</td>
     ${rejCell(x)}
     <td>${ops}${linkBtn}${ops2}
       ${isWarehouse?`<button class="lnk" style="color:#b08900" onclick="editDoc('receiving',${x.id},'入库单')">✏️修改</button>`:''} <button class="lnk" onclick="window.open('/api/receivings/${x.id}/download','_blank')">⬇️ 下载</button> ${isWarehouse&&x.status=='已入库'?`<button class="lnk" style="color:var(--d)" onclick="voidRcv(${x.id})">作废</button>`:''} ${isWarehouse&&(x.status=='待审批'||x.status=='已通过'||x.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('receiving',${x.id},'入库单')">↩️撤回</button>`:''}${isWarehouse&&(x.status=='待审批'||x.status=='待入库'||x.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('receiving',${x.id},'入库单')">🗑️删除</button>`:''}</td>`;
@@ -4169,11 +4215,25 @@ async function showRcvForm(){
   // V11.159: 立即弹窗(不等部门接口, 避免慢网络下表单迟迟不显示), 部门下拉异步补全
   window._rcvAtts=[];
   id('dmTitle').textContent='➕ 新建入库单';
+  // V11.325 需求模块二: 目标仓库必填 + 库区/库位可选(三级库房主数据, 停用节点不展示)
+  let _wf={warehouses:[]};
+  try{_wf=await api('/warehouse/options',{noCache:true});}catch(e){}
+  window._rcvFormWh=_wf||{warehouses:[]};
+  const _wfl=(window._rcvFormWh.warehouses||[]);
   const _deptOpts=window._depts&&window._depts.length?window._depts.map(d=>`<option>${esc(d.name)}</option>`).join(''):'<option>财务部</option><option>生产部</option><option>采购与供应链部</option><option>质量管理部</option><option>综合管理部</option><option>维修车间</option>';
   id('dmBody').innerHTML=`
-    <div style="font-size:9px;color:#666;margin-bottom:4px">入库三步：①选部门 ②选物资和数量 ③提交审批（类别自动带出）</div>
-    <div style="margin-bottom:8px"><label style="font-size:10px;color:#555;display:block;margin-bottom:3px">🏷️ 归属部门 *（这批货是给哪个部门的）</label>
+    <div style="font-size:9px;color:#666;margin-bottom:4px">入库三步：①选部门 ②选目标库房 ③选物资和数量提交审批（类别自动带出）</div>
+    <div style="margin-bottom:8px"><label style="font-size:10px;color:#555;display:block;margin-bottom:3px">🏷️ 归属部门 <span style="color:#e74c3c;font-weight:700">*</span>（这批货是给哪个部门的）</label>
     <select id="rcvDept" style="width:100%;padding:6px;border:1px solid var(--b);border-radius:4px;font-size:11px"><option value="">— 请选择部门 —</option>${_deptOpts}</select></div>
+    <div style="margin-bottom:8px;background:#f4f8ff;border:1px solid #d6e4ff;border-radius:6px;padding:6px 8px;display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">
+      <label style="font-size:10px;color:#333">🎯 目标仓库 <span style="color:#e74c3c;font-weight:700">*</span>（必选）<br>
+        <select id="rcvWh" style="font-size:10px;padding:4px 6px;border:1px solid var(--b);border-radius:4px;min-width:130px" onchange="rcvFormWhChange()">${_wfl.map(w=>`<option>${esc(w.name)}</option>`).join('')||'<option value="">— 无可选仓库 —</option>'}</select></label>
+      <label style="font-size:10px;color:#333">库区<br>
+        <select id="rcvZone" style="font-size:10px;padding:4px 6px;border:1px solid var(--b);border-radius:4px;min-width:120px" onchange="rcvFormZoneChange()"></select></label>
+      <label style="font-size:10px;color:#333">库位（可选）<br>
+        <select id="rcvLoc" style="font-size:10px;padding:4px 6px;border:1px solid var(--b);border-radius:4px;min-width:150px"><option value="">— 不指定货位 —</option></select></label>
+      <span style="font-size:9px;color:#888;line-height:1.5">不选库区默认入「待验区」<br>审批通过后计入该仓库/库区/库位</span>
+    </div>
     <div style="margin-bottom:8px;background:#fff3e0;border:1px solid #f5cba7;color:#a05a12;border-radius:6px;padding:6px 10px;font-size:10px">🟠 入库统一按<b>暂估</b>提交：货到发票未到先入账；发票回来后由采购员在入库列表点【🧾发票核对】红冲，自动生成正式入库单。</div>
     <div id="rcvItemList"></div>
     <button class="btn btn-o btn-sm" style="margin-top:4px" onclick="addRcvItem()">+ 添加商品</button>
@@ -4185,6 +4245,7 @@ async function showRcvForm(){
   id('detailModal').classList.add('show');
   id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="createRcv()">提交入库审批</button>';
   addRcvItem();
+  rcvFormWhChange();   // V11.325 目标仓库→库区→库位 联动初始化
   // 部门下拉异步补全(不影响表单即时显示)
   if(!window._depts||!window._depts.length){
     try{
@@ -4256,10 +4317,32 @@ async function createRcv(){
   // V11.29: 部门必选
   const dept=(id('rcvDept')?.value||'').trim();
   if(!dept){alert('请选择归属部门（这批货是给哪个部门的）');return}
+  // V11.325 需求模块二: 目标仓库必填(不选不能提交)
+  const _wh=((id('rcvWh')||{}).value||'').trim();
+  if(!_wh){alert('请选择本次入库的「目标仓库」（必填，不选不能提交）');return}
+  const _zn=((id('rcvZone')||{}).value||'').trim()||'待验区';
+  const _loc=((id('rcvLoc')||{}).value||'').trim();
   // V11.249: 入库统一暂估(票后发票核对红冲转正式), 不再选暂估/正式
-  const r=await api('/receivings',{method:'POST',body:JSON.stringify({items,attachments:window._rcvAtts||[],dept,is_est:1})});
-  if(r.success){alert(`✅ ${r.receive_no} 已创建（待入库）。请在列表点【📤 提交审批】填写验收数量后送审；审批通过自动增加库存（🟠暂估），发票回来后做【发票核对】红冲转正式`);closeMod();loadReceivings();loadDashboard()}
+  const r=await api('/receivings',{method:'POST',body:JSON.stringify({items,attachments:window._rcvAtts||[],dept,is_est:1,warehouse:_wh,zone:_zn,location:_loc})});
+  if(r.success){alert(`✅ ${r.receive_no} 已创建（待入库）\n目标库房：${_wh} / ${_zn}${_loc?(' / '+_loc):''}\n请在列表点【📤 提交审批】填写验收数量后送审；审批通过自动增加库存（🟠暂估），发票回来后做【发票核对】红冲转正式`);closeMod();loadReceivings();loadDashboard()}
   else alert(r.error||'提交失败');
+}
+// V11.325 新建入库单: 库房/库区/库位三级联动
+function rcvFormWhChange(){
+  const o=window._rcvFormWh||{warehouses:[]};
+  const w=(o.warehouses||[]).find(x=>x.name===((id('rcvWh')||{}).value||''))||{zones:[]};
+  const zs=w.zones||[];
+  const zsel=id('rcvZone');
+  if(zsel)zsel.innerHTML=zs.length?zs.map(z=>`<option value="${esc(z.name)}">${esc(z.name)}${z.color_tag=='pending'?'（待验）':z.color_tag=='bad'?'（不合格）':''}</option>`).join(''):'<option value="待验区">待验区</option>';
+  rcvFormZoneChange();
+}
+function rcvFormZoneChange(){
+  const o=window._rcvFormWh||{warehouses:[]};
+  const w=(o.warehouses||[]).find(x=>x.name===((id('rcvWh')||{}).value||''))||{zones:[]};
+  const z=(w.zones||[]).find(x=>x.name===((id('rcvZone')||{}).value||''));
+  const ls=(z&&z.locations)||[];
+  const lsel=id('rcvLoc');
+  if(lsel)lsel.innerHTML='<option value="">— 不指定货位 —</option>'+ls.map(l=>`<option value="${esc(l.name)}">${esc(l.name)}</option>`).join('');
 }
 // ============ V11.301 库房手工应急入库(货先到、单后到) ============
 async function showManualRcvForm(){
@@ -4362,7 +4445,8 @@ async function doLinkOrder(rid){
 async function showStockReport(kind){
   window._srKind=kind;
   const isInout=kind=='inout', isScrap=kind=='scrap';
-  const q='period='+((id('srPeriod')||{}).value||'month')+'&group='+((id('srGroup')||{}).value||'dept')+'&from='+((id('srFrom')||{}).value||'')+'&to='+((id('srTo')||{}).value||'')+'&wh='+encodeURIComponent((id('srWh')||{}).value||'');
+  const q='period='+((id('srPeriod')||{}).value||'month')+'&group='+((id('srGroup')||{}).value||'dept')+'&from='+((id('srFrom')||{}).value||'')+'&to='+((id('srTo')||{}).value||'')+'&wh='+encodeURIComponent((id('srWh')||{}).value||'');
+
   fillWhSelect('srWh');
   const path = isInout?'/reports/inout-stat?'+q : (isScrap?'/reports/scrap-stat':'/reports/issue-stat?'+q);
   const r=await api(path);
@@ -4522,13 +4606,45 @@ async function showRcvBatchForm(oid){
   const canBatch=pl.some(x=>x.remaining>0.001);
   if(!canBatch){alert('无待验收余量，不能新增批次');closeMod();return}
   id('dmTitle').textContent=`📦 新增验收批次 · ${esc(d.order.order_no)}`;
+  // V11.325 需求模块二: 本次入库「目标仓库」必填 + 库区/库位可选(取自三级库房主数据, 停用节点不展示)
+  let _whOpts={warehouses:[],default_zone:'待验区'};
+  try{_whOpts=await api('/warehouse/options',{noCache:true});}catch(e){}
+  window._rcvBatchWh=_whOpts||{warehouses:[]};
+  const _whList=(window._rcvBatchWh.warehouses||[]);
   id('dmBody').innerHTML=`
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;align-items:flex-end;background:#f4f8ff;border:1px solid #d6e4ff;border-radius:6px;padding:6px 8px">
+      <label style="font-size:10px;color:#333">🎯 目标仓库 <span style="color:#e74c3c;font-weight:700">*</span>（必选）<br>
+        <select id="bqWh" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px;min-width:130px" onchange="rcvBatchWhChange()">${_whList.map(w=>`<option>${esc(w.name)}</option>`).join('')||'<option value="">— 无可选仓库 —</option>'}</select></label>
+      <label style="font-size:10px;color:#333">库区<br>
+        <select id="bqZone" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px;min-width:120px" onchange="rcvBatchZoneChange()"></select></label>
+      <label style="font-size:10px;color:#333">库位（可选）<br>
+        <select id="bqLoc" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px;min-width:150px"><option value="">— 不指定货位 —</option></select></label>
+      <span style="font-size:9px;color:#888;line-height:1.5">每一批次可单独指定库房；库区不选默认入「待验区」<br>审批通过后，本批数量计入该仓库/库区/库位</span>
+    </div>
     <div style="font-size:9px;color:#666;margin-bottom:6px">订单订 <b>${st.order_total}</b> 件，已验收入库 <b>${st.accepted}</b> 件，本批可验 <b>${st.pending}</b> 件。逐行填写本批到货验收数量（本批统一按暂估提交）。每批独立走审批，审批通过后才增加库存；未验完的数量继续挂在待验收待定。</div>
     <div style="margin-bottom:8px;background:#e8f4ff;border:1px solid #b8d8f5;color:#1a4b8f;border-radius:6px;padding:6px 10px;font-size:10px">💡 <b>注意：本批数量已默认填成"剩余待验收的全部数量"</b>。如果这次只到了一部分，请<b>手工改成实际到货数量</b>（提交前系统会再让你确认一次）。</div>
     <div style="margin-bottom:8px;background:#fff3e0;border:1px solid #f5cba7;color:#a05a12;border-radius:6px;padding:6px 10px;font-size:10px">🟠 入库统一按<b>暂估</b>提交：货到发票未到先入账；发票回来后由采购员在入库列表点【🧾发票核对】红冲，自动生成正式入库单。</div>
     <table class="tb" style="font-size:9px"><thead><tr><th>物资名称</th><th>规格</th><th>订单数量</th><th>已验收</th><th>待验收待定</th><th>本批验收数量</th></tr></thead>
     <tbody>${pl.map((x,i)=>`<tr><td>${esc(x.item_name)}</td><td>${esc(x.spec||'')}</td><td>${x.order_qty}</td><td>${x.accepted}</td><td><b style="color:${x.remaining>0?'#e65100':'#2e7d32'}">${x.remaining}</b></td><td><input type="number" style="width:76px;padding:2px 4px;border:1px solid var(--b);border-radius:3px" id="bq${i}" value="${x.remaining>0?x.remaining:''}" min="0" step="any" ${x.remaining<=0?'disabled':''}></td></tr>`).join('')}</tbody></table>`;
   id('dmFooter').innerHTML=`<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="submitRcvBatch(${oid},${pl.length})">✅ 提交本批审批</button>`;
+  rcvBatchWhChange();   // V11.325 目标仓库→库区→库位 三级联动初始化
+}
+// V11.325 库房/库区/库位三级联动(入库表单通用)
+function rcvBatchWhChange(){
+  const o=window._rcvBatchWh||{warehouses:[]};
+  const w=(o.warehouses||[]).find(x=>x.name===((id('bqWh')||{}).value||''))||{zones:[]};
+  const zs=w.zones||[];
+  const zsel=id('bqZone');
+  if(zsel)zsel.innerHTML=zs.length?zs.map(z=>`<option value="${esc(z.name)}">${esc(z.name)}${z.color_tag=='pending'?'（待验）':z.color_tag=='bad'?'（不合格）':''}</option>`).join(''):'<option value="待验区">待验区</option>';
+  rcvBatchZoneChange();
+}
+function rcvBatchZoneChange(){
+  const o=window._rcvBatchWh||{warehouses:[]};
+  const w=(o.warehouses||[]).find(x=>x.name===((id('bqWh')||{}).value||''))||{zones:[]};
+  const z=(w.zones||[]).find(x=>x.name===((id('bqZone')||{}).value||''));
+  const ls=(z&&z.locations)||[];
+  const lsel=id('bqLoc');
+  if(lsel)lsel.innerHTML='<option value="">— 不指定货位 —</option>'+ls.map(l=>`<option value="${esc(l.name)}">${esc(l.name)}</option>`).join('');
 }
 async function submitRcvBatch(oid,n){
   const items=[];
@@ -4538,23 +4654,31 @@ async function submitRcvBatch(oid,n){
     items.push({quantity:q});
   }
   if(!items.some(x=>x.quantity>0)){alert('请至少填写一行本批验收数量');return}
-  // V11.298: 提交前二次确认(避免把"剩余全量"误当本批数量提交)
+  // V11.325 需求模块二: 目标仓库必填校验(不选不能提交)
+  const _bwh=((id('bqWh')||{}).value||'').trim();
+  if(!_bwh){alert('请先选择本次入库的「目标仓库」（必填，不选不能提交）');return}
+  const _bzn=((id('bqZone')||{}).value||'').trim()||'待验区';
+  const _bloc=((id('bqLoc')||{}).value||'').trim();
+  // V11.325 需求模块一: 提交前二次确认(含"超出剩余待入库量"拦截提示)
   try{
     const _d2=await api(`/orders/${oid}`);
     const _pl=(_d2.rcv_stats&&_d2.rcv_stats.per_line)||[];
-    let _txt='', _sum=0;
+    let _txt='', _sum=0, _over=[];
     items.forEach((x,i)=>{
       _sum+=x.quantity;
       const _nm=(_pl[i]&&_pl[i].item_name)||('第'+(i+1)+'行');
       const _rm=(_pl[i]&&_pl[i].remaining)||0;
+      if(x.quantity>_rm+1e-9)_over.push(_nm+'：本次 '+x.quantity+' > 剩余待入库 '+_rm);
       _txt+='  · '+_nm+'：本批 '+x.quantity+(x.quantity===_rm?'（=剩余全部）':'（剩余 '+_rm+'）')+'\n';
     });
-    if(!confirm('请确认本批验收数量：\n'+_txt+'\n合计 '+_sum+' 件，提交后本批独立走审批。\n\n如只到货一部分，请点"取消"回去修改。')) return;
+    if(_over.length){alert('⛔ 本次入库数量超出剩余待入库数量，已被拦截：\n\n'+_over.join('\n')+'\n\n请修正本次到货数量后再提交。');return}
+    if(_pl.length&&_pl.reduce((s,x)=>s+Number(x.remaining||0),0)+1e-9<_sum){alert('⛔ 本批合计 '+_sum+' 件，超出该订单剩余待入库合计，已被拦截。请修正后再提交。');return}
+    if(!confirm('请确认本批验收数量：\n'+_txt+'\n合计 '+_sum+' 件，入库库房：'+_bwh+' / '+_bzn+(_bloc?(' / '+_bloc):'')+'\n提交后本批独立走审批。\n\n如只到货一部分，请点"取消"回去修改。')) return;
   }catch(e){ if(!confirm('确认提交本批验收？')) return; }
   // V11.249: 入库统一暂估
-  const r=await api(`/orders/${oid}/receiving-batch`,{method:'POST',body:JSON.stringify({items,is_est:1})});
-  if(r.success){alert('✅ '+r.message+'（🟠暂估）');closeMod();loadOrders();loadReceivings();loadDashboard()}
-  else alert(r.error||'提交失败');
+  const r=await api(`/orders/${oid}/receiving-batch`,{method:'POST',body:JSON.stringify({items,is_est:1,warehouse:_bwh,zone:_bzn,location:_bloc})});
+  if(r.success){alert('✅ '+r.message+'（🟠暂估）\n入库库房：'+_bwh+' / '+_bzn+(_bloc?(' / '+_bloc):''));closeMod();loadOrders();loadReceivings();loadDashboard()}
+  else alert('⛔ '+(r.error||'提交失败'));
 }
 async function loadCredits(){const c=await api('/credits');const _ctb=id('creditsTable');if(!_ctb)return;_ctb.innerHTML=groupRnder(c, r=>r.created_at,['编号','内容','金额','状态','驳回'],r=>`<td><b>${esc(r.credit_no)}</b></td><td>${esc(r.item_name)}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}</td>${rejCell(r)}`)}
 async function loadPayments(){const p=await api('/payments');id('paymentsTable').innerHTML=groupRnder(p, r=>r.created_at,['编号','类型','金额','状态','驳回','操作'],r=>`<td><b>${esc(r.payment_no)}</b></td><td>${esc(r.payment_type)}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}</td>${rejCell(r)}<td>${r.status=='已通过'?`<button class="lnk" style="color:var(--s)" onclick="doPay(${r.id})">付款</button>`:''} ${(r.status=='待审批'||r.status=='已驳回'||r.status=='草稿')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('payment',${r.id},'付款单')">🗑️删除</button>`:''}</td>`)}
@@ -4689,7 +4813,8 @@ async function loadInventory(cat){
       <td>${low?'<span class="tag" style="background:#e74c3c;color:#fff">'+((r.quantity||0)<=0?'缺货':'预警')+'</span>':over?'<span class="tag" style="background:#f39c12;color:#fff">超储</span>':'<span class="tag" style="background:#27ae60;color:#fff">正常</span>'}</td>
       <td>${low?`<button class="lnk" style="color:var(--p);font-weight:600" onclick="replenishInv(${r.id})">🛒 补货</button>`:''} ${canEditInv?`<button class="lnk" style="color:#b08900" onclick="editDoc('inventory',${r.id},'库存物资')">✏️修改</button>`:''} <button class="lnk" style="color:var(--s)" onclick="traceInv(${r.id})">🔍 溯源</button> <button class="lnk" style="color:#8e44ad" onclick="showMatImgByIdx(${idx})">📷 图片</button></td></tr>`;
   });
-  id('inventoryTable').innerHTML=h||'<div style="padding:8px;color:#999">暂无库存数据</div>';
+  id('inventoryTable').innerHTML=h||'<div style="padding:8px;color:#999">暂无库存数据</div>';
+
   renderWhCards();   // V11.323 库房卡片(显眼, 点击即筛选)
 }
 // V11.206b 库存对账勾稽弹窗(模块四4.3) — 库存账面 vs 流水勾稽, 差额标红
@@ -5007,7 +5132,8 @@ async function batchSubmitReq(){
 async function loadRequisitions(){
   const _fr=(id('reqRecvF')||{}).value||'', _fw=(id('rqFWh')||{}).value||'';
   const _qs=new URLSearchParams(); if(_fr)_qs.set('receiver',_fr); if(_fw)_qs.set('wh',_fw);
-  const r=await api('/requisitions'+(_qs.toString()?'?'+_qs:''));
+  const r=await api('/requisitions'+(_qs.toString()?'?'+_qs:''));
+
   fillWhSelect('rqFWh');
   // V11.305 领用人按行展示(同单多人), 用途列展示; 顶部可按领用人筛选
   try{ const rf=id('reqRecvF'); if(rf){ const cur=rf.value; const names=[...new Set(((r||[]).flatMap(x=>(x.receivers&&x.receivers.length)?x.receivers:[x.receiver])).filter(Boolean))]; rf.innerHTML='<option value="">全部</option>'+names.map(n=>`<option>${esc(n)}</option>`).join(''); rf.value=cur; } }catch(e){}
@@ -6026,7 +6152,8 @@ function pickWh(w){
 let RET_SRC_CACHE=[];
 async function loadReturns(){
   try{
-    const r=await api('/returns'+(id('retFWh')&&id('retFWh').value?('?wh='+encodeURIComponent(id('retFWh').value)):''),{noCache:true});
+    const r=await api('/returns'+(id('retFWh')&&id('retFWh').value?('?wh='+encodeURIComponent(id('retFWh').value)):''),{noCache:true});
+
     fillWhSelect('retFWh');
     const st=id('retStatusF')?.value||'', kw=(id('retSearchF')?.value||'').trim();
     let list=r;

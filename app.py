@@ -775,6 +775,12 @@ def init_db():
         # ---- V11.310 需求模块四.1 货位管理: 库房→货架→层/位 货位(自由文本, 建议 主库房/A架-2层-3位) ----
         ('inventory', 'location', "ALTER TABLE inventory ADD COLUMN location TEXT DEFAULT ''"),
         ('receivings', 'location', "ALTER TABLE receivings ADD COLUMN location TEXT DEFAULT ''"),
+        # ---- V11.325 需求模块二: 入库指定库房(目标仓库必填 + 库区/库位可选) ----
+        ('receivings', 'zone', "ALTER TABLE receivings ADD COLUMN zone TEXT DEFAULT ''"),
+        ('inventory', 'zone', "ALTER TABLE inventory ADD COLUMN zone TEXT DEFAULT ''"),
+        # ---- V11.325 需求模块三: 数据来源标记(历史导入数据与系统新增业务数据隔离) ----
+        ('receivings', 'data_source', "ALTER TABLE receivings ADD COLUMN data_source TEXT DEFAULT '系统'"),
+        ('inventory', 'data_source', "ALTER TABLE inventory ADD COLUMN data_source TEXT DEFAULT '系统'"),
     ]:
         _cols = [r[1] for r in conn.execute(f"PRAGMA table_info({_tbl})").fetchall()]
         if _col not in _cols:
@@ -863,6 +869,74 @@ def init_db():
             print('V11.323 库房清单已对齐现场台账')
     except Exception as _w3e:
         print('V11.323 库房清单对齐跳过:', _w3e)
+    # ---- V11.325 需求模块一: 三级库房体系(仓库-库区-库位) 结构化主数据 ----
+    #   表 warehouse_nodes: parent_id=0 为一级仓库, 二级=库区, 三级=库位; 停用节点不进业务下拉
+    try:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS warehouse_nodes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                parent_id INTEGER DEFAULT 0,
+                level INTEGER DEFAULT 1,
+                code TEXT DEFAULT '',
+                name TEXT NOT NULL,
+                wh TEXT DEFAULT '',
+                status TEXT DEFAULT '启用',
+                color_tag TEXT DEFAULT 'normal',
+                sort_no INTEGER DEFAULT 0,
+                remark TEXT DEFAULT '',
+                created_at TEXT DEFAULT (datetime('now','localtime'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_whnode_parent ON warehouse_nodes(parent_id);
+        """)
+        if not conn.execute("SELECT 1 FROM sys_config WHERE key='warehouse_nodes_v1'").fetchone():
+            if not conn.execute("SELECT COUNT(*) FROM warehouse_nodes WHERE COALESCE(level,1)=1").fetchone()[0]:
+                _l1 = _warehouses(conn)
+                _zdefs = [('待验区', 'pending', 1), ('合格区', 'ok', 2), ('不合格区', 'bad', 3)]
+                for _wi, _wn in enumerate(_l1):
+                    _wcode = 'WH%02d' % (_wi + 1)
+                    cur1 = conn.execute("""INSERT INTO warehouse_nodes(parent_id,level,code,name,wh,status,color_tag,sort_no,remark)
+                                           VALUES(0,1,?,?,?,'启用','normal',?,'')""",
+                                        (_wcode, _wn, _wn, (_wi + 1) * 10))
+                    _p1 = cur1.lastrowid
+                    _pz = None
+                    for _zn, _zc, _zs in _zdefs:
+                        cur2 = conn.execute("""INSERT INTO warehouse_nodes(parent_id,level,code,name,wh,status,color_tag,sort_no,remark)
+                                               VALUES(?,2,?,?,?,'启用',?,?,'')""",
+                                            (_p1, '%s-Z%d' % (_wcode, _zs), _zn, _wn, _zc, _zs * 10))
+                        if _zn == '合格区':
+                            _pz = cur2.lastrowid
+                    if _pz and _wn != '废旧物资库':
+                        for _k in (1, 2):
+                            conn.execute("""INSERT INTO warehouse_nodes(parent_id,level,code,name,wh,status,color_tag,sort_no,remark)
+                                            VALUES(?,3,?,?,?,'启用','normal',?,'')""",
+                                         (_pz, '%s-A01-%02d' % (_wcode, _k), 'A区-01货架-%02d层' % _k, _wn, _k * 10))
+            conn.execute("INSERT OR IGNORE INTO sys_config(key,value) VALUES('warehouse_nodes_v1','1')")
+            conn.commit()
+            print('V11.325 三级库房结构已初始化(仓库/库区/库位)')
+    except Exception as _wne:
+        print('V11.325 三级库房初始化跳过:', _wne)
+    # ---- V11.325 需求模块三: 历史导入数据标记(老库存导入的期初建账单 + 仅由期初入库形成的库存条目) ----
+    try:
+        if not conn.execute("SELECT 1 FROM sys_config WHERE key='data_source_v1'").fetchone():
+            conn.execute("""UPDATE receivings SET data_source='历史导入'
+                            WHERE COALESCE(data_source,'') IN ('', '系统')
+                              AND (receive_no LIKE 'QC%' OR COALESCE(dept,'')='期初建账')""")
+            conn.execute("""UPDATE inventory SET data_source='历史导入'
+                            WHERE COALESCE(data_source,'') IN ('', '系统')
+                              AND EXISTS (SELECT 1 FROM inventory_flows f
+                                          WHERE f.doc_type='opening' AND f.item_name=inventory.item_name
+                                            AND COALESCE(f.spec,'')=COALESCE(inventory.spec,'')
+                                            AND COALESCE(f.warehouse,'')=COALESCE(inventory.warehouse,''))
+                              AND NOT EXISTS (SELECT 1 FROM inventory_flows f2
+                                          WHERE f2.doc_type<>'opening' AND COALESCE(f2.flow_type,'')='入库'
+                                            AND f2.item_name=inventory.item_name
+                                            AND COALESCE(f2.spec,'')=COALESCE(inventory.spec,'')
+                                            AND COALESCE(f2.warehouse,'')=COALESCE(inventory.warehouse,''))""")
+            conn.execute("INSERT OR IGNORE INTO sys_config(key,value) VALUES('data_source_v1','1')")
+            conn.commit()
+            print('V11.325 历史导入数据标记完成')
+    except Exception as _dse:
+        print('V11.325 历史导入数据标记跳过:', _dse)
     # ---- V11.301 手工应急入库金额上限(超限必须领导确认): 默认2000元, 幂等补齐三机一致 ----
     try:
         if not conn.execute("SELECT 1 FROM sys_config WHERE key='manual_recv_limit'").fetchone():
@@ -2637,7 +2711,11 @@ def finish_approvals(biz_type, biz_id, result='ok', approver='飞书', approver_
             c.execute("UPDATE inquiries SET status='询价中', updated_at=? WHERE id=?", (now(), biz_id))
     if result == 'ok':
         if biz_type == 'receiving' and st == '已入库':
-            do_receiving_stock(c, biz_id)
+            # V11.325 需求模块二: 审批通过后库存必须落入本单「目标仓库/库区/库位」(此前固定落主库房)
+            _rw = c.execute("SELECT COALESCE(NULLIF(warehouse,''),'主库房') w, COALESCE(location,'') l FROM receivings WHERE id=?", (biz_id,)).fetchone()
+            do_receiving_stock(c, biz_id,
+                               warehouse=((_rw['w'] if _rw else '') or '主库房'),
+                               location=((_rw['l'] if _rw else '') or ''))
         elif biz_type == 'requisition' and st == '已出库':
             do_requisition_stock(c, biz_id)
         elif biz_type == 'supplier_return' and st == '审批通过':
@@ -6820,7 +6898,18 @@ def api_order_receiving_batch(oid):
         return jsonify({'error': '无权限：分批验收入库仅限库管员/领导使用'}), 403
     d = request.json or {}
     is_est = 1 if int(d.get('is_est', 0) or 0) == 1 else 0
+    # V11.325 需求模块二: 入库目标库房必填(库区/库位可选, 不选库区默认入「待验区」)
+    _twh = str(d.get('warehouse') or '').strip()
+    _tzn = str(d.get('zone') or '').strip()
+    _tloc = str(d.get('location') or '').strip()
+    if not _twh:
+        return jsonify({'error': '请选择本次入库的「目标仓库」（必填，不选不能提交）'}), 400
     conn = db()
+    _act = [n for n in _wh_nodes(conn, only_active=True) if int(n.get('level') or 1) == 1]
+    if _act and _twh not in [n['name'] for n in _act]:
+        conn.close(); return jsonify({'error': '目标仓库「%s」已停用或不存在，请重新选择' % _twh}), 400
+    if not _tzn:
+        _tzn = '待验区'
     po = conn.execute("SELECT * FROM purchase_orders WHERE id=?", (oid,)).fetchone()
     if not po:
         conn.close(); return jsonify({'error': '订单不存在'}), 404
@@ -6907,11 +6996,11 @@ def api_order_receiving_batch(oid):
     _first = _lines[0]
     _name = (_first['item_name'] + ' 等%d项' % len(_lines)) if len(_lines) > 1 else _first['item_name']
     rno = gen_no('RK', 'receivings', 'receive_no', conn)
-    conn.execute("""INSERT INTO receivings(receive_no,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,dept,items_json,is_est,batch_no,inspector,warehouse,trace_no)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+    conn.execute("""INSERT INTO receivings(receive_no,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,dept,items_json,is_est,batch_no,inspector,warehouse,trace_no,zone,location,data_source)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                  (rno, oid, _name, '', total_batch, _first['unit'] or '个', total_batch, '待审批', now(),
-                  f'分批验收{batch_no}·{_typ_txt}', _dept, _items_json, is_est, batch_no,
-                  session.get('user_name', ''), d.get('warehouse', '主库房'), _trace_no))
+                  f'分批验收{batch_no}·{_typ_txt}·入库库房: {_twh}/{_tzn}' + (('/' + _tloc) if _tloc else ''), _dept, _items_json, is_est, batch_no,
+                  session.get('user_name', ''), _twh, _trace_no, _tzn, _tloc, '系统'))
     rid = conn.execute("SELECT id FROM receivings WHERE receive_no=?", (rno,)).fetchone()[0]
     conn.commit()
     create_approvals('receiving', rid, 0, submitter=session['user_name'])
@@ -9337,9 +9426,13 @@ def api_receivings():
     f_type = (request.args.get('type') or '').strip()
     f_trace = (request.args.get('trace') or '').strip()
     f_wh = (request.args.get('wh') or '').strip()   # V11.323 按库房筛选
+    f_hist = (request.args.get('hist') or '').strip()   # V11.325 需求模块三: 默认不显示历史导入数据
+    f_rcv = (request.args.get('rcv_state') or '').strip()   # V11.325: 按 部分入库/全部入库完成 筛选
     conn = db()
     sql = "SELECT r.*, po.trade_mode, po.order_no, po.supplier, po.is_sealed AS order_sealed FROM receivings r LEFT JOIN purchase_orders po ON r.order_id=po.id"
     where = []; args = []
+    if not f_hist:
+        where.append("COALESCE(r.data_source,'系统')<>'历史导入'")
     if f_wh:
         where.append("COALESCE(r.warehouse,'')=?"); args.append(f_wh)
     if f_trace:
@@ -9389,6 +9482,9 @@ def api_receivings():
                 d['order_total_qty'] = _stx['order_total']       # 后台留存(分批校验用)
                 d['order_accepted_qty'] = _stx['accepted']
                 d['order_pending_qty'] = _stx['pending']         # 剩余待入库(可继续入库)
+                # V11.325 需求模块一: 单据状态 【部分入库】/【全部入库完成】(只要累计＜总量=部分入库, 不置全部完结)
+                if _stx['accepted'] > 0.001:
+                    d['rcv_state_label'] = '部分入库' if _stx['pending'] > 0.001 else '全部入库完成'
         d['item_count'] = len(items)
         d['order_sealed'] = bool(r['order_sealed']) if 'order_sealed' in r.keys() else False
         # V11.152: 有明细时列表物资名显示完整(首项+共N项)
@@ -9398,8 +9494,62 @@ def api_receivings():
             d['item_name'] = items[0]['item_name']
         d['items'] = items
         out.append(d)
+    if f_rcv:
+        _want = '全部入库完成' if f_rcv in ('全部', '全部入库完成', 'done') else '部分入库'
+        out = [x for x in out if (x.get('rcv_state_label') or '') == _want]
     conn.close()
     return jsonify(out)
+
+def _rcv_batches_data(c, rid):
+    """V11.325 需求模块一: 原始入库验收订单下的全部批次入库记录(可追溯/导出)。
+    返回订单总量/已入库/剩余待入库 + 批次台账(含目标仓库/库区/库位/审批状态)。"""
+    rn = c.execute("SELECT * FROM receivings WHERE id=?", (rid,)).fetchone()
+    if not rn:
+        return {'error': '入库单不存在', 'rows': []}
+    oid = rn['order_id']
+    order_no = ''
+    order_total = 0.0
+    if oid:
+        _po = c.execute("SELECT order_no FROM purchase_orders WHERE id=?", (oid,)).fetchone()
+        order_no = (_po['order_no'] if _po else '') or ''
+        _st = _order_rcv_stats(c, oid)
+    else:
+        _st = {'order_total': float(rn['quantity'] or 0), 'accepted': 0.0, 'pending': 0.0, 'batches': []}
+    rows = []
+    if oid:
+        for b in c.execute("SELECT * FROM receivings WHERE order_id=? ORDER BY id", (oid,)).fetchall():
+            d = dict_row(b)
+            if d.get('is_conv'):
+                continue
+            d['_qty'] = _rcv_doc_qty(d)
+            d['doc_type_txt'] = '暂估入库' if d.get('is_est') else '正式入库'
+            rows.append(d)
+    else:
+        d = dict_row(rn)
+        d['_qty'] = _rcv_doc_qty(d)
+        d['doc_type_txt'] = '暂估入库' if d.get('is_est') else '正式入库'
+        rows.append(d)
+    _done = [x for x in rows if x.get('status') == '已入库' and not x.get('is_conv')]
+    return {'order_id': oid, 'order_no': order_no, 'order_total': _st.get('order_total') or 0,
+            'accepted': _st.get('accepted') or 0, 'pending': _st.get('pending') or 0,
+            'receive_no': rn['receive_no'], 'rows': rows,
+            'state_label': ('部分入库' if (_st.get('pending') or 0) > 0.001 else '全部入库完成') if (_st.get('accepted') or 0) > 0.001 else '',
+            'batch_done': len(_done), 'batch_all': len(rows)}
+
+
+@app.route('/api/receivings/<int:rid>/batches')
+@login_required
+def api_receiving_batches(rid):
+    """V11.325 需求模块一: 入库验收详情页「批次入库记录」— 全程关联原始订单号, 可查看"""
+    if session.get('user_role') == '员工':
+        return jsonify({'error': '无权限'}), 403
+    c = db()
+    d = _rcv_batches_data(c, rid)
+    c.close()
+    if d.get('error'):
+        return jsonify(d), 404
+    return jsonify(d)
+
 
 @app.route('/api/receivings/<int:rid>/arrived', methods=['POST'])
 @login_required
@@ -9805,6 +9955,11 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
     if not _loc:
         _m = re.search(r'｜货位[:：]\s*([^｜]+)', str(rn['remark'] or ''))
         _loc = (_m.group(1).strip() if _m else '')
+    # V11.325 需求模块二: 目标库区(入库时选定, 落到库存条目 供按库区盘点)
+    _zn = ((rn['zone'] if 'zone' in rn.keys() else '') or '')
+    if not _zn:
+        _mz = re.search(r'入库库房[:：]\s*([^/｜]+)/([^/｜]+)', str(rn['remark'] or ''))
+        _zn = (_mz.group(2).strip() if _mz else '')
     # V11.303 批次溯源信息(写入库存条目: 批次号/采购订单号/入库单号)
     _ord_no = ''
     if rn['order_id']:
@@ -9958,7 +10113,7 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
             else:
                 c.execute("UPDATE purchase_orders SET status='已入库',updated_at=? WHERE id=?", (now(), rn['order_id']))
         _po_rcv_state(c, rn['order_id'])   # V11.303 订单到货状态: 全部到货 / 部分到货
-    if _loc:   # V11.310 货位回填: 本单物资若无货位则补上(仅填空, 不覆盖已有货位)
+    if _loc or _zn:   # V11.310 货位 / V11.325 库区回填: 本单物资若无货位/库区则补上(仅填空, 不覆盖已有值)
         try:
             _nms = [(rn['item_name'], rn['spec'] or '')]
             _ij = (rn['items_json'] if 'items_json' in rn.keys() else '') or ''
@@ -9966,10 +10121,14 @@ def do_receiving_stock(c, rid, warehouse='主库房', inspector='管理员', qty
                 _nms = [(x.get('item_name'), x.get('spec') or '') for x in json.loads(_ij)]
             for _n, _sp in _nms:
                 if _n:
-                    c.execute("UPDATE inventory SET location=? WHERE COALESCE(location,'')='' AND item_name=? AND (?='' OR spec=?)",
-                              (_loc, _n, _sp, _sp))
+                    if _loc:
+                        c.execute("UPDATE inventory SET location=? WHERE COALESCE(location,'')='' AND item_name=? AND (?='' OR spec=?)",
+                                  (_loc, _n, _sp, _sp))
+                    if _zn:
+                        c.execute("UPDATE inventory SET zone=? WHERE COALESCE(zone,'')='' AND item_name=? AND (?='' OR spec=?)",
+                                  (_zn, _n, _sp, _sp))
         except Exception as _le:
-            print('V11.310 货位回填跳过:', _le)
+            print('V11.310 货位/库区回填跳过:', _le)
     return total_q
 
 # ---- V6: 入库单下载(生成标准入库单 xlsx) ----
@@ -10584,12 +10743,21 @@ def api_create_receiving():
         _remark_save += '｜0价入库(废旧物资·仅记数量不计成本)' + ('｜估算数量' if _qty_est else '')
     elif _manual and _qty_est:
         _remark_save += '｜估算数量'
-    conn.execute("INSERT INTO receivings(receive_no,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,items_json,attachments,dept,is_est,est_amount,inspector,trace_no,warehouse,is_manual,manual_supplier,manual_reason,link_status,manual_ok_by,manual_ok_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    # V11.325 需求模块二: 常规入库同样「目标仓库」必填(库区/库位可选, 库区不选默认待验区)
+    _req_wh = str(d.get('warehouse') or '').strip()[:30]
+    _req_zn = str(d.get('zone') or '').strip()[:30]
+    _req_loc = str(d.get('location') or '').strip()[:40]
+    if not _manual and not _req_wh:
+        conn.close(); return jsonify({'error': '请选择本次入库的「目标仓库」（必填，不选不能提交）'}), 400
+    if not _manual and not _req_zn:
+        _req_zn = '待验区'
+    conn.execute("INSERT INTO receivings(receive_no,order_id,item_name,spec,quantity,unit,qualified_qty,status,received_at,remark,items_json,attachments,dept,is_est,est_amount,inspector,trace_no,warehouse,is_manual,manual_supplier,manual_reason,link_status,manual_ok_by,manual_ok_at,zone,location,data_source) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                  (no, d.get('order_id'), first['item_name'], first.get('spec', ''), total_q,
                   first.get('unit', '个'), 0, '待入库', now(), _remark_save,
                   json.dumps(items, ensure_ascii=False), _atts_json, _dept, _is_est, _est_amt, _inspector, _trace,
-                  (_manual_wh or str(d.get('warehouse') or '').strip()[:30] or '主库房'),
-                  1 if _manual else 0, _manual_sup, _manual_reason, ('待补关联' if _manual else ''), _manual_ok_by, _manual_ok_at))
+                  (_manual_wh or _req_wh or '主库房'),
+                  1 if _manual else 0, _manual_sup, _manual_reason, ('待补关联' if _manual else ''), _manual_ok_by, _manual_ok_at,
+                  _req_zn, _req_loc, '系统'))
     rid = conn.execute("SELECT id FROM receivings WHERE receive_no=?", (no,)).fetchone()[0]
     # 手动入库单没有 order_items, 明细暂存 remark; 审批通过时按 quantity 入库
     conn.commit()
@@ -11188,6 +11356,309 @@ def api_warehouses():
         j = {}
     return jsonify({'list': j.get('warehouses') or _warehouses(), 'rows': j.get('rows') or [],
                     'total': j.get('total') or {}, 'note': j.get('note') or ''})
+
+
+# ============ V11.325 需求模块一/二: 三级库房体系(仓库-库区-库位) 主数据 ============
+WH_COLORS = {'normal': ('正常', '#16a34a', '#dcfce7'), 'pending': ('待验', '#2563eb', '#dbeafe'),
+             'bad': ('不合格', '#dc2626', '#fee2e2'), 'off': ('停用', '#6b7280', '#f1f3f4')}
+
+
+def _wh_nodes(c, only_active=False):
+    """三级库房节点(启用优先, 按 sort_no/id 排序); 表不存在时返回空"""
+    try:
+        _sql = "SELECT * FROM warehouse_nodes"
+        if only_active:
+            _sql += " WHERE COALESCE(status,'启用')='启用'"
+        _sql += " ORDER BY COALESCE(sort_no,0), id"
+        return [dict_row(r) for r in c.execute(_sql).fetchall()]
+    except Exception:
+        return []
+
+
+def _wh_node_stats(c, nd):
+    """单个库房节点下的库存概况(条目/数量/金额/0价条目/货位数)"""
+    _lvl = int(nd.get('level') or 1)
+    _w = "COALESCE(warehouse,'')=?"
+    _a = [nd.get('wh') or nd.get('name') or '']
+    if _lvl == 2:
+        _w += " AND COALESCE(zone,'')=?"; _a.append(nd.get('name') or '')
+    elif _lvl == 3:
+        _w += " AND COALESCE(location,'')=?"; _a.append(nd.get('name') or '')
+    r = c.execute("""SELECT COUNT(*) items, COALESCE(SUM(quantity),0) qty,
+                            COALESCE(SUM(CASE WHEN COALESCE(price,0)>0 THEN quantity*price ELSE 0 END),0) amt,
+                            SUM(CASE WHEN COALESCE(price,0)=0 THEN 1 ELSE 0 END) free_items,
+                            SUM(CASE WHEN COALESCE(data_source,'系统')='历史导入' THEN 1 ELSE 0 END) hist_items
+                     FROM inventory WHERE """ + _w, _a).fetchone()
+    d = dict_row(r) if r else {}
+    return {'items': d.get('items') or 0, 'qty': float(d.get('qty') or 0), 'amt': round(float(d.get('amt') or 0), 2),
+            'free_items': d.get('free_items') or 0, 'hist_items': d.get('hist_items') or 0}
+
+
+@app.route('/api/warehouse/tree')
+@login_required
+def api_warehouse_tree():
+    """V11.325 需求模块一: 三级库房树(仓库-库区-库位) + 各节点库存概况; 支持关键词搜索(q=名称/编码)"""
+    if session.get('user_role') == '员工':
+        return jsonify({'error': '无权限'}), 403
+    c = db()
+    _all = _wh_nodes(c)
+    if not _all:
+        c.close()
+        return jsonify({'tree': [], 'note': '三级库房结构尚未初始化(重启系统后自动创建)'})
+    _kw = (request.args.get('q') or '').strip().lower()
+    _by_parent = {}
+    for nd in _all:
+        nd['children'] = []
+        _by_parent.setdefault(nd['parent_id'] or 0, []).append(nd)
+    for nd in _all:
+        if nd['children']:
+            continue
+        nd['children'] = _by_parent.get(nd['id'], [])
+    _tree = []
+    for l1 in _by_parent.get(0, []):
+        _zones = _by_parent.get(l1['id'], [])
+        l1['children'] = _zones
+        for z in _zones:
+            z['children'] = _by_parent.get(z['id'], [])
+        _tree.append(l1)
+    _zone_all = []
+    _loc_all = []
+    for l1 in _tree:
+        for z in l1['children']:
+            _zone_all.append(z)
+            for lo in z['children']:
+                _loc_all.append(lo)
+    for nd in _tree + _zone_all + _loc_all:
+        nd['stats'] = _wh_node_stats(c, nd)
+    # 搜索: 命中节点保留其父级链路
+    if _kw:
+        def _hit(nd):
+            return _kw in (str(nd.get('name') or '') + str(nd.get('code') or '')).lower()
+        _keep = []
+        for l1 in _tree:
+            _zs = []
+            for z in l1['children']:
+                _ls = [lo for lo in z['children'] if _hit(lo)]
+                if _hit(z) or _ls:
+                    z['children'] = _ls or z['children']
+                    _zs.append(z)
+            if _hit(l1) or _zs:
+                l1['children'] = _zs or l1['children']
+                _keep.append(l1)
+        _tree = _keep
+    # 一级仓库: 未分区/未分货位数量提示(老数据没填库区时不影响盘点)
+    for l1 in _tree:
+        _wh = l1.get('name') or ''
+        _z = c.execute("""SELECT COUNT(*) n FROM inventory WHERE COALESCE(warehouse,'')=? AND COALESCE(zone,'')=''""", (_wh,)).fetchone()
+        l1['no_zone_items'] = (_z['n'] if _z else 0)
+    c.close()
+    _tot = {'items': sum(x['stats']['items'] for x in _tree), 'qty': round(sum(x['stats']['qty'] for x in _tree), 3),
+            'amt': round(sum(x['stats']['amt'] for x in _tree), 2)}
+    return jsonify({'tree': _tree, 'total': _tot, 'q': _kw, 'warehouses': _warehouses(),
+                    'colors': {k: {'label': v[0], 'fg': v[1], 'bg': v[2]} for k, v in WH_COLORS.items()}})
+
+
+@app.route('/api/warehouse/node', methods=['POST'])
+@login_required
+def api_warehouse_node_save():
+    """V11.325 库房节点新增/编辑(仅库管员/系统管理员) — 仓库/库区/库位三级"""
+    if session.get('user_role') not in ('库管员', '系统管理员'):
+        return jsonify({'error': '无权限：库房主数据仅限库管员/系统管理员维护'}), 403
+    d = request.json or {}
+    _id = int(d.get('id') or 0)
+    _name = str(d.get('name') or '').strip()
+    _parent = int(d.get('parent_id') or 0)
+    if not _name:
+        return jsonify({'error': '请填写名称'}), 400
+    c = db()
+    _lvl = 1
+    if _parent:
+        _p = c.execute("SELECT * FROM warehouse_nodes WHERE id=?", (_parent,)).fetchone()
+        if not _p:
+            c.close(); return jsonify({'error': '上级节点不存在'}), 404
+        _lvl = int(_p['level'] or 1) + 1
+        if _lvl > 3:
+            c.close(); return jsonify({'error': '库房层级最多三级(仓库→库区→库位)'}), 400
+        _wh = _p['wh'] or _p['name']
+    else:
+        _wh = _name
+    _dup = c.execute("SELECT id FROM warehouse_nodes WHERE COALESCE(parent_id,0)=? AND name=? AND id<>?",
+                     (_parent, _name, _id)).fetchone()
+    if _dup:
+        c.close(); return jsonify({'error': '同一层级下已存在「%s」' % _name}), 400
+    _code = str(d.get('code') or '').strip()
+    _status = '停用' if str(d.get('status') or '').strip() == '停用' else '启用'
+    _color = str(d.get('color_tag') or '').strip() or ('pending' if _name == '待验区' else 'bad' if _name == '不合格区' else 'normal')
+    _sort = int(d.get('sort_no') or 0)
+    _remark = str(d.get('remark') or '').strip()
+    if _id:
+        c.execute("""UPDATE warehouse_nodes SET code=?, name=?, status=?, color_tag=?, sort_no=?, remark=? WHERE id=?""",
+                  (_code, _name, _status, _color, _sort, _remark, _id))
+        _lid = _id
+    else:
+        _cur = c.execute("""INSERT INTO warehouse_nodes(parent_id,level,code,name,wh,status,color_tag,sort_no,remark)
+                            VALUES(?,?,?,?,?,?,?,?,?)""", (_parent, _lvl, _code, _name, _wh, _status, _color, _sort, _remark))
+        _lid = _cur.lastrowid
+    # 一级仓库改名 → 同步库存/入库单口径(避免库存挂在不存在的库房下)
+    if _lvl == 1 and _id:
+        _old = c.execute("SELECT name, wh FROM warehouse_nodes WHERE id=?", (_id,)).fetchone()
+        _on = (_old['name'] if _old else '') or ''
+        if _on and _on != _name:
+            c.execute("UPDATE inventory SET warehouse=? WHERE COALESCE(warehouse,'')=?", (_name, _on))
+            c.execute("UPDATE receivings SET warehouse=? WHERE COALESCE(warehouse,'')=?", (_name, _on))
+            c.execute("UPDATE warehouse_nodes SET wh=? WHERE COALESCE(wh,'')=?", (_name, _on))
+            _wl = c.execute("SELECT value FROM sys_config WHERE key='warehouse_list'").fetchone()
+            _lst = [x.strip() for x in str((_wl[0] if _wl else '') or '').split(',') if x.strip()]
+            _lst = [_name if x == _on else x for x in _lst]
+            if _name not in _lst:
+                _lst.append(_name)
+            c.execute("INSERT OR REPLACE INTO sys_config(key,value) VALUES('warehouse_list',?)", (','.join(_lst),))
+    if _lvl == 1 and not _id:
+        _wl = c.execute("SELECT value FROM sys_config WHERE key='warehouse_list'").fetchone()
+        _lst = [x.strip() for x in str((_wl[0] if _wl else '') or '').split(',') if x.strip()]
+        if _name not in _lst:
+            _lst.append(_name)
+            c.execute("INSERT OR REPLACE INTO sys_config(key,value) VALUES('warehouse_list',?)", (','.join(_lst),))
+    c.commit(); c.close()
+    log(session.get('user_name', ''), '库房主数据', ('%s %s「%s」' % ('编辑' if _id else '新增', ('仓库' if _lvl == 1 else '库区' if _lvl == 2 else '库位'), _name)))
+    return jsonify({'success': True, 'id': _lid, 'level': _lvl, 'message': '%s已%s' % (_name, '更新' if _id else '创建')})
+
+
+@app.route('/api/warehouse/node/<int:nid>', methods=['DELETE'])
+@login_required
+def api_warehouse_node_delete(nid):
+    """V11.325 删除库房节点(有下级或已挂库存时禁止, 建议改为停用)"""
+    if session.get('user_role') not in ('库管员', '系统管理员'):
+        return jsonify({'error': '无权限'}), 403
+    c = db()
+    nd = c.execute("SELECT * FROM warehouse_nodes WHERE id=?", (nid,)).fetchone()
+    if not nd:
+        c.close(); return jsonify({'error': '节点不存在'}), 404
+    _kids = c.execute("SELECT COUNT(*) n FROM warehouse_nodes WHERE COALESCE(parent_id,0)=?", (nid,)).fetchone()['n']
+    if _kids:
+        c.close(); return jsonify({'error': '该节点下还有 %d 个下级，请先删除或停用下级' % _kids}), 400
+    _nm = nd['name']; _lvl = int(nd['level'] or 1); _wh = nd['wh'] or _nm
+    if _lvl == 1:
+        _u = c.execute("SELECT COUNT(*) n FROM inventory WHERE COALESCE(warehouse,'')=?", (_nm,)).fetchone()['n']
+    elif _lvl == 2:
+        _u = c.execute("SELECT COUNT(*) n FROM inventory WHERE COALESCE(warehouse,'')=? AND COALESCE(zone,'')=?", (_wh, _nm)).fetchone()['n']
+    else:
+        _u = c.execute("SELECT COUNT(*) n FROM inventory WHERE COALESCE(warehouse,'')=? AND COALESCE(location,'')=?", (_wh, _nm)).fetchone()['n']
+    if _u:
+        c.close(); return jsonify({'error': '该节点下还有 %d 条库存，不能删除；如需停用请点「停用」' % _u}), 400
+    c.execute("DELETE FROM warehouse_nodes WHERE id=?", (nid,))
+    c.commit(); c.close()
+    log(session.get('user_name', ''), '库房主数据', '删除%s「%s」' % ('仓库' if _lvl == 1 else '库区' if _lvl == 2 else '库位', _nm))
+    return jsonify({'success': True, 'message': '已删除「%s」' % _nm})
+
+
+@app.route('/api/warehouse/node/<int:nid>/toggle', methods=['POST'])
+@login_required
+def api_warehouse_node_toggle(nid):
+    """V11.325 库房节点启用/停用(停用后不进业务下拉)"""
+    if session.get('user_role') not in ('库管员', '系统管理员'):
+        return jsonify({'error': '无权限'}), 403
+    c = db()
+    nd = c.execute("SELECT * FROM warehouse_nodes WHERE id=?", (nid,)).fetchone()
+    if not nd:
+        c.close(); return jsonify({'error': '节点不存在'}), 404
+    _new = '停用' if (nd['status'] or '启用') == '启用' else '启用'
+    c.execute("UPDATE warehouse_nodes SET status=? WHERE id=?", (_new, nid))
+    if int(nd['level'] or 1) == 1:
+        _kids = c.execute("SELECT id FROM warehouse_nodes WHERE COALESCE(parent_id,0)=?", (nid,)).fetchall()
+        for k in _kids:
+            c.execute("UPDATE warehouse_nodes SET status=? WHERE id=?", (_new, k['id']))
+            for k2 in c.execute("SELECT id FROM warehouse_nodes WHERE COALESCE(parent_id,0)=?", (k['id'],)).fetchall():
+                c.execute("UPDATE warehouse_nodes SET status=? WHERE id=?", (_new, k2['id']))
+    c.commit(); c.close()
+    log(session.get('user_name', ''), '库房主数据', '%s「%s」' % (_new, nd['name']))
+    return jsonify({'success': True, 'status': _new, 'message': '「%s」已%s' % (nd['name'], _new)})
+
+
+@app.route('/api/warehouse/node/<int:nid>/move', methods=['POST'])
+@login_required
+def api_warehouse_node_move(nid):
+    """V11.325 库房节点排序: dir=up/down 上下移一位, dir=top 置顶"""
+    if session.get('user_role') not in ('库管员', '系统管理员'):
+        return jsonify({'error': '无权限'}), 403
+    d = request.json or {}
+    _dir = str(d.get('dir') or 'up')
+    c = db()
+    nd = c.execute("SELECT * FROM warehouse_nodes WHERE id=?", (nid,)).fetchone()
+    if not nd:
+        c.close(); return jsonify({'error': '节点不存在'}), 404
+    _p = int(nd['parent_id'] or 0)
+    _sibs = [dict_row(x) for x in c.execute("""SELECT * FROM warehouse_nodes WHERE COALESCE(parent_id,0)=?
+                                               ORDER BY COALESCE(sort_no,0), id""", (_p,)).fetchall()]
+    _idx = next((i for i, s in enumerate(_sibs) if s['id'] == nid), -1)
+    if _idx < 0:
+        c.close(); return jsonify({'error': '节点不存在'}), 404
+    if _dir == 'top':
+        _sibs.insert(0, _sibs.pop(_idx))
+    elif _dir == 'down' and _idx < len(_sibs) - 1:
+        _sibs[_idx], _sibs[_idx + 1] = _sibs[_idx + 1], _sibs[_idx]
+    elif _dir == 'up' and _idx > 0:
+        _sibs[_idx - 1], _sibs[_idx] = _sibs[_idx], _sibs[_idx - 1]
+    for _i, s in enumerate(_sibs, start=1):
+        c.execute("UPDATE warehouse_nodes SET sort_no=? WHERE id=?", (_i * 10, s['id']))
+    c.commit(); c.close()
+    return jsonify({'success': True, 'message': '已按新顺序排列'})
+
+
+@app.route('/api/warehouse/options')
+@login_required
+def api_warehouse_options():
+    """V11.325 需求模块二: 入库表单联动选项 — 启用中的仓库→库区→库位(停用节点不展示)"""
+    c = db()
+    _nodes = _wh_nodes(c, only_active=True)
+    _whs = [n for n in _nodes if int(n.get('level') or 1) == 1]
+    if not _whs:
+        _whs = [{'id': 0, 'name': w, 'code': '', 'level': 1} for w in _warehouses(c)]
+    out = []
+    for w in _whs:
+        _zs = [n for n in _nodes if int(n.get('level') or 1) == 2 and (n.get('parent_id') or 0) == (w.get('id') or 0)]
+        _zout = []
+        for z in _zs:
+            _ls = [n for n in _nodes if int(n.get('level') or 1) == 3 and (n.get('parent_id') or 0) == z['id']]
+            _zout.append({'id': z['id'], 'name': z['name'], 'code': z.get('code') or '',
+                          'color_tag': z.get('color_tag') or 'normal',
+                          'locations': [{'id': x['id'], 'name': x['name'], 'code': x.get('code') or ''} for x in _ls]})
+        out.append({'id': w.get('id') or 0, 'name': w['name'], 'code': w.get('code') or '',
+                    'zones': _zout})
+    c.close()
+    return jsonify({'warehouses': out, 'default_zone': '待验区',
+                    'note': '库区不选默认入「待验区」；库位不选默认不指定货位'})
+
+
+@app.route('/api/warehouse/node/<int:nid>/stock')
+@login_required
+def api_warehouse_node_stock(nid):
+    """V11.325 库房节点库存明细(库房管理页点卡片查看)"""
+    if session.get('user_role') == '员工':
+        return jsonify({'error': '无权限'}), 403
+    c = db()
+    nd = c.execute("SELECT * FROM warehouse_nodes WHERE id=?", (nid,)).fetchone()
+    if not nd:
+        c.close(); return jsonify({'error': '节点不存在'}), 404
+    _lvl = int(nd['level'] or 1)
+    _w = "COALESCE(warehouse,'')=?"; _a = [nd['wh'] or nd['name']]
+    if _lvl == 2:
+        _w += " AND COALESCE(zone,'')=?"; _a.append(nd['name'])
+    elif _lvl == 3:
+        _w += " AND COALESCE(location,'')=?"; _a.append(nd['name'])
+    rows = c.execute("""SELECT item_name, spec, unit, quantity, warehouse, COALESCE(zone,'') zone,
+                               COALESCE(location,'') location, COALESCE(price,0) price,
+                               COALESCE(data_source,'系统') data_source, COALESCE(batch_no,'') batch_no
+                        FROM inventory WHERE """ + _w + " ORDER BY quantity DESC, id DESC LIMIT 300", _a).fetchall()
+    c.close()
+    out = []
+    for r in rows:
+        d = dict_row(r)
+        if not can_see_price():
+            d['price'] = None
+        d['amount'] = round(float(d.get('quantity') or 0) * float(d.get('price') or 0), 2)
+        out.append(d)
+    return jsonify({'node': dict_row(nd), 'rows': out})
 
 
 @app.route('/api/inventory/locations')
@@ -15750,6 +16221,20 @@ def api_export():
         ws.append(['合同号', '订单', '名称', '供应商', '金额', '状态', '创建时间'])
         for r in c.execute("SELECT * FROM contracts ORDER BY id DESC"):
             ws.append([r['contract_no'], r['order_id'], r['contract_name'], r['supplier'], r['amount'], r['status'], r['created_at']])
+    elif t == 'rcv_batches':
+        # V11.325 需求模块一: 批次入库记录导出(原始入库验收订单下的全部批次, 可追溯)
+        _bd = _rcv_batches_data(c, int(request.args.get('rid') or 0))
+        ws.append(['批次入库记录 — 原始订单 %s' % (_bd.get('order_no') or _bd.get('receive_no') or '')])
+        ws.append(['订单总数', _bd.get('order_total'), '已入库数量', _bd.get('accepted'),
+                   '剩余待入库', _bd.get('pending'), '单据状态', _bd.get('state_label') or '—'])
+        ws.append([])
+        ws.append(['批次', '入库单号', '溯源编号', '入库类型', '本批入库数量', '状态', '目标仓库', '库区', '库位', '创建时间', '入库完成时间', '备注'])
+        for x in (_bd.get('rows') or []):
+            ws.append([x.get('batch_no') or '整批', x.get('receive_no'), x.get('trace_no') or '',
+                       x.get('doc_type_txt') or '', x.get('_qty'), x.get('status') or '',
+                       x.get('warehouse') or '', x.get('zone') or '', x.get('location') or '',
+                       (x.get('created_at') or '')[:19], (x.get('completed_at') or '')[:19], x.get('remark') or ''])
+        ws.column_dimensions['B'].width = 18; ws.column_dimensions['L'].width = 30
     else:
         ws.append(['名称', '联系人', '电话', '类别', '评级'])
         for r in c.execute("SELECT * FROM suppliers ORDER BY id"):
