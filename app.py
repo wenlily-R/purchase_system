@@ -21935,7 +21935,7 @@ if __name__ == '__main__':
 ║  飞书回调: http://<公网地址>:{port}/api/feishu/callback  ║
 ╚══════════════════════════════════════════════════╝
 """)
-    app.run(host='0.0.0.0', port=port, debug=False)  # 0.0.0.0=局域网可直连(李总等同事可用 http://本机IP:5899)
+    app.run(host='0.0.0.0', port=port, debug=False, threaded=True)  # V11.327: 开启多线程(原单线程致多人并发时请求排队、整体变慢); 0.0.0.0=局域网可直连(李总等同事可用 http://本机IP:5899)
 
 
 @app.route('/api/_debug')
