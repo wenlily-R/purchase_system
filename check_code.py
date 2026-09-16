@@ -19,6 +19,7 @@ import os
 BASE = os.path.dirname(os.path.abspath(__file__))
 APP = os.path.join(BASE, 'app.py')
 HTML = os.path.join(BASE, 'templates', 'index.html')
+APPJS = os.path.join(BASE, 'static', 'app.js')  # V11.331b: 前端脚本已拆分到独立文件
 
 # V11.272修复: Windows 下被守护脚本以管道(PIPE)调用时, stdout 编码为 GBK(cp936),
 # 打印 ✅/❌ 等符号会抛 UnicodeEncodeError 导致脚本非零退出 → 守护误判"自检未通过"而拒绝重启, 本机服务长期挂掉。
@@ -146,6 +147,12 @@ try:
         for s in scripts:
             f.write(s + '\n')
     r = subprocess.run(['node', '--check', tmp], capture_output=True, text=True, timeout=30)
+    if os.path.exists(APPJS):
+        r2 = subprocess.run(['node', '--check', APPJS], capture_output=True, text=True, timeout=30)
+        if r2.returncode != 0:
+            err(f'static/app.js JS 语法错误: {r2.stderr[:300]}')
+        else:
+            ok('static/app.js JS 语法正确')
     if r.returncode == 0:
         ok('index.html JS 语法正确')
     else:

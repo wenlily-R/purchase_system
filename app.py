@@ -8398,6 +8398,17 @@ def _inq_no_store(resp):
 
 
 @app.after_request
+def _static_cache(resp):
+    """V11.331b: /static/app.js 带构建号查询串, 可长缓存(改版后URL变化自动取新); 其余静态资源保持默认校验"""
+    try:
+        if request.path.startswith('/static/') and request.args.get('v'):
+            resp.headers['Cache-Control'] = 'public, max-age=604800'
+    except Exception:
+        pass
+    return resp
+
+
+@app.after_request
 def _gz_compress(resp):
     """V11.331 传输压缩(应急修复"公网首页加载不全导致所有人进不去"):
     现象: 首页 index.html 约 873KB, 经公网隧道传输时反复被截断(实测只到 188~435KB), 浏览器脚本加载不完整 →
@@ -12727,6 +12738,18 @@ def api_feishu_instances():
 # V11.239: 版本探测端点 — 返回当前部署的 git HEAD(短哈希), 供双机自动部署核验: 推送到GitHub后, 刷 http://<公网>/api/version 看到新提交号即=Mac已同步生效
 import subprocess as _sp
 _version_cache = {'t': 0.0, 'sha': '', 'date': ''}
+
+
+def _cur_build():
+    """V11.331b: 取当前构建号(短哈希) — 首页给 /static/app.js 带版本查询串用, 保证脚本随构建刷新"""
+    try:
+        if time.time() - _version_cache['t'] > 30:
+            _r = _sp.run(['git', 'rev-parse', '--short', 'HEAD'], cwd=BASE, capture_output=True, text=True, timeout=10)
+            _version_cache['sha'] = (_r.stdout or '').strip() or 'dev'
+            _version_cache['t'] = time.time()
+    except Exception:
+        pass
+    return _version_cache['sha'] or 'dev'
 @app.route('/api/version')
 def api_version():
     if time.time() - _version_cache['t'] > 30:
@@ -20682,10 +20705,41 @@ def api_settings_notice_publishers():
 def test_login():
     return render_template('test_login.html')
 
+@app.route('/app.js')
+def _serve_appjs():
+    """V11.331b: 前端主脚本(约780KB)专用出口 — 显式 gzip 到约170KB, 带构建号可长缓存。
+    走专用路由而不是 /static/ 是因为静态文件是文件直通响应, 压缩中间件不生效。"""
+    import gzip as _gzip
+    try:
+        data = open(os.path.join(BASE, 'static', 'app.js'), 'rb').read()
+    except Exception as _e:
+        return make_response('/* app.js 读取失败: %s */' % _e, 500)
+    _gz = 'gzip' in (request.headers.get('Accept-Encoding') or '').lower()
+    if _gz:
+        out = _gzip.compress(data, 6)
+        resp = make_response(out)
+        resp.headers['Content-Encoding'] = 'gzip'
+    else:
+        out = data
+        resp = make_response(out)
+    resp.headers['Content-Type'] = 'application/javascript; charset=utf-8'
+    resp.headers['Content-Length'] = str(len(out))
+    resp.headers['Vary'] = 'Accept-Encoding'
+    resp.headers['Cache-Control'] = 'public, max-age=604800' if request.args.get('v') else 'no-cache'
+    return resp
+
+
+@app.route('/static/app.js')
+def _serve_appjs_compat():
+    """兼容旧地址 /static/app.js(已缓存的老页面可能会来取) → 同一个出口"""
+    return _serve_appjs()
+
+
 @app.route('/')
 def login_page():
     # V8.0: 禁用页面缓存 — 每次访问强制最新版本, 避免旧JS导致按钮失灵
-    resp = make_response(render_template('index.html'))
+    # V11.331b: 页面脚本已拆到 /static/app.js(带构建号查询串), 首页由 873KB 降到约 100KB, 避免隧道传输被截断
+    resp = make_response(render_template('index.html', appver=_cur_build()))
     resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     resp.headers['Pragma'] = 'no-cache'
     resp.headers['Expires'] = '0'
