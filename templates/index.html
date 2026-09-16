@@ -3188,10 +3188,12 @@ function exportXls(type){window.open('/api/export?type='+type,'_blank')}
 
 // Approvals Center (需求44: 按流程类型分类分页展示, 类型彩色标签+数量徽标+发起时间)
 let APPR_FILTER='';
-const APPR_TM={purchase_request:['📝采购申请','#2f6fed'],purchase_order:['📋订单','#e8890c'],inquiry_approval:['🔍比价单','#8e44ad'],contract:['📄合同','#0aa574'],credit:['📑挂账','#b08900'],payment:['💰付款','#d64541'],receiving:['📦入库','#7b5bdb'],collect_accept:['👥集体验收','#16a34a'],repair_plan:['🔧维修','#e67e22'],requisition:['📤出库','#00a896'],return_request:['↩️退库','#e67e22']};
+const APPR_TM={purchase_request:['📝采购申请','#2f6fed'],purchase_order:['📋订单','#e8890c'],inquiry_approval:['🔍比价单','#8e44ad'],contract:['📄合同','#0aa574'],credit:['📑挂账','#b08900'],payment:['💰付款','#d64541'],receiving:['📦入库','#7b5bdb'],collect_accept:['👥集体验收','#16a34a'],repair_plan:['🔧维修','#e67e22'],requisition:['📤出库','#00a896'],return_request:['↩️退库','#e67e22'],
+  // V11.327 应急紧急采购专项通道(独立审批链)
+  emergency_temp:['⚡应急-临时审批','#e65100'],emergency_formal:['⚡应急-正式审批','#c62828'],emergency_finance:['⚡应急-财务复核','#0891b2'],emergency_extend:['⚡应急-延期审批','#7c3aed']};
 let APPR_CENTER='buy';  // V11.221: 审批中心双中心 buy=采购 / repair=维修
 const APPR_CENTER_TABS={
-  buy:[['','全部'],['purchase_request','📝采购申请'],['inquiry_approval','🔍比价单'],['contract','📄合同'],['receiving','📦入库'],['collect_accept','👥集体验收'],['requisition','📤出库'],['return_request','↩️退库'],['payment','💰付款'],['rejected','❌未通过']],
+  buy:[['','全部'],['purchase_request','📝采购申请'],['inquiry_approval','🔍比价单'],['contract','📄合同'],['receiving','📦入库'],['collect_accept','👥集体验收'],['requisition','📤出库'],['return_request','↩️退库'],['payment','💰付款'],['emergency_temp','⚡应急-临时审批'],['emergency_formal','⚡应急-正式审批'],['emergency_finance','⚡应急-财务复核'],['emergency_extend','⚡应急-延期审批'],['rejected','❌未通过']],
   repair:[['','全部'],['repair_req','🛠维修申请'],['repair_plan','🔧存量定损'],['rejected','❌未通过']]
 };
 const APPR_REPAIR_TYPES=['repair_plan'];  // 维修中心旧类型(存量定损单)
@@ -3423,7 +3425,8 @@ async function showChain(bt,bid){
   const ns=d.nodes||[];
   if(!ns.length){id('dmBody').innerHTML='<div style="padding:20px;color:#888;font-size:11px">该单据未关联采购申请链路（独立单）。</div>';return}
   const ICON={purchase_request:'📝',inquiry:'🔍',purchase_order:'📦',contract:'📄',receiving:'📥',payment:'💳'};
-  const OPEN={purchase_request:'showPRequest',inquiry:'showInquiry',purchase_order:'showOrder',contract:'showContract',receiving:'showRcvDetail'};
+  const OPEN={purchase_request:'showPRequest',inquiry:'showInquiry',purchase_order:'showOrder',contract:'showContract',receiving:'showRcvDetail',
+    emergency_temp:'emgDetail',emergency_formal:'emgDetail',emergency_finance:'emgDetail',emergency_extend:'emgDetail'};
   let rows=ns.map(n=>{
     const cur=(n.type==bt&&n.id==bid);
     const btn=OPEN[n.type]?`<button class="lnk" onclick="${OPEN[n.type]}(${n.id})">查看 ↗</button>`:'';
@@ -6598,6 +6601,7 @@ async function emgConvert(eid){
   const r=await api('/emergency/'+eid+'/convert',{method:'POST',body:JSON.stringify({})});
   if(r.success){alert('✅ '+r.message);loadEmergency();loadReceivings();}else alert('⛔ '+(r.error||'转正失败'));
 }
+function emgOpenOrder(oid){ closeMod(); try{ showOrder(oid); }catch(e){ alert('打开订单失败：'+e.message) } }
 // ---- 详情(阶段条 + 时间轴留痕) ----
 async function emgDetail(eid){
   id('dmTitle').textContent='⚡ 应急采购详情';
@@ -6625,6 +6629,11 @@ async function emgDetail(eid){
       <dt>价格偏差</dt><dd>${d.price_ref?`基准¥${d.price_ref} · 偏差${d.price_dev_pct}%`:'—'}${d.price_note?`<div style="font-size:8px;color:#666">价格说明：${esc(d.price_note)}</div>`:''}</dd>
     </div></div>`;
   if(d.status=='已锁定')h+=`<div style="margin-top:6px;background:#fee2e2;border:1px solid #f5c2c2;color:#c62828;border-radius:6px;padding:6px 10px;font-size:10px">🔒 已锁单：${esc(d.lock_reason||'超期未补齐资料')}（不影响已入库库存，但禁止新增领料/转正/付款；可申请延期1次解锁）</div>`;
+  if(d.price_warn&&d.status!='已闭环')h+=`<div style="margin-top:6px;background:#fff3e0;border:1px solid #f5cba7;color:#a05a12;border-radius:6px;padding:6px 10px;font-size:10px">⚠️ 价格异常提醒：本单单价高于基准价 ${d.price_dev_pct}%（基准 ¥${d.price_ref}/单位，报价 ¥${d.quote_amt||''}），正式审批必须填写价格说明${d.price_note?'（已填）':'（<b>未填，提交时会被拦截</b>）'}</div>`;
+  if(d.linked_order_no||d.linked_contract_no||d.temp_receive_no)h+=`<div style="margin-top:6px;font-size:9.5px;color:#555">关联单据：`
+    +(d.temp_receive_no?`临时入库单 <button class="lnk" onclick="closeMod();showRcvDetail(${d.temp_receive_id})">${esc(d.temp_receive_no)}</button>　`:'')
+    +(d.linked_order_no?(d.linked_order_id?`正式采购单 <button class="lnk" onclick="emgOpenOrder(${d.linked_order_id})">${esc(d.linked_order_no)}</button>　`:`正式采购单 ${esc(d.linked_order_no)}（未匹配到订单，请核对单号）　`):'')
+    +(d.linked_contract_no?`合同号 ${esc(d.linked_contract_no)}`:'' )+`</div>`;
   if(d.reason)h+=`<div style="font-size:9.5px;color:#555;margin-top:6px">紧急事由：${esc(d.reason)}</div>`;
   const _att=(a)=>{try{return JSON.parse(a||'[]')}catch(e){return[]}};
   const _init=_att(d.attachments); if(_init.length)h+=`<div style="font-size:9px;color:#666;margin-top:4px">申请附件：${_init.map(p=>`<a href="/uploads/${esc(p)}" target="_blank">${esc(p.split('_').pop().slice(-18))}</a>`).join(' / ')}</div>`;
@@ -7790,10 +7799,19 @@ function reqTypeTip(){
 }
 function reqTypeChanged(fromUser){
   const t=id('fReqType')?.value||'物资采购';
-  // V11.327: 选「⚡应急紧急采购」→ 直接转到应急紧急采购专项流程表单(字段不同, 不走常规申请)
+  // V11.327: 选「⚡应急紧急采购」→ 弹窗合规提示(需求: 选择本流程须弹窗提示), 确认后转到应急专项表单
   if(t=='应急紧急采购'){
     id('fReqType').value='物资采购';
-    if(fromUser){ closeMod(); emgNew(); }
+    if(fromUser){
+      const go=confirm('⚡ 应急紧急采购 专项通道提示\n\n'+
+        '1. 仅限：工地抢险、存在停工风险的急用物资；\n'+
+        '2. 不适用：大额主材及可正常排期的常规需求；\n'+
+        '3. 禁止：拆分成多单规避金额管控（系统自动校验并拦截）；\n'+
+        '4. 超上限金额（默认¥20000）系统直接禁用本通道；\n'+
+        '5. 流程：先临时审批→采购→临时入库即可领用，合同发票等资料后置补全（3个工作日），超时自动锁单，逾期只能延期1次。\n\n'+
+        '确认符合上述条件并继续填写？（确定=打开应急采购申请）');
+      if(go){ closeMod(); emgNew(); }
+    }
     return;
   }
   REQ_MODE=(t=='设备维修')?'rep':'mat';
@@ -9709,7 +9727,8 @@ async function tqSearch(){
 }
 async function tqGoto(biz,bid){
   // 关联跳转: 打开对应业务详情(复用各模块查看函数); 无详情函数类型弹行数据
-  const map={'purchase_request':'showPRequest','purchase_order':'showOrder','receiving':'showRcvDetail','requisition':'showRequisitionDetail','return_request':'showReturnDetail','repair_plan':'showRepairDetail','repair_change':'showPRequest','repair_direct':'showPRequest','contract':'showContract','inquiry':'showInquiry'};
+  const map={'purchase_request':'showPRequest','purchase_order':'showOrder','receiving':'showRcvDetail','requisition':'showRequisitionDetail','return_request':'showReturnDetail','repair_plan':'showRepairDetail','repair_change':'showPRequest','repair_direct':'showPRequest','contract':'showContract','inquiry':'showInquiry',
+    'emergency_temp':'emgDetail','emergency_formal':'emgDetail','emergency_finance':'emgDetail','emergency_extend':'emgDetail'};
   const fn=map[biz];
   if(fn&&typeof window[fn]==='function'){try{await window[fn](bid);return}catch(e){}}
   // 降级: 展示原始行

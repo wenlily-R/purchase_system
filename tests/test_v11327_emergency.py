@@ -243,13 +243,20 @@ finally:
     c.execute("DELETE FROM inventory_flows WHERE item_name LIKE ?", (TAG + '%',))
     c.execute("DELETE FROM purchase_orders WHERE item_name LIKE ?", (TAG + '%',))
     c.execute("DELETE FROM purchase_orders WHERE order_no LIKE ?", (TAG + '%',))
+    for _pr in c.execute("SELECT id FROM payment_requests WHERE supplier LIKE ?", (TAG + '%',)).fetchall():
+        for _t in ('approval_instances', 'dingtalk_instances', 'approval_action_logs'):
+            c.execute("DELETE FROM %s WHERE biz_type='payment' AND biz_id=?" % _t, (_pr[0],))
+        c.execute("DELETE FROM notifications WHERE biz_type='payment' AND biz_id=?", (_pr[0],))
     c.execute("DELETE FROM payment_requests WHERE supplier LIKE ?", (TAG + '%',))
+    # 清理本次测试产生的孤儿付款审批实例(付款单已删、实例残留; 仅限今天生成, 不动历史数据)
+    c.execute("""DELETE FROM approval_instances WHERE biz_type='payment' AND status='pending'
+                  AND biz_id NOT IN (SELECT id FROM payment_requests) AND substr(created_at,1,10)=date('now','localtime')""")
     c.execute("DELETE FROM requisitions WHERE item_name LIKE ?", (TAG + '%',))
     c.execute("DELETE FROM requisition_items WHERE item_name LIKE ?", (TAG + '%',))
     c.execute("DELETE FROM alert_items WHERE alert_type='emg_freq'")
     c.execute("DELETE FROM alert_items WHERE alert_type='emg_locked'")
     c.execute("DELETE FROM reminder_log WHERE rule LIKE 'emg%'")
-    c.execute("UPDATE sys_config SET value=? WHERE key='dingtalk_enabled'", (_old,))
+    c.execute("UPDATE sys_config SET value=? WHERE key='dingtalk_enabled'", (_old or '1',))  # 兜底: 历史值缺失/异常时恢复为开启
     c.commit()
     _l1 = c.execute("SELECT COUNT(*) FROM emergency_purchases WHERE project LIKE ? OR item_name LIKE ?", (TAG + '%', TAG + '%')).fetchone()[0]
     _l2 = c.execute("SELECT COUNT(*) FROM inventory WHERE item_name LIKE ?", (TAG + '%',)).fetchone()[0]

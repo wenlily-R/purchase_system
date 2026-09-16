@@ -16531,6 +16531,11 @@ def api_emergency_detail(eid):
         d['docs'] = {}
     _rv = c.execute("SELECT * FROM receivings WHERE id=?", (d.get('temp_receive_id') or 0,)).fetchone()
     d['temp_receive'] = dict_row(_rv) if _rv else None
+    # V11.327 需求: 单据关联穿透 — 正式采购单按单号反查订单id, 前端点单号直达订单详情
+    d['linked_order_id'] = 0
+    if (d.get('linked_order_no') or '').strip():
+        _po = c.execute("SELECT id FROM purchase_orders WHERE order_no=?", (d['linked_order_no'].strip(),)).fetchone()
+        d['linked_order_id'] = _po['id'] if _po else 0
     d['doc_keys'] = [{'key': k, 'label': v} for k, v in EMG_DOC_KEYS]
     c.close()
     return jsonify(d)
@@ -17025,6 +17030,16 @@ def emergency_sweep():
                               ('项目应急采购频次超限：%s' % r['project'],
                                '%s 月度应急采购 %d 次（阈值 %d 次），合计 ¥%s。请核查是否常态化使用应急通道，需走常规采购。'
                                % (r['project'], r['n'], _N, round(float(r['amt'] or 0), 2)), now(), now()))
+                except Exception:
+                    pass
+                # V11.327 需求: 频次预警直接推送事业部(分管领导/总经理)钉钉 + 系统通知
+                try:
+                    for _u in c.execute("SELECT id,dingtalk_userid FROM users WHERE role IN ('分管领导','总经理') AND is_active=1").fetchall():
+                        if _u['dingtalk_userid']:
+                            dt_send_todo([_u['dingtalk_userid']], '🚨 项目应急采购频次预警',
+                                         '项目 %s 本月应急采购 %d 次（阈值 %d 次），合计 ¥%s。请核查是否常态化使用应急通道，应引导走常规采购。'
+                                         % (r['project'], r['n'], _N, round(float(r['amt'] or 0), 2)),
+                                         biz_type='emergency', biz_id=0, operator='系统')
                 except Exception:
                     pass
                 emergency_log(c, 0, '频次预警', '系统', '项目%s 本月应急 %d 次(阈值%d)' % (r['project'], r['n'], _N))
