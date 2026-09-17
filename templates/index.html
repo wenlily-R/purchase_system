@@ -410,7 +410,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
 </div>
 <div class="page" id="pprequests"><h2>📝 采购申请 <span style="font-size:10px;color:#999;font-weight:normal">(📦物资采购 / 🔧设备维修 统一入口)</span></h2>
   <div id="preqMat">
-    <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap"><button class="btn btn-p btn-sm" style="margin-left:auto" onclick="showForm('prequest')">+ 新建采购申请（物资/维修）</button><button class="btn btn-p btn-sm" style="background:#e65100;border-color:#e65100" onclick="emgNew()" title="工地抢险/停工待料的急用物资：先临时审批→采购→临时入库领用，资料后补转正">⚡ 应急紧急采购</button><button class="btn btn-o btn-sm" onclick="showFlowChart('purchase')">📊 采购流程图示</button><button class="btn btn-o btn-sm" style="color:#8a4b0f;border-color:#d9a05b" onclick="showFlowChart('repair')">🔧 维修流程图示</button><button class="btn btn-o btn-sm" style="color:#e65100;border-color:#f0a870" onclick="showFlowChart('emg')">⚡ 应急采购流程</button><button class="btn btn-o btn-sm" style="color:#0f7b6c;border-color:#7cc3b8" onclick="showFlowChart('stock')">📦 库房流程图示</button><button class="btn btn-w btn-sm" onclick="showAddCart()">🛒 加购下单(汇总已通过申请)</button><button class="btn btn-o btn-sm" style="color:#1f6feb;border-color:#9dc0f0" onclick="showRepairLedger()">🔧 维修记录</button></div>
+    <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap"><button class="btn btn-p btn-sm" style="margin-left:auto" onclick="showForm('prequest')">+ 新建采购申请（物资/维修）</button><button class="btn btn-p btn-sm" style="background:#e65100;border-color:#e65100" onclick="emgNew()" title="工地抢险/停工待料的急用物资：先临时审批→采购→临时入库领用，资料后补转正">⚡ 应急紧急采购</button><button class="btn btn-o btn-sm" onclick="showFlowChart('purchase')">📊 采购流程图示</button><button class="btn btn-o btn-sm" style="color:#8a4b0f;border-color:#d9a05b" onclick="showFlowChart('repair')">🔧 维修流程图示</button><button class="btn btn-o btn-sm" style="color:#e65100;border-color:#f0a870" onclick="showFlowChart('emg')">⚡ 应急采购流程</button><button class="btn btn-w btn-sm" onclick="showAddCart()">🛒 加购下单(汇总已通过申请)</button><button class="btn btn-o btn-sm" style="color:#1f6feb;border-color:#9dc0f0" onclick="showRepairLedger()">🔧 维修记录</button></div>
     <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap"><select id="reqTypeFilter" onchange="loadPRequests()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="" selected>全部类型</option><option value="物资采购">📦 物资采购</option><option value="设备维修">🔧 设备维修</option></select><select id="reqStatusFilter" onchange="loadPRequests()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="">全部状态</option><option>草稿</option><option>待审批</option><option>已通过</option><option>已下单</option><option>已驳回</option><option>已作废</option></select><select id="reqStageFilter" onchange="loadPRequests()" style="font-size:10px;padding:3px 6px;border:1px solid var(--b);border-radius:4px"><option value="">全部阶段</option><option>待厂家定损</option><option>已定损待询价</option><option>询价中</option><option>待定标</option><option>定标审批中</option><option>已委托</option><option>维修中</option><option>已完工</option><option>已作废</option></select><span style="font-size:9px;color:#999">类型/状态/阶段可叠加（阶段仅维修单有效）；🛠=维修 📦=物资</span></div>
     <div class="card"><div class="cb" id="prequestsTable"><div class="loading">加载中...</div></div></div>
   </div>
@@ -479,7 +479,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
   <div class="card"><div class="cb" id="emgAllocLogBox"><div class="loading">加载中...</div></div></div>
 </div>
 <div class="page" id="ppayments"><h2>💰 付款申请</h2><div style="margin-bottom:4px"><button class="btn btn-p btn-sm" onclick="showForm('payment')">+ 付款申请</button></div><div class="card"><div class="cb" id="paymentsTable"><div class="loading">加载中...</div></div></div></div>
-<div class="page" id="prequisitions"><h2>📤 出库管理</h2>
+<div class="page" id="prequisitions"><h2>📤 出库管理 <button class="btn btn-o btn-sm" style="float:right;margin-top:-2px;color:#0f7b6c;border-color:#7cc3b8" onclick="showFlowChart('stock')">📦 库房流程图示</button></h2>
   <div class="tabs" id="reqTabs">
     <button class="act" data-z="inv" onclick="reqTab('inv')">📦 库存商品出库</button>
     <button data-z="list" onclick="reqTab('list')">📋 出库记录</button>
@@ -507,7 +507,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
 <div class="card"><div class="cb" id="reqListBox"><div class="loading">加载中...</div></div></div>
   </div>
 </div>
-<div class="page" id="preturns"><h2>↩️ 退库管理 <span style="font-size:10px;color:#999;font-weight:normal">(领用物资退回仓库)</span></h2>
+<div class="page" id="preturns"><h2>↩️ 退库管理 <span style="font-size:10px;color:#999;font-weight:normal">(领用物资退回仓库)</span> <button class="btn btn-o btn-sm" style="float:right;margin-top:-2px;color:#0f7b6c;border-color:#7cc3b8" onclick="showFlowChart('stock')">📦 库房流程图示</button></h2>
   <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap">
     <span style="font-size:9px;color:#666">已领用的物资用不完/错领 → 关联原出库单做退库；审批通过后由仓库实物清点确认，确认后才增加库存。</span>
     <button class="btn btn-p btn-sm" style="margin-left:auto" onclick="showReturnForm()">➕ 新建退库单</button>
@@ -523,7 +523,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
   </div>
   <div class="card"><div class="cb" id="returnsTable"><div class="loading">加载中...</div></div></div>
 </div>
-<div class="page" id="pcounts"><h2>📋 库存盘点</h2>
+<div class="page" id="pcounts"><h2>📋 库存盘点 <button class="btn btn-o btn-sm" style="float:right;margin-top:-2px;color:#0f7b6c;border-color:#7cc3b8" onclick="showFlowChart('stock')">📦 库房流程图示</button></h2>
   <div class="card" id="countListCard" style="display:none"><div class="ch"><h3>盘点记录</h3></div>
     <div class="cb" id="countListBox"><div class="loading">加载中...</div></div></div>
   <div class="card"><div class="ch"><h3>新建盘点</h3></div>
@@ -533,7 +533,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
   <div class="card"><div class="ch"><h3>⚠️ 报溢/报损（V11.34 库存账实相符）</h3><button class="btn btn-p btn-sm" onclick="showAdjForm()">➕ 手动报溢/报损</button></div>
     <div class="cb" id="adjListBox"><div class="loading">加载中...</div></div></div>
 </div>
-<div class="page" id="pwarehouses"><h2>🏢 库房管理（仓库 - 库区 - 库位）</h2>
+<div class="page" id="pwarehouses"><h2>🏢 库房管理（仓库 - 库区 - 库位） <button class="btn btn-o btn-sm" style="float:right;margin-top:-2px;color:#0f7b6c;border-color:#7cc3b8" onclick="showFlowChart('stock')">📦 库房流程图示</button></h2>
   <div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap;align-items:center">
     <span style="font-size:9px;color:#666">三级结构：<b>仓库 → 库区 → 库位</b>；「停用」的仓库/库区不再出现在入库下拉里；卡片颜色区分状态（绿=正常 蓝=待验 红=不合格 灰=停用）</span>
     <input class="fc" id="whTreeSearch" placeholder="🔍 搜索仓库名称/编码" style="width:170px" oninput="loadWhTree()">
@@ -570,7 +570,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
   <div class="card"><div class="ch"><h3>费用记录</h3><button class="btn btn-p btn-sm" onclick="showExpenseForm()">+ 新增费用</button></div>
     <div class="cb" id="expListBox"><div class="loading">加载中...</div></div></div>
 </div>
-<div class="page" id="pinventory"><h2>📦 库存管理</h2>
+<div class="page" id="pinventory"><h2>📦 库存管理 <button class="btn btn-o btn-sm" style="float:right;margin-top:-2px;color:#0f7b6c;border-color:#7cc3b8" onclick="showFlowChart('stock')">📦 库房流程图示</button></h2>
   <div style="margin-bottom:4px;display:flex;gap:4px;flex-wrap:wrap;align-items:center">
     <select class="fc" id="invCatFilter" style="width:130px" onchange="invFilterCat()"><option value="">全部分类</option></select>
     <select class="fc" id="invWhFilter" style="width:120px" onchange="invFilterCat()"><option value="">全部库房</option></select>
