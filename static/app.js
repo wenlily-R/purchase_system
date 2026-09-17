@@ -1236,6 +1236,8 @@ async function loadInquiries(){
   let list=rows;
   if(_fT) list=list.filter(x=>((x.req_type||'物资采购')===_fT));
   if(_fS) list=list.filter(x=>(x.status||'')===_fS);
+  const _fE=id('ctEmgFilter')?.value||'';
+  if(_fE==='1') list=list.filter(x=>x.is_emg); else if(_fE==='0') list=list.filter(x=>!x.is_emg);
   id('inquiriesTable').innerHTML=groupRnder(list, r=>r.created_at,
     ['询价单号','类型','申请单号','采购事由','供应商数','已报价','最低报价','状态','审批状态','操作'],
     r=>{
@@ -1811,13 +1813,14 @@ async function selectInquirySupplier(iid,sid){
 // V11.272: 订单页筛选(类型/状态下拉) — 与采购申请页头部形态保持一致(用户要求)
 async function loadOrders(){
   const o=await api('/orders');
-  const tf=(id('ordTypeFilter')||{}).value||'', sf=(id('ordStatusFilter')||{}).value||'';
+  const tf=(id('ordTypeFilter')||{}).value||'', sf=(id('ordStatusFilter')||{}).value||'', ef=(id('ordEmgFilter')||{}).value||'';
   const rep=o.filter(x=>x.req_type=='设备维修'), mat=o.filter(x=>x.req_type!='设备维修');
   const tip=id('ordTip'); if(tip)tip.style.display=(tf==='设备维修')?'':'none';
   const nb=id('ordNewBtn'); if(nb)nb.style.display=(tf==='设备维修')?'none':'';
   let list=o;
   if(tf==='设备维修')list=rep; else if(tf==='物资采购')list=mat;
   if(sf)list=list.filter(x=>(x.status||'')===sf);
+  if(ef==='1')list=list.filter(x=>x.is_emg); else if(ef==='0')list=list.filter(x=>!x.is_emg);
   id('ordersTable').innerHTML=groupRnder(list, r=>r.created_at,['单号','物资','供应商','模式','金额','状态','采购进度','驳回','操作'],
     r=>{
       // 采购进度：根据items状态计算; V11.258: 维修委托订单=完工登记进度
@@ -1830,7 +1833,7 @@ async function loadOrders(){
       // V11.303 到货状态(分批入库强化): 全部到货 / 部分到货
       const rcvTag = (r.req_type!='设备维修'&&r.rcv_state)
         ? ` <span class="tag" style="background:${r.rcv_state=='全部到货'?'#e8f5e9':'#fff8e1'};color:${r.rcv_state=='全部到货'?'#2e7d32':'#8a6d3b'};border:1px solid #e0d3ad" title="按已验收入库量对比订单总量自动标记">${r.rcv_state=='全部到货'?'✅ 全部到货':'🟡 部分到货'}</span>` : '';
-      return `<td><b>${esc(r.order_no)}</b></td><td>${r.req_type=='设备维修'?'🔧 ':''}${esc(r.item_name)}</td><td>${esc(r.supplier)}</td>
+      return `<td><b>${r.is_emg?'⚡':''}${esc(r.order_no)}</b></td><td>${r.req_type=='设备维修'?'🔧 ':''}${esc(r.item_name)}</td><td>${esc(r.supplier)}</td>
       <td><span class="tag ${r.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(r.trade_mode||'货到付款')}</span></td>
       <td>¥${(r.total_amount||0).toFixed(0)}</td><td>${tag(r.status)}</td><td>${pg}${rcvTag}</td>
       ${rejCell(r)}
@@ -2862,7 +2865,7 @@ async function loadContracts(){
   if(_fS) list=list.filter(x=>(x.status||'')===_fS);
   id('contractsTable').innerHTML=groupRnder(list, r=>r.created_at,['编号','类型','名称','供应商','模板','溯源号','金额','状态','驳回','操作'],r=>{
   const _tp=((r.req_type||'物资采购')==='设备维修')?'<span style="color:#8a6d3b;background:#f8f0e3;padding:1px 6px;border-radius:3px;font-size:9px">🛠 维修</span>':'<span style="color:#666;background:#f0f0f0;padding:1px 6px;border-radius:3px;font-size:9px">📦 物资</span>';
-  return `<td><b>${esc(r.contract_no)}</b></td><td>${_tp}</td><td>${esc(r.contract_name)}</td><td>${esc(r.supplier)}</td><td>${r.template_name?`<span class="tag" style="background:#eef2ff;color:#4338ca">${esc(r.template_name.replace('买卖合同-','').replace('设备维修服务合同-','维修-'))}</span>`:'<span style="color:#ccc">-</span>'}</td><td style="font-size:8px;color:#0d9488">${r.trace_no?`<a style="cursor:pointer" onclick="openTrace('${esc(r.trace_no)}')">${esc(r.trace_no)}</a>`:'<span style="color:#ccc">-</span>'}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}</td>${rejCell(r)}
+  return `<td><b>${r.is_emg?'⚡':''}${esc(r.contract_no)}</b></td><td>${_tp}</td><td>${esc(r.contract_name)}</td><td>${esc(r.supplier)}</td><td>${r.template_name?`<span class="tag" style="background:#eef2ff;color:#4338ca">${esc(r.template_name.replace('买卖合同-','').replace('设备维修服务合同-','维修-'))}</span>`:'<span style="color:#ccc">-</span>'}</td><td style="font-size:8px;color:#0d9488">${r.trace_no?`<a style="cursor:pointer" onclick="openTrace('${esc(r.trace_no)}')">${esc(r.trace_no)}</a>`:'<span style="color:#ccc">-</span>'}</td><td>¥${(r.amount||0).toFixed(0)}</td><td>${tag(r.status)}</td>${rejCell(r)}
   <td style="white-space:nowrap"><button class="lnk" onclick="showContract(${r.id})">查看</button>${r.file_path?` <button class="lnk" style="color:var(--s)" onclick="window.open('/uploads/${esc(r.file_path)}','_blank')">📄下载</button>`:''} <button class="lnk" style="color:#b08900" onclick="editDoc('contract',${r.id},'合同')">✏️修改</button> ${(r.status=='待审批'||r.status=='已通过'||r.status=='审批通过')?`<button class="lnk" style="color:var(--o)" onclick="withdrawDoc('contract',${r.id},'合同')">↩️撤回</button>`:''}${(r.status=='待审批'||r.status=='已驳回')?`<button class="lnk" style="color:var(--d)" onclick="delDoc('contract',${r.id},'合同')">🗑️删除</button>`:''}</td>`})}
 async function showContract(id){
   // V11.150: 防连点 + 最新打开者优先

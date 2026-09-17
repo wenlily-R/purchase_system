@@ -9631,7 +9631,7 @@ def api_contracts():
         _ws = (_ws + ' AND ' if _ws else ' WHERE ') + "(c.trace_no=? OR po.order_no=?)"
         _args = _args + (f_trace, f_trace)
     conn = db()
-    rows = conn.execute("SELECT c.*,po.order_no,COALESCE(po.freight,0) AS freight,COALESCE(pr.req_type,'物资采购') AS req_type FROM contracts c LEFT JOIN purchase_orders po ON c.order_id=po.id LEFT JOIN purchase_requests pr ON pr.id=po.req_id" + _ws + " ORDER BY c.id DESC LIMIT 50", _args).fetchall()
+    rows = conn.execute("SELECT c.*,po.order_no,COALESCE(po.freight,0) AS freight,COALESCE(po.is_emg,0) AS is_emg,COALESCE(pr.req_type,'物资采购') AS req_type FROM contracts c LEFT JOIN purchase_orders po ON c.order_id=po.id LEFT JOIN purchase_requests pr ON pr.id=po.req_id" + _ws + " ORDER BY c.id DESC LIMIT 50", _args).fetchall()
     _atts = {}
     for _a in conn.execute("SELECT contract_id AS cid,id,file_name,file_path,file_kind,uploaded_by,created_at FROM contract_attachments ORDER BY id DESC").fetchall():
         _atts.setdefault(_a['cid'], []).append(dict_row(_a))
