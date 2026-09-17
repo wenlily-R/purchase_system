@@ -1010,6 +1010,8 @@ def init_db():
             ('inventory', 'is_emg_temp', "ALTER TABLE inventory ADD COLUMN is_emg_temp INTEGER DEFAULT 0"),
             ('inventory', 'emg_no', "ALTER TABLE inventory ADD COLUMN emg_no TEXT DEFAULT ''"),
             ('warehouse_nodes', 'is_temp_alloc', "ALTER TABLE warehouse_nodes ADD COLUMN is_temp_alloc INTEGER DEFAULT 0"),
+            # ---- V11.335 出库按库房严格扣减: 出库明细行记录库房(与单据/流水/台账同口径, 防跨库房扣减) ----
+            ('requisition_items', 'warehouse', "ALTER TABLE requisition_items ADD COLUMN warehouse TEXT DEFAULT ''"),
         ):
             try:
                 conn.execute(_ddl)
@@ -2120,6 +2122,18 @@ def do_approve(biz_type, biz_id, approver, approver_id, action='approved', comme
     if not is_admin and (not me or me['id'] != node_approver_id):
         conn.close()
         return {'success':False,'error':'仅当前审批节点指定审批人可操作'}
+    # V11.335 出库终审前库存复校(严格库房口径): 不足则不予通过 — 防同一物资多张单先后审批把库存扣成负数
+    if biz_type == 'requisition' and action == 'approved':
+        try:
+            _pend = conn.execute("SELECT COUNT(*) FROM approval_instances WHERE biz_type=? AND biz_id=? AND status='pending'",
+                                 (biz_type, biz_id)).fetchone()[0]
+            if int(_pend or 0) <= 1:
+                _bad = _requisition_stock_precheck(conn, biz_id)
+                if _bad:
+                    conn.close()
+                    return {'success': False, 'error': _bad}
+        except Exception as _pce:
+            print('requisition precheck err:', _pce)
     # 签名限制: 图片dataURL太长(可达几十KB), 截断保护
     sig = (signature or '').strip()
     if sig and not sig.startswith('data:image/'):
@@ -10047,9 +10061,65 @@ def api_complete_receiving(rid):
     return jsonify({'success': True, 'message': f'入库单已提交审批，审批通过后自动增加库存（{total_q}件）', 'status': '待审批', 'items_in': len(oi) or 1})
 
 
-def do_requisition_stock(c, rid, warehouse='主库房', operator='系统'):
+def _req_line_wh(it, hdr_wh):
+    """V11.335: 出库明细行的目标库房 — 行自带优先, 无则用单据表头库房(空=自动, 走先进先出并排除临时待分配库)"""
+    try:
+        v = str((it['warehouse'] if 'warehouse' in it.keys() else '') or '').strip()
+    except Exception:
+        v = ''
+    return v or str(hdr_wh or '').strip()
+
+
+def _req_stock_check(c, its, hdr_wh='', for_approve=False):
+    """V11.335: 出库明细的严格库房库存校验(建单/审批终审共用同一口径)
+    返回 [] 或 [不足说明文案, ...]; 口径: 指定库房→只算该库房; 未指定→自动(先进先出)但排除「临时待分配库」"""
+    try:
+        _twh = _emg_temp_wh(c)
+    except Exception:
+        _twh = ''
+    bad = []
+    for it in its:
+        try:
+            q = float(it['quantity'] or 0)
+        except Exception:
+            q = 0
+        if q <= 0:
+            continue
+        _wh = _req_line_wh(it, hdr_wh)
+        _avail = _inv_avail(c, it['item_name'], it['spec'] or '', _wh, strict=bool(_wh), exclude_wh=('' if _wh else _twh))
+        if _avail + 1e-9 < q:
+            _nm = '%s%s' % (it['item_name'], ('(' + (it['spec'] or '') + ')') if it['spec'] else '')
+            _wh_txt = '「%s」' % _wh if _wh else '自动(先进先出, 不含临时待分配库)'
+            _tip = ''
+            if not _wh and _twh and _inv_avail(c, it['item_name'], it['spec'] or '', _twh, strict=True) > 0:
+                _tip = '；该物资现有库存位于「%s」，请先在【临时库存分配】分配到正式库房' % _twh
+            bad.append('%s 在 %s 结存 %s，本次需 %s%s' % (_nm, _wh_txt, _avail, q, _tip))
+    return bad
+
+
+def _requisition_stock_precheck(c, rid):
+    """V11.335: 出库终审前库存复校 — 不足返回提示文案, 足量返回 ''(口径与扣减完全一致; 已扣减过的单据跳过, 幂等)"""
+    rq = c.execute("SELECT * FROM requisitions WHERE id=?", (rid,)).fetchone()
+    if not rq:
+        return ''
+    if c.execute("SELECT 1 FROM inventory_flows WHERE doc_type='requisition' AND doc_id=? AND flow_type='出库' LIMIT 1", (rid,)).fetchone():
+        return ''
+    its = c.execute("SELECT * FROM requisition_items WHERE requisition_id=? ORDER BY id", (rid,)).fetchall()
+    if not its:
+        return ''
+    _hdr = str((rq['warehouse'] if 'warehouse' in rq.keys() else '') or '').strip()
+    bad = _req_stock_check(c, its, _hdr, for_approve=True)
+    if bad:
+        return '库存不足，无法通过审批（请核对库房结存，或先补入库/修改作废本单）: ' + '；'.join(bad)
+    return ''
+
+
+def do_requisition_stock(c, rid, warehouse='', operator='系统'):
     """V5.0: 出库审批通过后执行 — 扣减库存 + 写流水(幂等: 已有该单据出库流水则跳过)
-    明细取 requisition_items; 扣减后允许库存为负(展示为负值, 与V5.0设计一致)"""
+    V11.335 修复实测事故(应急临时入库的货被常规出库跨库扣走并叠成 -666):
+      ① 按明细行库房(无则按单据库房)严格扣减, 不再"任意库房兜底"跨库扣别库房的货;
+      ② 未指定库房时排除「临时待分配库」——应急物资先分配到正式库房再领用(确需领用请在该库房显式出库);
+      ③ 库存不足只扣可用量、不制造负库存, 缺口写流水备注 + 系统通知库管(审批终审另有前置拦截)"""
     rq = c.execute("SELECT * FROM requisitions WHERE id=?", (rid,)).fetchone()
     if not rq:
         return 0
@@ -10059,16 +10129,28 @@ def do_requisition_stock(c, rid, warehouse='主库房', operator='系统'):
     its = c.execute("SELECT * FROM requisition_items WHERE requisition_id=? ORDER BY id", (rid,)).fetchall()
     if not its:
         return 0
+    _hdr_wh = str(warehouse or ((rq['warehouse'] if 'warehouse' in rq.keys() else '') or '')).strip()
+    try:
+        _twh = _emg_temp_wh(c)
+    except Exception:
+        _twh = ''
     total_q = 0.0
+    short = []
     for it in its:
         q = float(it['quantity'] or 0)
         if q <= 0:
             continue
-        total_q += q
+        _wh = _req_line_wh(it, _hdr_wh)
         # V11.303 分批次出库: 默认先进先出(FIFO)跨批次扣减, 流水按批次记录(批次成本/溯源可查)
-        _parts = _inv_deduct(c, it['item_name'], it['spec'] or '', warehouse, q,
+        _parts = _inv_deduct(c, it['item_name'], it['spec'] or '', _wh, q,
                              prefer_batch=(it['batch_no'] if 'batch_no' in it.keys() else '') or '',
-                             unit=it['unit'] or '个')
+                             unit=it['unit'] or '个', strict=bool(_wh),
+                             exclude_wh=('' if _wh else _twh))
+        _got = round(sum(_t for _row, _t in _parts), 4)
+        if _got + 1e-9 < q:
+            short.append('%s%s 需%s实扣%s(%s)' % (it['item_name'], ('(' + (it['spec'] or '') + ')') if it['spec'] else '',
+                                               q, _got, _wh or '自动'))
+        total_q += _got
         # V11.303: 按批次逐条写流水(批次号/单价/结存留在备注, 出库成本可按批次核算与溯源)
         for _row, _take in _parts:
             _bt = (_row.get('batch_no') or '')
@@ -10078,7 +10160,16 @@ def do_requisition_stock(c, rid, warehouse='主库房', operator='系统'):
                       (it['item_name'], it['spec'] or '', it['unit'] or '个', '出库', 'requisition', rid, rq['req_no'],
                        -_take, _row.get('quantity'), operator or '系统', _rmk, now(), (_row.get('trace_no') or ''),
                        (it['receiver'] if 'receiver' in it.keys() else '') or '', (it['purpose'] if 'purpose' in it.keys() else '') or '',
-                       warehouse, float(_row.get('price') or 0)))
+                       str(_row.get('warehouse') or _wh or ''), float(_row.get('price') or 0)))
+    if short:
+        _msg = '出库单%s 库存不足未足额出库: %s；请核对库房结存后补入库或修改/作废单据' % (rq['req_no'], '；'.join(short))
+        print('⚠️ ' + _msg)
+        try:
+            for _u in c.execute("SELECT id FROM users WHERE role='库管员' AND is_active=1").fetchall():
+                c.execute("INSERT INTO notifications(user_id,type,title,content,biz_type,biz_id) VALUES(?,?,?,?,?,?)",
+                          (_u['id'], '出库库存不足', '出库单%s 库存不足未足额扣减' % rq['req_no'], _msg, 'requisition', rid))
+        except Exception as _ne:
+            print('requisition short notify err:', _ne)
     return total_q
 
 
@@ -10208,26 +10299,38 @@ def _is_scrap_wh(name):
     return ('废旧' in n) or ('暂存' in n) or ('旧件' in n) or (n in _SCRAP_WH)
 
 
-def _inv_rows_fifo(c, name, spec, warehouse):
-    """V11.303 分批次库存: 取同品名+规格的多个批次条目(优先同库房), 按先进先出(入库时间/ID升序)排列"""
+def _inv_rows_fifo(c, name, spec, warehouse, strict=False, exclude_wh=''):
+    """V11.303 分批次库存: 取同品名+规格的多个批次条目(优先同库房), 按先进先出(入库时间/ID升序)排列
+    V11.335 修复实测事故(应急临时库的货被常规出库跨库扣走并叠成负库存):
+      - strict=True: 严格限定该库房, 不再"任意库房兜底"(以前指定主库房但货在别的库房时会跨库扣)
+      - exclude_wh: 排除指定库房(常规出库未指定库房时排除「临时待分配库」, 应急物资须先分配到正式库房)"""
     spec = spec or ''
     rows = c.execute("""SELECT * FROM inventory WHERE item_name=? AND spec=?
                         AND (warehouse=? OR warehouse IS NULL OR warehouse='')
                         ORDER BY COALESCE(last_move_date,'') ASC, id ASC""", (name, spec, warehouse)).fetchall()
-    if not rows:
+    if not rows and not strict:
         rows = c.execute("SELECT * FROM inventory WHERE item_name=? AND spec=? ORDER BY COALESCE(last_move_date,'') ASC, id ASC",
                          (name, spec)).fetchall()
+    if exclude_wh:
+        rows = [r for r in rows if str(r['warehouse'] or '') != exclude_wh]
     return [dict_row(r) for r in rows]
 
 
-def _inv_deduct(c, name, spec, warehouse, qty, prefer_batch='', unit='个'):
+def _inv_avail(c, name, spec, warehouse, strict=False, exclude_wh=''):
+    """V11.335: 与 _inv_deduct 同一选择口径下的可用结存(建单校验/审批复校用, 只看正结存)"""
+    return round(sum(float((r or {}).get('quantity') or 0) for r in _inv_rows_fifo(c, name, spec, warehouse, strict=strict, exclude_wh=exclude_wh)
+                     if float((r or {}).get('quantity') or 0) > 0), 4)
+
+
+def _inv_deduct(c, name, spec, warehouse, qty, prefer_batch='', unit='个', strict=False, exclude_wh=''):
     """V11.303 分批次出库扣减: 默认先进先出跨批次扣减, 指定批次(prefer_batch)则优先扣该批次;
-    返回 [(批次行, 本批扣减量)] 供写流水/批次成本核算; 库存不足时最后一行扣成负数(与V5.0"允许负库存"一致)"""
+    返回 [(批次行, 本批扣减量)] 供写流水/批次成本核算;
+    strict=True(V11.335): 严格同库房且不足时不补负数(只扣可用量, 缺口由调用方提示/留痕)"""
     need = float(qty or 0)
     out = []
     if need <= 0:
         return out
-    rows = _inv_rows_fifo(c, name, spec, warehouse)
+    rows = _inv_rows_fifo(c, name, spec, warehouse, strict=strict, exclude_wh=exclude_wh)
     if prefer_batch:
         rows.sort(key=lambda r: 0 if (r.get('batch_no') or '') == prefer_batch else 1)
     for r in rows:
@@ -10242,6 +10345,8 @@ def _inv_deduct(c, name, spec, warehouse, qty, prefer_batch='', unit='个'):
         r['quantity'] = avail - take
         out.append((r, take)); need -= take
     if need > 1e-9:
+        if strict or exclude_wh:
+            return out          # V11.335: 严格口径下不产生负数/不跨库房补扣, 缺口交调用方处理
         if rows:
             _rid0 = rows[0]['id']
             cur = float((c.execute("SELECT quantity FROM inventory WHERE id=?", (_rid0,)).fetchone() or [0])[0] or 0)
@@ -10959,16 +11064,69 @@ def api_create_requisition():
             conn.close(); return jsonify({'error': '出库明细第 %d 行请填写「领用人」(必填)' % _i0}), 400
         if not _it0['purpose']:
             conn.close(); return jsonify({'error': '出库明细第 %d 行请填写「用途」(必填, 如: 检修/日常消耗/工程安装)' % _i0}), 400
-    # 库存校验(拦截超量) — V9.1: 名称+规格双条件匹配独立SKU
+    # 库存校验(拦截超量) — V11.335: 按「库房」严格校验(不再跨库房兜底扣别库房的货), 并计入待审批单已占用量
+    try:
+        _twh0 = _emg_temp_wh(conn)
+    except Exception:
+        _twh0 = ''
     for it in items:
-        inv = conn.execute("SELECT * FROM inventory WHERE item_name=? AND spec=? ORDER BY quantity DESC",
-                           (it['item_name'], it.get('spec', '') or '')).fetchone()
+        it['warehouse'] = str(it.get('warehouse') or '').strip()
+        _rows_ok = _inv_rows_fifo(conn, it['item_name'], it.get('spec', '') or '', it['warehouse'],
+                                  strict=bool(it['warehouse']), exclude_wh=('' if it['warehouse'] else _twh0))
+        # V11.335: 明细行未指定库房时自动落定 — 该物资现有库存只在一个库房时记该库房(出库流水/单据库房与账实一致); 多库房才留空走自动FIFO
+        if not it['warehouse']:
+            _whs = []
+            for _x in _rows_ok:
+                _x = _x or {}
+                _w = str(_x.get('warehouse') or '')
+                if _w and float(_x.get('quantity') or 0) > 0 and _w not in _whs:
+                    _whs.append(_w)
+            if len(_whs) == 1:
+                it['warehouse'] = _whs[0]
+                _rows_ok = _inv_rows_fifo(conn, it['item_name'], it.get('spec', '') or '', it['warehouse'], strict=True)
+        inv = None
+        for _r in _rows_ok:
+            if inv is None:
+                inv = _r
+                continue
+            if float((_r or {}).get('quantity') or 0) > float(inv.get('quantity') or 0):
+                inv = _r
         # V11.251 溯源: 出库明细带库存台账溯源号(前端可选传覆盖)
-        it['_trace'] = str(it.get('trace_no') or '').strip() or (inv['trace_no'] if inv and inv['trace_no'] else '')
+        it['_trace'] = str(it.get('trace_no') or '').strip() or ((inv.get('trace_no') or '') if inv else '')
         if not inv:
-            conn.close(); return jsonify({'error': '库存中无此物资: %s %s' % (it['item_name'], it.get('spec', '') or '')}), 400
-        if inv['quantity'] < float(it['quantity']):
-            conn.close(); return jsonify({'error': '库存不足: %s(%s) 当前%s%s' % (it['item_name'], it.get('spec', '') or '', inv['quantity'], inv['unit'] or '个')}), 400
+            _in_temp = 0.0
+            if _twh0:
+                try:
+                    _in_temp = _inv_avail(conn, it['item_name'], it.get('spec', '') or '', _twh0, strict=True)
+                except Exception:
+                    _in_temp = 0.0
+            conn.close()
+            if _in_temp > 0:
+                return jsonify({'error': '库存中无此物资：%s %s（该物资现有库存位于「%s」，请先在【临时库存分配】分配到正式库房后再出库）'
+                                         % (it['item_name'], it.get('spec', '') or '', _twh0)}), 400
+            return jsonify({'error': '库存中无此物资: %s %s' % (it['item_name'], it.get('spec', '') or '')}), 400
+        _usable = _inv_avail(conn, it['item_name'], it.get('spec', '') or '', it['warehouse'],
+                             strict=bool(it['warehouse']), exclude_wh=('' if it['warehouse'] else _twh0))
+        # V11.335: 已提交未审批的出库单也占着库存(此前只在审批时扣减 → 同物资多单先后通过会扣成负数)
+        _held = conn.execute("""SELECT COALESCE(SUM(ri.quantity),0) FROM requisition_items ri
+                                 JOIN requisitions r ON r.id=ri.requisition_id
+                                 WHERE ri.item_name=? AND COALESCE(ri.spec,'')=? AND COALESCE(ri.warehouse,'')=?
+                                   AND r.status IN ('待审批','审批中')""",
+                             (it['item_name'], it.get('spec', '') or '', it['warehouse'])).fetchone()[0] or 0
+        if float(_usable) - float(_held) + 1e-9 < float(it['quantity']):
+            _nm = '%s%s' % (it['item_name'], ('(' + (it.get('spec') or '') + ')') if it.get('spec') else '')
+            _wh_txt = '「%s」' % it['warehouse'] if it['warehouse'] else '自动(先进先出, 不含临时待分配库)'
+            _tip = ''
+            if not it['warehouse'] and _twh0:
+                try:
+                    if _inv_avail(conn, it['item_name'], it.get('spec', '') or '', _twh0, strict=True) > 0:
+                        _tip = '（该物资库存位于「%s」，请先在【临时库存分配】分配到正式库房后再出库）' % _twh0
+                except Exception:
+                    pass
+            conn.close()
+            return jsonify({'error': '库存不足：%s 在 %s 结存 %s，待审批出库单已占用 %s，可用 %s，本次需 %s%s %s'
+                                     % (_nm, _wh_txt, _usable, _held, round(float(_usable) - float(_held), 4),
+                                        it['quantity'], it.get('unit') or '个', _tip)}), 400
     no = gen_no('CK', 'requisitions', 'req_no', conn)
     total_q = sum(float(it['quantity']) for it in items)
     first = items[0]
@@ -10983,15 +11141,17 @@ def api_create_requisition():
     if not receiver:
         receiver = session['user_name']
     # V11.323 库房一体化: 出库单记录库房(取表头或首行明细的库房), 供按库房筛选/隔离与报表同口径
+    # V11.335: 明细行库房缺失时按上面校验时自动落定的结果补齐 → 出库单与流水库房口径一致
     _wh0 = str(d.get('warehouse') or '').strip() or next((str(it.get('warehouse') or '').strip() for it in items if str(it.get('warehouse') or '').strip()), '')
     conn.execute("INSERT INTO requisitions(req_no,dept,requester,item_name,spec,quantity,unit,purpose,status,receiver,receive_dept,created_at,warehouse) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                  (no, d.get('dept', ''), session['user_name'], first['item_name'], first.get('spec', ''),
                   total_q, first.get('unit', '个'), d.get('purpose', first.get('purpose', '')), '待审批', receiver, receive_dept, now(), _wh0))
     rid = conn.execute("SELECT id FROM requisitions WHERE req_no=?", (no,)).fetchone()[0]
     for it in items:
-        conn.execute("INSERT INTO requisition_items(requisition_id,item_name,spec,unit,quantity,purpose,trace_no,created_at,receiver,batch_no) VALUES(?,?,?,?,?,?,?,?,?,?)",
+        conn.execute("INSERT INTO requisition_items(requisition_id,item_name,spec,unit,quantity,purpose,trace_no,created_at,receiver,batch_no,warehouse) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                      (rid, it['item_name'], it.get('spec', ''), it.get('unit', '个'),
-                      float(it['quantity']), it.get('purpose', ''), it.get('_trace', ''), now(), it.get('receiver', ''), it.get('batch_no', '')))
+                      float(it['quantity']), it.get('purpose', ''), it.get('_trace', ''), now(), it.get('receiver', ''), it.get('batch_no', ''),
+                      str(it.get('warehouse') or '') or _wh0))
     conn.commit()
     create_approvals('requisition', rid, 0, submitter=session['user_name'])
     conn.close()
@@ -18036,7 +18196,7 @@ def emergency_sweep():
                                   ('临时待分配库存超期未分配：%s' % r['item_name'],
                                    '「%s」中 %s%s 结存 %s，已 %d 天未分配到正式库房（阈值 %d 天），请库管及时分配。'
                                    % (_twh2, r['item_name'], r['spec'] or '', r['quantity'], _dg, _ad), now(), now()))
-                        _txt = '⏰ 临时待分配库存超期\n%s%s 在「%s」结存 %s，已 %d 天未分配到正式库房（阈值 %d 天）。\n请到「库存管理 → 临时库存分配」完成分配。' % (r['item_name'], r['spec'] or '', _twh2, r['quantity'], _dg, _ad)
+                        _txt = '⏰ 临时待分配库存超期\n%s%s 在「%s」结存 %s，已 %d 天未分配到正式库房（阈值 %d 天）。\n请到「仓储库存 → 📦临时库存分配」完成分配。' % (r['item_name'], r['spec'] or '', _twh2, r['quantity'], _dg, _ad)
                         for _u in c.execute("SELECT id,dingtalk_userid FROM users WHERE role='库管员' AND is_active=1").fetchall():
                             c.execute("INSERT INTO notifications(user_id,type,title,content,biz_type,biz_id) VALUES(?,?,?,?,?,?)",
                                       (_u['id'], '临时库存分配提醒', '超期未分配 %d 天' % _dg, _txt, 'inventory', 0))

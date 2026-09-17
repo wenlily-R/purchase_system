@@ -464,12 +464,12 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
   <div id="rcvPanelemg" style="display:none">
     <div style="background:#fff8e1;border:1px solid #f5c518;border-radius:4px;padding:4px 8px;margin-bottom:4px;font-size:9.5px;color:#7a5b00">
       ⚡ 应急采购专属验收：仅展示应急采购到货待验收单据（单据自带「应急采购-临时入库」标识，关联原应急申请号）。
-      库管核对品名/规格/数量并上传送货单+验收照片 → 验收通过后物资自动进入「<b>临时待分配库</b>」（虚拟过渡库），再由库管在「库存查询 → 临时库存分配」自主分配到正式库房；支持分批验收。
+      库管核对品名/规格/数量并上传送货单+验收照片 → 验收通过后物资自动进入「<b>临时待分配库</b>」（虚拟过渡库），再由库管在「<b>仓储库存 → 📦临时库存分配</b>」自主分配到正式库房；支持分批验收。
     </div>
     <div class="card"><div class="cb" id="emgRcvBox"><div class="loading">加载中...</div></div></div>
   </div>
 </div>
-<div class="page" id="pemgalloc"><h2>📦 临时库存分配 <span style="font-size:10px;color:#999;font-weight:normal">(应急采购临时入库的物资 → 库管自主分配到正式库房 · 全程留痕可撤回)</span></h2>
+<div class="page" id="pemgalloc"><h2>📦 临时库存分配 <span style="font-size:10px;color:#999;font-weight:normal">(应急采购临时入库的物资 → 库管自主分配到正式库房 · 全程留痕可撤回)</span> <button class="btn btn-o btn-sm" style="float:right;margin-top:-2px;color:#0f7b6c;border-color:#7cc3b8" onclick="showFlowChart('stock')">📦 库房流程图示</button></h2>
   <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap">
     <span style="font-size:9px;color:#666">分配后自动扣减「临时待分配库」、增加目标库房库存并生成标准调拨流水；<b>废旧/损坏</b>可直接选「废旧物资库」按 0 价核算；分配错误可撤回重分（记录操作人/时间）。</span>
     <button class="btn btn-w btn-sm" style="margin-left:auto" onclick="loadEmgAlloc()">🔄 刷新</button>
@@ -486,7 +486,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
   </div>
   <div id="reqInvPanel" style="margin-top:4px">
     <div style="margin-bottom:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap">
-      <span style="font-size:9px;color:#666">勾选商品→填数量→提交出库审批；审批通过自动扣减库存（草稿/驳回不扣）</span>
+      <span style="font-size:9px;color:#666">勾选商品→填数量→提交出库审批；审批通过自动扣减库存（草稿/驳回不扣）。<b>出库按库房扣减</b>：选具体批次=扣该批次所在库房；未指定时按先进先出且<b>不含「临时待分配库」</b>（应急物资请先在【临时库存分配】分配到正式库房）；同一物资已提交待审批的出库单会占用库存，不能重复开单</span>
       <button class="btn btn-p btn-sm" style="margin-left:auto" onclick="batchReqSubmit()">📤 批量出库(已选 <span id="reqSelCnt">0</span>)</button>
     </div>
     <div id="reqSelBar" style="display:none;background:#fff8e1;border:1px solid #f5c518;border-radius:4px;padding:4px 8px;margin-bottom:4px;font-size:9px"></div>
@@ -585,6 +585,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <button class="btn btn-w btn-sm" onclick="showRecon()">📊 对账勾稽</button>
     <button class="btn btn-w btn-sm" onclick="showInvImport()">⬆️ 老库存导入</button>
     <button class="btn btn-w btn-sm" onclick="showTransfer()">🔁 库房调拨</button>
+    <button class="btn btn-o btn-sm" id="invEmgAllocBtn" style="display:none;color:#7c3aed;border-color:#c3aef0" onclick="sw('emgalloc')">📦 临时库存分配</button>
     <button class="btn btn-o btn-sm" onclick="showWhOverview()">🏢 库房总览</button>
     <button class="btn btn-o btn-sm" onclick="window.open('/api/inventory/import-template','_blank')">📄 导入模板</button>
     <button class="btn btn-p btn-sm" style="margin-left:auto" onclick="exportInventory()">⬇️ 导出库存报表</button>

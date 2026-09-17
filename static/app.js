@@ -306,6 +306,8 @@ function qsWatch(){
 function initApp(){
   id('userName').textContent=ME.name+' ('+ME.role+')';
   buildNav();
+  // V11.335 库存查询页「📦 临时库存分配」直达按钮(与菜单/权限同一矩阵, 登录后即按岗位显隐)
+  try{const _eab=id('invEmgAllocBtn'); if(_eab)_eab.style.display=(['库管员','采购员','部门负责人','分管领导','总经理','系统管理员'].includes(ME.role))?'':'none';}catch(e){}
   if(typeof sideScrollInit==='function')sideScrollInit();
   qsInit();qsWatch();   // V11.302 全业务列表统一全局搜索(含切页/刷新保留条件)
   verWatchInit();       // V11.330: 版本监控 + 自动更新提示(同事电脑不用手动Ctrl+F5)
@@ -4174,6 +4176,15 @@ function reqSelBar(){
   id('reqSelBar').innerHTML='已选: '+keys.map(k=>{const p=k.split('||');return `<b>${esc(p[0])}${p[1]?'('+esc(p[1])+')':''}</b>`}).join('、')+'（在对应行填出库数量）';
   reqSelCnt();
 }
+function reqWhOf(key){
+  // V11.335: 出库行目标库房 — 选了具体批次取该批次所在库房; 自动(FIFO)时若该物资库存只在一个库房则落定该库房,
+  // 多库房留空由后端走自动先进先出(且不含「临时待分配库」, 应急物资须先分配到正式库房)
+  const rows=(window._reqInvIdx||{})[key]||[];
+  const b=reqBatch[key]||'';
+  if(b){ const hit=rows.find(x=>String(x.batch_no||'')===String(b)); return (hit&&hit.wh)||''; }
+  const ws=[...new Set(rows.filter(x=>Number(x.qty||0)>0).map(x=>x.wh||'').filter(Boolean))];
+  return ws.length===1?ws[0]:'';
+}
 function quickReq(name,spec,stock){
   // 单品直接出库 (V9.1: 带规格)
   // V11.171: 优先用该行"出库数量"输入框已填的值, 不再重复弹窗询问(用户反馈步骤繁琐);
@@ -4188,7 +4199,7 @@ function quickReq(name,spec,stock){
   }
   if(!q||q<=0){alert('数量无效');return}
   if(q>stock){alert(`库存不足: 当前 ${stock}`);return}
-  submitReq([{item_name:name,spec:spec||'',quantity:q,purpose:''}]);
+  submitReq([{item_name:name,spec:spec||'',quantity:q,purpose:'',warehouse:reqWhOf(key)}]);
 }
 async function batchReqSubmit(){
   // 勾选的商品批量出库(数量取自各行输入) — V9.1: 名称+规格独立
@@ -4200,7 +4211,7 @@ async function batchReqSubmit(){
     if(!q||q<=0){alert(`「${name}${spec?'('+spec+')':''}」请填写有效出库数量`);return}
     if(reqBatch[key]&&q>0){const _mx=( (window._reqInvIdx||{})[key]||[] ).filter(x=>x.batch_no===reqBatch[key]).reduce((a,b)=>a+Number(b.qty||0),0);
       if(_mx&&q>_mx){alert(`「${name}${spec?'('+spec+')':''}」所选批次「${reqBatch[key]}」结存 ${_mx}，不足 ${q}`);return}}
-    items.push({item_name:name,spec:spec,quantity:q,purpose:'',batch_no:reqBatch[key]||''});
+    items.push({item_name:name,spec:spec,quantity:q,purpose:'',batch_no:reqBatch[key]||'',warehouse:reqWhOf(key)});
   }
   if(!items.length){alert('请先勾选要出库的商品');return}
   submitReq(items);
@@ -4213,6 +4224,7 @@ async function submitReq(items){
   if(!users.length) users=[(ME&&ME.name)||''];
   const _opts=users.map(n=>`<option value="${esc(n)}">`).join('');
   const _rows=items.map((x,i)=>('<tr><td>'+(i+1)+'</td><td>'+esc(x.item_name)+(x.spec?' ('+esc(x.spec)+')':'')+(x.batch_no?' <span style="color:#2e7d32">['+esc(x.batch_no)+']</span>':' <span style="color:#999">[自动先进先出]</span>')+'</td><td>'+x.quantity+esc(x.unit||'')+'</td>'+
+    '<td>'+(x.warehouse?esc(x.warehouse):'<span style="color:#999">自动(不含临时待分配库)</span>')+'</td>'+
     '<td><input class="fc" id="riR'+i+'" list="reqUserList2" style="width:100%" value="'+esc((ME&&ME.name)||'')+'"></td>'+
     '<td><input class="fc" id="riP'+i+'" list="reqPurpList2" style="width:100%" placeholder="检修/日常消耗/…"></td></tr>')).join('');
   id('dmTitle').textContent='📤 出库明细：领用人 / 用途（必填）';
@@ -4227,7 +4239,7 @@ async function submitReq(items){
       <datalist id="reqPurpList2"><option value="检修"><option value="日常消耗"><option value="工程安装"><option value="生产用料"><option value="其他"></datalist>
     </div>
     <div style="overflow-x:auto"><table style="width:100%;font-size:10px;border-collapse:collapse" border="1">
-      <tr style="background:#f5f5f5"><th style="width:30px">#</th><th>物资</th><th style="width:64px">数量</th><th style="width:120px">领用人 *</th><th style="width:140px">用途 *</th></tr>
+      <tr style="background:#f5f5f5"><th style="width:30px">#</th><th>物资</th><th style="width:64px">数量</th><th style="width:120px">出库库房</th><th style="width:120px">领用人 *</th><th style="width:140px">用途 *</th></tr>
       ${_rows}
     </table></div>`;
   id('dmFooter').innerHTML='<button class="btn btn-o" onclick="closeMod()">取消</button><button class="btn btn-p" onclick="doSubmitReq()">提交出库审批</button>';
@@ -8083,6 +8095,7 @@ const FLOW_TREES={
         {t:'库存增加（带库房+库区+库位+批次+单价）',d:'系统',r:'同型号不同订单/批次分开记录，可一直溯源到采购订单',j:"sw('inventory')"},
         {t:'暂估（货到票未到）',d:'系统',r:'先按暂估入库，不影响领用',j:"sw('receivings')"},
         {t:'发票红冲 → 转正式',d:'采购员 / 财务',r:'发票回来后由采购做暂估红冲、生成正式入库；库房不接触发票',j:"sw('invoices')"},
+        {t:'临时待分配库 → 分配到正式库房',d:'库管员',r:'应急采购到货验收后先入「临时待分配库」（过渡库），库管再按用途分配到 生产库/生活库/工程材料/气体/再用库/废旧物资库；分配错误可撤回重分，全程留痕',j:"sw('emgalloc')"},
       ]},
       {lab:'B · 出库与退回',color:'#e67e22',nodes:[
         {t:'领用出库',d:'库管员',r:'逐行必填【领用人】【用途】（同部门多人分行）；可按批次出库、可攒单归集、可批量提交与批量打印',j:"sw('requisitions')"},
@@ -8174,7 +8187,7 @@ function ftTreeHtml(kind,inModal){
 }
 // 流程图示范入口(页面 📊 采购/维修流程图示 按钮): 弹出树状分支流程图
 function showFlowChart(kind){
-  const titles={purchase:'📊 物资采购流程图示范（树状分支）',repair:'📊 设备维修流程图示范（树状分支）'};
+  const titles={purchase:'📊 物资采购流程图示范（树状分支）',repair:'📊 设备维修流程图示范（树状分支）',stock:'📦 库房业务流程图（入库·出库·库内管理）',emg:'⚡ 应急采购流程图（先收货→临时入库→分配→转正）'};
   const box=id('flowTreeModalBox');
   showDetail(titles[kind]||'流程图示','<div id="flowTreeModalBox"><div class="loading">流程图中...</div></div>',
     '<button class="btn btn-o" onclick="closeMod()">关闭</button>');
