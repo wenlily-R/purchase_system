@@ -1012,6 +1012,9 @@ def init_db():
             ('warehouse_nodes', 'is_temp_alloc', "ALTER TABLE warehouse_nodes ADD COLUMN is_temp_alloc INTEGER DEFAULT 0"),
             # ---- V11.335 出库按库房严格扣减: 出库明细行记录库房(与单据/流水/台账同口径, 防跨库房扣减) ----
             ('requisition_items', 'warehouse', "ALTER TABLE requisition_items ADD COLUMN warehouse TEXT DEFAULT ''"),
+            # ---- V11.336 付款方式结构化(应急询价付款方式→结算方式→进月结汇总): 询价落定结算类型 + 订单记付款方式文本 ----
+            ('emergency_purchases', 'inq_settle_type', "ALTER TABLE emergency_purchases ADD COLUMN inq_settle_type TEXT DEFAULT ''"),
+            ('purchase_orders', 'pay_term', "ALTER TABLE purchase_orders ADD COLUMN pay_term TEXT DEFAULT ''"),
         ):
             try:
                 conn.execute(_ddl)
@@ -7372,6 +7375,10 @@ def api_create_order():
     d = request.json
     conn = db()
     tm = (d.get('trade_mode') or '货到付款').strip() or '货到付款'
+    # V11.336 结算方式与交易模式联动: 选"月结"(或自定义文本含月结)→settle_type='月结', 月底自动进【合同管理→月结汇总】;
+    # 付款方式文本(pay_term)随单保存, 供合同/月结汇总/对账显示具体账期
+    _settle0 = (d.get('settle_type') or '').strip() or _settle_of_trade_mode(tm, '现结')
+    _payterm0 = (d.get('pay_term') or '').strip() or tm
     # V11.3: 交易模式支持自定义, 不局限于 货到付款/先款后货
     items = d.get('items') or []
     if not items and d.get('item_name'):
@@ -7411,11 +7418,11 @@ def api_create_order():
         rows.append((it.get('item_name',''), it.get('spec','') or '', it.get('unit','个') or '个', qty, price, amt, tr, tax, amt))
     first = rows[0]
     conn.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,
-        supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,settle_type,pay_term) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (no, d.get('req_id'), first[0], first[1], total_qty, first[2], first[4], grand_amt, first[6], grand_tax, grand_total,
          d.get('supplier',''), d.get('requester',''), d.get('category','后勤类'), session['user_name'], session['user_id'],
          d.get('target_date'), tm, d.get('remark',''), 1 if d.get('urgent') else 0,
-         json.dumps(d.get('attachments') or [], ensure_ascii=False)))
+         json.dumps(d.get('attachments') or [], ensure_ascii=False), _settle0, _payterm0))
     oid = conn.execute("SELECT id FROM purchase_orders WHERE order_no=?", (no,)).fetchone()[0]
     for r in rows:
         conn.execute("INSERT INTO order_items(order_id,item_name,spec,unit,quantity,price,amount,tax_rate,tax_amount,total_amount,remark) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
@@ -8935,7 +8942,8 @@ def api_inquiry_select(iid):
                 tm = kw
                 break
     # 定标审批: 领导选定后, 订单草稿 + 提交定标审批(必须领导审批通过才能下单)
-    settle_type = d.get('settle_type') or '现结'
+    # V11.336 结算方式: 显式传值优先, 否则与交易模式联动(选月结→月结, 否则现结; 询价备注里的"月结"也算) — 防月结单不进月结汇总
+    settle_type = (d.get('settle_type') or '').strip() or _settle_of_trade_mode(tm, '现结')
     conn.execute("""INSERT INTO purchase_orders(order_no,req_id,item_name,spec,quantity,unit,price,amount,tax_rate,tax_amount,total_amount,
         supplier,requester,category,owner,owner_id,target_date,trade_mode,remark,urgent,attachments,status,inquiry_id,freight) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (no, i['req_id'], first[0], first[1], sum(r[3] for r in rows), first[2], first[4], grand_amt, 0, 0, total,
@@ -8949,7 +8957,7 @@ def api_inquiry_select(iid):
     conn.execute("UPDATE inquiry_suppliers SET is_selected=1 WHERE id=?", (sid,))
     _trace_biz('purchase_order', 'purchase_orders', oid, '定标生成订单', '整单定标-'+s['supplier_name'], conn=conn)
     # V11.73: 定标审批通过后直接生效(领导已选定供应商,无需再次审批)
-    conn.execute("UPDATE purchase_orders SET status='已通过', settle_type=?, updated_at=? WHERE id=?", (settle_type, now(), oid))
+    conn.execute("UPDATE purchase_orders SET status='已通过', settle_type=?, pay_term=?, updated_at=? WHERE id=?", (settle_type, tm, now(), oid))
     conn.execute("UPDATE inquiries SET status='已生成订单', selected_supplier_id=?, updated_at=? WHERE id=?", (sid, now(), iid))
     conn.commit()
     log(session['user_name'], '询价定标', '%s → 订单%s(供应商:%s ¥%.0f,已生效)' % (i['inq_no'], no, s['supplier_name'], total))
@@ -9699,7 +9707,8 @@ def api_monthly_summary():
     # V11.200: 月结汇总条件放宽 — 月结订单只要未月结(settled_at空)且未作废/未取消就应列入,
     # 含已入库未结款(原条件限'审批通过/已通过'导致入库后状态变'已入库'的单从汇总消失)
     rows = conn.execute("""SELECT supplier, COUNT(*) cnt, COALESCE(SUM(total_amount),0) amt,
-        GROUP_CONCAT(order_no || ':' || item_name || 'x' || printf('%g',quantity) || ' ¥' || printf('%.2f',total_amount), '\n') detail
+        SUM(CASE WHEN COALESCE(is_emg,0)=1 THEN 1 ELSE 0 END) emg_cnt,
+        GROUP_CONCAT((CASE WHEN COALESCE(is_emg,0)=1 THEN '⚡' ELSE '' END) || order_no || ':' || item_name || 'x' || printf('%g',quantity) || ' ¥' || printf('%.2f',total_amount), '\n') detail
         FROM purchase_orders WHERE settle_type='月结' AND status NOT IN ('已作废','已取消','草稿')
         AND (settled_at IS NULL OR settled_at='') AND created_at LIKE ?
         GROUP BY supplier ORDER BY amt DESC""", (m + '%',)).fetchall()
@@ -9728,7 +9737,10 @@ def api_monthly_generate():
     # 明细文本
     lines = []
     for o in orders:
-        lines.append(f"{o['order_no']} {o['item_name']} x{o['quantity']}{o['unit'] or '个'} ¥{float(o['total_amount'] or 0):.2f}")
+        # V11.336: 月度合同明细标注来源(⚡=应急采购订单)与付款方式, 便于对账区分
+        _emg = '⚡' if ('is_emg' in o.keys() and o['is_emg']) else ''
+        _pt = (' 付款方式:%s' % o['pay_term']) if ('pay_term' in o.keys() and o['pay_term']) else ''
+        lines.append(f"{_emg}{o['order_no']} {o['item_name']} x{o['quantity']}{o['unit'] or '个'} ¥{float(o['total_amount'] or 0):.2f}{_pt}")
     content = '\n'.join(lines)
     order_nos = '、'.join(o['order_no'] for o in orders)
     # 生成月度合同(关联第一张单, 明细在content, 关联单号在remark)
@@ -10171,6 +10183,23 @@ def do_requisition_stock(c, rid, warehouse='', operator='系统'):
         except Exception as _ne:
             print('requisition short notify err:', _ne)
     return total_q
+
+
+def _settle_of_pay(txt):
+    """V11.336: 按付款方式文本判定结算类型 — 含"月结"→月结, 其余(现结/货到付款/预付/承兑等)→现结。
+    与前端下拉同一规则: 应急询价选"月结/月结30天/月结60天"→月结, 才会进【合同管理→月结汇总】"""
+    return '月结' if '月结' in str(txt or '') else '现结'
+
+
+def _settle_of_trade_mode(tm, cur=''):
+    """V11.336: 交易模式与结算方式联动 — 选"月结"→结算方式=月结(否则月结汇总会漏单);
+    其他标准模式(货到付款/先款后货/预付定金)→现结; 自定义文本含"月结"也算月结; 无法判定时保留原值"""
+    _t = str(tm or '')
+    if '月结' in _t:
+        return '月结'
+    if _t in ('货到付款', '先款后货', '预付定金', '现款', '现结', '应急采购'):
+        return '现结'
+    return (str(cur or '').strip() or '现结')
 
 
 def _op_name():
@@ -17439,9 +17468,15 @@ def _emg_create_order(c, eid):
     _amt = float(r['inq_amount'] or 0) or float(r['est_amount'] or 0)
     _price = round(_amt / _q, 4)
     _cols = [x[1] for x in c.execute("PRAGMA table_info(purchase_orders)").fetchall()]
+    # V11.336 付款方式/结算方式随询价结论带到订单: 月结类→settle_type='月结'(月底自动进【合同管理→月结汇总】按厂家归集)
+    _pay_txt = str(r['inq_pay_method'] or '').strip() if 'inq_pay_method' in r.keys() else ''
+    _settle = str(r['inq_settle_type'] or '').strip() if 'inq_settle_type' in r.keys() else ''
+    if _settle not in ('月结', '现结'):
+        _settle = _settle_of_pay(_pay_txt)
     kv = {'order_no': _no, 'item_name': r['item_name'], 'spec': r['spec'] or '', 'unit': r['unit'] or '个',
           'quantity': _q, 'price': _price, 'total_amount': _amt, 'supplier': r['inq_supplier'] or r['supplier'] or '',
           'trade_mode': '应急采购', 'status': '已下单', 'dept': r['dept'] or '', 'created_at': now(), 'updated_at': now(),
+          'settle_type': _settle, 'pay_term': _pay_txt,
           'is_emg': 1, 'emg_no': r['emg_no'] or '', 'remark': '⚡应急采购自动生成（关联应急单 %s）' % (r['emg_no'] or '')}
     _ks = [k for k in kv if k in _cols]
     oid = c.execute("INSERT INTO purchase_orders(%s) VALUES(%s)" % (','.join(_ks), ','.join(['?'] * len(_ks))), [kv[k] for k in _ks]).lastrowid
@@ -17483,11 +17518,16 @@ def api_emergency_inquiry(eid):
     _ref = _emg_price_ref(c, r['item_name'])
     _dev = round((_amt / _q - _ref) / _ref * 100, 2) if _ref > 0 else 0.0
     _files = [str(x) for x in (d.get('files') or []) if x]
+    # V11.336 付款方式结构化: 前端下拉显式传 settle_type, 未传则按文本判定(兼容老客户端/手填"月结30天")
+    _pay_txt = str(d.get('pay_method') or '').strip()
+    _settle = str(d.get('settle_type') or '').strip()
+    if _settle not in ('月结', '现结'):
+        _settle = _settle_of_pay(_pay_txt)
     c.execute("""UPDATE emergency_purchases SET inq_supplier=?, inq_amount=?, inq_tax_rate=?, inq_amount_ex=?, inq_tax=?,
-                 inq_valid_until=?, inq_delivery_days=?, inq_pay_method=?, inq_files=?, inq_at=?, inq_by=?,
+                 inq_valid_until=?, inq_delivery_days=?, inq_pay_method=?, inq_settle_type=?, inq_files=?, inq_at=?, inq_by=?,
                  price_ref=?, price_dev_pct=?, status='待定标', updated_at=? WHERE id=?""",
               (_sup, _amt, _rate, _ex, _tax, str(d.get('valid_until') or '').strip(), str(d.get('delivery_days') or '').strip(),
-               str(d.get('pay_method') or '').strip(), json.dumps(_files, ensure_ascii=False), now(), session.get('user_name', ''),
+               _pay_txt, _settle, json.dumps(_files, ensure_ascii=False), now(), session.get('user_name', ''),
                _ref, _dev, now(), eid))
     _emg_ensure_supplier(c, _sup)
     emergency_log(c, eid, '应急单家询价', session.get('user_name', ''),
@@ -20460,13 +20500,18 @@ def api_doc_update(biz_type, bid):
     # ---- 主表字段白名单 + 更新 ----
     EDITABLE = {
         'purchase_request': ['dept', 'requester', 'budget_code', 'purpose', 'target_date', 'remark', 'urgent', 'apply_date'],
-        'purchase_order': ['supplier', 'requester', 'category', 'target_date', 'remark', 'trade_mode', 'urgent'],
+        'purchase_order': ['supplier', 'requester', 'category', 'target_date', 'remark', 'trade_mode', 'urgent', 'settle_type', 'pay_term'],
         'contract': ['contract_name', 'supplier', 'amount', 'sign_date', 'start_date', 'end_date', 'content', 'remark', 'urgent'],
         'receiving': ['warehouse', 'inspector', 'remark', 'urgent'],
         'requisition': ['dept', 'requester', 'purpose', 'issued_at'],
         'inventory': ['item_name', 'spec', 'cat_code', 'unit', 'quantity', 'safe_stock', 'warehouse', 'price', 'tax_rate', 'remark', 'max_stock', 'expiry_date', 'supplier'],
     }
     fields = EDITABLE.get(biz_type, [])
+    # V11.336 订单编辑: 交易模式改了→结算方式自动联动(选月结→月结, 否则现结), 前端未显式传 settle_type 时兜底
+    if biz_type == 'purchase_order' and 'trade_mode' in d and not (d.get('settle_type') or '').strip():
+        d['settle_type'] = _settle_of_trade_mode(d.get('trade_mode'), (row['settle_type'] if 'settle_type' in row.keys() else '现结'))
+        if not (d.get('pay_term') or '').strip():
+            d['pay_term'] = str(d.get('trade_mode') or '')
     updates = []
     vals = []
     for f in fields:

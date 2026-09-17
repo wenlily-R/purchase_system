@@ -891,6 +891,13 @@ async function editDoc(bizType, bid, label){
         <option ${!['货到付款','先款后货','月结','预付定金'].includes(o.trade_mode)?'selected':''}>自定义...</option>
       </select>
       <input class="fc" id="edModeCustom" placeholder="输入自定义交易模式" style="display:none;margin-top:3px" value="${esc(['货到付款','先款后货','月结','预付定金'].includes(o.trade_mode)?'':(o.trade_mode||''))}">
+      <label class="fl2" style="margin-top:4px">结算方式</label>
+      <select class="fc" id="edSettle" title="决定月底是否进【合同管理→月结汇总】；交易模式选「月结」时自动置为月结，可手工纠正">
+        <option ${o.settle_type=='月结'?'':'selected'}>现结</option><option ${o.settle_type=='月结'?'selected':''}>月结</option>
+      </select>
+      <div style="font-size:8px;color:#999;margin-top:2px">月结订单月底按厂家汇总生成月度结算合同</div>
+      <label class="fl2" style="margin-top:4px">付款方式(账期)</label>
+      <input class="fc" id="edPayTerm" placeholder="如 月结30天 / 承兑汇票（留空不改）" value="${esc(o.pay_term||'')}">
     </div></div>
     <div class="fr"><div class="fg"><label class="fl2">需求部门</label><input class="fc" id="edReq" value="${esc(o.requester||'')}"></div>
     <div class="fg"><label class="fl2">品类</label><input class="fc" id="edCat" value="${esc(o.category||'')}"></div></div>
@@ -1000,6 +1007,10 @@ async function saveEditDoc(bizType, bid, label){
       tm=cv;
     }
     d.trade_mode=tm;d.requester=id('edReq')?.value;
+    // V11.336 结算方式/付款方式(账期): 结算方式决定月底是否进月结汇总; 账期文本留空则不改动原值
+    d.settle_type=(id('edSettle')?.value||'现结');
+    const _pt=(id('edPayTerm')?.value||'').trim();
+    if(_pt)d.pay_term=_pt;
     d.category=id('edCat')?.value;d.target_date=id('edDate')?.value;d.remark=id('edRem')?.value;
     d.items=[];
     document.querySelectorAll('[id^="editm"]').forEach(el=>{
@@ -1893,7 +1904,8 @@ async function showOrder(ordid){
   // V11.258: 维修委托订单 — 独立视图: 完工登记收尾(维修件不进库存), 不提供验收入库
   if(o.req_type=='设备维修'){ return showRepairOrderView(ordid, d, my); }
   let h=`<div class="c2"><div><dt>单号</dt><dd><b>${esc(o.order_no)}</b></dd><dt>物资</dt><dd>${esc(o.item_name)}</dd><dt>数量</dt><dd>${o.quantity}${esc(o.unit)}</dd><dt>金额</dt><dd>¥${(o.total_amount||0).toFixed(0)}</dd></div>
-    <div><dt>供应商</dt><dd>${esc(o.supplier)}</dd><dt>负责人</dt><dd>${esc(o.owner)}</dd><dt>交易模式</dt><dd><span class="tag ${o.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(o.trade_mode||'货到付款')}</span></dd><dt>状态</dt><dd>${tag(o.status)}</dd></div></div>`;
+    <div><dt>供应商</dt><dd>${esc(o.supplier)}</dd><dt>负责人</dt><dd>${esc(o.owner)}</dd><dt>交易模式</dt><dd><span class="tag ${o.trade_mode=='先款后货'?'tg-o':'tg-b'}">${esc(o.trade_mode||'货到付款')}</span></dd><dt>状态</dt><dd>${tag(o.status)}</dd>
+    ${(o.pay_term||o.settle_type)?`<dt>付款方式</dt><dd>${esc(o.pay_term||'—')} <span class="tag ${o.settle_type=='月结'?'tg-o':'tg-b'}" title="月结订单月底进【合同管理→月结汇总】">${esc(o.settle_type||'现结')}</span></dd>`:''}</div></div>`;
   if(o.contract_no){const cf=(await api('/contracts')).find(x=>x.contract_no===o.contract_no);h+=`<div style="margin-top:6px;font-size:9px;color:var(--s)">已关联合同: ${esc(o.contract_no)} ${cf&&cf.file_path?`<a href="/uploads/${esc(cf.file_path)}" target="_blank" style="color:var(--b2,#3370ff)">📄下载</a>`:''}</div>`}
   // V11.264: 关联申请(申请号为主线) — 独立行+一键看全链路, 不再拼接在编号里
   h+=`<div style="margin-top:6px;font-size:10px;color:#333;background:#f0f6ff;border:1px solid #d5e4fb;border-radius:4px;padding:4px 8px">📝 关联申请：<b>${esc(o.req_no||'-')}</b> <a class="lnk" style="color:#1a6bff;font-size:10px" onclick="showChain('purchase_order',${ordid})">🔗 查看完整链路 ↗</a></div>`;
@@ -2846,7 +2858,7 @@ async function loadMonthlySummary(){
   id('contractsTable').innerHTML=`<div style="font-size:10px;color:#666;margin-bottom:6px">📅 本月待月结订单 — 按厂家分组, 月底点"生成月度合同"汇总</div>`+
     d.map(g=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--b);border-radius:5px;margin-bottom:4px;background:#fff">
       <span style="font-size:11px;font-weight:700">🏢 ${esc(g.supplier)}</span>
-      <span style="font-size:10px;color:#666">${g.cnt}单</span>
+      <span style="font-size:10px;color:#666">${g.cnt}单${Number(g.emg_cnt||0)>0?` <span style="color:#e65100">(含⚡应急 ${g.emg_cnt} 单)</span>`:''}</span>
       <span style="font-size:11px;color:var(--p);font-weight:700">¥${(g.amt||0).toFixed(0)}</span>
       <span style="flex:1;font-size:9px;color:#aaa;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc((g.detail||'').slice(0,80))}</span>
       <button class="btn btn-p btn-sm" onclick="genMonthlyContract('${esc(g.supplier)}')">📄 生成月度合同</button>
@@ -5740,7 +5752,7 @@ async function emgDetail(eid){
       <dt>资料补齐截止</dt><dd>${esc(d.deadline||'—')} ${d.deadline?`<span style="color:${d.days_left<0?'#c62828':'#e65100'}">(${d.days_left<0?'超期 '+Math.abs(d.days_left)+' 个工作日':'剩 '+d.days_left+' 个工作日'})</span>`:''}</dd>
       <dt>延期</dt><dd>${Number(d.extend_count||0)>0?('已延期'+d.extend_count+'次：'+esc(d.extend_reason||'')):'未延期'}</dd>
       <dt>价格偏差</dt><dd>${d.price_ref?`基准¥${d.price_ref} · 偏差${d.price_dev_pct}%`:'—'}${d.price_note?`<div style="font-size:8px;color:#666">价格说明：${esc(d.price_note)}</div>`:''}</dd>
-      <dt>应急单家询价</dt><dd>${d.inq_supplier?`${esc(d.inq_supplier)} · 含税¥${d.inq_amount||0} · 不含税¥${d.inq_amount_ex||0} · 税额¥${d.inq_tax||0} · 税率${d.inq_tax_rate||0}%${d.inq_delivery_days?(' · 交货'+esc(d.inq_delivery_days)+'天'):''}${d.inq_pay_method?(' · '+esc(d.inq_pay_method)):''}<div style="font-size:8px;color:#666">${esc((d.inq_by||'')+' '+String(d.inq_at||'').slice(0,16))}</div>`:'未询价（审批通过后采购员录入1家报价）'}</dd>
+      <dt>应急单家询价</dt><dd>${d.inq_supplier?`${esc(d.inq_supplier)} · 含税¥${d.inq_amount||0} · 不含税¥${d.inq_amount_ex||0} · 税额¥${d.inq_tax||0} · 税率${d.inq_tax_rate||0}%${d.inq_delivery_days?(' · 交货'+esc(d.inq_delivery_days)+'天'):''}${d.inq_pay_method?(' · 付款方式:'+esc(d.inq_pay_method)+(d.inq_settle_type=='月结'?' <span class="tag tg-o" title="月底进【合同管理→月结汇总】按厂家汇总">月结</span>':' <span class="tag tg-b">现结</span>')):''}<div style="font-size:8px;color:#666">${esc((d.inq_by||'')+' '+String(d.inq_at||'').slice(0,16))}</div>`:'未询价（审批通过后采购员录入1家报价）'}</dd>
       <dt>应急订单/收货/分配</dt><dd>${d.order_no?`<button class="lnk" onclick="emgOpenOrder(${d.order_id})">${esc(d.order_no)}</button>`:'—'}${d.recv_done_qty?` · 已验收 ${d.recv_done_qty}/${d.quantity}`:''}${d.alloc_state?` · 分配进度 <b>${esc(d.alloc_state)}</b>`:''}</dd>
     </div></div>`;
   if(d.status=='已锁定')h+=`<div style="margin-top:6px;background:#fee2e2;border:1px solid #f5c2c2;color:#c62828;border-radius:6px;padding:6px 10px;font-size:10px">🔒 已锁单：${esc(d.lock_reason||'超期未补齐资料')}（不影响已入库库存，但禁止新增领料/转正/付款；可申请延期1次解锁）</div>`;
@@ -7054,6 +7066,13 @@ function edModeTip(){
   const t=id('edMode').value;
   const custom=id('edModeCustom');
   if(custom)custom.style.display=(t=='自定义...')?'block':'none';
+  // V11.336 结算方式联动: 交易模式选"月结"(或自定义含月结)→结算方式自动置为月结(决定是否进月结汇总); 可再手工改
+  const st=id('edSettle');
+  if(st){
+    const v=(t=='自定义...')?((custom&&custom.value)||''):t;
+    if(v.includes('月结'))st.value='月结';
+    else if(['货到付款','先款后货','预付定金'].includes(v))st.value='现结';
+  }
 }
 function getTradeMode(){
   const t=id('fTradeMode').value;
@@ -9068,18 +9087,44 @@ async function emgInquiryForm(eid){
        <div><dt>税额</dt><dd><b id="emgInqTax">—</b></dd></div>
        <div><dt>报价有效期</dt><dd><input class="fc" type="date" id="emgInqValid" value="${esc(r.inq_valid_until||'')}"></dd></div>
        <div><dt>交货周期(天)</dt><dd><input class="fc" id="emgInqDays" value="${esc(r.inq_delivery_days||'')}" placeholder="如 2"></dd></div>
-       <div><dt>付款方式</dt><dd><input class="fc" id="emgInqPay" value="${esc(r.inq_pay_method||'')}" placeholder="如 月结30天"></dd></div>
+       <div><dt>付款方式</dt><dd><select class="fc" id="emgInqPaySel" onchange="emgPaySel()">${emgPayOpts(r.inq_pay_method||'')}</select><input class="fc" id="emgInqPay" value="${esc(r.inq_pay_method||'')}" placeholder="自定义付款方式（如 承兑汇票/月结90天）" style="margin-top:3px;display:none"><div style="font-size:8px;color:#999;margin-top:2px">选「月结/月结30天/月结60天」→ 该应急订单月底自动进【合同管理 → 月结汇总】按厂家汇总生成月度结算合同</div></dd></div>
        <div><dt>报价单附件</dt><dd><input type="file" id="emgInqFile" onchange="emgInqUp()"><span id="emgInqAtts" style="font-size:9px;color:#666">未上传</span></dd></div>
      </div>`,
     `<button class="btn btn-p" onclick="emgInquirySave(${eid})">💾 保存报价</button> <button class="btn btn-o" onclick="closeMod()">取消</button>`);
   emgInqCalc();
+  emgPaySel(true);   // V11.336 付款方式下拉: 回显(预设选中/自定义回填输入框)
+}
+// ============ V11.336 付款方式结构化(与采购订单"交易模式"同口径) ============
+// 口径: 下拉预设 + 自定义; 含"月结"→结算方式=月结(月底进月结汇总), 其余→现结
+const EMG_PAY_PRESET=['货到付款','月结','月结30天','月结60天','预付定金'];
+function emgPayOpts(cur){
+  const c=String(cur||''), custom=c&&!EMG_PAY_PRESET.includes(c);
+  const rows=[['货到付款','货到付款（现结）'],['月结','月结'],['月结30天','月结30天'],['月结60天','月结60天'],['预付定金','预付定金'],['__custom__','自定义…']];
+  return rows.map(([v,l])=>{
+    const sel=custom?(v==='__custom__'):(v===(c||'货到付款'));
+    return `<option value="${esc(v)}" ${sel?'selected':''}>${esc(l)}</option>`;
+  }).join('');
+}
+function emgPaySel(init){
+  const sel=id('emgInqPaySel'), inp=id('emgInqPay'); if(!sel||!inp)return;
+  const custom=(sel.value==='__custom__');
+  inp.style.display=custom?'':'none';
+  if(!custom)inp.value=sel.value;
+  else if(!init&&!inp.value)inp.value='';
+}
+function emgPayVal(){
+  const sel=id('emgInqPaySel'), inp=id('emgInqPay'); if(!sel)return '';
+  return (sel.value==='__custom__')?((inp&&inp.value||'').trim()):sel.value;
 }
 async function emgInquirySave(eid){
   const _sup=((id('emgInqSup')||{}).value||'').trim();
   if(!_sup){alert('请先在上方下拉选择系统供应商，或手工填写供应商名称');return}
+  const _pay=emgPayVal();
+  if(!_pay){alert('请选择付款方式，或在自定义里填写付款方式');return}
   const b={supplier:_sup, amount:(id('emgInqAmt')||{}).value||0,
            tax_rate:(id('emgInqRate')||{}).value||13, valid_until:(id('emgInqValid')||{}).value||'',
-           delivery_days:(id('emgInqDays')||{}).value||'', pay_method:(id('emgInqPay')||{}).value||'',
+           delivery_days:(id('emgInqDays')||{}).value||'', pay_method:_pay,
+           settle_type:(_pay.includes('月结')?'月结':'现结'),
            files:window.__emgInqAtts||[]};
   const r=await api('/emergency/'+eid+'/inquiry',{method:'POST',body:JSON.stringify(b)});
   if(r.success){toast('✅ '+r.message);closeMod();loadEmergency();}else alert('⛔ '+(r.error||'保存失败'));
