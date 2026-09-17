@@ -9803,6 +9803,9 @@ def api_receivings():
     where = []; args = []
     if not f_hist:
         where.append("COALESCE(r.data_source,'系统')<>'历史导入'")
+    # V11.329: 常规入库验收与应急入库验收彻底分开(用户要求) — 应急采购单据只在「⚡应急入库验收」专属Tab显示;
+    # 应急单转正后(is_emg=0, is_emg_converted=1)自动回到常规列表, 无需额外处理
+    where.append("COALESCE(r.is_emg,0)=0")
     if f_wh:
         where.append("COALESCE(r.warehouse,'')=?"); args.append(f_wh)
     if f_trace:
