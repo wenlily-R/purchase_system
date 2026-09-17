@@ -5563,12 +5563,13 @@ async function emgSubmit(){
 async function emgSupplierForm(eid){
   const r=(window._emgRows||[]).find(x=>x.id==eid)||{};
   window._emgBuckets={};
+  await emgSupArchive();
   id('dmTitle').textContent='📞 采购接单 · '+(r.emg_no||'');
   id('dmBody').innerHTML=`
     <div style="font-size:10px;color:#555;margin-bottom:6px">项目：<b>${esc(r.project||'')}</b>｜物资：<b>${esc(r.item_name||'')}</b> ${esc(r.spec||'')}｜数量：${r.quantity}${esc(r.unit||'')}｜要求到货：${esc(r.need_arrive||'—')}｜预估 ¥${r.est_amount||0}</div>
     <input type="hidden" id="emgSupOk" value="1">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:10px">
-      <label>供应商 <span style="color:#e74c3c;font-weight:700">*</span><input class="fc" id="emgSupplier" style="width:100%"></label>
+      <label>供应商 <span style="color:#e74c3c;font-weight:700">*</span><select class="fc" id="emgSupSel" style="width:100%" onchange="emgPickSup('emgSupplier')">${emgSupOpts('')}</select><input class="fc" id="emgSupplier" style="width:100%;margin-top:3px" placeholder="选上方档案自动填入，也可手工输入"></label>
       <label>供应商报价(元) <span style="color:#e74c3c;font-weight:700">*</span><input class="fc" id="emgQuote" type="number" min="1" step="0.01" style="width:100%"></label>
     </div>
     <label style="display:flex;gap:6px;align-items:center;font-size:10px;margin-top:8px;background:#f7f8fa;border:1px solid var(--b);border-radius:5px;padding:6px">
@@ -5592,7 +5593,9 @@ async function emgSupplierReject(eid){
   if(r.success){alert('✅ '+r.message);closeMod();loadEmergency();}else alert('⛔ '+(r.error||'操作失败'));
 }
 async function emgSupplierSave(eid){
-  const b={supplier:(id('emgSupplier')||{}).value||'',quote_amt:parseFloat((id('emgQuote')||{}).value||'0')||0,
+  const _s=((id('emgSupplier')||{}).value||'').trim();
+  if(!_s){alert('请先在上方下拉选择系统供应商，或手工填写供应商名称');return}
+  const b={supplier:_s,quote_amt:parseFloat((id('emgQuote')||{}).value||'0')||0,
     no_compare:!!(id('emgNoComp')||{}).checked,no_compare_reason:(id('emgNoCompReason')||{}).value||'',
     quote_files:(window._emgBuckets['quote']||[])};
   const r=await api('/emergency/'+eid+'/supplier',{method:'POST',body:JSON.stringify(b)});
@@ -8944,6 +8947,25 @@ function tqFromReports(){showTimeQuery('purchase_order')}
 //   → 自动临时入库「临时待分配库」 → 库管自主分配到正式库房(调拨流水+留痕,可撤回) → 补资料转正
 // 与常规流程物理分区(独立Tab/独立页), 底层共用(订单/入库/库存/调拨/供应商档案/价格库)
 // ============================================================
+// V11.334 应急询价/采购接单: 供应商改为「下拉选择系统供应商档案」(与常规询价 V11.161 同口径) — 选档案自动填入名称, 仍可手工输入新供应商
+let EMG_SUP_ARCHIVE=null;
+async function emgSupArchive(){
+  if(EMG_SUP_ARCHIVE)return EMG_SUP_ARCHIVE;
+  try{EMG_SUP_ARCHIVE=await api('/suppliers/pick',{noCache:true})}catch(e){EMG_SUP_ARCHIVE=[]}
+  return EMG_SUP_ARCHIVE||[]
+}
+function emgSupOpts(cur){
+  const c=(cur||'').trim(), rows=(EMG_SUP_ARCHIVE||[]).filter(s=>s&&s.name);
+  let h=rows.length
+    ? '<option value="">— 从系统供应商档案选择 —</option>'+rows.map(s=>`<option value="${esc(s.name)}"${s.name===c?' selected':''}>${esc(s.name)}${s.contact?('｜'+esc(s.contact)):''}${s.phone?('｜'+esc(s.phone)):''}</option>`).join('')
+    : '<option value="">暂无档案供应商（请手工输入）</option>';
+  if(c&&!rows.some(s=>s.name===c))h+=`<option value="${esc(c)}" selected>${esc(c)}（当前）</option>`;
+  return h;
+}
+function emgPickSup(dst){
+  const s=id('emgSupSel'); if(!s)return; const v=s.value||''; if(!v)return;
+  const t=id(dst||'emgInqSup'); if(t)t.value=v;
+}
 function emgInqCalc(){
   const a=parseFloat((id('emgInqAmt')||{}).value||0)||0, r0=parseFloat((id('emgInqRate')||{}).value||0)||0;
   const ex=a>0?(a/(1+r0/100)):0;
@@ -8961,11 +8983,12 @@ async function emgInqUp(){
 async function emgInquiryForm(eid){
   const r=(window._emgRows||[]).find(x=>x.id==eid)||{};
   window.__emgInqAtts=[];
+  await emgSupArchive();
   showDetail('📝 应急单家询价 · '+esc(r.emg_no||''),
     `<div style="font-size:10px;color:#666;margin-bottom:6px">应急通道仅支持 <b>1家供应商</b> 报价（精简流程，无需三方比价/开标）；保存后点【✅ 提交定标】即自动生成应急采购订单。</div>
      <div class="c2">
        <div><dt>物资</dt><dd>${esc(r.item_name||'')} ${esc(r.spec||'')} × ${r.quantity||0}${esc(r.unit||'')}</dd></div>
-       <div><dt>供应商（限1家）*</dt><dd><input class="fc" id="emgInqSup" value="${esc(r.inq_supplier||'')}" placeholder="供应商名称（自动同步供应商档案）"></dd></div>
+       <div><dt>供应商（限1家）*</dt><dd><select class="fc" id="emgSupSel" onchange="emgPickSup('emgInqSup')">${emgSupOpts(r.inq_supplier||'')}</select><input class="fc" id="emgInqSup" value="${esc(r.inq_supplier||'')}" placeholder="选上方档案自动填入，也可手工输入新供应商" style="margin-top:3px"></dd></div>
        <div><dt>报价金额(含税) *</dt><dd><input class="fc" type="number" step="0.01" id="emgInqAmt" value="${r.inq_amount||r.est_amount||0}" oninput="emgInqCalc()"></dd></div>
        <div><dt>税率 %</dt><dd><input class="fc" type="number" step="1" id="emgInqRate" value="${r.inq_tax_rate||13}" oninput="emgInqCalc()"></dd></div>
        <div><dt>不含税金额</dt><dd><b id="emgInqEx">—</b></dd></div>
@@ -8979,7 +9002,9 @@ async function emgInquiryForm(eid){
   emgInqCalc();
 }
 async function emgInquirySave(eid){
-  const b={supplier:(id('emgInqSup')||{}).value||'', amount:(id('emgInqAmt')||{}).value||0,
+  const _sup=((id('emgInqSup')||{}).value||'').trim();
+  if(!_sup){alert('请先在上方下拉选择系统供应商，或手工填写供应商名称');return}
+  const b={supplier:_sup, amount:(id('emgInqAmt')||{}).value||0,
            tax_rate:(id('emgInqRate')||{}).value||13, valid_until:(id('emgInqValid')||{}).value||'',
            delivery_days:(id('emgInqDays')||{}).value||'', pay_method:(id('emgInqPay')||{}).value||'',
            files:window.__emgInqAtts||[]};

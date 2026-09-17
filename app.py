@@ -7706,6 +7706,23 @@ def api_suppliers():
     conn = db(); rows = conn.execute("SELECT * FROM suppliers").fetchall(); conn.close()
     return jsonify([dict_row(r) for r in rows])
 
+@app.route('/api/suppliers/pick')
+@login_required
+def api_suppliers_pick():
+    """V11.334 应急询价/采购接单: 供应商「下拉选择系统供应商档案」(与常规询价 V11.161 同口径)。
+    仅返回选择所需的非敏感字段(名称/联系人/电话) —— 银行账号/税号等仍按 V11.281 收窄给采购员/领导/管理员,
+    故本接口独立, 供应急采购侧角色(含库管员/部门负责人)取候选供应商。"""
+    if session.get('user_role') not in EMG_BUY_ROLES:
+        return jsonify([])
+    c = db()
+    rows = c.execute("""SELECT id,name,contact,phone FROM suppliers
+                          WHERE COALESCE(status,'') NOT IN ('停用','已停用','禁用','作废','0')
+                          ORDER BY id""").fetchall()
+    c.close()
+    return jsonify([{'id': r['id'], 'name': r['name'] or '', 'contact': r['contact'] or '', 'phone': r['phone'] or ''}
+                    for r in rows])
+
+
 @app.route('/api/suppliers', methods=['POST'])
 @admin_required
 def api_create_supplier():
