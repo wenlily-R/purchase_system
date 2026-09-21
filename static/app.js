@@ -372,9 +372,9 @@ function buildNav(){
     {label:'📝 采购',page:'prequests'},
     {label:'📦 库房',page:'receivings'},
     {label:'💰 财务',page:'payments'},
-    {label:'📈 报表',page:'reports'},
+    {label:'📈 报表中心',page:'reports'},
     {label:'🚨 预警中心',page:'alerts'},
-        {label:'📊 数据看板',href:'/dashboard'},
+        {label:'📊 统计大屏',href:'/dashboard'},
       ];
   let navHtml='';
   navCats.forEach(c=>{
