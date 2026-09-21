@@ -296,6 +296,8 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
   .dash-quick-cards{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))!important}
   img{max-width:100%}
 }
+/* V11.340 页面减负：报表中心/系统设置的筛选行默认收起（点标题旁【🔎 筛选条件】展开） */
+#preports:not(.adv-open) .advf,#psystem:not(.adv-open) .advf{display:none!important}
 </style>
 <script>
 /* V11.331b 应用脚本独立加载 + 自动重试

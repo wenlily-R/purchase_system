@@ -8210,6 +8210,39 @@ window.hideGuide=function(){
   else setTimeout(show,1200);
 })();
 
+
+// V11.340 页面减负：报表中心/系统设置筛选条件默认收起，点标题旁【🔎 筛选条件】一键展开（状态本机记忆）
+window.advToggle=function(pid,btn){
+  var pg=document.getElementById(pid); if(!pg)return;
+  var open=pg.classList.toggle('adv-open');
+  try{localStorage.setItem('zc_adv_'+pid,open?'1':'0')}catch(e){}
+  if(btn)btn.textContent=open?'🔎 收起筛选条件':'🔎 筛选条件（已收起，点击展开）';
+};
+(function(){
+  function init(pid){
+    var pg=document.getElementById(pid); if(!pg)return;
+    pg.querySelectorAll('.cb > div').forEach(function(d){
+      if(d.dataset.advf)return;
+      if(d.querySelector('select,input') && d.querySelector('button')){d.classList.add('advf');d.dataset.advf='1';}
+    });
+    var h2=pg.querySelector('h2'); if(!h2)return;
+    var b=h2.querySelector('.advBtn');
+    if(!b){
+      b=document.createElement('button');
+      b.className='btn btn-o btn-sm advBtn';
+      b.style.cssText='float:right;margin-top:-2px';
+      b.onclick=function(){window.advToggle(pid,b)};
+      b.textContent='🔎 筛选条件（已收起，点击展开）';
+      h2.appendChild(b);
+    }
+    var saved='0'; try{saved=localStorage.getItem('zc_adv_'+pid)||'0'}catch(e){}
+    if(saved==='1'){pg.classList.add('adv-open');b.textContent='🔎 收起筛选条件';}
+  }
+  function boot(){['preports','psystem'].forEach(init)}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',function(){setTimeout(boot,1500)});
+  else setTimeout(boot,1500);
+})();
+
 // 树节点卡(圆点+卡+下引线); inModal=true 时点击先关弹窗再跳转
 function _ftNode(n,small,inModal){
   const sz=small?9:10;
