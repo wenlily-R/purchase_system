@@ -8192,6 +8192,24 @@ const FLOW_TREES={
     ]
   }
 };
+
+// V11.339 新手导航卡：首次进工作台显示，点"收起"后不再打扰（本机记忆）
+window.hideGuide=function(){
+  var el=document.getElementById('newbieGuide');
+  if(el)el.style.display='none';
+  try{localStorage.setItem('zc_guide_off','1')}catch(e){}
+};
+(function(){
+  function show(){
+    var el=document.getElementById('newbieGuide');
+    if(!el)return;
+    var off=''; try{off=localStorage.getItem('zc_guide_off')||''}catch(e){}
+    if(!off)el.style.display='';
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',function(){setTimeout(show,1200)});
+  else setTimeout(show,1200);
+})();
+
 // 树节点卡(圆点+卡+下引线); inModal=true 时点击先关弹窗再跳转
 function _ftNode(n,small,inModal){
   const sz=small?9:10;

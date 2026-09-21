@@ -412,6 +412,20 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
 <div class="side" id="sideMenu"></div>
 <main class="main" id="mainContent">
 <div class="page act" id="pdashboard">
+  <div class="card dash-card" id="newbieGuide" style="display:none">
+    <div class="ch"><h3>🧭 新手导航（第一次用先看这里）</h3><span class="ch-sub">点一下直达，不用记菜单</span><button class="btn btn-o btn-sm" style="margin-left:auto" onclick="hideGuide()">知道了，收起</button></div>
+    <div class="cb" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px">
+      <button class="btn btn-o btn-sm" onclick="sw('approvals')">✅ 有活儿要办 → 审批中心</button>
+      <button class="btn btn-o btn-sm" onclick="sw('prequests')">📝 要买东西 → 采购申请</button>
+      <button class="btn btn-o btn-sm" onclick="sw('receivings')">📦 货到了 → 入库验收</button>
+      <button class="btn btn-o btn-sm" onclick="sw('inventory')">🔍 查库存 → 库存查询</button>
+      <button class="btn btn-o btn-sm" onclick="showFlowChart('glossary')">📖 叫法看不懂 → 术语规则</button>
+      <button class="btn btn-o btn-sm" onclick="showFlowChart('purchase')">📋 看每步谁办 → 流程图</button>
+    </div>
+    <div class="cb" style="border-top:1px dashed var(--v9-b);padding-top:6px;font-size:10px;color:#8a94a6">
+      三条规矩：①同一环节只走一次审批（已办过的再点会被拦）；②单据走到哪一步看状态；③叫法有分歧，以页头「📖 术语规则」为准。
+    </div>
+  </div>
   <!-- ① 第一卡片: 我的待办(最高优先级) -->
   <div class="card dash-card">
     <div class="ch"><h3>✅ 我的待办</h3><span class="ch-sub" id="dashTodoStats"></span><button class="btn btn-o btn-sm" style="margin-left:auto" onclick="sw('approvals')">去审批中心 →</button></div>
