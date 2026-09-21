@@ -304,6 +304,7 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
    做法: 脚本拆成独立文件(可缓存), 加载失败自动重试6次并提示, 首屏HTML缩到约86KB。*/
 (function(){
   var V='{{ appver }}';
+  window.__BUILD=V;   /* V11.337 版本显示与自动更新检查用 */
   function bar(msg,retry){
     var d=document.getElementById('__bootbar');
     if(!d){d=document.createElement('div');d.id='__bootbar';
@@ -329,6 +330,40 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
   boot(0);
 })();
 </script>
+<script>
+/* V11.337 版本显示与自动更新提示：解决"用户不知道自己看到的是不是最新版"（异地电脑看不到新功能/流程图）
+   做法：页面底部与登录页显示构建号；每 3 分钟与 /api/version 对一次，发现服务器已换版即提示刷新。 */
+(function(){
+  function paint(){
+    var t=document.getElementById('appVerTag');
+    if(t && window.__BUILD) t.textContent='构建 '+window.__BUILD;
+    var l=document.getElementById('loginVer');
+    if(l && window.__BUILD) l.textContent='当前版本 '+window.__BUILD;
+  }
+  function banner(msg,keep){
+    var d=document.getElementById('__updbar');
+    if(!d){d=document.createElement('div');d.id='__updbar';
+      d.style.cssText='position:fixed;left:0;right:0;bottom:0;padding:9px 14px;text-align:center;font-size:13px;color:#fff;background:#14508c;z-index:99998;box-shadow:0 -2px 8px rgba(0,0,0,.2)';
+      document.body.appendChild(d);}
+    d.innerHTML=msg+' <button onclick="location.href=location.origin+location.pathname+\'?_r=\'+Date.now()" style="border:0;border-radius:4px;padding:4px 12px;margin-left:8px;cursor:pointer;font-weight:700">立即刷新</button>';
+    if(!keep) setTimeout(function(){var b=document.getElementById('__updbar');if(b&&b.parentNode)b.parentNode.removeChild(b)},8000);
+  }
+  window.verCheckNow=function(manual){
+    fetch('/api/version?t='+Date.now(),{cache:'no-store'}).then(function(r){return r.json()}).then(function(d){
+      var srv=(d&&d.version)||'';
+      if(srv && window.__BUILD && srv!==window.__BUILD){
+        banner('🔄 系统已更新（服务器 '+srv+'，当前页面 '+window.__BUILD+'），刷新后即可看到最新功能。',true);
+      }else if(manual){
+        banner('✅ 当前已是最新版本（'+window.__BUILD+'）。',false);
+      }
+    }).catch(function(){ if(manual) banner('⚠️ 暂时连不上服务器，请检查网络后重试。',false); });
+  };
+  document.addEventListener('DOMContentLoaded',paint);
+  setTimeout(paint,500); setTimeout(paint,2500);
+  setTimeout(function(){window.verCheckNow(false)},45000);
+  setInterval(function(){window.verCheckNow(false)},180000);
+})();
+</script>
 </head>
 <body>
 <div id="loginPage" class="login-page">
@@ -352,11 +387,12 @@ body:not(.side-collapsed) #sideScrollBar{opacity:1;pointer-events:auto}
     <div class="err" id="loginErr"></div>
     <div style="margin-top:6px;font-size:9px;color:#aaa;text-align:center" id="loginRememberTip"></div>
     <div style="margin-top:22px;font-size:9px;color:#c0c8d4;text-align:center;letter-spacing:.5px">正成能源科技 · 智慧采购管理平台</div>
+    <div id="loginVer" title="与服务器版本一致即为最新，不一致请按 Ctrl+F5 强刷" style="margin-top:6px;font-size:9px;color:#c0c8d4;text-align:center">当前版本 {{ appver }}</div>
   </div>
 </div>
 <div id="appMain" style="display:none">
 <div class="header">
-  <div class="logo"><span class="logo-ic">⚡</span><span class="logo-tx">正成能源采购系统</span><span class="tag" id="appVerTag" title="产品版本（构建号以 /api/version 为准）">V11.286</span></div>  <div class="topnav" id="topnav"></div>
+  <div class="logo"><span class="logo-ic">⚡</span><span class="logo-tx">正成能源采购系统</span><span class="tag" id="appVerTag" onclick="verCheckNow(true)" title="点击可检查是否有新版本" style="cursor:pointer">{{ appver }}</span></div>  <div class="topnav" id="topnav"></div>
   <div style="position:relative;margin-left:auto;margin-right:8px">
     <input id="globalSearch" placeholder="🔍 搜索菜单/单据/档案..." style="width:220px;padding:4px 8px;border:1px solid var(--b);border-radius:4px;font-size:10px" oninput="globalSearch(this.value)" onfocus="window.id('gsBox').style.display='block'" onblur="setTimeout(()=>window.id('gsBox').style.display='none',300)">
     <div id="gsBox" style="display:none;position:absolute;top:26px;right:0;width:340px;background:var(--c);border:1px solid var(--b);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:999;max-height:380px;overflow-y:auto;font-size:10px"></div>
